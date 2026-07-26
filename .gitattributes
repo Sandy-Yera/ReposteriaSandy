@@ -1,0 +1,17 @@
+# Por defecto, normalizar texto y usar LF
+* text=auto eol=lf
+
+# Gradle wrapper: siempre LF (aunque no tenga extensión .sh, es un script de shell)
+/gradlew text eol=lf
+*.sh text eol=lf
+
+# Scripts de Windows: siempre CRLF
+*.bat text eol=crlf
+/gradlew.bat text eol=crlf
+
+# Binarios: que Git no intente tocar saltos de línea ni mostrar diffs de texto
+*.jar binary
+*.png binary
+*.jpg binary
+*.jks binary
+*.keystore binary
