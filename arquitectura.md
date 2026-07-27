@@ -177,6 +177,9 @@ erDiagram
     RECETAS ||--o{ RECETA_PASOS : contiene
     EMPLEADOS ||--o{ EMPLEADO_RECETA_SUELDO : tiene
     RECETAS ||--o{ EMPLEADO_RECETA_SUELDO : referenciada
+    EMPLEADOS ||--|| EMPLEADO_SIMULACION_MULTIPLE : tiene
+    EMPLEADO_SIMULACION_MULTIPLE ||--o{ EMPLEADO_SIMULACION_MULTIPLE_DETALLE : contiene
+    RECETAS ||--o{ EMPLEADO_SIMULACION_MULTIPLE_DETALLE : referenciada
 ```
 
 ### 5.1 Ejemplos de entidades
@@ -302,16 +305,19 @@ Cada repositorio (`IngredienteRepositorio`, `RecetaRepositorio`, `MoldeRepositor
 
 ### 5.4 Resto de entidades (mismo patrón)
 
+**Regla explícita:** toda FK que apunte a `Receta` usa `onDelete = ForeignKey.CASCADE`, sin excepción. Room no asume cascada por defecto (el default real es `NO_ACTION`, que **bloquearía** el borrado de una receta con hijos pendientes) — así que cada entidad de esta tabla debe declararlo a mano, igual que ya se muestra explícito para `RecetaPrecio` (5.1), `RecetaRendimiento` (5.2) y `EmpleadoRecetaSueldo` (5.4, más abajo). Esto es lo que hace posible el flujo de borrado de receta descrito en 8.9 y la decisión #10.
+
 | Entidad Kotlin | Campos clave | Relación |
 |---|---|---|
-| `RecetaSeccion` | `id, recetaId, nombreSeccion, orden` | FK a `Receta` |
-| `RecetaIngrediente` | `id, seccionId, ingredienteId, cantidadG, orden` | FK a `RecetaSeccion` e `Ingrediente` |
-| `RecetaDuracion` | `recetaId, tipo (ambiente/refrigerada/congelada), apto, cantidad, unidad` | PK compuesta (`recetaId`, `tipo`) |
-| `RecetaSimulacionVenta` | `recetaId (PK), diasPorSemana, unidadesPorDia` | 1:1 con `Receta` |
-| `RecetaPaso` | `id, recetaId, orden, contenido` | FK a `Receta` |
+| `RecetaSeccion` | `id, recetaId, nombreSeccion, orden` | FK a `Receta` (**CASCADE**) |
+| `RecetaIngrediente` | `id, seccionId, ingredienteId, cantidadG, orden` | FK a `RecetaSeccion` (**CASCADE** — al borrar una sección se borran sus ingredientes) e `Ingrediente` (sin FK formal, ver 5.1 y 7.1) |
+| `RecetaDuracion` | `recetaId, tipo (ambiente/refrigerada/congelada), apto, cantidad, unidad` | PK compuesta (`recetaId`, `tipo`), FK a `Receta` (**CASCADE**) |
+| `RecetaSimulacionVenta` | `recetaId (PK), diasPorSemana, unidadesPorDia` | 1:1 con `Receta`, FK (**CASCADE**) |
+| `RecetaPaso` | `id, recetaId, orden, contenido` | FK a `Receta` (**CASCADE**) |
 | `Empleado` | `id, nombre, esGenerico, creadoEn` | — |
 | `EmpleadoRecetaSueldo` | `id, empleadoId, recetaId, gananciaEmpleado, diasPorSemana, unidadesPorDia` | FK a `Empleado` (CASCADE) y a `Receta` (**CASCADE** — ver decisión #10) |
-| `EmpleadoSimulacionMultiple` / `Detalle` | `empleadoId (PK), diasPorSemana` + tabla detalle por receta | ver sección 10.3 |
+| `EmpleadoSimulacionMultiple` | `empleadoId (PK), diasPorSemana` | 1:1 con `Empleado`, FK (**CASCADE**) |
+| `EmpleadoSimulacionMultipleDetalle` | `id, empleadoId, recetaId, unidadesPorDia` | FK a `EmpleadoSimulacionMultiple` (**CASCADE**) y a `Receta` (**CASCADE** — misma razón que `EmpleadoRecetaSueldo`: si la receta desaparece, su fila de detalle en la simulación múltiple también) |
 
 ```kotlin
 @Entity(
