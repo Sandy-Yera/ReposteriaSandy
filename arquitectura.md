@@ -392,7 +392,7 @@ Vive en `logica/Formato.kt`, sin dependencias de Android — se puede probar con
 - Ingrediente (borrado): si `recetaRepo.obtenerRecetasQueUsan(ingredienteId)` no está vacío, la UI **debe** mostrar la advertencia con esa lista y pedir confirmación explícita antes de llamar a `confirmarEliminacionIngrediente` (7.1). Si está vacío, se borra directo (igual queda el evento en el historial).
 - Rendimiento: `trozos >= 1` siempre; si `usaMolde = false`, `pesoFinalG` es obligatorio.
 - Molde: `alturaMoldeCm > 0` siempre; el resto de los campos de `DimensionesMolde` obligatorios según `tipoForma` (para `EXOTICO`, solo `volumenExoticoCm3` y `alturaMoldeCm`).
-- Reescalado Modo Altura: `nuevo.alturaMoldeCm >= original.alturaMoldeCm` — si no se cumple, error de validación antes de calcular el factor (9.3).
+- Reescalado Modo Altura: `nuevo.alturaMoldeCm >= original.alturaMoldeCm` — si no se cumple, error de validación antes de calcular el factor (8.3.1).
 - Duración: si `apto = false`, se ignoran cantidad/unidad.
 - Sueldo empleado: `gananciaEmpleado` entre `0` y `gananciaTotal` de la receta.
 
@@ -511,7 +511,8 @@ fun factorEscala(original: DimensionesMolde, nuevo: DimensionesMolde, modo: Modo
 suspend fun reescalarRecetaPorMolde(
     recetaId: Long,
     nuevo: DimensionesMolde,
-    modo: ModoReescalado
+    modo: ModoReescalado,
+    nuevoMoldeOrigenId: Long? // id del molde elegido del catálogo (9.3, opción 1), o null si fue "modo prueba"
 ) {
     val original = recetaRepo.obtenerDimensionesMolde(recetaId)
         ?: error("Esta receta no usa molde; usar reescalarRecetaPorPeso()")
@@ -519,7 +520,12 @@ suspend fun reescalarRecetaPorMolde(
     recetaRepo.obtenerTodosLosIngredientes(recetaId).forEach {
         recetaRepo.actualizarCantidad(it.id, Math.round(it.cantidadG * factor * 100) / 100.0)
     }
-    recetaRepo.actualizarDimensionesMolde(recetaId, nuevo)
+    // A diferencia de actualizarDimensionesMolde() (5.2, solo dimensiones -- usada por la
+    // sincronización cuando se edita un molde ya enlazado), este reescalado también decide
+    // el vínculo: si se reescaló contra un molde guardado, la receta queda enlazada a él
+    // (activa la sincronización de 5.2 a futuro); si fue modo prueba, se desvincula de
+    // cualquier molde anterior aunque hubiese estado enlazada antes de este reescalado.
+    recetaRepo.actualizarDimensionesYVinculoMolde(recetaId, nuevo, nuevoMoldeOrigenId)
 }
 ```
 
@@ -629,10 +635,10 @@ fun simulacion(ingresoBase: Double, costoBase: Double, dias: Int, unidades: Int)
 
 En el paso "Rendimiento" de una receta (8.3.1), al reescalar se elige el molde nuevo de dos formas:
 
-1. **Molde guardado:** selector tipo `ComboBuscable` sobre el catálogo de moldes (9.2).
-2. **Modo prueba:** se ingresan las dimensiones directamente en el mismo formulario de 9.2, sin persistirlas como `Molde` — pensado para cuando reescalas una receta ajena y no necesariamente quieres guardar ese molde en tu catálogo.
+1. **Molde guardado:** selector tipo `ComboBuscable` sobre el catálogo de moldes (9.2). Deja la receta **enlazada** a ese molde (`moldeOrigenId` apunta a él), activando la sincronización de 5.2: si más adelante corriges una medida de ese molde en el catálogo, se propaga solo a esta receta.
+2. **Modo prueba:** se ingresan las dimensiones directamente en el mismo formulario de 9.2, sin persistirlas como `Molde` — pensado para cuando reescalas una receta ajena y no necesariamente quieres guardar ese molde en tu catálogo. Deja la receta **sin vínculo** (`moldeOrigenId = null`), incluso si antes estaba enlazada a otro molde — sus dimensiones quedan fijas hasta el próximo reescalado.
 
-Con el molde nuevo (guardado o de prueba) ya definido, se elige el modo (Altura o Capacidad, 8.3.1) y se aplica `factorEscala()`.
+Con el molde nuevo (guardado o de prueba) ya definido, se elige el modo (Altura o Capacidad, 8.3.1) y se aplica `factorEscala()`. Este mismo selector (guardado vs. prueba) es el que se usa también al definir el molde por primera vez en el paso Rendimiento (8.3) para una receta nueva — no es exclusivo del reescalado.
 
 ---
 
