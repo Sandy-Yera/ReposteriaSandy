@@ -197,7 +197,11 @@ erDiagram
 )
 data class Ingrediente(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val nombre: String,
+    // NOCASE: sin esto el índice único distingue mayúsculas y dejaría crear "Harina" y
+    // "harina" como dos ingredientes distintos, que es justo lo que se quiere evitar.
+    // Ojo con su límite: NOCASE solo ignora mayúsculas del alfabeto inglés, así que
+    // "azucar" y "azúcar" siguen siendo distintos para la base (ver 6.2).
+    @ColumnInfo(collate = ColumnInfo.NOCASE) val nombre: String,
     val valorPorGramo: Double = 0.0,
     val creadoEn: Long = System.currentTimeMillis(),
     val actualizadoEn: Long = System.currentTimeMillis()
@@ -276,7 +280,8 @@ data class Molde(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val nombre: String,
     @Embedded val dimensiones: DimensionesMolde,
-    val creadoEn: Long = System.currentTimeMillis()
+    val creadoEn: Long = System.currentTimeMillis(),
+    val actualizadoEn: Long = System.currentTimeMillis()  // se edita (9.2), así que lleva fecha igual que Ingrediente y Receta
 )
 
 @Entity(
@@ -313,7 +318,7 @@ suspend fun actualizarMolde(moldeId: Long, nuevasDimensiones: DimensionesMolde) 
     }
     historialRepo.registrar(
         tipo = TipoEvento.EDICION,
-        entidad = "Molde",
+        entidad = EntidadEvento.MOLDE,
         descripcion = "Se editó el molde '$nombreMolde'",
         detalleAdicional = if (recetasVinculadas.isEmpty()) null
             else "Actualizó el molde base de: ${recetasVinculadas.joinToString { it.titulo }}"
@@ -327,11 +332,13 @@ suspend fun actualizarMolde(moldeId: Long, nuevasDimensiones: DimensionesMolde) 
 enum class TipoEvento { CREACION, EDICION, ELIMINACION }
 // color en la UI: CREACION = azul · EDICION = verde · ELIMINACION = rojo
 
-@Entity(tableName = "eventos_cambio")
+enum class EntidadEvento { INGREDIENTE, RECETA, MOLDE, EMPLEADO }
+
+@Entity(tableName = "eventos_cambio", indices = [Index("creadoEn")])
 data class EventoCambio(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val tipo: TipoEvento,
-    val entidad: String,               // "Ingrediente" | "Receta" | "Empleado" | "Molde"
+    val entidad: EntidadEvento,        // enum y no String, misma razón que ModoPrecio (5.5)
     val descripcion: String,           // ej. "Se eliminó el ingrediente 'Harina'"
     val detalleAdicional: String? = null, // ej. "Afectó a: Bizcocho de vainilla, Torta de manjar"
     val creadoEn: Long = System.currentTimeMillis()
@@ -353,7 +360,7 @@ Cada repositorio (`IngredienteRepositorio`, `RecetaRepositorio`, `MoldeRepositor
 | `RecetaDuracion` | `recetaId, tipo (ambiente/refrigerada/congelada), apto, cantidad, unidad` | PK compuesta (`recetaId`, `tipo`), FK a `Receta` (**CASCADE**) |
 | `RecetaSimulacionVenta` | `recetaId (PK), diasPorSemana, unidadesPorDia` | 1:1 con `Receta`, FK (**CASCADE**) |
 | `RecetaPaso` | `id, recetaId, orden, contenido` | FK a `Receta` (**CASCADE**) |
-| `Empleado` | `id, nombre, esGenerico, creadoEn` | — |
+| `Empleado` | `id, nombre, esGenerico, creadoEn, actualizadoEn` | — (el nombre se edita, así que lleva fecha como las demás entidades editables) |
 | `EmpleadoRecetaSueldo` | `id, empleadoId, recetaId, gananciaEmpleado, diasPorSemana, unidadesPorDia` | FK a `Empleado` (CASCADE) y a `Receta` (**CASCADE** — ver decisión #10). **Único (`empleadoId`, `recetaId`)** — un empleado tiene un solo sueldo por receta (5.6) |
 | `EmpleadoSimulacionMultiple` | `empleadoId (PK), diasPorSemana` | 1:1 con `Empleado`, FK (**CASCADE**) |
 | `EmpleadoSimulacionMultipleDetalle` | `id, empleadoId, recetaId, unidadesPorDia` | FK a `EmpleadoSimulacionMultiple` (**CASCADE**) y a `Receta` (**CASCADE** — misma razón que `EmpleadoRecetaSueldo`: si la receta desaparece, su fila de detalle en la simulación múltiple también). **Único (`empleadoId`, `recetaId`)** |
@@ -401,7 +408,7 @@ class Convertidores {
     @TypeConverter fun textoAForma(v: String?): TipoFormaMolde? = v?.let { TipoFormaMolde.valueOf(it) }
     @TypeConverter fun modoATexto(v: ModoPrecio?): String? = v?.name
     @TypeConverter fun textoAModo(v: String?): ModoPrecio? = v?.let { ModoPrecio.valueOf(it) }
-    // … ídem para TipoEvento, TipoDuracion y UnidadDuracion
+    // … ídem para TipoEvento, EntidadEvento, TipoDuracion y UnidadDuracion
 }
 ```
 
@@ -490,7 +497,8 @@ Vive en `logica/Formato.kt`, sin dependencias de Android — se puede probar con
 
 ### 6.2 Validaciones comunes
 
-- Ingrediente: nombre único, `valorPorGramo >= 0`.
+- Ingrediente: `valorPorGramo >= 0`. El nombre es único sin distinguir mayúsculas (lo garantiza el índice `NOCASE` de 5.1), pero **la comparación de tildes queda en `logica/`**: antes de guardar se compara con `sinTildes` contra los existentes, porque para la base "azucar" y "azúcar" son distintos y para ti son el mismo ingrediente. Si coincide, se avisa en vez de crear un duplicado.
+- Receta: siempre al menos una `RecetaSeccion`. La primera se crea junto con la receta (8.10) y no se puede borrar la última que quede.
 - Ingrediente (borrado): si `recetaRepo.obtenerRecetasQueUsan(ingredienteId)` no está vacío, la UI **debe** mostrar la advertencia con esa lista y pedir confirmación explícita antes de llamar a `confirmarEliminacionIngrediente` (7.1). Si está vacío, se borra directo (igual queda el evento en el historial).
 - Rendimiento: `trozos >= 1` siempre; si `usaMolde = false`, `pesoFinalG` es obligatorio **y `> 0`** (si fuera 0, `reescalarRecetaPorPeso` divide por cero).
 - Molde: los campos de `DimensionesMolde` que correspondan a `tipoForma` son obligatorios **y todos `> 0`**, incluida `alturaMoldeCm` (para `EXOTICO`, solo `volumenExoticoCm3` y `alturaMoldeCm`). No basta con "obligatorio": una medida en 0 deja el área o el volumen en 0 y hace que `factorEscala` divida por cero.
@@ -593,7 +601,7 @@ suspend fun confirmarEliminacionIngrediente(ingredienteId: Long) {
     ingredienteRepo.eliminar(ingredienteId)
     historialRepo.registrar(
         tipo = TipoEvento.ELIMINACION,
-        entidad = "Ingrediente",
+        entidad = EntidadEvento.INGREDIENTE,
         descripcion = "Se eliminó el ingrediente '$nombreIngrediente'",
         detalleAdicional = if (afectadas.isEmpty()) null
             else "Afectó a: ${afectadas.joinToString { it.titulo }}"
@@ -657,8 +665,18 @@ fun pesoPorTrozo(pesoFinalG: Double?, trozos: Int): String =
 
 ```kotlin
 suspend fun reescalarRecetaPorPeso(recetaId: Long, nuevoPesoReferencia: Double) {
+    require(nuevoPesoReferencia > 0) { "El peso nuevo debe ser mayor que cero" }
+    // Espejo del require de reescalarRecetaPorMolde: cada función atiende su propio caso.
+    // Sin esto, llamarla sobre una receta CON molde reescalaría contra un pesoFinalG que
+    // ahí es opcional, cayendo al fallback de gramos y dando un factor que no significa nada.
+    require(!recetaRepo.usaMolde(recetaId)) {
+        "Esta receta usa molde; usar reescalarRecetaPorMolde()"
+    }
+    // pesoFinalG es obligatorio y > 0 cuando usaMolde = false (6.2), así que el fallback
+    // a la suma de gramos solo actúa sobre datos viejos anteriores a esa validación.
     val pesoActual = recetaRepo.obtenerPesoFinal(recetaId)
         ?: recetaRepo.sumaGramosIngredientes(recetaId)
+    require(pesoActual > 0) { "La receta no tiene peso ni ingredientes: nada que reescalar" }
     val factor = nuevoPesoReferencia / pesoActual
     recetaRepo.obtenerTodosLosIngredientes(recetaId).forEach {
         recetaRepo.actualizarCantidad(it.id, Math.round(it.cantidadG * factor * 100) / 100.0)
@@ -810,6 +828,44 @@ fun simulacion(ingresoBase: Double, costoBase: Double, dias: Int, unidades: Int)
 - `DetalleRecetaScreen.kt`: cada paso como sección `SeccionColapsable`, con acceso a edición inline por sección.
 - `ListaRecetasScreen.kt`: botón "+ Nueva receta" fijo arriba (fuera del scroll, vía `Scaffold` + contenido fijo sobre un `LazyColumn`), `BarraBusqueda` arriba (coincidencia parcial en título), lista debajo.
 - Al eliminar una receta: primero la confirmación de 6.3, listando qué empleados le tienen sueldo asignado. Recién al confirmar se dispara la cascada de la sección 5.4 (borra sus `EmpleadoRecetaSueldo`), se registra un evento rojo en el historial (11) mencionando qué empleados quedaron sin esa receta si corresponde, y las simulaciones de esos empleados se recalculan solas.
+
+### 8.10 Recetas a medio crear (el caso que más puede reventar)
+
+El wizard tiene 6 pasos y **guarda al terminar cada uno**, no solo al final — si no, cerrar la app o que suene el teléfono a mitad de camino te haría perder todo lo escrito. La consecuencia es que existen recetas incompletas, y casi todas las fórmulas de este documento dividen por algo que en ese estado podría no existir todavía:
+
+| División | Explota si… | Cuándo puede pasar |
+|---|---|---|
+| `costoTotal / trozos` | `trozos` es 0 o no hay fila de rendimiento | Receta guardada en el paso 1, aún sin pasar por Rendimiento |
+| `precioTotal / trozosCubiertos` | `cantidad` es 0 | Cubierto por la validación de 6.2 |
+| `precioDeMenorGanancia` | no hay ningún precio | Receta que no llegó al paso 4 |
+| `pesoFinalG / trozos` | `trozos` es 0 | Igual que el primero |
+
+**Regla que lo cierra: al crear la receta se insertan sus filas 1:1 en la misma transacción, con valores por defecto seguros.**
+
+```kotlin
+@Transaction
+suspend fun crearReceta(titulo: String): Long {
+    val recetaId = recetaDao.insertar(Receta(titulo = titulo))
+    // trozos = 1 y no 0: así NINGUNA división por trozos puede reventar, en ningún momento
+    rendimientoDao.insertar(RecetaRendimiento(recetaId = recetaId, usaMolde = false, trozos = 1))
+    simulacionDao.insertar(RecetaSimulacionVenta(recetaId = recetaId, diasPorSemana = 1, unidadesPorDia = 1))
+    seccionDao.insertar(RecetaSeccion(recetaId = recetaId, nombreSeccion = "General", orden = 0))
+    return recetaId
+}
+```
+
+Esto respeta las validaciones de 6.2 (`trozos >= 1`, `diasPorSemana` entre 1 y 7, `unidadesPorDia >= 0`) desde el primer instante, en vez de dejar un hueco entre "la receta existe" y "la receta tiene rendimiento".
+
+**Los precios son la excepción y no se inventan.** Un precio en 0 sería mentira y además rompería la validación `precioTotal > 0`. En su lugar, el snapshot expone la pregunta directamente:
+
+```kotlin
+// en DatosCalculoReceta (6.4)
+val tienePrecio: Boolean get() = precios.isNotEmpty()
+```
+
+Quien muestre campos automáticos **debe** consultarlo primero. Si es `false`, la pantalla muestra un guion (`—`) en ingreso bruto, ganancias y trozo ganador, con el texto *"Falta definir el precio"*, en vez de llamar a `precioDeMenorGanancia` y llevarse la excepción. La excepción sigue existiendo a propósito: es la red de seguridad para el caso en que alguien se salte este chequeo, no el camino normal.
+
+En la lista de recetas (8.9), las que no tienen precio se marcan con la misma etiqueta, para que se note que están a medias sin tener que abrirlas.
 
 ---
 

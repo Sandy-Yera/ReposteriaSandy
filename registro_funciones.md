@@ -162,6 +162,86 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Qué hace: cuánto tiempo se guardan los eventos del historial de cambios antes de borrarse solos.
 - Cómo funciona: constante de ~6 meses en milisegundos. Se aplica al registrar cada evento nuevo, borrando los más viejos que ese umbral. Evita que el archivo que se sube a Drive crezca para siempre por una tabla que casi no se consulta.
 
+### obtener (IngredienteRepositorio)
+- Ubicación: data/repositorio/IngredienteRepositorio.kt
+- Qué hace: trae un ingrediente por su id.
+- Cómo funciona: `suspend`, recibe `ingredienteId` y devuelve `Ingrediente`. La usan `costoTotalReceta` (indirectamente, vía el JOIN) y `confirmarEliminacionIngrediente`, que necesita el nombre **antes** de borrar la fila para poder registrarlo en el historial.
+
+### eliminar (IngredienteRepositorio)
+- Ubicación: data/repositorio/IngredienteRepositorio.kt
+- Qué hace: borra la fila de un ingrediente.
+- Cómo funciona: `suspend`, recibe `ingredienteId`. Es el borrado crudo: **no** avisa, no revisa si está en uso ni registra en el historial. Todo eso lo hace `confirmarEliminacionIngrediente`, que es la que debe llamarse desde la UI.
+
+### obtener (MoldeRepositorio)
+- Ubicación: data/repositorio/MoldeRepositorio.kt
+- Qué hace: trae un molde del catálogo por su id.
+- Cómo funciona: `suspend`, recibe `moldeId` y devuelve `Molde`. La usa `actualizarMolde` para leer el nombre antes de modificarlo, por el historial.
+
+### actualizarDimensiones (MoldeRepositorio)
+- Ubicación: data/repositorio/MoldeRepositorio.kt
+- Qué hace: guarda las medidas nuevas de un molde del catálogo.
+- Cómo funciona: `suspend`, recibe `moldeId` y las nuevas `DimensionesMolde`. Solo toca la fila del molde: la propagación a las recetas enlazadas la hace `actualizarMolde`, que es quien debe llamarse.
+
+### obtenerDimensionesMolde
+- Ubicación: data/repositorio/RecetaRepositorio.kt
+- Qué hace: trae las medidas del molde que tiene guardada una receta.
+- Cómo funciona: `suspend`, recibe `recetaId` y devuelve `DimensionesMolde?`. Devuelve `null` si la receta no usa molde, y de ese `null` se agarra `reescalarRecetaPorMolde` para cortar con un error en vez de calcular un factor sin sentido.
+
+### usaMolde
+- Ubicación: data/repositorio/RecetaRepositorio.kt
+- Qué hace: dice si una receta usa molde o no.
+- Cómo funciona: `suspend`, recibe `recetaId` y devuelve `Boolean` (el campo `usaMolde` de su rendimiento). La usa `reescalarRecetaPorPeso` para rechazar recetas con molde, que deben ir por `reescalarRecetaPorMolde`.
+
+### obtenerPesoFinal
+- Ubicación: data/repositorio/RecetaRepositorio.kt
+- Qué hace: trae el peso final del producto de una receta.
+- Cómo funciona: `suspend`, recibe `recetaId` y devuelve `Double?`. Es `null` cuando no se especificó, cosa que solo puede pasar en recetas con molde (sin molde es obligatorio, 6.2).
+
+### sumaGramosIngredientes
+- Ubicación: data/repositorio/RecetaRepositorio.kt
+- Qué hace: suma los gramos de todos los ingredientes de una receta.
+- Cómo funciona: `suspend`, recibe `recetaId` y devuelve `Double`. Es el plan B de `reescalarRecetaPorPeso` cuando no hay peso final guardado. **No confundir con `costoTotalReceta`**: esta suma gramos, la otra suma dinero.
+
+### obtenerTodosLosIngredientes
+- Ubicación: data/repositorio/RecetaRepositorio.kt
+- Qué hace: trae los ingredientes de una receta, de todas sus secciones juntas.
+- Cómo funciona: `suspend`, recibe `recetaId` y devuelve `List<RecetaIngrediente>`. La usan las dos funciones de reescalado para recorrer y multiplicar cada cantidad.
+
+### actualizarCantidad
+- Ubicación: data/repositorio/RecetaRepositorio.kt
+- Qué hace: cambia los gramos de un ingrediente dentro de una receta.
+- Cómo funciona: `suspend`, recibe el id de la fila `RecetaIngrediente` y la nueva cantidad. La llaman los reescalados una vez por ingrediente, siempre con el valor ya redondeado a 2 decimales.
+
+### quitarIngredienteDeTodasLasSecciones
+- Ubicación: data/repositorio/RecetaRepositorio.kt
+- Qué hace: saca un ingrediente de todas las recetas donde aparezca.
+- Cómo funciona: `suspend`, recibe `ingredienteId` y borra las filas `RecetaIngrediente` que lo referencian. Existe porque esa relación **no** tiene clave foránea declarada, así que no hay cascada automática que lo haga. La llama `confirmarEliminacionIngrediente` justo antes de borrar el ingrediente.
+
+### crearReceta
+- Ubicación: data/repositorio/RecetaRepositorio.kt
+- Qué hace: crea una receta nueva junto con sus filas obligatorias, ya listas con valores seguros.
+- Cómo funciona: `@Transaction suspend`, recibe el título y devuelve el `recetaId`. Inserta en la misma transacción el rendimiento (`trozos = 1`), la simulación de venta y una sección "General". **El `trozos = 1` es deliberado**: garantiza que ninguna división por trozos pueda reventar mientras la receta está a medio crear en el wizard (8.10). Los precios no se crean, porque un precio en 0 sería falso.
+
+### obtenerDiasCompartidos
+- Ubicación: data/repositorio/EmpleadoRepositorio.kt
+- Qué hace: trae los días por semana que un empleado vendería, el valor común a todas sus recetas.
+- Cómo funciona: `suspend`, recibe `empleadoId` y devuelve `Int`. Es el `diasPorSemana` de `EmpleadoSimulacionMultiple`. **No confundir** con el `diasPorSemana` de `EmpleadoRecetaSueldo`, que es propio de cada receta por separado; cambiar uno no afecta al otro.
+
+### obtenerDetalle
+- Ubicación: data/repositorio/EmpleadoRepositorio.kt
+- Qué hace: trae cuántas unidades por día vendería un empleado de cada una de sus recetas.
+- Cómo funciona: `suspend`, recibe `empleadoId` y devuelve la lista de `EmpleadoSimulacionMultipleDetalle`. Es la lista sobre la que itera `simulacionMultiple`.
+
+### obtenerSueldos
+- Ubicación: data/repositorio/EmpleadoRepositorio.kt
+- Qué hace: trae de una sola vez todos los sueldos asignados a un empleado, indexados por receta.
+- Cómo funciona: `suspend`, recibe `empleadoId` y devuelve `Map<Long, EmpleadoRecetaSueldo>` con el `recetaId` como clave. Devuelve el mapa completo a propósito, para que `simulacionMultiple` no consulte uno por receta dentro del bucle. Una receta sin sueldo asignado simplemente no está en el mapa y cuenta como 0.
+
+### registrar
+- Ubicación: data/repositorio/HistorialRepositorio.kt
+- Qué hace: deja anotado en el historial que algo se creó, se editó o se eliminó.
+- Cómo funciona: `suspend`, recibe `tipo`, `entidad`, `descripcion` y un `detalleAdicional` opcional. **La descripción siempre debe nombrar la entidad afectada** (`"Se eliminó el ingrediente 'Harina'"`), nunca un texto genérico, lo que obliga a leer el nombre antes de borrar. Aprovecha la llamada para borrar los eventos más viejos que `RETENCION_HISTORIAL_MS`.
+
 ---
 
 <a name="orquestacion"></a>
@@ -246,6 +326,11 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Ubicación: data/db/entidades/EventoCambio.kt
 - Qué hace: si un evento del historial fue una creación, una edición o una eliminación.
 - Cómo funciona: `enum` con `CREACION` (azul), `EDICION` (verde) y `ELIMINACION` (rojo). Necesita `TypeConverter`.
+
+### EntidadEvento
+- Ubicación: data/db/entidades/EventoCambio.kt
+- Qué hace: sobre qué tipo de cosa fue un evento del historial.
+- Cómo funciona: `enum` con `INGREDIENTE`, `RECETA`, `MOLDE` y `EMPLEADO`. Era un `String` libre y se pasó a enum por la misma razón que `ModoPrecio` (5.5). Necesita `TypeConverter`.
 
 ### Convertidores
 - Ubicación: data/db/Convertidores.kt
