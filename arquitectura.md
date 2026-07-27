@@ -190,7 +190,6 @@ data class Ingrediente(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val nombre: String,
     val valorPorGramo: Double = 0.0,
-    val activo: Boolean = true,
     val creadoEn: Long = System.currentTimeMillis(),
     val actualizadoEn: Long = System.currentTimeMillis()
 )
@@ -399,6 +398,7 @@ Vive en `logica/Formato.kt`, sin dependencias de Android — se puede probar con
 - Duración: si `apto = false`, se ignoran cantidad/unidad.
 - Precio/promoción (`RecetaPrecio`): `precioTotal > 0` y `cantidad >= 1` siempre — sin esto, un precio en $0 o una promo con `cantidad = 0` produce división por cero en `trozoGanador` (8.5).
 - Sueldo empleado: `gananciaEmpleado` entre `0` y `gananciaTotal` de la receta (el tope real es "no bajar de `costoTotal` para mí" — matemáticamente equivalente, ver nota en 10.1).
+- `diasPorSemana` en `RecetaSimulacionVenta`, `EmpleadoRecetaSueldo` y `EmpleadoSimulacionMultiple`: entre `1` y `7` siempre — una semana no tiene más de 7 días.
 
 Estas validaciones viven en `logica/`, no solo en la UI, para que sean consistentes sin importar desde qué pantalla se invoquen.
 
@@ -725,6 +725,8 @@ Las creaciones y eliminaciones siempre generan evento. Para ediciones, solo esto
 | Receta | `titulo`; crear/editar/eliminar una fila de `RecetaPrecio` (precio base o promo); `dimensiones`/`pesoFinalG`/reescalado del Rendimiento; `trozos` |
 | Molde | `nombre`; cualquier campo de `DimensionesMolde` (siempre relevante — dispara además la propagación de 5.2) |
 | Empleado | `nombre`; `gananciaEmpleado` asignada por receta |
+
+**Deliberadamente fuera de esta tabla:** `RecetaDuracion` (ya lleva su propio banner de "estimación no precisa" — no es un dato financiero ni estructural) y `RecetaPaso`/`pasoPrevio` (texto instructivo, no algo que valga la pena notificar). Editarlos no genera evento.
 
 ---
 
