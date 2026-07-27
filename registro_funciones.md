@@ -34,92 +34,92 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 ## Lógica pura (`logica/`) — sin Android, sin Room, sin `suspend`
 
 ### formatearNumero ✅ IMPLEMENTADA
-- Ubicación: logica/src/main/kotlin/formato/Formato.kt
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/formato/Formato.kt
 - Qué hace: convierte un número a texto con el formato de la app — punto para los miles, coma para los decimales, y sin coma cuando no hay decimales.
 - Cómo funciona: recibe un `Double`, redondea a 2 decimales y devuelve `String`. Trabaja sobre el valor absoluto y pega el signo al final, porque `(-0.56).toLong()` da 0 y perdería el "-" (mostraría una pérdida como ganancia). Fija `Locale.US` para que el separador de miles sea predecible y no dependa del idioma del celular. Ej: `1000.0` → `"1.000"`, `-1234.56` → `"-1.234,56"`. Cubierta por `FormatoTest` (9 casos, incluidos negativos y redondeos que llegan a entero).
 
-### coincide
-- Ubicación: logica/Busqueda.kt
+### coincide ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/busqueda/Busqueda.kt
 - Qué hace: dice si un texto buscado aparece en cualquier parte de un campo, ignorando mayúsculas y tildes.
 - Cómo funciona: recibe `textoBusqueda` y `campo` (ambos `String`), devuelve `Boolean`. Pasa los dos por `sinTildes` antes de comparar, para que "limon" encuentre "Mousse de limón". Lo usan las 4 pantallas con buscador (12.2).
 
-### sinTildes
-- Ubicación: logica/Busqueda.kt
+### sinTildes ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/busqueda/Busqueda.kt
 - Qué hace: quita los acentos de un texto dejando la letra base ("plátano" → "platano").
-- Cómo funciona: recibe `String` y devuelve `String`. Normaliza a NFD (separa la letra de su acento) y borra los caracteres de marca con `Regex("\\p{Mn}+")`. Es `private`: solo la usa `coincide` dentro del mismo archivo.
+- Cómo funciona: recibe `String` y devuelve `String`. Normaliza a NFD (separa la letra de su acento) y borra los caracteres de marca con `Regex("\\p{Mn}+")`. Es `internal`: solo se usa dentro del módulo, a través de `coincide`.
 
-### pesoPorTrozo
-- Ubicación: logica/Rendimiento.kt
+### pesoPorTrozo ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/rendimiento/Rendimiento.kt
 - Qué hace: calcula cuánto pesa cada trozo dividiendo el peso final del producto entre la cantidad de trozos.
-- Cómo funciona: recibe `pesoFinalG: Double?` y `trozos: Int`, devuelve `String` ya formateado. Si `pesoFinalG` es `null` devuelve el texto `"No especificado"` en vez de un número — por eso retorna `String` y no `Double`. No valida `trozos`: la regla `trozos >= 1` la garantiza la validación de 6.2.
+- Cómo funciona: recibe `pesoFinalG: Double?` y `trozos: Int`, devuelve `String` ya formateado. Si `pesoFinalG` es `null` devuelve la constante `PESO_NO_ESPECIFICADO` en vez de un número — por eso retorna `String` y no `Double`. Valida `trozos >= 1` y lanza excepción si no, en vez de dividir por cero.
 
-### factorEscala
-- Ubicación: logica/Moldes.kt
+### factorEscala ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/moldes/Moldes.kt
 - Qué hace: calcula por cuánto hay que multiplicar cada ingrediente al pasar una receta de un molde a otro.
-- Cómo funciona: recibe `original` y `nuevo` (ambos `DimensionesMolde`) más el `modo`, devuelve `Double`. En `ALTURA` divide áreas y **lanza excepción** si el molde nuevo es más bajo que el original; en `CAPACIDAD` divide volúmenes sin esa restricción. Divide por los datos del molde original, así que depende de que la validación de 6.2 haya exigido medidas `> 0`.
+- Cómo funciona: recibe `original` y `nuevo` (ambos `DimensionesMolde`) más el `modo`, devuelve `Double`. En `ALTURA` divide áreas y **lanza excepción** si el molde nuevo es más bajo que el original; en `CAPACIDAD` divide volúmenes sin esa restricción. Lanza excepción si el molde original tiene área o volumen cero, en vez de devolver infinito en silencio, y si a alguno de los dos moldes le falta la altura.
 
-### trozosCubiertosPor
-- Ubicación: logica/Precios.kt
+### trozosCubiertosPor ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/precios/Precios.kt
 - Qué hace: dice cuántos trozos cubre un precio guardado, que no es lo mismo según sea precio por trozo o por producto completo.
-- Cómo funciona: recibe un `RecetaPrecio` y el snapshot `DatosCalculoReceta`, devuelve `Int`. Si el modo es `TROZO` devuelve la cantidad tal cual; si es `PRODUCTO` la multiplica por los trozos de la receta (2 productos completos de 8 trozos = 16 trozos).
+- Cómo funciona: recibe un `PrecioVigente` y el snapshot `DatosCalculoReceta`, devuelve `Int`. Si el modo es `TROZO` devuelve la cantidad tal cual; si es `PRODUCTO` la multiplica por los trozos de la receta (2 productos completos de 8 trozos = 16 trozos).
 
-### precioPorTrozoDe
-- Ubicación: logica/Precios.kt
+### precioPorTrozoDe ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/precios/Precios.kt
 - Qué hace: lleva cualquier precio guardado a su equivalente por trozo, para poder compararlos entre sí.
-- Cómo funciona: recibe un `RecetaPrecio` y el snapshot, devuelve `Double`. Divide `precioTotal` por `trozosCubiertosPor`. Depende de la validación `cantidad >= 1` de 6.2 para no dividir por cero.
+- Cómo funciona: recibe un `PrecioVigente` y el snapshot, devuelve `Double`. Divide `precioTotal` por `trozosCubiertosPor` y **lanza excepción si eso diera cero**, en vez de devolver infinito.
 
-### costoPorTrozo
-- Ubicación: logica/Precios.kt
+### costoPorTrozo ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/precios/Precios.kt
 - Qué hace: reparte el costo total de la receta entre sus trozos.
 - Cómo funciona: recibe el snapshot y devuelve `Double` (`costoTotal / trozos`). Es constante para todos los precios de una misma receta, y esa es justamente la razón de que exista el snapshot: antes se recalculaba una vez por cada precio.
 
-### gananciaPorTrozoDe
-- Ubicación: logica/Precios.kt
+### gananciaPorTrozoDe ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/precios/Precios.kt
 - Qué hace: cuánto se gana por trozo con un precio guardado concreto.
-- Cómo funciona: recibe un `RecetaPrecio` y el snapshot, devuelve `Double` (`precioPorTrozoDe - costoPorTrozo`). Puede ser negativo si ese precio no cubre el costo, y así debe mostrarse.
+- Cómo funciona: recibe un `PrecioVigente` y el snapshot, devuelve `Double` (`precioPorTrozoDe - costoPorTrozo`). Puede ser negativo si ese precio no cubre el costo, y así debe mostrarse.
 
-### precioDeMenorGanancia
-- Ubicación: logica/Precios.kt
+### precioDeMenorGanancia ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/precios/Precios.kt
 - Qué hace: de todos los precios y promociones guardados de una receta, elige el que deja menos ganancia — el peor caso, que es con el que se juega (decisión #4).
-- Cómo funciona: recibe el snapshot y devuelve el `RecetaPrecio` ganador. **Lanza excepción si la receta no tiene ningún precio guardado**; quien la llame en un contexto agregado (simulación múltiple) debe filtrar antes con `precios.isEmpty()`, porque si no una receta a medio configurar voltea el total completo.
+- Cómo funciona: recibe el snapshot y devuelve el `PrecioVigente` ganador. **Lanza excepción si la receta no tiene ningún precio guardado**; quien la llame en un contexto agregado (simulación múltiple) debe filtrar antes con `DatosCalculoReceta.tienePrecio`, porque si no una receta a medio configurar voltea el total completo.
 
-### precioEfectivoPorTrozo
-- Ubicación: logica/Precios.kt
+### precioEfectivoPorTrozo ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/precios/Precios.kt
 - Qué hace: el precio por trozo que alimenta todos los campos automáticos de la app.
 - Cómo funciona: recibe el snapshot, devuelve `Double`. Es `precioPorTrozoDe` aplicado al resultado de `precioDeMenorGanancia`, así que hereda su excepción cuando no hay precios.
 
-### trozoGanador
-- Ubicación: logica/Precios.kt
+### trozoGanador ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/precios/Precios.kt
 - Qué hace: dice a partir de qué trozo vendido la receta deja de perder plata y empieza a ganarla.
 - Cómo funciona: recibe el snapshot y devuelve un `TrozoGanador` con el número, la ganancia en ese punto, y si es **alcanzable**. Lo último importa: si hacen falta 11 trozos en una receta que rinde 8, el número existe pero es imposible y la pantalla debe mostrar la advertencia en vez del dato.
 
-### ingresoBruto
-- Ubicación: logica/Precios.kt
+### ingresoBruto ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/precios/Precios.kt
 - Qué hace: lo que entra al vender el producto completo, sin descontar nada.
 - Cómo funciona: recibe el snapshot, devuelve `Double` (`precioEfectivoPorTrozo × trozos`). Es la base del cálculo de sueldos (10.1) y de la simulación (8.7).
 
-### gananciaPorTrozo
-- Ubicación: logica/Precios.kt
+### gananciaPorTrozo ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/precios/Precios.kt
 - Qué hace: la ganancia por trozo al precio vigente de menor ganancia.
 - Cómo funciona: recibe el snapshot, devuelve `Double`. Puede ser negativo. De solo lectura en la UI.
 
-### gananciaFinal
-- Ubicación: logica/Precios.kt
+### gananciaFinal ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/precios/Precios.kt
 - Qué hace: la ganancia del producto completo.
 - Cómo funciona: recibe el snapshot, devuelve `Double` (`ingresoBruto - costoTotal`). Puede ser negativo; se muestra con signo gracias a `formatearNumero`.
 
-### simulacion
-- Ubicación: logica/Simulacion.kt
+### simulacion ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/simulacion/Simulacion.kt
 - Qué hace: proyecta ingreso, costo y ganancia a una semana y a un mes, según cuántos días se vende y cuántas unidades por día.
 - Cómo funciona: recibe `ingresoBase`, `costoBase`, `dias` y `unidades`; devuelve `SimulacionResultado` con las 6 cifras (3 semanales y 3 mensuales). Lo semanal es `base × dias × unidades` y lo mensual multiplica por `SEMANAS_POR_MES`.
 
-### calcularSueldo
-- Ubicación: logica/Sueldos.kt
+### calcularSueldo ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/sueldos/Sueldos.kt
 - Qué hace: reparte el ingreso bruto de una receta entre lo que se lleva el dueño (costo + su parte de la ganancia) y lo que se lleva el empleado.
 - Cómo funciona: recibe el snapshot y la `gananciaEmpleado` acordada, devuelve un `Sueldo`. **Lanza excepción en dos casos**: si la receta no cubre su costo (no hay ganancia que repartir) y si la ganancia pedida supera la ganancia total. El primer chequeo va antes a propósito: con ganancia total negativa el rango `0.0..gananciaTotal` queda vacío en Kotlin y el segundo `require` fallaría siempre con un mensaje que no explica nada.
 
-### SEMANAS_POR_MES
-- Ubicación: logica/Simulacion.kt
+### SEMANAS_POR_MES ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/simulacion/Simulacion.kt
 - Qué hace: cuántas semanas se cuentan por mes al proyectar cifras mensuales.
 - Cómo funciona: constante `4.33`, que es 52 ÷ 12. La usan `simulacion` y las propiedades mensuales de `SimulacionMultipleResultado`.
 
@@ -278,28 +278,28 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 <a name="tipos-de-datos"></a>
 ## Tipos de datos
 
-### DatosCalculoReceta
-- Ubicación: data/db/entidades/DatosCalculoReceta.kt
+### DatosCalculoReceta ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/precios/Precios.kt
 - Qué hace: la foto de una receta —id, título, costo total, trozos y precios— que se lee una vez y se le pasa a todas las fórmulas.
-- Cómo funciona: `data class` que **no es una tabla**, se arma en memoria con `obtenerDatosCalculo`. Es lo que permite que las funciones de `logica/` sean puras y probables sin base de datos, y que todas las cifras de una pantalla salgan de la misma lectura.
+- Cómo funciona: `data class` que **no es una tabla**, se arma en memoria con `obtenerDatosCalculo`. Valida en su constructor que `trozos >= 1`, así ninguna fórmula que divida por trozos puede reventar. Expone `tienePrecio`, que hay que consultar antes de pedir cualquier cifra automática. Es lo que permite que las funciones de `logica/` sean puras y probables sin base de datos, y que todas las cifras de una pantalla salgan de la misma lectura.
 
-### DimensionesMolde
-- Ubicación: data/db/entidades/DimensionesMolde.kt
+### DimensionesMolde ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/moldes/Moldes.kt
 - Qué hace: guarda la geometría de un molde (forma y medidas) y calcula solo su área y su volumen.
-- Cómo funciona: `data class` compartido vía `@Embedded` entre `Molde` y `RecetaRendimiento`. **Todos sus campos son nulables por obligación técnica**, no de diseño: se embebe como nulable en las recetas sin molde y Room no admite subcampos no-nulos ahí. La obligatoriedad real la impone la validación de 6.2. Expone `areaCm2` y `volumenCm3` como propiedades calculadas; ambas usan `!!` y fallan ruidosamente si el molde es inválido.
+- Cómo funciona: `data class` puro que vive en `:logica`; el módulo `:app` lo embebe con `@Embedded` en `Molde` y en `RecetaRendimiento`. **Todos sus campos son nulables por obligación técnica**, no de diseño: se embebe como nulable en las recetas sin molde y Room no admite subcampos no-nulos ahí. La obligatoriedad real la impone la validación de 6.2. Expone `areaCm2` y `volumenCm3` como propiedades calculadas; ambas usan `!!` y fallan ruidosamente si el molde es inválido.
 
-### TrozoGanador
-- Ubicación: logica/Precios.kt
+### TrozoGanador ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/precios/Precios.kt
 - Qué hace: el resultado de `trozoGanador` — qué número de trozo cubre el costo, cuánto se gana ahí, y si ese trozo existe de verdad.
 - Cómo funciona: `data class` con `numero: Int`, `ganancia: Double` y `alcanzable: Boolean`. El tercer campo evita mostrar "trozo ganador: 11" en una receta que solo rinde 8.
 
-### Sueldo
-- Ubicación: logica/Sueldos.kt
+### Sueldo ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/sueldos/Sueldos.kt
 - Qué hace: el reparto del ingreso de una receta entre el dueño y el empleado.
 - Cómo funciona: `data class` con `ingresoBruto`, `yoMeLlevo` y `gananciaEmpleado`. `yoMeLlevo` incluye el costo total más la parte de la ganancia que no se lleva el empleado.
 
-### SimulacionResultado
-- Ubicación: logica/Simulacion.kt
+### SimulacionResultado ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/simulacion/Simulacion.kt
 - Qué hace: las 6 cifras que devuelve una simulación de ventas: ingreso, costo y ganancia, en versión semanal y mensual.
 - Cómo funciona: `data class` de 6 `Double`. Lo mensual ya viene multiplicado por `SEMANAS_POR_MES`, no hay que volver a hacerlo al mostrarlo.
 
@@ -308,18 +308,23 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Qué hace: el total de una simulación con varias recetas a la vez, en versión diaria, semanal y mensual, más la lista de las que quedaron fuera.
 - Cómo funciona: `data class` que guarda solo las 3 cifras **diarias** más `diasPorSemana` y `omitidas: List<String>` (títulos de recetas sin precio). Las 6 cifras semanales y mensuales son propiedades calculadas: guardar las tres versiones permitiría que quedaran desincronizadas entre sí.
 
-### ModoPrecio
-- Ubicación: data/db/entidades/RecetaPrecio.kt
+### PrecioVigente ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/precios/Precios.kt
+- Qué hace: un precio o promoción tal como lo ven las fórmulas: "vender N trozos (o N productos) por X en total".
+- Cómo funciona: `data class` con `modo`, `cantidad`, `precioTotal` y `etiqueta`. Es el equivalente puro de la tabla `receta_precios`: la entidad de Room vive en `:app` y se convierte a este tipo al armar el snapshot. Existe porque `:logica` no puede depender de Android, y es lo que permite probar las fórmulas de precios sin base de datos.
+
+### ModoPrecio ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/precios/Precios.kt
 - Qué hace: distingue si un precio guardado es por trozo o por producto completo.
 - Cómo funciona: `enum` con `TROZO` y `PRODUCTO`. Es enum y no `String` a propósito: un typo en un texto libre no lo detecta el compilador. Necesita `TypeConverter` y se guarda por nombre, no por ordinal.
 
-### ModoReescalado
-- Ubicación: logica/Moldes.kt
+### ModoReescalado ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/moldes/Moldes.kt
 - Qué hace: distingue las dos formas de reescalar una receta a otro molde.
 - Cómo funciona: `enum` con `ALTURA` (conserva el grosor comparando áreas; exige que el molde nuevo no sea más bajo) y `CAPACIDAD` (conserva el volumen, sin restricción de altura).
 
-### TipoFormaMolde
-- Ubicación: data/db/entidades/DimensionesMolde.kt
+### TipoFormaMolde ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/moldes/Moldes.kt
 - Qué hace: la forma de un molde, que determina qué medidas se piden y con qué fórmula se saca el área.
 - Cómo funciona: `enum` con `RECTANGULO`, `CIRCULO`, `CUADRADO`, `TRIANGULO` y `EXOTICO`. El último es para formas irregulares, donde el volumen se mide llenando el molde con agua en vez de calcularlo. Necesita `TypeConverter`.
 

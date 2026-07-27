@@ -1,4 +1,4 @@
-package formato
+package com.sandyyera.reposteria.logica.formato
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
