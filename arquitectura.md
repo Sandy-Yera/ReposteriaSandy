@@ -275,14 +275,35 @@ data class Molde(
 data class RecetaRendimiento(
     @PrimaryKey val recetaId: Long,
     val usaMolde: Boolean,
-    val moldeOrigenId: Long? = null,                          // solo trazabilidad ("basado en: Molde X")
+    val moldeOrigenId: Long? = null,                          // referencia vigente al molde del catálogo, o null (nunca vinculado / molde borrado)
     @Embedded(prefix = "molde_") val dimensiones: DimensionesMolde? = null, // null si usaMolde = false
     val pesoFinalG: Double? = null,                           // peso real del producto, manual; opcional si usaMolde=true, obligatorio si usaMolde=false
     val trozos: Int
 )
 ```
 
-`moldeOrigenId` es `SET_NULL` al borrar el molde del catálogo: la receta conserva su propio snapshot de dimensiones (`dimensiones`) y solo pierde el vínculo de trazabilidad hacia el catálogo, nunca sus datos.
+`dimensiones` es siempre "el molde base vigente para el próximo reescalado" de esa receta — no es un snapshot fijo desde el momento de la creación. Su comportamiento depende de `moldeOrigenId`:
+
+- **Mientras `moldeOrigenId` apunta a un molde que existe** (vínculo vivo): `dimensiones` se mantiene sincronizada con ese `Molde` del catálogo. Si editas el molde en 9.2 (ej. corriges un diámetro mal medido), la corrección se propaga a `dimensiones` de todas las recetas que lo referencian — **sin** tocar las cantidades de ingredientes ya guardadas, porque es una corrección del dato de referencia, no un reescalado real (8.3.1).
+- **Si el molde se borra del catálogo** (`moldeOrigenId` pasa a `null` vía `SET_NULL`): `dimensiones` deja de sincronizarse y queda congelada con el último valor conocido — la receta no se rompe, solo pierde el vínculo. Si más adelante quieres volver a vincularla a una referencia viva, se hace manualmente eligiendo (o creando) un molde nuevo en el paso de reescalado (9.3).
+- **Si nunca se vinculó a un molde guardado** (reescalado en "modo prueba", 9.3): mismo caso que el anterior, `dimensiones` es y sigue siendo un valor fijo propio de la receta.
+
+```kotlin
+suspend fun actualizarMolde(moldeId: Long, nuevasDimensiones: DimensionesMolde) {
+    moldeRepo.actualizarDimensiones(moldeId, nuevasDimensiones)
+    val recetasVinculadas = recetaRepo.obtenerRecetasConMoldeOrigen(moldeId)
+    recetasVinculadas.forEach { receta ->
+        recetaRepo.actualizarDimensionesMolde(receta.id, nuevasDimensiones) // solo el punto de referencia, no reescala
+    }
+    historialRepo.registrar(
+        tipo = TipoEvento.EDICION,
+        entidad = "Molde",
+        descripcion = "Se editó un molde",
+        detalleAdicional = if (recetasVinculadas.isEmpty()) null
+            else "Actualizó el molde base de: ${recetasVinculadas.joinToString { it.titulo }}"
+    )
+}
+```
 
 ### 5.3 Historial de cambios (nuevo)
 
@@ -601,7 +622,8 @@ fun simulacion(ingresoBase: Double, costoBase: Double, dias: Int, unidades: Int)
 - Al crear uno, se completa `nombre` + los campos de `DimensionesMolde` que correspondan según `tipoForma` elegido (el formulario solo muestra los campos relevantes a esa forma).
 - Cada molde en la lista muestra: nombre, tipo de forma, área calculada, volumen calculado y altura — todo derivado de `DimensionesMolde` (5.2), no hay que guardar área/volumen a mano.
 - Buscador arriba, mismo componente `BarraBusqueda.kt` reutilizado (coincidencia parcial por nombre).
-- Eliminar un molde del catálogo no afecta a las recetas que ya lo usaron como origen (`moldeOrigenId` es `SET_NULL`, y cada receta guarda su propio snapshot de `dimensiones`); solo se pierde el texto de trazabilidad "basado en: <nombre>".
+- Eliminar un molde del catálogo no rompe las recetas que ya lo usaron como origen: `moldeOrigenId` pasa a `null` (`SET_NULL`) y el campo `dimensiones` de cada receta vinculada simplemente deja de sincronizarse, congelado en su último valor conocido (5.2). Solo se pierde el vínculo, nunca los datos.
+- Editar un molde existente (corregir una medida) **sí** se propaga a toda receta cuyo `moldeOrigenId` siga apuntando a él (5.2, `actualizarMolde`) — pensado para corregir errores de medición, no para reescalar; las cantidades de ingredientes de esas recetas no cambian solas.
 
 ### 9.3 Uso en el reescalado de recetas
 
@@ -671,6 +693,17 @@ No se reasigna sueldo aquí — solo se lee lo ya configurado en 10.1, agregado 
 - Al tocarlo, `HistorialCambiosPanel.kt` despliega la lista de `EventoCambio` (5.3) ordenada por fecha descendente, cada fila con una franja de color según `tipo`: azul (creación), verde (edición), rojo (eliminación).
 - Cuando una eliminación tuvo efectos en cascada (ingrediente que afectó recetas, receta que afectó empleados), el `detalleAdicional` del evento lo deja explícito como comentario, sin que el usuario tenga que ir a buscarlo por su cuenta.
 - Se alimenta solo: cada repositorio llama a `HistorialRepositorio.registrar(...)` en sus operaciones de create/update/delete, no es algo que el usuario configure.
+
+### 11.1 Qué cuenta como "edición" (campos importantes)
+
+Las creaciones y eliminaciones siempre generan evento. Para ediciones, solo estos campos por entidad — tocar cualquier otro (reordenar pasos, ajustar `orden`, etc.) no genera ruido en el historial:
+
+| Entidad | Campos que generan evento verde |
+|---|---|
+| Ingrediente | `nombre`, `valorPorGramo` |
+| Receta | `titulo`; crear/editar/eliminar una fila de `RecetaPrecio` (precio base o promo); `dimensiones`/`pesoFinalG`/reescalado del Rendimiento; `trozos` |
+| Molde | `nombre`; cualquier campo de `DimensionesMolde` (siempre relevante — dispara además la propagación de 5.2) |
+| Empleado | `nombre`; `gananciaEmpleado` asignada por receta |
 
 ---
 
@@ -785,8 +818,8 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 
 ### Fase 5 — Receta: Rendimiento y reescalado
 
-- **Construyes:** paso "Rendimiento" (con/sin molde), `reescalarRecetaPorPeso` (sin molde) y `reescalarRecetaPorMolde` + Modo Altura/Capacidad (con molde), selector de molde guardado o "modo prueba", `InfoTooltip`.
-- **Hecho cuando:** las reglas de obligatoriedad funcionan, Modo Altura rechaza un molde nuevo más bajo, Modo Capacidad no tiene esa restricción, y reescalar con cada modo produce el factor esperado sobre un caso de prueba a mano.
+- **Construyes:** paso "Rendimiento" (con/sin molde), `reescalarRecetaPorPeso` (sin molde) y `reescalarRecetaPorMolde` + Modo Altura/Capacidad (con molde), selector de molde guardado o "modo prueba", `InfoTooltip`, y la sincronización `actualizarMolde` (5.2) que propaga ediciones del catálogo a las recetas vinculadas sin reescalar ingredientes.
+- **Hecho cuando:** las reglas de obligatoriedad funcionan, Modo Altura rechaza un molde nuevo más bajo, Modo Capacidad no tiene esa restricción, reescalar con cada modo produce el factor esperado sobre un caso de prueba a mano, y editar un molde vinculado actualiza el `dimensiones` de la receta sin tocar sus ingredientes (mientras que borrarlo la deja congelada en el último valor).
 
 ### Fase 6 — Receta: Duración
 
