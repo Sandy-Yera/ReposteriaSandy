@@ -108,9 +108,11 @@ app/
 │   │   ├── ReposteriaApp.kt              # Application, arma el AppContainer
 │   │   ├── data/
 │   │   │   ├── db/
-│   │   │   │   ├── AppDatabase.kt         # Room database, versión, migraciones
+│   │   │   │   ├── AppDatabase.kt         # Room database, versión, migraciones, @TypeConverters
+│   │   │   │   ├── Convertidores.kt       # TypeConverter de todos los enums (5.5)
 │   │   │   │   ├── entidades/             # una clase @Entity por tabla (sección 5)
-│   │   │   │   │   └── DimensionesMolde.kt   # data class @Embedded, reutilizada por Molde y RecetaRendimiento
+│   │   │   │   │   ├── DimensionesMolde.kt   # data class @Embedded, reutilizada por Molde y RecetaRendimiento
+│   │   │   │   │   └── DatosCalculoReceta.kt # snapshot que reciben las fórmulas (6.4)
 │   │   │   │   └── dao/
 │   │   │   │       ├── IngredienteDao.kt
 │   │   │   │       ├── RecetaDao.kt
@@ -187,7 +189,10 @@ erDiagram
 ### 5.1 Ejemplos de entidades
 
 ```kotlin
-@Entity(tableName = "ingredientes")
+@Entity(
+    tableName = "ingredientes",
+    indices = [Index(value = ["nombre"], unique = true)]   // "nombre único" de 6.2, garantizado por la BD
+)
 data class Ingrediente(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val nombre: String,
@@ -195,8 +200,9 @@ data class Ingrediente(
     val creadoEn: Long = System.currentTimeMillis(),
     val actualizadoEn: Long = System.currentTimeMillis()
 )
-// Nota: no tiene FK saliente hacia RecetaIngrediente que impida borrarlo — el borrado
-// se controla a nivel de lógica de negocio (ver 7.1), no con un ON DELETE RESTRICT.
+// Nota: ninguna FK impide borrar un ingrediente que esté en uso. Las filas de
+// RecetaIngrediente sí lo referencian, pero sin FK declarada, así que el control
+// es de lógica de negocio (7.1) y no un ON DELETE RESTRICT de la base.
 
 @Entity(tableName = "recetas")
 data class Receta(
@@ -215,10 +221,12 @@ data class Receta(
     )],
     indices = [Index("recetaId")]
 )
+enum class ModoPrecio { TROZO, PRODUCTO }
+
 data class RecetaPrecio(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val recetaId: Long,
-    val modo: String,          // "trozo" | "producto"
+    val modo: ModoPrecio,      // enum y no String suelto, ver 5.5
     val cantidad: Int = 1,
     val precioTotal: Double,
     val etiqueta: String? = null   // nombre de la promo, ej. "2x1.500"
@@ -230,7 +238,7 @@ data class RecetaPrecio(
 
 ### 5.2 Entidad Molde y su reutilización en Receta (nuevo)
 
-`DimensionesMolde` es un `data class` compartido (no es una entidad Room por sí sola, se usa vía `@Embedded`) para no duplicar los campos de geometría entre el catálogo de moldes y el snapshot que guarda cada receta:
+`DimensionesMolde` es un `data class` compartido (no es una entidad Room por sí sola, se usa vía `@Embedded`) para no duplicar los campos de geometría entre el catálogo de moldes y la copia que guarda cada receta:
 
 ```kotlin
 enum class TipoFormaMolde { RECTANGULO, CIRCULO, CUADRADO, TRIANGULO, EXOTICO }
@@ -344,9 +352,9 @@ Cada repositorio (`IngredienteRepositorio`, `RecetaRepositorio`, `MoldeRepositor
 | `RecetaSimulacionVenta` | `recetaId (PK), diasPorSemana, unidadesPorDia` | 1:1 con `Receta`, FK (**CASCADE**) |
 | `RecetaPaso` | `id, recetaId, orden, contenido` | FK a `Receta` (**CASCADE**) |
 | `Empleado` | `id, nombre, esGenerico, creadoEn` | — |
-| `EmpleadoRecetaSueldo` | `id, empleadoId, recetaId, gananciaEmpleado, diasPorSemana, unidadesPorDia` | FK a `Empleado` (CASCADE) y a `Receta` (**CASCADE** — ver decisión #10) |
+| `EmpleadoRecetaSueldo` | `id, empleadoId, recetaId, gananciaEmpleado, diasPorSemana, unidadesPorDia` | FK a `Empleado` (CASCADE) y a `Receta` (**CASCADE** — ver decisión #10). **Único (`empleadoId`, `recetaId`)** — un empleado tiene un solo sueldo por receta (5.6) |
 | `EmpleadoSimulacionMultiple` | `empleadoId (PK), diasPorSemana` | 1:1 con `Empleado`, FK (**CASCADE**) |
-| `EmpleadoSimulacionMultipleDetalle` | `id, empleadoId, recetaId, unidadesPorDia` | FK a `EmpleadoSimulacionMultiple` (**CASCADE**) y a `Receta` (**CASCADE** — misma razón que `EmpleadoRecetaSueldo`: si la receta desaparece, su fila de detalle en la simulación múltiple también) |
+| `EmpleadoSimulacionMultipleDetalle` | `id, empleadoId, recetaId, unidadesPorDia` | FK a `EmpleadoSimulacionMultiple` (**CASCADE**) y a `Receta` (**CASCADE** — misma razón que `EmpleadoRecetaSueldo`: si la receta desaparece, su fila de detalle en la simulación múltiple también). **Único (`empleadoId`, `recetaId`)** |
 
 ```kotlin
 @Entity(
@@ -355,7 +363,13 @@ Cada repositorio (`IngredienteRepositorio`, `RecetaRepositorio`, `MoldeRepositor
         ForeignKey(entity = Empleado::class, parentColumns = ["id"], childColumns = ["empleadoId"], onDelete = ForeignKey.CASCADE),
         ForeignKey(entity = Receta::class, parentColumns = ["id"], childColumns = ["recetaId"], onDelete = ForeignKey.CASCADE)
     ],
-    indices = [Index("empleadoId"), Index("recetaId")]
+    // El compuesto único impide dos sueldos del mismo empleado para la misma receta (5.6)
+    // y cubre además la FK de empleadoId por prefijo izquierdo. El de recetaId va aparte
+    // porque el compuesto no sirve para buscar solo por receta, y la cascada lo necesita.
+    indices = [
+        Index(value = ["empleadoId", "recetaId"], unique = true),
+        Index("recetaId")
+    ]
 )
 data class EmpleadoRecetaSueldo(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -377,20 +391,66 @@ Las entidades de arriba están escritas en Kotlin idiomático, pero hay dos punt
 
 **1. Los enums necesitan `TypeConverter`.** Room no sabe guardar `TipoFormaMolde` ni `TipoEvento` por sí solo — hay que darle la conversión a texto. Un solo archivo de convertidores registrado con `@TypeConverters` en `AppDatabase` cubre ambos:
 
+Aplica a **todos** los campos que son "uno de estos valores": `TipoFormaMolde`, `TipoEvento`, `ModoPrecio` (`TROZO`/`PRODUCTO`), `RecetaDuracion.tipo` (`AMBIENTE`/`REFRIGERADA`/`CONGELADA`) y `RecetaDuracion.unidad` (`HORAS`/`DIAS`/`SEMANAS`/`MESES`). Ninguno debe quedar como `String` suelto: un typo en un texto libre no lo cacha el compilador, lo cachas tú cuando el precio salga mal. Un solo archivo de convertidores registrado con `@TypeConverters` en `AppDatabase` los cubre todos, siguiendo este patrón:
+
 ```kotlin
 class Convertidores {
     @TypeConverter fun formaATexto(v: TipoFormaMolde?): String? = v?.name
     @TypeConverter fun textoAForma(v: String?): TipoFormaMolde? = v?.let { TipoFormaMolde.valueOf(it) }
-    @TypeConverter fun eventoATexto(v: TipoEvento?): String? = v?.name
-    @TypeConverter fun textoAEvento(v: String?): TipoEvento? = v?.let { TipoEvento.valueOf(it) }
+    @TypeConverter fun modoATexto(v: ModoPrecio?): String? = v?.name
+    @TypeConverter fun textoAModo(v: String?): ModoPrecio? = v?.let { ModoPrecio.valueOf(it) }
+    // … ídem para TipoEvento, TipoDuracion y UnidadDuracion
 }
 ```
 
-Aprovechando esto, conviene que `RecetaDuracion.tipo` (`AMBIENTE`/`REFRIGERADA`/`CONGELADA`), `RecetaDuracion.unidad` (`HORAS`/`DIAS`/`SEMANAS`/`MESES`) y `RecetaPrecio.modo` (`TROZO`/`PRODUCTO`) también sean enums y no `String` sueltos: hoy `modo` es un texto libre comparado con `== "trozo"` en 8.5, y un typo ahí no lo cacha el compilador — lo cachas tú cuando el precio salga mal.
+Se guardan como texto (`.name`) y no como número ordinal a propósito: si algún día se agrega un valor al enum en medio de la lista, los ordinales de los datos ya guardados cambiarían de significado en silencio. El nombre no.
 
 **2. `dimensiones` no puede ser un `@Embedded` nulable con subcampos no-nulos.** En `RecetaRendimiento` el campo es `DimensionesMolde? = null` (para recetas sin molde), pero dentro de `DimensionesMolde` hay dos campos no-nulos: `tipoForma` y `alturaMoldeCm`. Room los mapea a columnas `NOT NULL`, así que al guardar una receta con `usaMolde = false` intenta escribir `NULL` en ellas y falla por restricción de la base de datos.
 
 La salida más simple, sin duplicar el `data class`: declarar **todos** los campos de `DimensionesMolde` como nulables (incluidos `tipoForma` y `alturaMoldeCm`), y que la obligatoriedad la garantice la validación de 6.2 en `logica/` — que es donde ya vive el resto de las reglas. Los `getter` de `areaCm2`/`volumenCm3` ya usan `!!`, así que fallarían ruidosamente si alguien construye un molde inválido saltándose la validación, que es el comportamiento correcto.
+
+### 5.6 Índices
+
+Un índice es una lista ordenada que SQLite mantiene aparte para no tener que recorrer la tabla entera cuando buscas por una columna. Acá no son opcionales por dos razones que van más allá de la velocidad:
+
+- **Room los exige en las claves foráneas.** Si una columna es FK y no está indexada, Room tira una advertencia en compilación (*"column references a foreign key but it is not part of an index"*). Hoy faltan varias.
+- **Sin ellos el `CASCADE` es lento por diseño.** Al borrar una receta, SQLite tiene que encontrar sus filas hijas en 7 tablas. Sin índice en `recetaId` recorre cada tabla completa, una por una.
+
+| Tabla | Índice | Para qué |
+|---|---|---|
+| `ingredientes` | `nombre` **ÚNICO** | Hace cumplir el "nombre único" de 6.2 en la base de datos, no solo en `logica/`. Además acelera el `ComboBuscable` |
+| `receta_secciones` | `recetaId` | FK + cascada al borrar la receta |
+| `receta_ingredientes` | `seccionId` | FK + cascada al borrar una sección |
+| `receta_ingredientes` | `ingredienteId` | El `JOIN` del costo total (8.2) y la consulta de "qué recetas usan este ingrediente" (7.1) |
+| `receta_precios` | `recetaId` | Ya declarado en 5.1 |
+| `receta_rendimiento` | `moldeOrigenId` | Ya declarado en 5.2. Es el que usa `obtenerRecetasConMoldeOrigen` al propagar la edición de un molde |
+| `receta_pasos` | `recetaId` | FK + cascada |
+| `empleado_receta_sueldo` | (`empleadoId`, `recetaId`) **ÚNICO** | Ver nota abajo |
+| `empleado_receta_sueldo` | `recetaId` | El compuesto de arriba no sirve para buscar solo por receta, y la cascada al borrar una receta lo necesita |
+| `empleado_sim_multiple_detalle` | (`empleadoId`, `recetaId`) **ÚNICO** + `recetaId` | Misma lógica que la anterior |
+| `eventos_cambio` | `creadoEn` | El panel ordena por fecha descendente y la limpieza a 6 meses filtra por esta columna (11) |
+
+`receta_duracion` (PK compuesta `recetaId` + `tipo`), `receta_simulacion_venta`, `receta_rendimiento` y `empleado_simulacion_multiple` **no necesitan índice adicional**: su clave primaria ya lo es, y en las compuestas el prefijo izquierdo (`recetaId`) cubre las búsquedas por receta.
+
+**Los dos índices ÚNICOS reparan algo que se había perdido.** Una versión anterior de este documento declaraba `EmpleadoRecetaSueldo` como *único (`empleadoId`, `recetaId`)* y esa restricción desapareció al reescribir la tabla para documentar las cascadas. Sin ella, un empleado puede terminar con dos filas de sueldo distintas para la misma receta y `obtenerSueldo` devolvería cualquiera de las dos, en silencio. El índice único lo vuelve imposible a nivel de base de datos:
+
+```kotlin
+@Entity(
+    tableName = "empleado_receta_sueldo",
+    foreignKeys = [ /* … las dos FK con CASCADE de 5.4 … */ ],
+    indices = [
+        Index(value = ["empleadoId", "recetaId"], unique = true),
+        Index("recetaId")
+    ]
+)
+```
+
+**Dónde NO poner índices** (importa tanto como dónde sí, porque cada índice ocupa espacio y hace un poco más lenta cada escritura):
+
+- **En `recetas.titulo` para el buscador.** El buscador hace coincidencia parcial (`%texto%`) y un índice **no sirve** para eso: SQLite solo puede aprovecharlo cuando la búsqueda empieza por el principio del texto. Además, el filtro de 12.2 corre en Kotlin —porque ignora tildes— así que ni siquiera llega a la base como consulta.
+- **En columnas de datos** (`precioTotal`, `cantidadG`, `orden`, dimensiones del molde): nunca se filtra ni se ordena por ellas a nivel de base.
+
+**Siendo honestos con la escala:** con unas decenas de recetas, la diferencia de velocidad de estos índices es imperceptible. Se ponen igual porque son gratis ahora y caros después (agregarlos con datos reales ya guardados obliga a una migración de Room), porque silencian las advertencias de compilación, y sobre todo porque los dos únicos aportan **corrección**, no rendimiento.
 
 ---
 
@@ -922,12 +982,21 @@ Cliente Drive vía `com.google.api.services.drive.Drive` (con `GoogleAccountCred
 
 ```
 al guardar cualquier cambio (Room):
-  1. encolar un WorkManager OneTimeWorkRequest con restricción NetworkType.CONNECTED
-  2. SyncWorker: snapshot del archivo .db (Room expone el archivo físico de SQLite)
+  1. encolar el trabajo como ÚNICO, con enqueueUniqueWork(REPLACE) y un retraso corto
+     (~30 s) + restricción NetworkType.CONNECTED
+  2. SyncWorker: copia del archivo .db (Room expone el archivo físico de SQLite)
   3. subir/actualizar en Drive cuenta 1 (usar el fileId guardado, no crear duplicados)
   4. si cuenta 2 está activa -> repetir con cuenta 2
   5. si falla -> WorkManager reintenta solo con backoff exponencial, sin código adicional
 ```
+
+**Por qué el trabajo va como "único" y con retraso — es la mejora de rendimiento más grande del diseño.** Cada respaldo sube la base de datos **completa**, y a dos cuentas. Si se encolara un trabajo suelto por cada guardado, escribir una receta larga (título, 15 ingredientes, 6 pasos, precios…) dispararía decenas de subidas de todo el archivo, la mayoría de ellas ya obsoletas antes de terminar — gastando batería y datos móviles para nada.
+
+Con `enqueueUniqueWork` + `ExistingWorkPolicy.REPLACE` y un nombre fijo (`"sync_drive"`), cada guardado nuevo **reemplaza** al anterior que aún no ha corrido. El resultado: rellenas una receta entera y se sube **una vez**, al final. No se pierde nada, porque lo que se sube siempre es el estado completo y actual de la base; la subida que se descarta iba a subir una versión vieja de todos modos.
+
+Esto encaja con la regla de "última escritura gana" de más abajo: no hay respaldos incrementales que puedan quedar incompletos, solo la foto más reciente.
+
+**Y por eso también importa la limpieza del historial (11).** El archivo que se sube crece con cada evento registrado; los 6 meses de retención evitan que la subida engorde para siempre por una tabla que casi no se consulta.
 
 ✅ Confirmado: se asume un solo dispositivo en uso normal. Drive es respaldo/restauración, no edición simultánea — última escritura gana, sin resolución de conflictos.
 
@@ -964,8 +1033,8 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 
 ### Fase 1 — Cimientos de datos
 
-- **Construyes:** `AppDatabase`, todas las entidades `@Entity` (incluye `Molde` y `EventoCambio`), los `TypeConverter` de los enums (5.5), los DAOs, los repositorios, y `obtenerDatosCalculo` (6.4).
-- **Hecho cuando:** un test JUnit (con Room en modo in-memory) inserta un ingrediente y una receta con 2 secciones y los recupera correctamente; guardar una receta **sin** molde no falla por columnas `NOT NULL` (5.5); y `obtenerDatosCalculo` con 3 ids devuelve los 3 snapshots.
+- **Construyes:** `AppDatabase`, todas las entidades `@Entity` (incluye `Molde` y `EventoCambio`), los `TypeConverter` de los enums (5.5), **todos los índices de 5.6**, los DAOs, los repositorios, y `obtenerDatosCalculo` (6.4).
+- **Hecho cuando:** un test JUnit (con Room en modo in-memory) inserta un ingrediente y una receta con 2 secciones y los recupera correctamente; guardar una receta **sin** molde no falla por columnas `NOT NULL` (5.5); `obtenerDatosCalculo` con 3 ids devuelve los 3 snapshots; intentar guardar dos ingredientes con el mismo nombre, o dos sueldos del mismo empleado para la misma receta, **falla** por los índices únicos; y la compilación no arroja ninguna advertencia de Room sobre claves foráneas sin índice.
 
 ### Fase 2 — Ingredientes (módulo completo)
 
@@ -1029,8 +1098,8 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 
 ### Fase 14 — Sincronización real con Google Drive
 
-- **Construyes:** `DriveClient`, `SyncWorker`, integración con Room, respaldo dual, restauración, `SesionLock` (13.4).
-- **Hecho cuando:** guardar cualquier cambio sube el respaldo a ambas cuentas configuradas, poner el celular en modo avión no bloquea el uso (y sincroniza solo al volver la red), restaurar en una instalación limpia trae todo de vuelta, y probar con dos `deviceId` distintos dispara la advertencia.
+- **Construyes:** `DriveClient`, `SyncWorker` (encolado como trabajo único, 13.3), integración con Room, respaldo dual, restauración, `SesionLock` (13.4).
+- **Hecho cuando:** guardar cualquier cambio sube el respaldo a ambas cuentas configuradas, **rellenar una receta completa dispara una sola subida y no una por campo**, poner el celular en modo avión no bloquea el uso (y sincroniza solo al volver la red), restaurar en una instalación limpia trae todo de vuelta, y probar con dos `deviceId` distintos dispara la advertencia.
 
 ### Fase 15 — QA final y APK firmado (última fase)
 
@@ -1064,6 +1133,7 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 - **Reescalar**: ajustar cantidades de ingredientes proporcionalmente a un nuevo molde (Modo Altura/Capacidad) o a un nuevo peso de referencia (recetas sin molde).
 - **Evento de cambio**: registro en el historial global (11) de una creación, edición o eliminación relevante, con color asociado (azul/verde/rojo) y detalle de efectos en cascada si los hubo.
 - **Empleado genérico**: perfil de sueldo estándar, siempre presente.
+- **Índice**: lista ordenada que SQLite mantiene aparte para no recorrer una tabla entera al buscar por una columna (5.6). Si además es **único**, impide guardar dos filas repetidas — ahí deja de ser una optimización y pasa a ser una regla de datos.
 - **Room**: capa de Android sobre SQLite; genera acceso a datos desde clases Kotlin anotadas.
 - **WorkManager**: sistema de Android para trabajo diferido y confiable en segundo plano (usado aquí para el respaldo a Drive).
 - **Scope `drive.file`**: permiso de Google Drive limitado a los archivos creados por la propia app, sin acceso al resto del Drive del usuario.
