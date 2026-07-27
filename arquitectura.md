@@ -441,6 +441,19 @@ Vive en `logica/Formato.kt`, sin dependencias de Android — se puede probar con
 
 Estas validaciones viven en `logica/`, no solo en la UI, para que sean consistentes sin importar desde qué pantalla se invoquen.
 
+### 6.3 Nada se borra de golpe
+
+Regla única para las cuatro entidades: **ningún borrado se ejecuta sin confirmación previa, y la confirmación dice qué más se va a ver afectado.** El flujo detallado de ingredientes (7.1) es la implementación de referencia; el resto sigue el mismo patrón, cambiando solo qué se consulta antes de preguntar.
+
+| Qué borras | Qué muestra la advertencia antes de confirmar | Qué se lleva consigo |
+|---|---|---|
+| **Ingrediente** | Las recetas que lo usan (7.1) | Sus filas `RecetaIngrediente`; el costo de esas recetas se reajusta solo |
+| **Receta** | Los empleados que le tienen sueldo asignado, si los hay | Todo lo suyo en cascada (5.4): secciones, ingredientes, rendimiento, duración, precios, pasos, simulación, y los sueldos de esos empleados |
+| **Molde** | Las recetas vinculadas a él como origen | Nada: solo se corta el vínculo y esas recetas conservan sus medidas congeladas (5.2). Igual se avisa, para que no sorprenda que dejen de sincronizarse |
+| **Empleado** | Cuántas recetas tiene con sueldo asignado | Sus `EmpleadoRecetaSueldo` y su simulación múltiple. El empleado genérico no ofrece esta acción (10.2) |
+
+En los cuatro casos, si no hay nada afectado la advertencia igual aparece pero sin listado — es una confirmación simple. Y en los cuatro queda su evento rojo en el historial, con el detalle de lo afectado (11).
+
 ---
 
 ## 7. Módulo Ingredientes
@@ -502,6 +515,8 @@ suspend fun costoTotalReceta(recetaId: Long): Double {
 ```
 
 Una o más `RecetaSeccion` (recetas de un solo conjunto crean automáticamente una sección "General" invisible para el usuario). Costo total = suma de todos los ingredientes de todas las secciones, siempre con el precio **actual** del ingrediente.
+
+**Cuando una receta simple pasa a tener varias secciones.** Como todo es editable después (8.1), tarde o temprano una receta de un solo conjunto necesita una segunda sección — al bizcocho le agregas la crema. En ese momento la sección "General" invisible tiene que dejar de serlo, porque ya no se entiende sola. Al tocar "+ agregar sección" en una receta que solo tiene la sección automática, la app **pide primero un nombre para la que ya existía** (proponiendo el título de la receta como sugerencia, ej. "Bizcocho") y recién después crea la nueva. Los ingredientes ya cargados no se mueven de lugar: siguen en la misma sección, que ahora simplemente tiene nombre visible. El camino inverso —quedarse con una sola sección otra vez— vuelve a ocultar el encabezado.
 
 ### 8.3 Paso 2 — Rendimiento (con moldes)
 
@@ -674,7 +689,7 @@ fun simulacion(ingresoBase: Double, costoBase: Double, dias: Int, unidades: Int)
 
 - `DetalleRecetaScreen.kt`: cada paso como sección `SeccionColapsable`, con acceso a edición inline por sección.
 - `ListaRecetasScreen.kt`: botón "+ Nueva receta" fijo arriba (fuera del scroll, vía `Scaffold` + contenido fijo sobre un `LazyColumn`), `BarraBusqueda` arriba (coincidencia parcial en título), lista debajo.
-- Al eliminar una receta: se dispara la cascada de la sección 5.4 (borra sus `EmpleadoRecetaSueldo`), se registra un evento rojo en el historial (11) mencionando qué empleados quedaron sin esa receta si corresponde, y las simulaciones de esos empleados se recalculan solas.
+- Al eliminar una receta: primero la confirmación de 6.3, listando qué empleados le tienen sueldo asignado. Recién al confirmar se dispara la cascada de la sección 5.4 (borra sus `EmpleadoRecetaSueldo`), se registra un evento rojo en el historial (11) mencionando qué empleados quedaron sin esa receta si corresponde, y las simulaciones de esos empleados se recalculan solas.
 
 ---
 
@@ -696,7 +711,7 @@ fun simulacion(ingresoBase: Double, costoBase: Double, dias: Int, unidades: Int)
 - Al crear uno, se completa `nombre` + los campos de `DimensionesMolde` que correspondan según `tipoForma` elegido (el formulario solo muestra los campos relevantes a esa forma).
 - Cada molde en la lista muestra: nombre, tipo de forma, área calculada, volumen calculado y altura — todo derivado de `DimensionesMolde` (5.2), no hay que guardar área/volumen a mano.
 - Buscador arriba, mismo componente `BarraBusqueda.kt` reutilizado (coincidencia parcial por nombre).
-- Eliminar un molde del catálogo no rompe las recetas que ya lo usaron como origen: `moldeOrigenId` pasa a `null` (`SET_NULL`) y el campo `dimensiones` de cada receta vinculada simplemente deja de sincronizarse, congelado en su último valor conocido (5.2). Solo se pierde el vínculo, nunca los datos.
+- Eliminar un molde del catálogo no rompe las recetas que ya lo usaron como origen: `moldeOrigenId` pasa a `null` (`SET_NULL`) y el campo `dimensiones` de cada receta vinculada simplemente deja de sincronizarse, congelado en su último valor conocido (5.2). Solo se pierde el vínculo, nunca los datos. Aun así pide confirmación y lista esas recetas (6.3), para que no sorprenda después que dejaron de actualizarse.
 - Editar un molde existente (corregir una medida) **sí** se propaga a toda receta cuyo `moldeOrigenId` siga apuntando a él (5.2, `actualizarMolde`) — pensado para corregir errores de medición, no para reescalar; las cantidades de ingredientes de esas recetas no cambian solas.
 
 ### 9.3 Uso en el reescalado de recetas
@@ -783,6 +798,11 @@ No se reasigna sueldo aquí — solo se lee lo ya configurado en 10.1, agregado 
 - Al tocarlo, `HistorialCambiosPanel.kt` despliega la lista de `EventoCambio` (5.3) ordenada por fecha descendente, cada fila con una franja de color según `tipo`: azul (creación), verde (edición), rojo (eliminación).
 - Cuando una eliminación tuvo efectos en cascada (ingrediente que afectó recetas, receta que afectó empleados), el `detalleAdicional` del evento lo deja explícito como comentario, sin que el usuario tenga que ir a buscarlo por su cuenta.
 - Se alimenta solo: cada repositorio llama a `HistorialRepositorio.registrar(...)` en sus operaciones de create/update/delete, no es algo que el usuario configure.
+- **Se limpia solo: 6 meses de retención.** Los eventos más viejos que eso se borran, porque el historial sirve para "qué toqué últimamente", no como archivo permanente — y sin límite crecería para siempre dentro del mismo archivo `.db` que se sube completo a Drive en cada guardado (13.3). La limpieza corre al registrar un evento nuevo, con un simple `DELETE FROM eventos_cambio WHERE creadoEn < :hace6Meses`; no necesita su propio proceso en segundo plano.
+
+```kotlin
+const val RETENCION_HISTORIAL_MS = 180L * 24 * 60 * 60 * 1000  // ~6 meses
+```
 
 ### 11.1 Qué cuenta como "edición" (campos importantes)
 
@@ -909,7 +929,7 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 ### Fase 3 — Receta: Cantidades y precios
 
 - **Construyes:** wizard de nueva receta (primer paso), secciones múltiples, `costoTotalReceta`.
-- **Hecho cuando:** creas una receta de un conjunto y otra con 2+ secciones, y el costo total de cada una coincide con tu cálculo a mano.
+- **Hecho cuando:** creas una receta de un conjunto y otra con 2+ secciones, el costo total de cada una coincide con tu cálculo a mano, y agregarle una segunda sección a una receta simple te pide el nombre de la primera sin mover ningún ingrediente de lugar (8.2).
 
 ### Fase 4 — Módulo Moldes
 
@@ -943,8 +963,8 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 
 ### Fase 10 — Vista final de receta + lista
 
-- **Construyes:** `DetalleRecetaScreen` (acordeón editable) + `ListaRecetasScreen` (botón fijo, buscador, listado), borrado de receta con cascada a empleados.
-- **Hecho cuando:** cualquier receta de fases 3–9 se ve y edita sección por sección sin perder datos, aparece bien en la lista con buscador funcional, y borrar una receta con sueldos de empleado asignados los quita sin dejar datos huérfanos.
+- **Construyes:** `DetalleRecetaScreen` (acordeón editable) + `ListaRecetasScreen` (botón fijo, buscador, listado), borrado de receta con confirmación (6.3) y cascada a empleados.
+- **Hecho cuando:** cualquier receta de fases 3–9 se ve y edita sección por sección sin perder datos, aparece bien en la lista con buscador funcional, y borrar una receta con sueldos de empleado asignados avisa a cuáles afecta antes de confirmar y luego los quita sin dejar datos huérfanos.
 
 ### Fase 11 — Módulo Empleados completo
 
@@ -953,8 +973,8 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 
 ### Fase 12 — Historial de cambios / notificaciones
 
-- **Construyes:** `EventoCambio`, `HistorialRepositorio`, `HistorialCambiosPanel` (botón campana + lista color-coded).
-- **Hecho cuando:** crear, editar o eliminar cualquier ingrediente/receta/molde/empleado deja su rastro en el historial con el color correcto, y una eliminación con efectos en cascada muestra el detalle de qué se vio afectado.
+- **Construyes:** `EventoCambio`, `HistorialRepositorio`, `HistorialCambiosPanel` (botón campana + lista color-coded), y la limpieza automática a 6 meses.
+- **Hecho cuando:** crear, editar o eliminar cualquier ingrediente/receta/molde/empleado deja su rastro en el historial con el color correcto, cada evento nombra la entidad afectada (no un texto genérico), una eliminación con efectos en cascada muestra el detalle de qué se vio afectado, y un evento con fecha falseada a 7 meses atrás desaparece solo.
 
 ### Fase 13 — Navegación general y pulido de UI
 
