@@ -1,5 +1,46 @@
 # Ver arquitectura.md para el diseño completo del proyecto.
 
+# Instrucción: revisar `.gitignore` y `.gitattributes` al sumar algo nuevo
+
+Estos dos archivos no se escriben una vez y se olvidan: hay que volver a ellos **cada vez
+que entra tecnología nueva al proyecto** (una librería, una herramienta, un tipo de archivo
+que antes no existía) o que aparece cualquier dato que no debería publicarse. La revisión
+va en el **mismo cambio** que introduce lo nuevo, no después.
+
+## Qué preguntarse en cada uno
+
+**`.gitignore` — ¿esto genera algo que no debe subirse?**
+- ¿Crea carpetas de compilación, cachés o archivos temporales?
+- ¿Trae credenciales, tokens, claves o certificados? (ojo con los nombres que impone la
+  herramienta: Google Cloud Console, por ejemplo, descarga un
+  `client_secret_XXXX.apps.googleusercontent.com.json` con ese nombre exacto)
+- ¿Genera archivos con rutas absolutas de esta máquina, que a otra no le sirven?
+- ¿Puede llegar a contener **datos reales del negocio** — recetas, costos, márgenes,
+  sueldos? Esos no son código y no van al repositorio.
+
+**`.gitattributes` — ¿trae tipos de archivo que Git podría arruinar?**
+- Todo formato binario nuevo (imágenes, fuentes, librerías `.so`/`.aar`) va marcado como
+  `binary`. Si no, Git puede creer que es texto y corromperlo al normalizar saltos de línea.
+- Todo script nuevo necesita su salto de línea explícito: `eol=lf` para Linux/Mac,
+  `eol=crlf` para Windows. Un `.sh` con CRLF no se ejecuta.
+
+## Cómo verificarlo (no a ojo)
+
+Leer el archivo no basta; hay que preguntarle a Git:
+
+```
+git check-ignore -v <archivo>          # ¿lo ignoraría?, ¿por qué regla?
+git check-attr -a -- <archivo>         # ¿qué atributos le aplican?
+```
+
+Comprobar **las dos direcciones**: que lo sensible quede ignorado, y que lo que sí debe
+versionarse (el wrapper de Gradle, los esquemas de Room en `app/schemas/`) no se ignore
+por accidente.
+
+**Detalle que ya causó un error acá:** en `.gitignore` el `#` solo abre un comentario **al
+inicio de la línea**. Escrito al final de un patrón queda como parte del patrón y la regla
+deja de funcionar en silencio.
+
 # Instrucción: registro y reutilización obligatoria de funciones y variables
 
 Aplica a todo el código de este proyecto, en cualquier archivo y lenguaje (Kotlin, Gradle scripts, etc.). Objetivo: nunca reinventar algo que ya existe por falta de contexto.
