@@ -33,3 +33,6 @@ google-services.json
 # ---- Kotlin / logs varios ----
 *.hprof
 *.log
+
+# ---- Gradle wrapper: el .jar SÍ se versiona (permite construir sin Gradle instalado) ----
+!gradle/wrapper/gradle-wrapper.jar

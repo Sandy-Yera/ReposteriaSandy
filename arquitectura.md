@@ -40,6 +40,8 @@ Esta versión del documento es la vigente y reciente: por eso el alcance quedó 
 | 11 | **Reescalado por molde** | Dos modos posibles: **Altura** (conserva el grosor/estructura, exige altura del molde nuevo ≥ altura del original) y **Capacidad** (conserva la proporción de volumen, sin esa restricción). Ver sección 8.3 y 9. |
 | 12 | **Catálogo de Moldes** | Nuevo módulo independiente. El reescalado de una receta puede usar un molde guardado del catálogo o dimensiones ingresadas al vuelo sin guardarlas ("modo prueba", útil para reescalar una receta ajena). |
 | 13 | **Notificaciones de cambios** | Botón global en la barra superior (aparte del buscador) que despliega un historial color-coded: azul = creación, verde = edición, rojo = eliminación (con el detalle de qué otras entidades resultaron afectadas, cuando aplica). |
+| 14 | **Identidad visual** | Paleta propia de repostería (crema, caramelo, chocolate) sobre Material 3 — no colores dinámicos del sistema. Modo claro y oscuro automático desde la primera pantalla. Ver 12.6. |
+| 15 | **Orden de construcción** | Se empieza por la Fase 1 (base de datos, código puro y verificable con tests). La Fase 0 —Google Cloud Console, SHA-1 y prueba en celular real— la hace Sandy en paralelo, porque requiere accesos y un dispositivo físico. |
 
 ---
 
@@ -1055,6 +1057,39 @@ Compose maneja la mayor parte de la adaptación de forma nativa (a diferencia de
 ### 12.5 Ícono de información ("?")
 
 `InfoTooltip.kt`: Composable pequeño y reutilizable — un ícono "?" que al presionarlo despliega un `Popup`/`AlertDialog` acotado con texto explicativo. Usado en el selector de Modo Altura/Capacidad (8.3.1), reutilizable a futuro donde haga falta aclarar una opción sin saturar la pantalla.
+
+### 12.6 Identidad visual
+
+Paleta propia de repostería sobre Material 3, **no** colores dinámicos del sistema: la app se ve igual en cualquier celular y tiene identidad propia. Con soporte de **modo claro y oscuro automático** desde el principio, siguiendo lo que tenga configurado el teléfono — agregarlo después obligaría a repasar todas las pantallas una por una.
+
+Todo vive en `res/` + `ui/theme/` (`Color.kt`, `Theme.kt`, `Type.kt`), nunca como colores sueltos escritos dentro de un Composable.
+
+| Rol | Claro | Oscuro | Dónde se usa |
+|---|---|---|---|
+| Fondo | Crema `#FFF8F0` | Chocolate muy oscuro `#1C1512` | Fondo de pantalla |
+| Superficie | Blanco cálido `#FFFCF8` | `#2A211C` | Tarjetas de receta, secciones colapsables |
+| Primario | Caramelo `#B0762F` | Caramelo claro `#E0A96D` | Botones principales, "+ Nueva receta", barra superior |
+| Texto | Chocolate `#3E2A22` | Crema `#F2E4D6` | Títulos y cuerpo |
+| Texto tenue | Chocolate 60% | Crema 65% | Subtítulos, "$12.400 · 8 trozos" |
+
+**Los tres colores del historial (11) son parte del sistema, no decorativos**, y por eso ninguno de los colores base compite con ellos: la paleta es cálida (cremas y marrones) justamente para dejar libres el azul, el verde y el rojo:
+
+| Evento | Claro | Oscuro |
+|---|---|---|
+| Creación (azul) | `#2E6FA8` | `#7FB6E3` |
+| Edición (verde) | `#3E7D4F` | `#87C99A` |
+| Eliminación (frambuesa) | `#B03A5B` | `#E8899F` |
+
+El frambuesa cumple **a la vez** de color de eliminación y de `error` de Material 3. Es deliberado: si fuera un acento decorativo aparte, un rojo de adorno se confundiría con un aviso de borrado.
+
+**Reglas que valen para todas las pantallas:**
+
+- **Nada de colores fijos en los Composables.** Siempre `MaterialTheme.colorScheme.*`, para que el modo oscuro salga solo. Un `Color(0xFF...)` dentro de una pantalla es un error a corregir, no un atajo.
+- **Contraste mínimo 4.5:1** entre texto y su fondo, en los dos modos. La app se usa en la cocina, muchas veces con las manos ocupadas y sin mirar de cerca.
+- **Objetivos táctiles de al menos 48dp.** Se usa con las manos sucias o apuradas; los botones chicos se fallan.
+- **Espaciado en múltiplos de 8dp** (4dp para ajustes finos), para que todo quede alineado sin decidirlo pantalla por pantalla.
+- **El dinero siempre pasa por `formatearNumero`** (6.1) y nunca se concatena a mano.
+- **Las cifras negativas se muestran en el color de eliminación**, no en el color de texto normal: una ganancia negativa tiene que saltar a la vista (8.5).
 
 ---
 

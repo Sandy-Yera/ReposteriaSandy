@@ -3,15 +3,16 @@
 Ver `CLAUDE.md` para las reglas de uso de este archivo.
 Cada entrada nueva va al final de su sección, con el mismo formato.
 
-> **Estado actual: todo lo de abajo está ESPECIFICADO en `arquitectura.md`, pero todavía NO
-> IMPLEMENTADO** — el repositorio aún no tiene código Kotlin (la Fase 0 no ha empezado).
-> Las rutas indican dónde va a vivir cada cosa según la sección 4, no un archivo que ya exista.
+> **Cómo leer el estado de cada entrada:**
 >
-> Esto importa para el paso 2 de `CLAUDE.md`: al revisar si algo ya existe, una entrada de acá
-> significa "ya está diseñado, reutiliza este diseño", no "ya está escrito, ábrelo y léelo".
-> **Cuando cada fase implemente estas funciones de verdad, hay que volver a esta entrada y
-> confirmar que la firma real coincide con la documentada** — si cambió, se actualiza acá en el
-> mismo cambio, no después.
+> - **`✅ IMPLEMENTADA`** — el archivo existe y compila. La ruta es real: ábrelo y léelo, tal
+>   como pide el paso 2 de `CLAUDE.md`.
+> - **Sin marca** — está solo ESPECIFICADA en `arquitectura.md`. La ruta indica dónde va a
+>   vivir según la sección 4, pero ese archivo todavía no existe. Para el paso 2 de `CLAUDE.md`
+>   significa "ya está diseñado, reutiliza este diseño", no "ábrelo".
+>
+> **Al implementar cada función hay que volver a su entrada, marcarla y confirmar que la firma
+> real coincide con la documentada.** Si cambió, se actualiza acá en el mismo cambio, no después.
 
 Índice rápido: [Lógica pura](#logica-pura) · [Acceso a datos](#acceso-a-datos) · [Orquestación](#orquestacion) · [Tipos de datos](#tipos-de-datos)
 
@@ -32,10 +33,10 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 <a name="logica-pura"></a>
 ## Lógica pura (`logica/`) — sin Android, sin Room, sin `suspend`
 
-### formatearNumero
-- Ubicación: logica/Formato.kt
+### formatearNumero ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/formato/Formato.kt
 - Qué hace: convierte un número a texto con el formato de la app — punto para los miles, coma para los decimales, y sin coma cuando no hay decimales.
-- Cómo funciona: recibe un `Double`, redondea a 2 decimales y devuelve `String`. Trabaja sobre el valor absoluto y pega el signo al final, porque `(-0.56).toInt()` da 0 y perdería el "-" (mostraría una pérdida como ganancia). Fija `Locale.US` para que el separador de miles sea predecible y no dependa del idioma del celular. Ej: `1000.0` → `"1.000"`, `-1234.56` → `"-1.234,56"`.
+- Cómo funciona: recibe un `Double`, redondea a 2 decimales y devuelve `String`. Trabaja sobre el valor absoluto y pega el signo al final, porque `(-0.56).toLong()` da 0 y perdería el "-" (mostraría una pérdida como ganancia). Fija `Locale.US` para que el separador de miles sea predecible y no dependa del idioma del celular. Ej: `1000.0` → `"1.000"`, `-1234.56` → `"-1.234,56"`. Cubierta por `FormatoTest` (9 casos, incluidos negativos y redondeos que llegan a entero).
 
 ### coincide
 - Ubicación: logica/Busqueda.kt
