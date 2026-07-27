@@ -2,7 +2,7 @@
 
 **Plataforma:** Android nativo · Kotlin · Jetpack Compose · Room (SQLite) · WorkManager · Google Drive API
 **Desarrollo:** Android Studio en Linux
-**Objetivo:** reemplazar Trello/Excel para gestionar ingredientes, recetas (costeo, rendimiento, duración, precios, pasos) y empleados (cálculo de sueldos por venta), con respaldo dual en Google Drive. Entregable final: un **APK instalable** en tu celular.
+**Objetivo:** reemplazar Trello/Excel para gestionar ingredientes, moldes, recetas (costeo, rendimiento, duración, precios, pasos) y empleados (cálculo de sueldos por venta), con respaldo dual en Google Drive. Entregable final: un **APK instalable** en tu celular.
 
 ---
 
@@ -19,6 +19,8 @@ El modelo de datos, las fórmulas y el plan de fases que ya construimos **no se 
 | Un script corriendo dentro de otra app | APK instalable, con ícono propio, notificaciones posibles a futuro |
 | Pensado para verse bien en PC y celular a la vez | Pensado para celular (Android). Versión de escritorio quedaría para más adelante vía Compose Multiplatform, si algún día se quiere |
 
+Esta versión del documento es la vigente y reciente: por eso el alcance quedó limitado a celular y la estructura original (Python/Pydroid3) fue reemplazada por completo. Confirmado como decisión final, no un supuesto.
+
 ---
 
 ## 1. Decisiones confirmadas
@@ -28,11 +30,16 @@ El modelo de datos, las fórmulas y el plan de fases que ya construimos **no se 
 | 1 | **Stack** | Kotlin + Jetpack Compose + Room + WorkManager. Android Studio en Linux. |
 | 2 | **Autenticación Google Drive** | Google Sign-In nativo (`GoogleSignInClient`), scope `drive.file` (solo archivos creados por la app — evita el proceso de verificación de scopes sensibles de Google). |
 | 3 | **Precio de ingrediente en recetas antiguas** | Se recalcula siempre con el precio actual del ingrediente. |
-| 4 | **Trozo ganador con promoción activa** | Se calcula automáticamente según el precio que esté "activo" en ese momento — base o promo. |
+| 4 | **Selección de precio para cálculos automáticos** | Siempre se usa el precio/promo guardado que entregue la **menor ganancia por trozo** (el peor caso, "con lo que se juega"). Los demás precios guardados quedan visibles en la receta solo como referencia visual, no participan del cálculo automático. |
 | 5 | **Semanas por mes** | `SEMANAS_POR_MES = 4.33` (52 ÷ 12). |
-| 6 | **Sueldo de empleado: base de cálculo** | Ingreso bruto del producto completo, derivado del precio activo de la receta. |
-| 7 | **Múltiples dispositivos** | Poco probable; advertencia best-effort si detecta apertura simultánea (sección 11.4). |
+| 6 | **Sueldo de empleado: base de cálculo** | Ingreso bruto del producto completo, derivado del precio de menor ganancia de la receta. |
+| 7 | **Múltiples dispositivos** | Poco probable; advertencia best-effort si detecta apertura simultánea (sección 13.4). |
 | 8 | **Alcance de plataforma** | Solo Android (celular/tablet). No se busca paridad con PC en esta etapa. |
+| 9 | **Borrado de ingredientes** | Permitido solo tras advertencia si el ingrediente está en uso: se listan las recetas afectadas y se pide confirmación explícita. Al confirmar, se quita de esas recetas y el costo se reajusta solo (el costo total siempre se calcula en vivo). |
+| 10 | **Borrado de recetas** | En cascada: se eliminan también las asignaciones de sueldo (`EmpleadoRecetaSueldo`) de cualquier empleado que tuviera esa receta asignada. Las simulaciones de esos empleados se recalculan solas al ya no incluir esa receta. |
+| 11 | **Reescalado por molde** | Dos modos posibles: **Altura** (conserva el grosor/estructura, exige altura del molde nuevo ≥ altura del original) y **Capacidad** (conserva la proporción de volumen, sin esa restricción). Ver sección 8.3 y 9. |
+| 12 | **Catálogo de Moldes** | Nuevo módulo independiente. El reescalado de una receta puede usar un molde guardado del catálogo o dimensiones ingresadas al vuelo sin guardarlas ("modo prueba", útil para reescalar una receta ajena). |
+| 13 | **Notificaciones de cambios** | Botón global en la barra superior (aparte del buscador) que despliega un historial color-coded: azul = creación, verde = edición, rojo = eliminación (con el detalle de qué otras entidades resultaron afectadas, cuando aplica). |
 
 ---
 
@@ -65,7 +72,7 @@ El modelo de datos, las fórmulas y el plan de fases que ya construimos **no se 
                     │ llama a
 ┌───────────────────▼─────────────────────────┐
 │  Lógica de negocio (logica/)                │
-│  Formato · Rendimiento · Precios · Sueldos  │
+│  Formato · Rendimiento · Moldes · Precios   │
 │  Simulaciones — Kotlin puro, sin Android    │
 └───────────────────┬─────────────────────────┘
                     │ usa
@@ -84,7 +91,7 @@ El modelo de datos, las fórmulas y el plan de fases que ya construimos **no se 
 └───────────────────────────────────────────┘
 ```
 
-Igual que en la versión anterior: la UI nunca toca Room ni Drive directamente. Todo pasa por ViewModel → lógica → repositorio. La carpeta `logica/` es Kotlin puro (sin imports de Android), así que se puede probar con JUnit sin emulador ni celular — muy útil dado lo intrincado de las fórmulas de sueldos y promociones.
+Igual que en la versión anterior: la UI nunca toca Room ni Drive directamente. Todo pasa por ViewModel → lógica → repositorio. La carpeta `logica/` es Kotlin puro (sin imports de Android), así que se puede probar con JUnit sin emulador ni celular — muy útil dado lo intrincado de las fórmulas de sueldos, moldes y promociones.
 
 ---
 
@@ -101,17 +108,23 @@ app/
 │   │   │   ├── db/
 │   │   │   │   ├── AppDatabase.kt         # Room database, versión, migraciones
 │   │   │   │   ├── entidades/             # una clase @Entity por tabla (sección 5)
+│   │   │   │   │   └── DimensionesMolde.kt   # value class @Embedded, reutilizada por Molde y RecetaRendimiento
 │   │   │   │   └── dao/
 │   │   │   │       ├── IngredienteDao.kt
 │   │   │   │       ├── RecetaDao.kt
-│   │   │   │       └── EmpleadoDao.kt
+│   │   │   │       ├── MoldeDao.kt
+│   │   │   │       ├── EmpleadoDao.kt
+│   │   │   │       └── HistorialDao.kt
 │   │   │   └── repositorio/
 │   │   │       ├── IngredienteRepositorio.kt
 │   │   │       ├── RecetaRepositorio.kt
-│   │   │       └── EmpleadoRepositorio.kt
+│   │   │       ├── MoldeRepositorio.kt
+│   │   │       ├── EmpleadoRepositorio.kt
+│   │   │       └── HistorialRepositorio.kt
 │   │   ├── logica/                        # Kotlin puro, sin Android
 │   │   │   ├── Formato.kt
 │   │   │   ├── Rendimiento.kt
+│   │   │   ├── Moldes.kt                  # factorEscala, DimensionesMolde.areaCm2/volumenCm3
 │   │   │   ├── Precios.kt
 │   │   │   ├── Simulacion.kt
 │   │   │   └── Sueldos.kt
@@ -131,13 +144,19 @@ app/
 │   │       │   ├── ListaRecetasScreen.kt
 │   │       │   ├── wizard/                # un archivo por paso del wizard
 │   │       │   └── DetalleRecetaScreen.kt
+│   │       ├── moldes/
+│   │       │   ├── MoldeViewModel.kt
+│   │       │   ├── ListaMoldesScreen.kt
+│   │       │   └── SelectorReescaladoMolde.kt   # elegir molde guardado o dimensiones "al vuelo"
 │   │       ├── empleados/
 │   │       │   ├── EmpleadosViewModel.kt
 │   │       │   ├── ListaEmpleadosScreen.kt
 │   │       │   └── SimulacionMultipleScreen.kt
 │   │       └── componentes/
 │   │           ├── SeccionColapsable.kt
-│   │           └── BarraBusqueda.kt
+│   │           ├── BarraBusqueda.kt
+│   │           ├── InfoTooltip.kt          # ícono "?" con texto explicativo (usado en Modo Altura/Capacidad)
+│   │           └── HistorialCambiosPanel.kt # botón campana + lista color-coded de EventoCambio
 │   └── res/                                # temas, colores, strings.xml
 ```
 
@@ -145,14 +164,13 @@ app/
 
 ## 5. Modelo de datos (Room)
 
-El diseño de tablas es el mismo que ya validamos; solo cambia la sintaxis. Diagrama de relaciones sin cambios:
-
 ```mermaid
 erDiagram
     INGREDIENTES ||--o{ RECETA_INGREDIENTES : "usado en"
     RECETAS ||--o{ RECETA_SECCIONES : contiene
     RECETA_SECCIONES ||--o{ RECETA_INGREDIENTES : contiene
     RECETAS ||--|| RECETA_RENDIMIENTO : tiene
+    MOLDES |o--o{ RECETA_RENDIMIENTO : "origen opcional de"
     RECETAS ||--o{ RECETA_DURACION : tiene
     RECETAS ||--o{ RECETA_PRECIOS : tiene
     RECETAS ||--|| RECETA_SIMULACION_VENTA : tiene
@@ -173,6 +191,8 @@ data class Ingrediente(
     val creadoEn: Long = System.currentTimeMillis(),
     val actualizadoEn: Long = System.currentTimeMillis()
 )
+// Nota: no tiene FK saliente hacia RecetaIngrediente que impida borrarlo — el borrado
+// se controla a nivel de lógica de negocio (ver 7.1), no con un ON DELETE RESTRICT.
 
 @Entity(tableName = "recetas")
 data class Receta(
@@ -197,24 +217,122 @@ data class RecetaPrecio(
     val modo: String,          // "trozo" | "producto"
     val cantidad: Int = 1,
     val precioTotal: Double,
-    val activo: Boolean = false,
-    val etiqueta: String? = null
+    val etiqueta: String? = null   // nombre de la promo, ej. "2x1.500"
+)
+// Ya no existe un campo "activo": el precio que alimenta los cálculos automáticos
+// se resuelve en vivo como el de menor ganancia (ver 8.6). Todos los guardados
+// quedan visibles en la UI para referencia.
+```
+
+### 5.2 Entidad Molde y su reutilización en Receta (nuevo)
+
+`DimensionesMolde` es un `data class` compartido (no es una entidad Room por sí sola, se usa vía `@Embedded`) para no duplicar los campos de geometría entre el catálogo de moldes y el snapshot que guarda cada receta:
+
+```kotlin
+enum class TipoFormaMolde { RECTANGULO, CIRCULO, CUADRADO, TRIANGULO, EXOTICO }
+
+data class DimensionesMolde(
+    val tipoForma: TipoFormaMolde,
+    val largoCm: Double? = null,           // rectángulo
+    val anchoCm: Double? = null,           // rectángulo
+    val ladoCm: Double? = null,            // cuadrado
+    val diametroCm: Double? = null,        // círculo
+    val baseTrianguloCm: Double? = null,   // triángulo (base, para el área)
+    val alturaTrianguloCm: Double? = null, // triángulo (altura de la base, para el área — NO confundir con alturaMoldeCm)
+    val volumenExoticoCm3: Double? = null, // exótico, medido llenando el molde con agua
+    val alturaMoldeCm: Double              // profundidad/alto real del molde — obligatorio siempre, en las 5 formas
+) {
+    val areaCm2: Double get() = when (tipoForma) {
+        TipoFormaMolde.RECTANGULO -> largoCm!! * anchoCm!!
+        TipoFormaMolde.CUADRADO -> ladoCm!! * ladoCm!!
+        TipoFormaMolde.CIRCULO -> Math.PI * (diametroCm!! / 2).let { it * it }
+        TipoFormaMolde.TRIANGULO -> (baseTrianguloCm!! * alturaTrianguloCm!!) / 2
+        TipoFormaMolde.EXOTICO -> volumenExoticoCm3!! / alturaMoldeCm   // área despejada del volumen medido
+    }
+    val volumenCm3: Double get() =
+        if (tipoForma == TipoFormaMolde.EXOTICO) volumenExoticoCm3!! else areaCm2 * alturaMoldeCm
+}
+
+@Entity(tableName = "moldes")
+data class Molde(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val nombre: String,
+    @Embedded val dimensiones: DimensionesMolde,
+    val creadoEn: Long = System.currentTimeMillis()
+)
+
+@Entity(
+    tableName = "receta_rendimiento",
+    foreignKeys = [
+        ForeignKey(entity = Receta::class, parentColumns = ["id"], childColumns = ["recetaId"], onDelete = ForeignKey.CASCADE),
+        ForeignKey(entity = Molde::class, parentColumns = ["id"], childColumns = ["moldeOrigenId"], onDelete = ForeignKey.SET_NULL)
+    ],
+    indices = [Index("moldeOrigenId")]
+)
+data class RecetaRendimiento(
+    @PrimaryKey val recetaId: Long,
+    val usaMolde: Boolean,
+    val moldeOrigenId: Long? = null,                          // solo trazabilidad ("basado en: Molde X")
+    @Embedded(prefix = "molde_") val dimensiones: DimensionesMolde? = null, // null si usaMolde = false
+    val pesoFinalG: Double? = null,                           // obligatorio si usaMolde = false
+    val trozos: Int
 )
 ```
 
-### 5.2 Resto de entidades (mismo patrón)
+`moldeOrigenId` es `SET_NULL` al borrar el molde del catálogo: la receta conserva su propio snapshot de dimensiones (`dimensiones`) y solo pierde el vínculo de trazabilidad hacia el catálogo, nunca sus datos.
+
+### 5.3 Historial de cambios (nuevo)
+
+```kotlin
+enum class TipoEvento { CREACION, EDICION, ELIMINACION }
+// color en la UI: CREACION = azul · EDICION = verde · ELIMINACION = rojo
+
+@Entity(tableName = "eventos_cambio")
+data class EventoCambio(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val tipo: TipoEvento,
+    val entidad: String,               // "Ingrediente" | "Receta" | "Empleado" | "Molde"
+    val descripcion: String,           // ej. "Se eliminó el ingrediente 'Harina'"
+    val detalleAdicional: String? = null, // ej. "Afectó a: Bizcocho de vainilla, Torta de manjar"
+    val creadoEn: Long = System.currentTimeMillis()
+)
+```
+
+Cada repositorio (`IngredienteRepositorio`, `RecetaRepositorio`, `MoldeRepositorio`, `EmpleadoRepositorio`) escribe una fila en `HistorialRepositorio` en cada create/update/delete relevante — no requiere que el usuario haga nada aparte.
+
+### 5.4 Resto de entidades (mismo patrón)
 
 | Entidad Kotlin | Campos clave | Relación |
 |---|---|---|
 | `RecetaSeccion` | `id, recetaId, nombreSeccion, orden` | FK a `Receta` |
 | `RecetaIngrediente` | `id, seccionId, ingredienteId, cantidadG, orden` | FK a `RecetaSeccion` e `Ingrediente` |
-| `RecetaRendimiento` | `recetaId (PK), usaMolde, moldeDesc, pesoFinalG, trozos` | 1:1 con `Receta` |
 | `RecetaDuracion` | `recetaId, tipo (ambiente/refrigerada/congelada), apto, cantidad, unidad` | PK compuesta (`recetaId`, `tipo`) |
 | `RecetaSimulacionVenta` | `recetaId (PK), diasPorSemana, unidadesPorDia` | 1:1 con `Receta` |
 | `RecetaPaso` | `id, recetaId, orden, contenido` | FK a `Receta` |
 | `Empleado` | `id, nombre, esGenerico, creadoEn` | — |
-| `EmpleadoRecetaSueldo` | `id, empleadoId, recetaId, gananciaEmpleado, diasPorSemana, unidadesPorDia` | único (`empleadoId`, `recetaId`) |
-| `EmpleadoSimulacionMultiple` / `Detalle` | `empleadoId (PK), diasPorSemana` + tabla detalle por receta | ver sección 9.3 |
+| `EmpleadoRecetaSueldo` | `id, empleadoId, recetaId, gananciaEmpleado, diasPorSemana, unidadesPorDia` | FK a `Empleado` (CASCADE) y a `Receta` (**CASCADE** — ver decisión #10) |
+| `EmpleadoSimulacionMultiple` / `Detalle` | `empleadoId (PK), diasPorSemana` + tabla detalle por receta | ver sección 10.3 |
+
+```kotlin
+@Entity(
+    tableName = "empleado_receta_sueldo",
+    foreignKeys = [
+        ForeignKey(entity = Empleado::class, parentColumns = ["id"], childColumns = ["empleadoId"], onDelete = ForeignKey.CASCADE),
+        ForeignKey(entity = Receta::class, parentColumns = ["id"], childColumns = ["recetaId"], onDelete = ForeignKey.CASCADE)
+    ],
+    indices = [Index("empleadoId"), Index("recetaId")]
+)
+data class EmpleadoRecetaSueldo(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val empleadoId: Long,
+    val recetaId: Long,
+    val gananciaEmpleado: Double,
+    val diasPorSemana: Int,
+    val unidadesPorDia: Int
+)
+```
+
+Al borrar una `Receta`, Room elimina en cascada su fila en `EmpleadoRecetaSueldo` para todos los empleados que la tenían asignada — esos empleados simplemente dejan de listar esa receta, y sus simulaciones (10.3) se recalculan solas al ya no sumarla.
 
 `AppDatabase.kt` declara la versión del esquema y las migraciones cuando algo cambie — a diferencia de un `schema.sql` suelto, Room **obliga** a documentar cada cambio de estructura, lo cual es una salvaguarda útil una vez que tengas datos reales guardados en el celular.
 
@@ -244,7 +362,10 @@ Vive en `logica/Formato.kt`, sin dependencias de Android — se puede probar con
 ### 6.2 Validaciones comunes
 
 - Ingrediente: nombre único, `valorPorGramo >= 0`.
+- Ingrediente (borrado): si `recetaRepo.obtenerRecetasQueUsan(ingredienteId)` no está vacío, la UI **debe** mostrar la advertencia con esa lista y pedir confirmación explícita antes de llamar a `confirmarEliminacionIngrediente` (7.1). Si está vacío, se borra directo (igual queda el evento en el historial).
 - Rendimiento: `trozos >= 1` siempre; si `usaMolde = false`, `pesoFinalG` es obligatorio.
+- Molde: `alturaMoldeCm > 0` siempre; el resto de los campos de `DimensionesMolde` obligatorios según `tipoForma` (para `EXOTICO`, solo `volumenExoticoCm3` y `alturaMoldeCm`).
+- Reescalado Modo Altura: `nuevo.alturaMoldeCm >= original.alturaMoldeCm` — si no se cumple, error de validación antes de calcular el factor (9.3).
 - Duración: si `apto = false`, se ignoran cantidad/unidad.
 - Sueldo empleado: `gananciaEmpleado` entre `0` y `gananciaTotal` de la receta.
 
@@ -257,6 +378,35 @@ Estas validaciones viven en `logica/`, no solo en la UI, para que sean consisten
 - CRUD (nombre + valor por gramo) vía `IngredienteRepositorio` + `IngredientesViewModel`.
 - `ComboBuscable.kt`: Composable reutilizable — campo de texto que filtra la lista en tiempo real (coincidencia en cualquier parte del nombre) y un botón "+ nuevo ingrediente" que abre un `AlertDialog`/`ModalBottomSheet` para dar de alta uno sin salir de la receta. Se reutiliza en el paso "Cantidades y precios" de Recetas.
 - Al lado de cada ingrediente en una receta se muestra `cantidad × valorPorGramo`, siempre pasado por `formatearNumero`.
+
+### 7.1 Política de borrado (nuevo)
+
+Un ingrediente solo se elimina de verdad tras pasar por este flujo:
+
+```kotlin
+// 1. La UI pide la lista de recetas afectadas antes de mostrar cualquier botón de borrado definitivo
+suspend fun recetasQueUsan(ingredienteId: Long): List<Receta> =
+    recetaRepo.obtenerRecetasQueUsan(ingredienteId)
+
+// 2. Si la lista no está vacía, se muestra la advertencia con esos títulos + botón "Confirmar eliminación".
+//    Si está vacía, se puede saltar directo al paso 3.
+
+// 3. Confirmado (o si no había recetas afectadas):
+suspend fun confirmarEliminacionIngrediente(ingredienteId: Long) {
+    val afectadas = recetaRepo.obtenerRecetasQueUsan(ingredienteId)
+    recetaRepo.quitarIngredienteDeTodasLasSecciones(ingredienteId) // borra las filas RecetaIngrediente que lo referencian
+    ingredienteRepo.eliminar(ingredienteId)
+    historialRepo.registrar(
+        tipo = TipoEvento.ELIMINACION,
+        entidad = "Ingrediente",
+        descripcion = "Se eliminó un ingrediente",
+        detalleAdicional = if (afectadas.isEmpty()) null
+            else "Afectó a: ${afectadas.joinToString { it.titulo }}"
+    )
+}
+```
+
+`costoTotalReceta()` (8.2) ya se calcula en vivo sumando los ingredientes vigentes de cada receta — al desaparecer la fila `RecetaIngrediente`, el costo total de cada receta afectada se reajusta solo, sin ningún paso adicional.
 
 ---
 
@@ -282,20 +432,29 @@ suspend fun costoTotalReceta(recetaId: Long): Double {
 
 Una o más `RecetaSeccion` (recetas de un solo conjunto crean automáticamente una sección "General" invisible para el usuario). Costo total = suma de todos los ingredientes de todas las secciones, siempre con el precio **actual** del ingrediente.
 
-### 8.3 Paso 2 — Rendimiento
+### 8.3 Paso 2 — Rendimiento (con moldes)
 
 | Caso | Molde | Peso final |
 |---|---|---|
-| Con molde | Obligatorio (descripción) | Opcional → si vacío, "No especificado" |
+| Con molde | Obligatorio (se define con el módulo Moldes — 9) | Se calcula, no se pide |
 | Sin molde (ej. salsa) | Fijo: "No utiliza molde" | Obligatorio |
 
 ```kotlin
 fun pesoPorTrozo(pesoFinalG: Double?, trozos: Int): String =
     if (pesoFinalG == null) "No especificado" else formatearNumero(pesoFinalG / trozos)
+```
 
-suspend fun reescalarReceta(recetaId: Long, nuevoPesoReferencia: Double) {
+Si `usaMolde = true`, el peso final ya no se escribe a mano: se calcula desde `dimensiones.volumenCm3` (asumiendo densidad ≈ 1 g/cm³ como referencia visual) o simplemente se muestra "No especificado" si no aplica; lo relevante para el costeo son los gramos por ingrediente, no el peso final del molde. Si `usaMolde = false` (salsas y similares), se mantiene el campo `pesoFinalG` manual tal como antes.
+
+**Reescalado — dos rutas separadas:**
+
+- **Con molde:** ver 8.3.1 (Modo Altura / Modo Capacidad, con el módulo Moldes).
+- **Sin molde (salsas, etc.):** se mantiene el reescalado directo por peso, igual que en la versión anterior:
+
+```kotlin
+suspend fun reescalarRecetaPorPeso(recetaId: Long, nuevoPesoReferencia: Double) {
     val pesoActual = recetaRepo.obtenerPesoFinal(recetaId)
-        ?: recetaRepo.sumaGramosIngredientes(recetaId)   // si no había peso final definido
+        ?: recetaRepo.sumaGramosIngredientes(recetaId)
     val factor = nuevoPesoReferencia / pesoActual
     recetaRepo.obtenerTodosLosIngredientes(recetaId).forEach {
         recetaRepo.actualizarCantidad(it.id, Math.round(it.cantidadG * factor * 100) / 100.0)
@@ -303,7 +462,45 @@ suspend fun reescalarReceta(recetaId: Long, nuevoPesoReferencia: Double) {
 }
 ```
 
-`trozos` no cambia automáticamente al reescalar; se ajusta aparte si se quiere, igual que cualquier otro campo editable.
+En ambos casos, `trozos` no cambia automáticamente al reescalar; se ajusta aparte si se quiere, igual que cualquier otro campo editable. También se mantiene la opción de editar molde/peso final **sin** reescalar (edición normal de un campo, como cualquier otro).
+
+#### 8.3.1 Reescalado por molde — Modo Altura vs. Modo Capacidad (nuevo)
+
+Todo reescalado por molde sigue 2 pasos: primero medir el molde nuevo (9.1), después elegir qué preservar.
+
+```kotlin
+enum class ModoReescalado { ALTURA, CAPACIDAD }
+
+fun factorEscala(original: DimensionesMolde, nuevo: DimensionesMolde, modo: ModoReescalado): Double {
+    if (modo == ModoReescalado.ALTURA) {
+        require(nuevo.alturaMoldeCm >= original.alturaMoldeCm) {
+            "En Modo Altura el molde nuevo no puede ser más bajo que el original"
+        }
+        return nuevo.areaCm2 / original.areaCm2
+    }
+    return nuevo.volumenCm3 / original.volumenCm3
+}
+
+suspend fun reescalarRecetaPorMolde(
+    recetaId: Long,
+    nuevo: DimensionesMolde,
+    modo: ModoReescalado
+) {
+    val original = recetaRepo.obtenerDimensionesMolde(recetaId)
+        ?: error("Esta receta no usa molde; usar reescalarRecetaPorPeso()")
+    val factor = factorEscala(original, nuevo, modo)
+    recetaRepo.obtenerTodosLosIngredientes(recetaId).forEach {
+        recetaRepo.actualizarCantidad(it.id, Math.round(it.cantidadG * factor * 100) / 100.0)
+    }
+    recetaRepo.actualizarDimensionesMolde(recetaId, nuevo)
+}
+```
+
+- **Modo Altura (Modo Estructura):** `factor = áreaNueva / áreaOriginal`. Úsalo cuando la receta te gustó como quedó y quieres que se vea/sienta igual — mismo grosor de tajada, misma proporción de capas (queques, bizcochos, milhojas). Exige conocer la altura de ambos moldes, y **no permite** elegir un molde nuevo más bajo que el original.
+- **Modo Capacidad (Modo Volumen):** `factor = volumenNuevo / volumenOriginal`. Úsalo para rellenos o masas densas sin estructura de aire crítica, o cuando quieres que la receta rinda más/sea más grande aceptando que la altura cambie como parte de ese crecimiento. No tiene restricción de altura.
+- En ambos casos: `ingredienteNuevo = ingredienteOriginal × factor`.
+- La UI muestra un ícono "?" (`InfoTooltip.kt`) junto al selector de modo, con el texto de arriba, para no tener que memorizar cuál usar.
+- Al elegir el molde nuevo: se puede seleccionar uno guardado del catálogo (9) o ingresar dimensiones sueltas sin guardarlas ("modo prueba" — útil para reescalar una receta ajena sin ensuciar el catálogo de moldes propios).
 
 ### 8.4 Paso 3 — Duración (opcional)
 
@@ -311,14 +508,25 @@ Banner fijo: *"Las duraciones son estimaciones no precisas"*. Tres bloques (ambi
 
 ### 8.5 Paso 4 — Gastos y Ganancias
 
-El valor que ingresas aquí (modo "trozo" o "producto" + un número) crea la primera fila de `RecetaPrecio` (`cantidad = 1`, `activo = true`) — tu precio base. Todo lo automático de este paso se recalcula según el precio que esté **activo** en cada momento (base o promo):
+El valor que ingresas aquí (modo "trozo" o "producto" + un número) crea la primera fila de `RecetaPrecio` (`cantidad = 1`) — tu precio base. Todo lo automático de este paso se recalcula según el **precio de menor ganancia** entre todos los guardados (base + promos, decisión #4):
 
 ```kotlin
-suspend fun precioEfectivoPorTrozo(recetaId: Long): Double {
-    val activo = recetaRepo.obtenerPrecioActivo(recetaId)
+suspend fun gananciaPorTrozoDe(precio: RecetaPrecio, recetaId: Long): Double {
     val trozos = recetaRepo.obtenerTrozos(recetaId)
-    val trozosCubiertos = if (activo.modo == "trozo") activo.cantidad else activo.cantidad * trozos
-    return activo.precioTotal / trozosCubiertos
+    val trozosCubiertos = if (precio.modo == "trozo") precio.cantidad else precio.cantidad * trozos
+    val precioPorTrozo = precio.precioTotal / trozosCubiertos
+    val costoPorTrozo = recetaRepo.costoTotal(recetaId) / trozos
+    return precioPorTrozo - costoPorTrozo
+}
+
+suspend fun precioDeMenorGanancia(recetaId: Long): RecetaPrecio =
+    recetaRepo.obtenerPrecios(recetaId).minBy { gananciaPorTrozoDe(it, recetaId) }
+
+suspend fun precioEfectivoPorTrozo(recetaId: Long): Double {
+    val minimo = precioDeMenorGanancia(recetaId)
+    val trozos = recetaRepo.obtenerTrozos(recetaId)
+    val trozosCubiertos = if (minimo.modo == "trozo") minimo.cantidad else minimo.cantidad * trozos
+    return minimo.precioTotal / trozosCubiertos
 }
 
 fun trozoGanador(costoTotal: Double, precioTrozo: Double): Pair<Int, Double> {
@@ -330,11 +538,11 @@ fun trozoGanador(costoTotal: Double, precioTrozo: Double): Pair<Int, Double> {
 // con promo "2 trozos por $1.500": precioTrozo=750 -> n=2, ganancia=100
 ```
 
-`costoPorTrozo`, `gananciaPorTrozo`, `gananciaFinal` e `ingresoBruto` se derivan de la misma forma que en el diseño original — todos de solo lectura.
+`costoPorTrozo`, `gananciaPorTrozo`, `gananciaFinal` e `ingresoBruto` se derivan de la misma forma que en el diseño original, todos de solo lectura, siempre alimentados por `precioDeMenorGanancia`.
 
 ### 8.6 Precios y promociones
 
-Filas de `RecetaPrecio`. Cada una = "vender `cantidad` trozos (o `cantidad` productos completos, según `modo`) por `precioTotal`". Solo una puede estar `activo = true` a la vez por receta; activar una nueva desactiva la anterior. Cambiar cuál está activa recalcula 8.5 y 8.7 sin acción adicional.
+Filas de `RecetaPrecio`. Cada una = "vender `cantidad` trozos (o `cantidad` productos completos, según `modo`) por `precioTotal`", con una `etiqueta` opcional (ej. "2x1.500"). No existe un toggle manual de "activo": **todas** las filas guardadas se ven en una lista dentro de la receta, cada una con su ganancia calculada, para que puedas comparar tus precios a gusto — pero los campos automáticos de 8.5 y 8.8 siempre se recalculan con la fila de menor ganancia, sin que tengas que elegir nada.
 
 ### 8.7 Paso 5 — Ganancias simuladas
 
@@ -354,7 +562,7 @@ fun simulacion(ingresoBase: Double, costoBase: Double, dias: Int, unidades: Int)
 }
 ```
 
-`diasPorSemana` / `unidadesPorDia` quedan visibles y editables al final; cualquier cambio recalcula todo en el mismo momento.
+`ingresoBase`/`costoBase` se derivan siempre del precio de menor ganancia (8.5). `diasPorSemana` / `unidadesPorDia` quedan visibles y editables al final; cualquier cambio recalcula todo en el mismo momento.
 
 ### 8.8 Paso 6 — Pasos
 
@@ -365,12 +573,44 @@ fun simulacion(ingresoBase: Double, costoBase: Double, dias: Int, unidades: Int)
 
 - `DetalleRecetaScreen.kt`: cada paso como sección `SeccionColapsable`, con acceso a edición inline por sección.
 - `ListaRecetasScreen.kt`: botón "+ Nueva receta" fijo arriba (fuera del scroll, vía `Scaffold` + contenido fijo sobre un `LazyColumn`), `BarraBusqueda` arriba (coincidencia parcial en título), lista debajo.
+- Al eliminar una receta: se dispara la cascada de la sección 5.4 (borra sus `EmpleadoRecetaSueldo`), se registra un evento rojo en el historial (11) mencionando qué empleados quedaron sin esa receta si corresponde, y las simulaciones de esos empleados se recalculan solas.
 
 ---
 
-## 9. Módulo Empleados
+## 9. Módulo Moldes (nuevo)
 
-### 9.1 Cálculo de sueldo por receta
+### 9.1 Medir el molde (paso 1 de cualquier reescalado)
+
+- **Formas regulares** (`RECTANGULO`, `CIRCULO`, `CUADRADO`, `TRIANGULO`): se piden las medidas necesarias para el área según la forma, más `alturaMoldeCm` (siempre obligatoria) para llegar al volumen.
+  - Rectángulo: `área = largo × ancho`
+  - Cuadrado: `área = lado²`
+  - Círculo: `área = π × (diámetro / 2)²`
+  - Triángulo: `área = (base × alturaTriángulo) / 2` — el "alturaTriángulo" es propio de la fórmula del área, no confundir con `alturaMoldeCm` (la profundidad real del molde).
+  - `volumen = área × alturaMoldeCm`
+- **Exótico** (formas irregulares — estrella, corazón, etc.): se mide llenando el molde con agua y midiéndola en una jarra medidora; se ingresa `volumenExoticoCm3` directamente, más `alturaMoldeCm` por separado (necesaria si luego se quiere usar Modo Altura, para poder despejar `área = volumen / alturaMoldeCm`).
+
+### 9.2 Catálogo de Moldes (CRUD)
+
+- `ListaMoldesScreen.kt`: botón "+ Crear molde" fijo primero (mismo patrón que Ingredientes/Recetas), moldes creados debajo.
+- Al crear uno, se completa `nombre` + los campos de `DimensionesMolde` que correspondan según `tipoForma` elegido (el formulario solo muestra los campos relevantes a esa forma).
+- Cada molde en la lista muestra: nombre, tipo de forma, área calculada, volumen calculado y altura — todo derivado de `DimensionesMolde` (5.2), no hay que guardar área/volumen a mano.
+- Buscador arriba, mismo componente `BarraBusqueda.kt` reutilizado (coincidencia parcial por nombre).
+- Eliminar un molde del catálogo no afecta a las recetas que ya lo usaron como origen (`moldeOrigenId` es `SET_NULL`, y cada receta guarda su propio snapshot de `dimensiones`); solo se pierde el texto de trazabilidad "basado en: <nombre>".
+
+### 9.3 Uso en el reescalado de recetas
+
+En el paso "Rendimiento" de una receta (8.3.1), al reescalar se elige el molde nuevo de dos formas:
+
+1. **Molde guardado:** selector tipo `ComboBuscable` sobre el catálogo de moldes (9.2).
+2. **Modo prueba:** se ingresan las dimensiones directamente en el mismo formulario de 9.2, sin persistirlas como `Molde` — pensado para cuando reescalas una receta ajena y no necesariamente quieres guardar ese molde en tu catálogo.
+
+Con el molde nuevo (guardado o de prueba) ya definido, se elige el modo (Altura o Capacidad, 8.3.1) y se aplica `factorEscala()`.
+
+---
+
+## 10. Módulo Empleados
+
+### 10.1 Cálculo de sueldo por receta
 
 ```kotlin
 suspend fun ingresoBrutoProducto(recetaId: Long): Double =
@@ -390,15 +630,15 @@ suspend fun calcularSueldo(recetaId: Long, gananciaEmpleado: Double): Sueldo {
 // gananciaEmpleado=3.000 -> yoMeLlevo = 3.000 + 4.000 = 7.000
 ```
 
-Simulación día/semana/mes idéntica a 8.7, usando `diasPorSemana`/`unidadesPorDia` propios de cada combinación empleado-receta.
+Simulación día/semana/mes idéntica a 8.7, usando `diasPorSemana`/`unidadesPorDia` propios de cada combinación empleado-receta. Si la receta se elimina, la fila `EmpleadoRecetaSueldo` correspondiente desaparece en cascada (5.4) y esta simulación deja de incluirla automáticamente.
 
-### 9.2 Empleado genérico vs. específicos
+### 10.2 Empleado genérico vs. específicos
 
 - Registro `esGenerico = true` sembrado una sola vez (en la migración inicial de Room), fijo en segundo lugar de la lista (después del botón "+ nuevo empleado", fijo primero).
 - Empleados específicos: título editable, se agregan libremente.
-- Desplegable de recetas por empleado para ir asignando `gananciaEmpleado`.
+- Desplegable de recetas por empleado para ir asignando `gananciaEmpleado`. Solo lista recetas que aún existen (las eliminadas ya no aparecen, por la cascada de 5.4).
 
-### 9.3 Simulación múltiple
+### 10.3 Simulación múltiple
 
 ```kotlin
 suspend fun simulacionMultiple(empleadoId: Long): SimulacionMultipleResultado {
@@ -415,26 +655,35 @@ suspend fun simulacionMultiple(empleadoId: Long): SimulacionMultipleResultado {
 }
 ```
 
-No se reasigna sueldo aquí — solo se lee lo ya configurado en 9.1, agregado por día/semana/mes.
+No se reasigna sueldo aquí — solo se lee lo ya configurado en 10.1, agregado por día/semana/mes.
 
 ---
 
-## 10. Navegación y UI transversal
+## 11. Historial de cambios / notificaciones globales (nuevo)
 
-### 10.1 Navegación
+- Botón campana en la barra superior, junto a `BarraBusqueda` pero independiente de ella — no reemplaza al buscador, convive con él.
+- Al tocarlo, `HistorialCambiosPanel.kt` despliega la lista de `EventoCambio` (5.3) ordenada por fecha descendente, cada fila con una franja de color según `tipo`: azul (creación), verde (edición), rojo (eliminación).
+- Cuando una eliminación tuvo efectos en cascada (ingrediente que afectó recetas, receta que afectó empleados), el `detalleAdicional` del evento lo deja explícito como comentario, sin que el usuario tenga que ir a buscarlo por su cuenta.
+- Se alimenta solo: cada repositorio llama a `HistorialRepositorio.registrar(...)` en sus operaciones de create/update/delete, no es algo que el usuario configure.
 
-`NavGraph.kt` con Navigation Compose y un `ModalNavigationDrawer` para el menú de 3 líneas (Ingredientes / Recetas / Empleados). Se abre/cierra con el mismo botón, patrón estándar de Compose — no hay que construirlo a mano como en Tkinter.
+---
 
-### 10.2 Buscador
+## 12. Navegación y UI transversal
 
-`BarraBusqueda.kt`, un solo Composable reutilizado en las 3 secciones. Filtro por coincidencia parcial, insensible a mayúsculas:
+### 12.1 Navegación
+
+`NavGraph.kt` con Navigation Compose y un `ModalNavigationDrawer` para el menú de 3 líneas, ahora con **4 secciones**: Ingredientes / Recetas / Moldes / Empleados. Se abre/cierra con el mismo botón, patrón estándar de Compose — no hay que construirlo a mano como en Tkinter.
+
+### 12.2 Buscador
+
+`BarraBusqueda.kt`, un solo Composable reutilizado en las 4 secciones. Filtro por coincidencia parcial, insensible a mayúsculas:
 
 ```kotlin
 fun coincide(textoBusqueda: String, campo: String) =
     campo.contains(textoBusqueda, ignoreCase = true)
 ```
 
-### 10.3 Responsividad
+### 12.3 Responsividad
 
 Compose maneja la mayor parte de la adaptación de forma nativa (a diferencia de Tkinter, no hay que calcular factores de escala a mano):
 
@@ -442,15 +691,19 @@ Compose maneja la mayor parte de la adaptación de forma nativa (a diferencia de
 - Tipografía definida en `Theme.kt` con `sp` (escala con la configuración de accesibilidad del sistema, no con píxeles fijos).
 - Si en el futuro se agrega soporte para tablets, `WindowSizeClass` permite adaptar el layout (una o dos columnas) sin rehacer las pantallas.
 
-### 10.4 Secciones colapsables
+### 12.4 Secciones colapsables
 
 `SeccionColapsable.kt`: Composable con un `remember { mutableStateOf(false) }` para expandido/colapsado, header con título + ícono de flecha (`AnimatedVisibility` para la animación de apertura/cierre). Reutilizado en recetas (8.9) y empleados.
 
+### 12.5 Ícono de información ("?")
+
+`InfoTooltip.kt`: Composable pequeño y reutilizable — un ícono "?" que al presionarlo despliega un `Popup`/`AlertDialog` acotado con texto explicativo. Usado en el selector de Modo Altura/Capacidad (8.3.1), reutilizable a futuro donde haga falta aclarar una opción sin saturar la pantalla.
+
 ---
 
-## 11. Sincronización con la nube (Google Drive ×2)
+## 13. Sincronización con la nube (Google Drive ×2)
 
-### 11.1 Autenticación
+### 13.1 Autenticación
 
 Google Sign-In nativo (`GoogleSignInClient`), scope `Drive.SCOPE_FILE` (`drive.file` — la app solo ve/edita los archivos que ella misma crea, no todo tu Drive). Esto evita el proceso de verificación de scopes sensibles de Google: para uso personal, basta con dejar el proyecto en Google Cloud Console en modo "Testing" y agregar tu(s) propio(s) correo(s) como *test users*.
 
@@ -458,11 +711,11 @@ Google Sign-In nativo (`GoogleSignInClient`), scope `Drive.SCOPE_FILE` (`drive.f
 - **Cuenta 2 (opcional):** un botón "+ Agregar respaldo secundario" dispara el mismo flujo de `GoogleSignInClient`, pero pidiendo elegir una cuenta distinta a la 1. Android permite tener varias cuentas Google en el mismo dispositivo, así que esto es soporte nativo, no un truco.
 - Los tokens de cada cuenta los administra el SDK de Google Sign-In (se refrescan solos); no hay que guardarlos a mano.
 
-### 11.2 Subida/descarga
+### 13.2 Subida/descarga
 
 Cliente Drive vía `com.google.api.services.drive.Drive` (con `GoogleAccountCredential`), o alternativamente llamadas REST directas con Retrofit si se prefiere una app más liviana — a evaluar en la Fase 0 según cuál sea más simple de integrar en la práctica.
 
-### 11.3 Flujo de respaldo — `SyncWorker` (WorkManager)
+### 13.3 Flujo de respaldo — `SyncWorker` (WorkManager)
 
 ```
 al guardar cualquier cambio (Room):
@@ -477,7 +730,7 @@ al guardar cualquier cambio (Room):
 
 Restauración: si Room detecta que no hay base de datos local, la app ofrece "Restaurar desde la nube", trayendo el archivo desde la cuenta 1 (o la 2 si la 1 falla).
 
-### 11.4 Detección de uso simultáneo (best-effort)
+### 13.4 Detección de uso simultáneo (best-effort)
 
 - `deviceId`: UUID generado una sola vez, guardado en `SharedPreferences` (no en Room, para que no viaje al restaurar en otro dispositivo).
 - Cada `SyncWorker` exitoso también sube `sesion.json` con `{deviceId, actualizadoEn}` a la cuenta 1.
@@ -485,7 +738,7 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 
 ---
 
-## 12. Manejo de errores y modo offline
+## 14. Manejo de errores y modo offline
 
 - Toda escritura relevante en Room dentro de una transacción (`@Transaction` en el DAO), para que una app cerrada a la fuerza no deje datos a medias.
 - Sin conexión: la app funciona 100% local; WorkManager mantiene el trabajo de sync encolado y lo ejecuta solo apenas vuelve la red — no hay que programar el reintento a mano.
@@ -494,9 +747,9 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 
 ---
 
-## 13. Plan de implementación por fases
+## 15. Plan de implementación por fases
 
-Mismo espíritu que antes — 14 fases, cada una con algo concreto y probable al final. Cambia el "cómo probarlo" (Android Studio, emulador y celular real en vez de consola de Python), y la Fase 13 ahora termina en un **APK firmado**.
+16 fases (0 a 15), cada una con algo concreto y probable al final. Se prueba en Android Studio, emulador y celular real; la Fase 15 termina en un **APK firmado**.
 
 ### Fase 0 — Validar Google Sign-In + Drive API en un proyecto vacío
 
@@ -506,72 +759,82 @@ Mismo espíritu que antes — 14 fases, cada una con algo concreto y probable al
 
 ### Fase 1 — Cimientos de datos
 
-- **Construyes:** `AppDatabase`, todas las entidades `@Entity`, los DAOs, y los repositorios.
+- **Construyes:** `AppDatabase`, todas las entidades `@Entity` (incluye `Molde` y `EventoCambio`), los DAOs, y los repositorios.
 - **Hecho cuando:** un test JUnit (con Room en modo in-memory) inserta un ingrediente y una receta con 2 secciones, y los recupera correctamente.
 
 ### Fase 2 — Ingredientes (módulo completo)
 
-- **Construyes:** `Formato.kt`, CRUD con Compose, `ComboBuscable` con alta rápida.
-- **Hecho cuando:** desde el celular agregas/editas/eliminas ingredientes, los buscas por coincidencia parcial, y los montos respetan tu formato exacto.
+- **Construyes:** `Formato.kt`, CRUD con Compose, `ComboBuscable` con alta rápida, y la política de borrado con advertencia (7.1).
+- **Hecho cuando:** desde el celular agregas/editas/eliminas ingredientes, los buscas por coincidencia parcial, los montos respetan tu formato exacto, y borrar uno en uso muestra la advertencia con las recetas afectadas antes de confirmar.
 
 ### Fase 3 — Receta: Cantidades y precios
 
 - **Construyes:** wizard de nueva receta (primer paso), secciones múltiples, `costoTotalReceta`.
 - **Hecho cuando:** creas una receta de un conjunto y otra con 2+ secciones, y el costo total de cada una coincide con tu cálculo a mano.
 
-### Fase 4 — Receta: Rendimiento y reescalado
+### Fase 4 — Módulo Moldes
 
-- **Construyes:** molde/peso final/trozos, peso por trozo automático, `reescalarReceta`.
-- **Hecho cuando:** las reglas de obligatoriedad funcionan, "No especificado"/"No utiliza molde" aparecen correctamente, y reescalar al doble de peso duplica cada ingrediente.
+- **Construyes:** `DimensionesMolde`, entidad `Molde`, `ListaMoldesScreen`, formularios condicionales según `tipoForma`, cálculo de área/volumen.
+- **Hecho cuando:** creas un molde de cada una de las 5 formas y el área/volumen/altura mostrados coinciden con tu cálculo a mano (incluido el caso exótico, con volumen medido con agua).
 
-### Fase 5 — Receta: Duración
+### Fase 5 — Receta: Rendimiento y reescalado
+
+- **Construyes:** paso "Rendimiento" (con/sin molde), `reescalarRecetaPorPeso` (sin molde) y `reescalarRecetaPorMolde` + Modo Altura/Capacidad (con molde), selector de molde guardado o "modo prueba", `InfoTooltip`.
+- **Hecho cuando:** las reglas de obligatoriedad funcionan, Modo Altura rechaza un molde nuevo más bajo, Modo Capacidad no tiene esa restricción, y reescalar con cada modo produce el factor esperado sobre un caso de prueba a mano.
+
+### Fase 6 — Receta: Duración
 
 - **Construyes:** los 3 bloques, el switch "no apto", el banner de advertencia.
 - **Hecho cuando:** el paso completo puede quedar vacío, o con solo 1–2 bloques rellenos, respetando "no apto".
 
-### Fase 6 — Receta: Gastos y Ganancias + Precios/Promociones
+### Fase 7 — Receta: Gastos y Ganancias + Precios/Promociones
 
-- **Construyes:** precio base (primera fila de `RecetaPrecio`), `precioEfectivoPorTrozo`, `trozoGanador`, CRUD de promociones con `activo`.
-- **Hecho cuando:** el ejemplo base (costo 1.400, precio 500 → trozo 3, ganancia 100) y el ejemplo con promo (2×1.500 → trozo 2, ganancia 100) dan esos resultados exactos.
+- **Construyes:** precio base (primera fila de `RecetaPrecio`, sin campo `activo`), `precioDeMenorGanancia`, `precioEfectivoPorTrozo`, `trozoGanador`, lista visual de todos los precios guardados.
+- **Hecho cuando:** el ejemplo base (costo 1.400, precio 500 → trozo 3, ganancia 100) y el ejemplo con promo (2×1.500 → trozo 2, ganancia 100) dan esos resultados exactos, y agregar una segunda promo con más ganancia no cambia los campos automáticos (siguen usando la de menor ganancia).
 
-### Fase 7 — Receta: Ganancias simuladas
+### Fase 8 — Receta: Ganancias simuladas
 
 - **Construyes:** `diasPorSemana`/`unidadesPorDia`, cálculo semanal/mensual con `SEMANAS_POR_MES = 4.33`.
 - **Hecho cuando:** el ejemplo (5.000 × 4 × 2 = 40.000 semanal) funciona, y editar los valores después de guardado recalcula todo.
 
-### Fase 8 — Receta: Pasos + autocompletado
+### Fase 9 — Receta: Pasos + autocompletado
 
 - **Construyes:** paso previo, pasos numerados, detector de `ingredientes:`.
 - **Hecho cuando:** el popup aparece/desaparece según tus reglas (selección, borrado de la palabra clave, continuar escribiendo).
 
-### Fase 9 — Vista final de receta + lista
+### Fase 10 — Vista final de receta + lista
 
-- **Construyes:** `DetalleRecetaScreen` (acordeón editable) + `ListaRecetasScreen` (botón fijo, buscador, listado).
-- **Hecho cuando:** cualquier receta de fases 3–8 se ve y edita sección por sección sin perder datos, y aparece bien en la lista con buscador funcional.
+- **Construyes:** `DetalleRecetaScreen` (acordeón editable) + `ListaRecetasScreen` (botón fijo, buscador, listado), borrado de receta con cascada a empleados.
+- **Hecho cuando:** cualquier receta de fases 3–9 se ve y edita sección por sección sin perder datos, aparece bien en la lista con buscador funcional, y borrar una receta con sueldos de empleado asignados los quita sin dejar datos huérfanos.
 
-### Fase 10 — Módulo Empleados completo
+### Fase 11 — Módulo Empleados completo
 
 - **Construyes:** genérico + específicos, `calcularSueldo`, simulación individual y múltiple.
 - **Hecho cuando:** el ejemplo de sueldo (10.000/3.000/7.000/3.000 → 7.000) funciona, el tope se respeta, y la simulación múltiple con 3+ recetas suma bien.
 
-### Fase 11 — Navegación general y pulido de UI
+### Fase 12 — Historial de cambios / notificaciones
 
-- **Construyes:** drawer de navegación, buscador global, ajustes de Compose para verse bien en distintos tamaños de celular.
+- **Construyes:** `EventoCambio`, `HistorialRepositorio`, `HistorialCambiosPanel` (botón campana + lista color-coded).
+- **Hecho cuando:** crear, editar o eliminar cualquier ingrediente/receta/molde/empleado deja su rastro en el historial con el color correcto, y una eliminación con efectos en cascada muestra el detalle de qué se vio afectado.
+
+### Fase 13 — Navegación general y pulido de UI
+
+- **Construyes:** drawer de navegación con las 4 secciones, buscador global, ajustes de Compose para verse bien en distintos tamaños de celular.
 - **Hecho cuando:** la app completa se usa cómodamente en tu celular real, sin elementos cortados ni ilegibles.
 
-### Fase 12 — Sincronización real con Google Drive
+### Fase 14 — Sincronización real con Google Drive
 
-- **Construyes:** `DriveClient`, `SyncWorker`, integración con Room, respaldo dual, restauración, `SesionLock` (11.4).
+- **Construyes:** `DriveClient`, `SyncWorker`, integración con Room, respaldo dual, restauración, `SesionLock` (13.4).
 - **Hecho cuando:** guardar cualquier cambio sube el respaldo a ambas cuentas configuradas, poner el celular en modo avión no bloquea el uso (y sincroniza solo al volver la red), restaurar en una instalación limpia trae todo de vuelta, y probar con dos `deviceId` distintos dispara la advertencia.
 
-### Fase 13 — QA final y APK firmado (última fase)
+### Fase 15 — QA final y APK firmado (última fase)
 
 - **Construyes:** nada nuevo — checklist completo contra tu especificación original, prueba de estrés (recetas grandes), revisión de formatos numéricos, manejo de errores en cada formulario, y la generación de un **APK de release firmado** (`./gradlew assembleRelease` con tu keystore).
-- **Hecho cuando:** instalas el APK directo en tu celular (sin Android Studio conectado), usas la app de principio a fin — ingredientes, receta completa con sus 6 pasos, sueldos de empleados — y todo respalda solo en Drive. Este es el ejecutable final.
+- **Hecho cuando:** instalas el APK directo en tu celular (sin Android Studio conectado), usas la app de principio a fin — ingredientes, moldes, receta completa con sus 6 pasos, sueldos de empleados, historial de cambios — y todo respalda solo en Drive. Este es el ejecutable final.
 
 ---
 
-## 14. Riesgos y mitigaciones
+## 16. Riesgos y mitigaciones
 
 | Riesgo | Mitigación |
 |---|---|
@@ -580,15 +843,20 @@ Mismo espíritu que antes — 14 fases, cada una con algo concreto y probable al
 | Gradle/Android Studio | Linux es el sistema más fluido para esto (mejor rendimiento del emulador con KVM); en la práctica menos fricción que compilar Kivy con Buildozer en Windows |
 | Migraciones de Room | A diferencia de un `schema.sql` suelto, Room obliga a declarar migraciones cuando cambia el esquema — más disciplina inicial, pero evita perder datos reales una vez que la app esté en uso diario |
 | Tamaño del APK con librerías de Google | Evaluar en Fase 0 si conviene el cliente oficial de Drive o llamadas REST directas más livianas |
+| Geometría de moldes triangulares/exóticos mal medida | El formulario de Moldes (9.2) muestra área/volumen calculados al instante para que el error de medición se note antes de guardar, no después de reescalar una receta completa |
 
 ---
 
-## 15. Glosario
+## 17. Glosario
 
-- **Precio activo**: la fila de `RecetaPrecio` marcada como vigente (base o promoción). Alimenta Gastos y Ganancias, trozo ganador y sueldos.
-- **Trozo ganador**: primer trozo cuya venta acumulada, al precio activo, supera el costo total de la receta.
+- **Precio de menor ganancia**: entre todos los precios/promos guardados de una receta, el que da la menor ganancia por trozo. Es el que alimenta todos los cálculos automáticos (decisión #4); los demás son solo referencia visual.
+- **Trozo ganador**: primer trozo cuya venta acumulada, al precio de menor ganancia, supera el costo total de la receta.
 - **Rendimiento**: sección que define molde/peso final y cantidad de trozos.
-- **Reescalar**: ajustar cantidades de ingredientes proporcionalmente a un nuevo peso de referencia.
+- **Molde**: objeto reutilizable del catálogo (9) con forma, dimensiones, área y volumen calculados. Una receta puede usar uno guardado o dimensiones sueltas sin guardar ("modo prueba").
+- **Modo Altura (Modo Estructura)**: reescalado que conserva el grosor/proporción de capas, comparando áreas; exige que el molde nuevo no sea más bajo que el original.
+- **Modo Capacidad (Modo Volumen)**: reescalado que conserva la proporción de volumen, comparando volúmenes; sin restricción de altura.
+- **Reescalar**: ajustar cantidades de ingredientes proporcionalmente a un nuevo molde (Modo Altura/Capacidad) o a un nuevo peso de referencia (recetas sin molde).
+- **Evento de cambio**: registro en el historial global (11) de una creación, edición o eliminación relevante, con color asociado (azul/verde/rojo) y detalle de efectos en cascada si los hubo.
 - **Empleado genérico**: perfil de sueldo estándar, siempre presente.
 - **Room**: capa de Android sobre SQLite; genera acceso a datos desde clases Kotlin anotadas.
 - **WorkManager**: sistema de Android para trabajo diferido y confiable en segundo plano (usado aquí para el respaldo a Drive).

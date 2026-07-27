@@ -1,6 +1,6 @@
 # Registro de funciones y variables
 
-Ver `INSTRUCCIONES_REGISTRO_FUNCIONES.md` para las reglas de uso de este archivo.
+Ver `CLAUDE.md` para las reglas de uso de este archivo.
 Cada entrada nueva va al final, con el mismo formato.
 
 <!--
