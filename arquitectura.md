@@ -91,7 +91,9 @@ Esta versión del documento es la vigente y reciente: por eso el alcance quedó 
 └───────────────────────────────────────────┘
 ```
 
-Igual que en la versión anterior: la UI nunca toca Room ni Drive directamente. Todo pasa por ViewModel → lógica → repositorio. La carpeta `logica/` es Kotlin puro (sin imports de Android), así que se puede probar con JUnit sin emulador ni celular — muy útil dado lo intrincado de las fórmulas de sueldos, moldes y promociones.
+Igual que en la versión anterior: la UI nunca toca Room ni Drive directamente. Todo pasa por ViewModel → lógica → repositorio.
+
+**La flecha "lógica → usa → repositorios" del diagrama va en un solo sentido y con una condición:** las funciones de `logica/` no consultan repositorios, **reciben los datos ya cargados** (el `DatosCalculoReceta` de 6.4). El que va a buscarlos es el ViewModel, que llama al repositorio primero y le entrega el resultado a la lógica después. Esto es lo que hace que `logica/` sea Kotlin puro de verdad —sin `suspend`, sin Room, sin Android— y por lo tanto probable con JUnit sin emulador ni celular, que es justo lo que más falta hace con lo intrincado de las fórmulas de sueldos, moldes y promociones.
 
 ---
 
@@ -454,6 +456,38 @@ Regla única para las cuatro entidades: **ningún borrado se ejecuta sin confirm
 
 En los cuatro casos, si no hay nada afectado la advertencia igual aparece pero sin listado — es una confirmación simple. Y en los cuatro queda su evento rojo en el historial, con el detalle de lo afectado (11).
 
+### 6.4 Un solo snapshot por receta para todos los cálculos
+
+Las fórmulas de 8.5, 8.7 y 10 se llaman entre ellas en cadena (`calcularSueldo` → `ingresoBruto` → `precioEfectivoPorTrozo` → `precioDeMenorGanancia` → `gananciaPorTrozoDe` → costo total). Si cada eslabón fuera a buscar sus datos por su cuenta, el **costo total de una receta se recalcularía siete veces seguidas con el mismo resultado**, y una simulación múltiple de 5 recetas dispararía del orden de 700 consultas a la base para pintar una sola pantalla.
+
+La solución no cambia ninguna fórmula: se leen los datos **una vez**, y las fórmulas pasan a recibirlos ya cargados.
+
+```kotlin
+// Todo lo que las fórmulas necesitan saber de una receta. Se arma una vez y se pasa hacia abajo.
+data class DatosCalculoReceta(
+    val recetaId: Long,
+    val titulo: String,
+    val costoTotal: Double,
+    val trozos: Int,
+    val precios: List<RecetaPrecio>
+)
+```
+
+Esto trae tres beneficios, y el de velocidad es el menos importante:
+
+1. **Las funciones de `logica/` son puras de verdad.** Si en cambio recibieran un `recetaId` y salieran a consultar repositorios, serían `suspend` y quedarían atadas a Room, contradiciendo lo que promete la sección 3 ("Kotlin puro… se puede probar con JUnit sin emulador ni celular"). Recibiendo un `DatosCalculoReceta` ya armado, se prueban construyendo el objeto a mano en un test, sin base de datos de por medio — justamente lo que más conviene testear, que son las fórmulas de sueldos y promociones.
+2. **Los números quedan consistentes entre sí.** Si cada eslabón leyera el costo por su cuenta, nada garantiza que todos leyeran lo mismo. El snapshot asegura que el ingreso bruto, la ganancia y el sueldo que se muestran juntos en pantalla salieron todos de la misma foto de los datos.
+3. **Se evita un parche.** Con funciones `suspend`, `precioDeMenorGanancia` necesitaría un rodeo con `map` porque `minByOrNull` no acepta un selector `suspend`. Al no serlo, queda en una línea (8.5).
+
+Quién arma el snapshot es el repositorio, en una sola pasada y dentro de un `@Transaction` (14):
+
+```kotlin
+@Transaction
+suspend fun obtenerDatosCalculo(recetaIds: List<Long>): Map<Long, DatosCalculoReceta>
+```
+
+Recibe una **lista** de ids a propósito: la simulación múltiple (10.3) necesita varias recetas, y pedirlas en lote hace 3 consultas en total (`WHERE recetaId IN (:recetaIds)`) en vez de 3 por receta. Para una sola receta se llama con una lista de un elemento.
+
 ---
 
 ## 7. Módulo Ingredientes
@@ -502,19 +536,26 @@ Un `RecetaViewModel` con estado compartido entre los pasos del wizard (`wizard/`
 
 ### 8.2 Paso 1 — Cantidades y precios
 
+Costo total = suma de `cantidad × valorPorGramo` de todos los ingredientes de todas las secciones, siempre con el precio **actual** del ingrediente (decisión #3). Es una suma, así que la hace la base de datos en una sola consulta en vez de recorrer sección por sección e ingrediente por ingrediente desde Kotlin:
+
 ```kotlin
-suspend fun costoTotalReceta(recetaId: Long): Double {
-    var total = 0.0
-    recetaRepo.obtenerSecciones(recetaId).forEach { seccion ->
-        recetaRepo.obtenerIngredientes(seccion.id).forEach { item ->
-            total += item.cantidadG * ingredienteRepo.obtener(item.ingredienteId).valorPorGramo
-        }
-    }
-    return total
-}
+@Query("""
+    SELECT COALESCE(SUM(ri.cantidadG * i.valorPorGramo), 0)
+    FROM receta_ingredientes ri
+    JOIN receta_secciones rs ON rs.id = ri.seccionId
+    JOIN ingredientes i      ON i.id  = ri.ingredienteId
+    WHERE rs.recetaId = :recetaId
+""")
+suspend fun costoTotalReceta(recetaId: Long): Double
 ```
 
-Una o más `RecetaSeccion` (recetas de un solo conjunto crean automáticamente una sección "General" invisible para el usuario). Costo total = suma de todos los ingredientes de todas las secciones, siempre con el precio **actual** del ingrediente.
+Detalles que importan:
+
+- El `COALESCE(..., 0)` es obligatorio: `SUM` sobre cero filas devuelve `NULL` en SQLite, no `0`, y una receta recién creada todavía no tiene ingredientes.
+- El `JOIN` con `ingredientes` lee `valorPorGramo` en el momento de la consulta, que es exactamente lo que pide la decisión #3 — no hay ningún precio congelado en ninguna parte.
+- Al ser `INNER JOIN`, si por algún camino quedara un `RecetaIngrediente` apuntando a un ingrediente ya borrado (no hay FK formal que lo impida, 5.1), ese ingrediente simplemente no suma, en vez de reventar con un nulo como haría el recorrido en Kotlin. El flujo de 7.1 ya evita que eso ocurra; esto es solo la red de seguridad.
+
+Una o más `RecetaSeccion` (recetas de un solo conjunto crean automáticamente una sección "General" invisible para el usuario).
 
 **Cuando una receta simple pasa a tener varias secciones.** Como todo es editable después (8.1), tarde o temprano una receta de un solo conjunto necesita una segunda sección — al bizcocho le agregas la crema. En ese momento la sección "General" invisible tiene que dejar de serlo, porque ya no se entiende sola. Al tocar "+ agregar sección" en una receta que solo tiene la sección automática, la app **pide primero un nombre para la que ya existía** (proponiendo el título de la receta como sugerencia, ej. "Bizcocho") y recién después crea la nueva. Los ingredientes ya cargados no se mueven de lugar: siguen en la misma sección, que ahora simplemente tiene nombre visible. El camino inverso —quedarse con una sola sección otra vez— vuelve a ocultar el encabezado.
 
@@ -602,59 +643,56 @@ Banner fijo: *"Las duraciones son estimaciones no precisas"*. Tres bloques (ambi
 
 El valor que ingresas aquí (modo "trozo" o "producto" + un número) crea la primera fila de `RecetaPrecio` (`cantidad = 1`) — tu precio base. Todo lo automático de este paso se recalcula según el **precio de menor ganancia** entre todos los guardados (base + promos, decisión #4):
 
+Todas estas funciones son **puras**: reciben el snapshot `DatosCalculoReceta` (6.4) ya cargado, no consultan nada, no son `suspend`, y se prueban con JUnit construyendo el objeto a mano.
+
 ```kotlin
-suspend fun gananciaPorTrozoDe(precio: RecetaPrecio, recetaId: Long): Double {
-    val trozos = recetaRepo.obtenerTrozos(recetaId)
-    val trozosCubiertos = if (precio.modo == "trozo") precio.cantidad else precio.cantidad * trozos
-    val precioPorTrozo = precio.precioTotal / trozosCubiertos
-    val costoPorTrozo = recetaRepo.costoTotalReceta(recetaId) / trozos
-    return precioPorTrozo - costoPorTrozo
-}
+fun trozosCubiertosPor(precio: RecetaPrecio, d: DatosCalculoReceta): Int =
+    if (precio.modo == ModoPrecio.TROZO) precio.cantidad else precio.cantidad * d.trozos
 
-suspend fun precioDeMenorGanancia(recetaId: Long): RecetaPrecio {
-    val precios = recetaRepo.obtenerPrecios(recetaId)
-    // OJO: minBy espera un selector (T) -> R, no suspend (T) -> R -- no acepta directamente
-    // una lambda que llame a gananciaPorTrozoDe(). Se calculan las ganancias aparte primero.
-    val conGanancia = precios.map { it to gananciaPorTrozoDe(it, recetaId) }
-    return conGanancia.minByOrNull { it.second }?.first
+fun precioPorTrozoDe(precio: RecetaPrecio, d: DatosCalculoReceta): Double =
+    precio.precioTotal / trozosCubiertosPor(precio, d)
+
+fun costoPorTrozo(d: DatosCalculoReceta): Double = d.costoTotal / d.trozos
+
+fun gananciaPorTrozoDe(precio: RecetaPrecio, d: DatosCalculoReceta): Double =
+    precioPorTrozoDe(precio, d) - costoPorTrozo(d)
+
+// Ahora que no es suspend, minByOrNull acepta el selector directo y esto vuelve a ser una línea.
+fun precioDeMenorGanancia(d: DatosCalculoReceta): RecetaPrecio =
+    d.precios.minByOrNull { gananciaPorTrozoDe(it, d) }
         ?: error("La receta no tiene ningún precio guardado todavía (falta el paso Gastos y Ganancias)")
-}
 
-suspend fun precioEfectivoPorTrozo(recetaId: Long): Double {
-    val minimo = precioDeMenorGanancia(recetaId)
-    val trozos = recetaRepo.obtenerTrozos(recetaId)
-    val trozosCubiertos = if (minimo.modo == "trozo") minimo.cantidad else minimo.cantidad * trozos
-    return minimo.precioTotal / trozosCubiertos
-}
+fun precioEfectivoPorTrozo(d: DatosCalculoReceta): Double =
+    precioPorTrozoDe(precioDeMenorGanancia(d), d)
 
 // El trozo ganador puede caer FUERA de la receta: si el precio no alcanza a cubrir el costo
 // dentro de los trozos que existen, n > trozos y la receta pierde plata. Por eso se devuelve
 // también ese dato, en vez de mostrar un "N° del trozo ganador: 11" en una receta de 8 trozos.
 data class TrozoGanador(val numero: Int, val ganancia: Double, val alcanzable: Boolean)
 
-fun trozoGanador(costoTotal: Double, precioTrozo: Double, trozos: Int): TrozoGanador {
-    val n = (costoTotal / precioTrozo).toInt() + 1
-    val ganancia = n * precioTrozo - costoTotal
-    return TrozoGanador(n, ganancia, alcanzable = n <= trozos)
+fun trozoGanador(d: DatosCalculoReceta): TrozoGanador {
+    val precioTrozo = precioEfectivoPorTrozo(d)
+    val n = (d.costoTotal / precioTrozo).toInt() + 1
+    val ganancia = n * precioTrozo - d.costoTotal
+    return TrozoGanador(n, ganancia, alcanzable = n <= d.trozos)
 }
 // sin promo: costoTotal=1400, precioTrozo=500, trozos=6  -> n=3, ganancia=100, alcanzable=true
 // con promo "2 trozos por $1.500": precioTrozo=750       -> n=2, ganancia=100, alcanzable=true
 // caso malo: costoTotal=5000, precioTrozo=500, trozos=8  -> n=11, alcanzable=FALSE
 //            (habría que vender 11 trozos de una receta que solo da 8: se vende a pérdida)
+
+// Los cuatro campos automáticos restantes, todos de solo lectura:
+fun ingresoBruto(d: DatosCalculoReceta): Double = precioEfectivoPorTrozo(d) * d.trozos
+fun gananciaPorTrozo(d: DatosCalculoReceta): Double = precioEfectivoPorTrozo(d) - costoPorTrozo(d)
+fun gananciaFinal(d: DatosCalculoReceta): Double = ingresoBruto(d) - d.costoTotal
+// costoPorTrozo(d) ya está definido más arriba
 ```
 
 Cuando `alcanzable = false`, la pantalla no muestra el número como si fuera un dato normal: muestra la advertencia *"Con este precio la receta no alcanza a cubrir su costo"*. Es justamente el caso que más importa ver.
 
-**Los cuatro campos automáticos restantes** (todos de solo lectura, todos alimentados por `precioDeMenorGanancia`):
-
-```kotlin
-costoPorTrozo    = costoTotalReceta(recetaId) / trozos
-gananciaPorTrozo = precioEfectivoPorTrozo(recetaId) - costoPorTrozo
-ingresoBruto     = precioEfectivoPorTrozo(recetaId) * trozos      // el producto completo
-gananciaFinal    = ingresoBruto - costoTotalReceta(recetaId)
-```
-
 `gananciaPorTrozo` y `gananciaFinal` pueden ser negativos, y así deben mostrarse (por eso `formatearNumero` conserva el signo, 6.1).
+
+Con todas estas funciones recibiendo el mismo `d`, la pantalla de una receta arma **un** `DatosCalculoReceta` al abrirse y de ahí salen los siete campos automáticos, sin volver a la base ni una vez.
 
 ### 8.6 Precios y promociones
 
@@ -678,7 +716,7 @@ fun simulacion(ingresoBase: Double, costoBase: Double, dias: Int, unidades: Int)
 }
 ```
 
-`ingresoBase`/`costoBase` se derivan siempre del precio de menor ganancia (8.5). `diasPorSemana` / `unidadesPorDia` quedan visibles y editables al final; cualquier cambio recalcula todo en el mismo momento.
+`simulacion()` ya era pura y se queda igual. Sus dos entradas salen del mismo snapshot que el resto de la pantalla: `ingresoBase = ingresoBruto(d)` y `costoBase = d.costoTotal`, ambos derivados del precio de menor ganancia (8.5). `diasPorSemana` / `unidadesPorDia` quedan visibles y editables al final; cualquier cambio recalcula todo en el momento — y como recalcular es aritmética sobre datos ya en memoria, es instantáneo y no vuelve a consultar la base.
 
 ### 8.8 Paso 6 — Pasos
 
@@ -731,16 +769,14 @@ Con el molde nuevo (guardado o de prueba) ya definido, se elige el modo (Altura 
 
 ### 10.1 Cálculo de sueldo por receta
 
-```kotlin
-suspend fun ingresoBrutoProducto(recetaId: Long): Double =
-    precioEfectivoPorTrozo(recetaId) * recetaRepo.obtenerTrozos(recetaId)
+El ingreso bruto del producto completo es el `ingresoBruto(d)` ya definido en 8.5 — no hay una segunda fórmula para lo mismo. `calcularSueldo` también es pura y recibe el snapshot (6.4):
 
+```kotlin
 data class Sueldo(val ingresoBruto: Double, val yoMeLlevo: Double, val gananciaEmpleado: Double)
 
-suspend fun calcularSueldo(recetaId: Long, gananciaEmpleado: Double): Sueldo {
-    val ingresoBruto = ingresoBrutoProducto(recetaId)
-    val costoTotal = recetaRepo.costoTotalReceta(recetaId)
-    val gananciaTotal = ingresoBruto - costoTotal
+fun calcularSueldo(d: DatosCalculoReceta, gananciaEmpleado: Double): Sueldo {
+    val ingresoBruto = ingresoBruto(d)
+    val gananciaTotal = ingresoBruto - d.costoTotal
     // OJO: si gananciaTotal es negativa (la receta se vende bajo su costo), el rango
     // 0.0..gananciaTotal queda VACÍO en Kotlin y `in` devuelve false incluso para 0.0 --
     // el require de abajo fallaría siempre, con un mensaje que no explica el problema real.
@@ -749,7 +785,7 @@ suspend fun calcularSueldo(recetaId: Long, gananciaEmpleado: Double): Sueldo {
         "La receta no cubre su costo con el precio actual: no hay ganancia que repartir"
     }
     require(gananciaEmpleado in 0.0..gananciaTotal) { "Excede la ganancia total de la receta" }
-    val yoMeLlevo = costoTotal + (gananciaTotal - gananciaEmpleado)
+    val yoMeLlevo = d.costoTotal + (gananciaTotal - gananciaEmpleado)
     return Sueldo(ingresoBruto, yoMeLlevo, gananciaEmpleado)
 }
 // ejemplo: ingresoBruto=10.000, costoTotal=3.000, gananciaTotal=7.000
@@ -769,24 +805,34 @@ Simulación día/semana/mes idéntica a 8.7, usando `diasPorSemana`/`unidadesPor
 
 ### 10.3 Simulación múltiple
 
+Este es el caso donde más se nota el snapshot de 6.4: **toda la lectura ocurre en las tres primeras líneas**, y el bucle no vuelve a tocar la base de datos.
+
 ```kotlin
 suspend fun simulacionMultiple(empleadoId: Long): SimulacionMultipleResultado {
     val dias = empleadoRepo.obtenerDiasCompartidos(empleadoId)
+    val detalles = empleadoRepo.obtenerDetalle(empleadoId)
+    val sueldos = empleadoRepo.obtenerSueldos(empleadoId)                       // todos de una vez
+    val datos = recetaRepo.obtenerDatosCalculo(detalles.map { it.recetaId })    // en lote (6.4)
+
     var totalIngreso = 0.0; var totalYoMeLlevo = 0.0; var totalEmpleado = 0.0
-    empleadoRepo.obtenerDetalle(empleadoId).forEach { detalle ->
-        val sueldo = empleadoRepo.obtenerSueldo(empleadoId, detalle.recetaId)
+    val omitidas = mutableListOf<String>()
+    detalles.forEach { detalle ->
+        val d = datos[detalle.recetaId] ?: return@forEach
+        val gananciaEmpleado = sueldos[detalle.recetaId]?.gananciaEmpleado ?: 0.0
+        if (d.precios.isEmpty()) { omitidas += d.titulo; return@forEach }       // ver nota abajo
         val factor = dias * detalle.unidadesPorDia
-        totalIngreso += ingresoBrutoProducto(detalle.recetaId) * factor
-        totalYoMeLlevo += calcularSueldo(detalle.recetaId, sueldo.gananciaEmpleado).yoMeLlevo * factor
-        totalEmpleado += sueldo.gananciaEmpleado * factor
+        totalIngreso   += ingresoBruto(d) * factor
+        totalYoMeLlevo += calcularSueldo(d, gananciaEmpleado).yoMeLlevo * factor
+        totalEmpleado  += gananciaEmpleado * factor
     }
-    return SimulacionMultipleResultado(totalIngreso, totalYoMeLlevo, totalEmpleado) // + versión mensual ×4,33
+    return SimulacionMultipleResultado(totalIngreso, totalYoMeLlevo, totalEmpleado, omitidas)
+    // + versión mensual ×4,33
 }
 ```
 
 No se reasigna sueldo aquí — solo se lee lo ya configurado en 10.1, agregado por día/semana/mes.
 
-**Una receta a medio configurar no puede voltear la simulación completa.** `ingresoBrutoProducto` termina llamando a `precioDeMenorGanancia` (8.5), que lanza error si esa receta todavía no tiene ningún precio guardado. Eso está bien en la pantalla de esa receta —ahí quieres saberlo—, pero acá haría fallar el total de las 10 recetas por culpa de una. En este agregado (y en el de 10.1) esas recetas se saltan aportando 0 y se listan aparte como *"sin precio definido, no se incluyeron"*, en la misma línea de lo ya previsto para las recetas sin sueldo asignado.
+**Una receta a medio configurar no puede voltear la simulación completa.** `precioDeMenorGanancia` (8.5) lanza error si la receta no tiene ningún precio guardado. Eso está bien en la pantalla de esa receta —ahí quieres saberlo—, pero acá haría fallar el total de las 10 recetas por culpa de una. Por eso el bucle revisa `d.precios.isEmpty()` **antes** de calcular: esas recetas se saltan y se devuelven en `omitidas`, para que la pantalla las liste aparte como *"sin precio definido, no se incluyeron"*. Es un chequeo barato precisamente porque los precios ya vienen dentro del snapshot.
 
 **Ojo, son dos "días" independientes:** el `diasPorSemana` de `EmpleadoRecetaSueldo` (10.1) es propio de cada receta individual y no tiene relación con `EmpleadoSimulacionMultiple.diasPorSemana` (`obtenerDiasCompartidos`) usado acá — este último es **uno solo, compartido entre todas las recetas** de ese empleado, tal como en el ejemplo original ("venderé 4 días, y esos 4 días serán 2 bizcochos, 1 torta, 5 chocolates por día"). Cambiar uno no afecta al otro.
 
@@ -918,8 +964,8 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 
 ### Fase 1 — Cimientos de datos
 
-- **Construyes:** `AppDatabase`, todas las entidades `@Entity` (incluye `Molde` y `EventoCambio`), los DAOs, y los repositorios.
-- **Hecho cuando:** un test JUnit (con Room en modo in-memory) inserta un ingrediente y una receta con 2 secciones, y los recupera correctamente.
+- **Construyes:** `AppDatabase`, todas las entidades `@Entity` (incluye `Molde` y `EventoCambio`), los `TypeConverter` de los enums (5.5), los DAOs, los repositorios, y `obtenerDatosCalculo` (6.4).
+- **Hecho cuando:** un test JUnit (con Room en modo in-memory) inserta un ingrediente y una receta con 2 secciones y los recupera correctamente; guardar una receta **sin** molde no falla por columnas `NOT NULL` (5.5); y `obtenerDatosCalculo` con 3 ids devuelve los 3 snapshots.
 
 ### Fase 2 — Ingredientes (módulo completo)
 
@@ -968,8 +1014,8 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 
 ### Fase 11 — Módulo Empleados completo
 
-- **Construyes:** genérico + específicos, `calcularSueldo`, simulación individual y múltiple.
-- **Hecho cuando:** el ejemplo de sueldo (10.000/3.000/7.000/3.000 → 7.000) funciona, el tope se respeta, y la simulación múltiple con 3+ recetas suma bien.
+- **Construyes:** genérico + específicos, `calcularSueldo`, simulación individual y múltiple (con la carga en lote de 6.4).
+- **Hecho cuando:** el ejemplo de sueldo (10.000/3.000/7.000/3.000 → 7.000) funciona **en un test JUnit puro, armando el `DatosCalculoReceta` a mano y sin base de datos**; el tope se respeta; la simulación múltiple con 3+ recetas suma bien; y una receta sin precio queda listada en `omitidas` en vez de voltear el total.
 
 ### Fase 12 — Historial de cambios / notificaciones
 
@@ -1009,6 +1055,7 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 ## 17. Glosario
 
 - **Precio de menor ganancia**: entre todos los precios/promos guardados de una receta, el que da la menor ganancia por trozo. Es el que alimenta todos los cálculos automáticos (decisión #4); los demás son solo referencia visual.
+- **Snapshot de cálculo (`DatosCalculoReceta`)**: la foto de una receta —costo total, trozos y precios— leída de la base una sola vez y pasada a todas las fórmulas (6.4). Es lo que permite que las funciones de `logica/` sean puras y probables sin base de datos, y que los números mostrados juntos en pantalla vengan todos de la misma lectura.
 - **Trozo ganador**: primer trozo cuya venta acumulada, al precio de menor ganancia, supera el costo total de la receta.
 - **Rendimiento**: sección que define molde/peso final y cantidad de trozos.
 - **Molde**: objeto reutilizable del catálogo (9) con forma, dimensiones, área y volumen calculados. Una receta puede usar uno guardado o dimensiones sueltas sin guardar ("modo prueba").
