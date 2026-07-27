@@ -290,6 +290,7 @@ data class RecetaRendimiento(
 
 ```kotlin
 suspend fun actualizarMolde(moldeId: Long, nuevasDimensiones: DimensionesMolde) {
+    val nombreMolde = moldeRepo.obtener(moldeId).nombre // se obtiene ANTES de actualizar, para el historial
     moldeRepo.actualizarDimensiones(moldeId, nuevasDimensiones)
     val recetasVinculadas = recetaRepo.obtenerRecetasConMoldeOrigen(moldeId)
     recetasVinculadas.forEach { receta ->
@@ -298,7 +299,7 @@ suspend fun actualizarMolde(moldeId: Long, nuevasDimensiones: DimensionesMolde) 
     historialRepo.registrar(
         tipo = TipoEvento.EDICION,
         entidad = "Molde",
-        descripcion = "Se editó un molde",
+        descripcion = "Se editó el molde '$nombreMolde'",
         detalleAdicional = if (recetasVinculadas.isEmpty()) null
             else "Actualizó el molde base de: ${recetasVinculadas.joinToString { it.titulo }}"
     )
@@ -323,6 +324,8 @@ data class EventoCambio(
 ```
 
 Cada repositorio (`IngredienteRepositorio`, `RecetaRepositorio`, `MoldeRepositorio`, `EmpleadoRepositorio`) escribe una fila en `HistorialRepositorio` en cada create/update/delete relevante — no requiere que el usuario haga nada aparte.
+
+**Regla obligatoria:** `descripcion` siempre incluye el nombre/título de la entidad afectada (ej. `"Se eliminó el ingrediente 'Harina'"`), nunca un texto genérico como `"Se eliminó un ingrediente"` — de lo contrario el historial no sirve para saber *qué* cambió. Esto implica obtener el nombre **antes** de borrar la fila (no después).
 
 ### 5.4 Resto de entidades (mismo patrón)
 
@@ -394,7 +397,8 @@ Vive en `logica/Formato.kt`, sin dependencias de Android — se puede probar con
 - Molde: `alturaMoldeCm > 0` siempre; el resto de los campos de `DimensionesMolde` obligatorios según `tipoForma` (para `EXOTICO`, solo `volumenExoticoCm3` y `alturaMoldeCm`).
 - Reescalado Modo Altura: `nuevo.alturaMoldeCm >= original.alturaMoldeCm` — si no se cumple, error de validación antes de calcular el factor (8.3.1).
 - Duración: si `apto = false`, se ignoran cantidad/unidad.
-- Sueldo empleado: `gananciaEmpleado` entre `0` y `gananciaTotal` de la receta.
+- Precio/promoción (`RecetaPrecio`): `precioTotal > 0` y `cantidad >= 1` siempre — sin esto, un precio en $0 o una promo con `cantidad = 0` produce división por cero en `trozoGanador` (8.5).
+- Sueldo empleado: `gananciaEmpleado` entre `0` y `gananciaTotal` de la receta (el tope real es "no bajar de `costoTotal` para mí" — matemáticamente equivalente, ver nota en 10.1).
 
 Estas validaciones viven en `logica/`, no solo en la UI, para que sean consistentes sin importar desde qué pantalla se invoquen.
 
@@ -420,13 +424,14 @@ suspend fun recetasQueUsan(ingredienteId: Long): List<Receta> =
 
 // 3. Confirmado (o si no había recetas afectadas):
 suspend fun confirmarEliminacionIngrediente(ingredienteId: Long) {
+    val nombreIngrediente = ingredienteRepo.obtener(ingredienteId).nombre // ANTES de borrar, para el historial
     val afectadas = recetaRepo.obtenerRecetasQueUsan(ingredienteId)
     recetaRepo.quitarIngredienteDeTodasLasSecciones(ingredienteId) // borra las filas RecetaIngrediente que lo referencian
     ingredienteRepo.eliminar(ingredienteId)
     historialRepo.registrar(
         tipo = TipoEvento.ELIMINACION,
         entidad = "Ingrediente",
-        descripcion = "Se eliminó un ingrediente",
+        descripcion = "Se eliminó el ingrediente '$nombreIngrediente'",
         detalleAdicional = if (afectadas.isEmpty()) null
             else "Afectó a: ${afectadas.joinToString { it.titulo }}"
     )
@@ -552,8 +557,14 @@ suspend fun gananciaPorTrozoDe(precio: RecetaPrecio, recetaId: Long): Double {
     return precioPorTrozo - costoPorTrozo
 }
 
-suspend fun precioDeMenorGanancia(recetaId: Long): RecetaPrecio =
-    recetaRepo.obtenerPrecios(recetaId).minBy { gananciaPorTrozoDe(it, recetaId) }
+suspend fun precioDeMenorGanancia(recetaId: Long): RecetaPrecio {
+    val precios = recetaRepo.obtenerPrecios(recetaId)
+    // OJO: minBy espera un selector (T) -> R, no suspend (T) -> R -- no acepta directamente
+    // una lambda que llame a gananciaPorTrozoDe(). Se calculan las ganancias aparte primero.
+    val conGanancia = precios.map { it to gananciaPorTrozoDe(it, recetaId) }
+    return conGanancia.minByOrNull { it.second }?.first
+        ?: error("La receta no tiene ningún precio guardado todavía (falta el paso Gastos y Ganancias)")
+}
 
 suspend fun precioEfectivoPorTrozo(recetaId: Long): Double {
     val minimo = precioDeMenorGanancia(recetaId)
@@ -575,7 +586,7 @@ fun trozoGanador(costoTotal: Double, precioTrozo: Double): Pair<Int, Double> {
 
 ### 8.6 Precios y promociones
 
-Filas de `RecetaPrecio`. Cada una = "vender `cantidad` trozos (o `cantidad` productos completos, según `modo`) por `precioTotal`", con una `etiqueta` opcional (ej. "2x1.500"). No existe un toggle manual de "activo": **todas** las filas guardadas se ven en una lista dentro de la receta, cada una con su ganancia calculada, para que puedas comparar tus precios a gusto — pero los campos automáticos de 8.5 y 8.8 siempre se recalculan con la fila de menor ganancia, sin que tengas que elegir nada.
+Filas de `RecetaPrecio`. Cada una = "vender `cantidad` trozos (o `cantidad` productos completos, según `modo`) por `precioTotal`", con una `etiqueta` opcional (ej. "2x1.500"). No existe un toggle manual de "activo": **todas** las filas guardadas se ven en una lista dentro de la receta, cada una con su ganancia calculada, para que puedas comparar tus precios a gusto — pero los campos automáticos de 8.5 y 8.7 siempre se recalculan con la fila de menor ganancia, sin que tengas que elegir nada.
 
 ### 8.7 Paso 5 — Ganancias simuladas
 
@@ -620,7 +631,7 @@ fun simulacion(ingresoBase: Double, costoBase: Double, dias: Int, unidades: Int)
   - Círculo: `área = π × (diámetro / 2)²`
   - Triángulo: `área = (base × alturaTriángulo) / 2` — el "alturaTriángulo" es propio de la fórmula del área, no confundir con `alturaMoldeCm` (la profundidad real del molde).
   - `volumen = área × alturaMoldeCm`
-- **Exótico** (formas irregulares — estrella, corazón, etc.): se mide llenando el molde con agua y midiéndola en una jarra medidora; se ingresa `volumenExoticoCm3` directamente, más `alturaMoldeCm` por separado (necesaria si luego se quiere usar Modo Altura, para poder despejar `área = volumen / alturaMoldeCm`).
+- **Exótico** (formas irregulares — estrella, corazón, etc.): se mide llenando el molde con agua y midiéndola en una jarra medidora; se ingresa `volumenExoticoCm3` directamente, más `alturaMoldeCm` por separado — igual de obligatoria que en las otras 4 formas (6.2), aunque para un molde exótico solo se "aprovecha" si más adelante se usa Modo Altura, para poder despejar `área = volumen / alturaMoldeCm`.
 
 ### 9.2 Catálogo de Moldes (CRUD)
 
@@ -664,7 +675,9 @@ suspend fun calcularSueldo(recetaId: Long, gananciaEmpleado: Double): Sueldo {
 // gananciaEmpleado=3.000 -> yoMeLlevo = 3.000 + 4.000 = 7.000
 ```
 
-Simulación día/semana/mes idéntica a 8.7, usando `diasPorSemana`/`unidadesPorDia` propios de cada combinación empleado-receta. Si la receta se elimina, la fila `EmpleadoRecetaSueldo` correspondiente desaparece en cascada (5.4) y esta simulación deja de incluirla automáticamente.
+El tope real de `gananciaEmpleado` (`0..gananciaTotal`, 6.2) es la traducción matemática de "el empleado puede llevarse toda la ganancia, pero yo nunca bajo del costo total": `yoMeLlevo = costoTotal + (gananciaTotal - gananciaEmpleado) ≥ costoTotal` se cumple exactamente cuando `gananciaEmpleado ≤ gananciaTotal`. Son la misma regla, solo que la validación se expresa en términos de `gananciaEmpleado` en vez de `yoMeLlevo`.
+
+Simulación día/semana/mes idéntica a 8.7, usando `diasPorSemana`/`unidadesPorDia` propios de cada combinación empleado-receta — un **`diasPorSemana` independiente por cada receta asignada**, no compartido entre recetas. Si la receta se elimina, la fila `EmpleadoRecetaSueldo` correspondiente desaparece en cascada (5.4) y esta simulación deja de incluirla automáticamente.
 
 ### 10.2 Empleado genérico vs. específicos
 
@@ -690,6 +703,8 @@ suspend fun simulacionMultiple(empleadoId: Long): SimulacionMultipleResultado {
 ```
 
 No se reasigna sueldo aquí — solo se lee lo ya configurado en 10.1, agregado por día/semana/mes.
+
+**Ojo, son dos "días" independientes:** el `diasPorSemana` de `EmpleadoRecetaSueldo` (10.1) es propio de cada receta individual y no tiene relación con `EmpleadoSimulacionMultiple.diasPorSemana` (`obtenerDiasCompartidos`) usado acá — este último es **uno solo, compartido entre todas las recetas** de ese empleado, tal como en el ejemplo original ("venderé 4 días, y esos 4 días serán 2 bizcochos, 1 torta, 5 chocolates por día"). Cambiar uno no afecta al otro.
 
 ---
 
