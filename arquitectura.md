@@ -125,13 +125,15 @@ app/
 │   │   │       ├── MoldeRepositorio.kt
 │   │   │       ├── EmpleadoRepositorio.kt
 │   │   │       └── HistorialRepositorio.kt
-│   │   ├── logica/                        # Kotlin puro, sin Android
-│   │   │   ├── Formato.kt
-│   │   │   ├── Rendimiento.kt
-│   │   │   ├── Moldes.kt                  # factorEscala, DimensionesMolde.areaCm2/volumenCm3
-│   │   │   ├── Precios.kt
-│   │   │   ├── Simulacion.kt
-│   │   │   └── Sueldos.kt
+│   │   ├── logica/                        # Kotlin puro: sin Android, sin Room, sin suspend (6.5)
+│   │   │   ├── Formato.kt                 # formatearNumero
+│   │   │   ├── Busqueda.kt                # coincide, sinTildes
+│   │   │   ├── Rendimiento.kt             # pesoPorTrozo
+│   │   │   ├── Moldes.kt                  # factorEscala, ModoReescalado
+│   │   │   ├── Precios.kt                 # precioDeMenorGanancia, trozoGanador, ingresoBruto…
+│   │   │   ├── Simulacion.kt              # simulacion, SEMANAS_POR_MES
+│   │   │   ├── Sueldos.kt                 # calcularSueldo
+│   │   │   └── Validaciones.kt            # las reglas de 6.2
 │   │   ├── sync/
 │   │   │   ├── DriveClient.kt
 │   │   │   ├── SyncWorker.kt              # Worker de WorkManager
@@ -548,6 +550,20 @@ suspend fun obtenerDatosCalculo(recetaIds: List<Long>): Map<Long, DatosCalculoRe
 
 Recibe una **lista** de ids a propósito: la simulación múltiple (10.3) necesita varias recetas, y pedirlas en lote hace 3 consultas en total (`WHERE recetaId IN (:recetaIds)`) en vez de 3 por receta. Para una sola receta se llama con una lista de un elemento.
 
+### 6.5 Dónde vive cada función
+
+De lo anterior sale una regla de ubicación que hay que respetar para que `logica/` siga siendo probable sin base de datos. Cada función cae en exactamente uno de estos tres grupos:
+
+| Grupo | Cómo se reconoce | Dónde vive | Ejemplos |
+|---|---|---|---|
+| **Cálculo puro** | No es `suspend`, no recibe ids, recibe los datos ya cargados | `logica/` | `formatearNumero`, `factorEscala`, `precioDeMenorGanancia`, `calcularSueldo`, `trozoGanador`, `simulacion`, `coincide` |
+| **Acceso a datos** | Es una `@Query` o combina varias | `data/dao/` y `data/repositorio/` | `costoTotalReceta`, `obtenerDatosCalculo`, `obtenerRecetasQueUsan` |
+| **Orquestación** | Es `suspend`, recibe ids, **lee → calcula → escribe** y suele registrar en el historial | `data/repositorio/` | `confirmarEliminacionIngrediente`, `actualizarMolde`, `reescalarRecetaPorPeso`, `reescalarRecetaPorMolde`, `simulacionMultiple` |
+
+El tercer grupo es el que se presta a confusión: `reescalarRecetaPorMolde` *parece* lógica de negocio, pero lee la receta, aplica `factorEscala` y escribe el resultado, así que es orquestación y vive en el repositorio. **La parte que sí es lógica pura se extrae siempre**: `factorEscala` está en `logica/Moldes.kt` y se prueba sola, mientras que la función que la usa para escribir en la base vive aparte. Misma relación entre `simulacionMultiple` (repositorio: carga en lote y suma) y `calcularSueldo`/`ingresoBruto` (lógica pura: las fórmulas que aplica).
+
+La regla práctica: **si una función tiene `suspend` en la firma, no va en `logica/`.**
+
 ---
 
 ## 7. Módulo Ingredientes
@@ -561,9 +577,10 @@ Recibe una **lista** de ids a propósito: la simulación múltiple (10.3) necesi
 Un ingrediente solo se elimina de verdad tras pasar por este flujo:
 
 ```kotlin
-// 1. La UI pide la lista de recetas afectadas antes de mostrar cualquier botón de borrado definitivo
-suspend fun recetasQueUsan(ingredienteId: Long): List<Receta> =
-    recetaRepo.obtenerRecetasQueUsan(ingredienteId)
+// 1. Antes de mostrar cualquier botón de borrado definitivo, la UI pide la lista de
+//    recetas afectadas con recetaRepo.obtenerRecetasQueUsan(ingredienteId).
+//    No se envuelve en otra función con otro nombre: sería el mismo trabajo dos veces
+//    y justo lo que registro_funciones.md existe para evitar.
 
 // 2. Si la lista no está vacía, se muestra la advertencia con esos títulos + botón "Confirmar eliminación".
 //    Si está vacía, se puede saltar directo al paso 3.
@@ -763,6 +780,11 @@ Filas de `RecetaPrecio`. Cada una = "vender `cantidad` trozos (o `cantidad` prod
 ```kotlin
 const val SEMANAS_POR_MES = 4.33
 
+data class SimulacionResultado(
+    val ingresoSemanal: Double, val costoSemanal: Double, val gananciaSemanal: Double,
+    val ingresoMensual: Double, val costoMensual: Double, val gananciaMensual: Double
+)
+
 fun simulacion(ingresoBase: Double, costoBase: Double, dias: Int, unidades: Int): SimulacionResultado {
     val ingresoSemanal = ingresoBase * dias * unidades
     val costoSemanal = costoBase * dias * unidades
@@ -868,25 +890,40 @@ Simulación día/semana/mes idéntica a 8.7, usando `diasPorSemana`/`unidadesPor
 Este es el caso donde más se nota el snapshot de 6.4: **toda la lectura ocurre en las tres primeras líneas**, y el bucle no vuelve a tocar la base de datos.
 
 ```kotlin
+// Se guardan las cifras DIARIAS y se derivan la semanal y la mensual, en vez de guardar
+// las tres: así no puede pasar que queden desincronizadas entre sí.
+data class SimulacionMultipleResultado(
+    val ingresoDiario: Double, val yoMeLlevoDiario: Double, val empleadoDiario: Double,
+    val diasPorSemana: Int,
+    val omitidas: List<String>   // títulos de recetas sin precio que quedaron fuera del total
+) {
+    val ingresoSemanal: Double   get() = ingresoDiario * diasPorSemana
+    val yoMeLlevoSemanal: Double get() = yoMeLlevoDiario * diasPorSemana
+    val empleadoSemanal: Double  get() = empleadoDiario * diasPorSemana
+
+    val ingresoMensual: Double   get() = ingresoSemanal * SEMANAS_POR_MES
+    val yoMeLlevoMensual: Double get() = yoMeLlevoSemanal * SEMANAS_POR_MES
+    val empleadoMensual: Double  get() = empleadoSemanal * SEMANAS_POR_MES
+}
+
 suspend fun simulacionMultiple(empleadoId: Long): SimulacionMultipleResultado {
     val dias = empleadoRepo.obtenerDiasCompartidos(empleadoId)
     val detalles = empleadoRepo.obtenerDetalle(empleadoId)
     val sueldos = empleadoRepo.obtenerSueldos(empleadoId)                       // todos de una vez
     val datos = recetaRepo.obtenerDatosCalculo(detalles.map { it.recetaId })    // en lote (6.4)
 
-    var totalIngreso = 0.0; var totalYoMeLlevo = 0.0; var totalEmpleado = 0.0
+    var ingresoDia = 0.0; var yoMeLlevoDia = 0.0; var empleadoDia = 0.0
     val omitidas = mutableListOf<String>()
     detalles.forEach { detalle ->
         val d = datos[detalle.recetaId] ?: return@forEach
         val gananciaEmpleado = sueldos[detalle.recetaId]?.gananciaEmpleado ?: 0.0
         if (d.precios.isEmpty()) { omitidas += d.titulo; return@forEach }       // ver nota abajo
-        val factor = dias * detalle.unidadesPorDia
-        totalIngreso   += ingresoBruto(d) * factor
-        totalYoMeLlevo += calcularSueldo(d, gananciaEmpleado).yoMeLlevo * factor
-        totalEmpleado  += gananciaEmpleado * factor
+        val porDia = detalle.unidadesPorDia                                     // solo unidades: los días los aplica el data class
+        ingresoDia   += ingresoBruto(d) * porDia
+        yoMeLlevoDia += calcularSueldo(d, gananciaEmpleado).yoMeLlevo * porDia
+        empleadoDia  += gananciaEmpleado * porDia
     }
-    return SimulacionMultipleResultado(totalIngreso, totalYoMeLlevo, totalEmpleado, omitidas)
-    // + versión mensual ×4,33
+    return SimulacionMultipleResultado(ingresoDia, yoMeLlevoDia, empleadoDia, dias, omitidas)
 }
 ```
 
@@ -907,6 +944,7 @@ No se reasigna sueldo aquí — solo se lee lo ya configurado en 10.1, agregado 
 - **Se limpia solo: 6 meses de retención.** Los eventos más viejos que eso se borran, porque el historial sirve para "qué toqué últimamente", no como archivo permanente — y sin límite crecería para siempre dentro del mismo archivo `.db` que se sube completo a Drive en cada guardado (13.3). La limpieza corre al registrar un evento nuevo, con un simple `DELETE FROM eventos_cambio WHERE creadoEn < :hace6Meses`; no necesita su propio proceso en segundo plano.
 
 ```kotlin
+// en data/repositorio/HistorialRepositorio.kt
 const val RETENCION_HISTORIAL_MS = 180L * 24 * 60 * 60 * 1000  // ~6 meses
 ```
 
