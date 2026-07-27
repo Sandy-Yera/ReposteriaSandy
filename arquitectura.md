@@ -108,7 +108,7 @@ app/
 │   │   │   ├── db/
 │   │   │   │   ├── AppDatabase.kt         # Room database, versión, migraciones
 │   │   │   │   ├── entidades/             # una clase @Entity por tabla (sección 5)
-│   │   │   │   │   └── DimensionesMolde.kt   # value class @Embedded, reutilizada por Molde y RecetaRendimiento
+│   │   │   │   │   └── DimensionesMolde.kt   # data class @Embedded, reutilizada por Molde y RecetaRendimiento
 │   │   │   │   └── dao/
 │   │   │   │       ├── IngredienteDao.kt
 │   │   │   │       ├── RecetaDao.kt
@@ -233,8 +233,11 @@ data class RecetaPrecio(
 ```kotlin
 enum class TipoFormaMolde { RECTANGULO, CIRCULO, CUADRADO, TRIANGULO, EXOTICO }
 
+// Todos los campos son nulables por una razón técnica, no de diseño: este data class se
+// embebe como nulable en RecetaRendimiento (recetas sin molde) y Room no admite subcampos
+// no-nulos ahí -- ver 5.5. La obligatoriedad real la impone la validación de 6.2.
 data class DimensionesMolde(
-    val tipoForma: TipoFormaMolde,
+    val tipoForma: TipoFormaMolde? = null,
     val largoCm: Double? = null,           // rectángulo
     val anchoCm: Double? = null,           // rectángulo
     val ladoCm: Double? = null,            // cuadrado
@@ -242,17 +245,18 @@ data class DimensionesMolde(
     val baseTrianguloCm: Double? = null,   // triángulo (base, para el área)
     val alturaTrianguloCm: Double? = null, // triángulo (altura de la base, para el área — NO confundir con alturaMoldeCm)
     val volumenExoticoCm3: Double? = null, // exótico, medido llenando el molde con agua
-    val alturaMoldeCm: Double              // profundidad/alto real del molde — obligatorio siempre, en las 5 formas
+    val alturaMoldeCm: Double? = null      // profundidad/alto real del molde — obligatorio en las 5 formas (6.2)
 ) {
     val areaCm2: Double get() = when (tipoForma) {
         TipoFormaMolde.RECTANGULO -> largoCm!! * anchoCm!!
         TipoFormaMolde.CUADRADO -> ladoCm!! * ladoCm!!
         TipoFormaMolde.CIRCULO -> Math.PI * (diametroCm!! / 2).let { it * it }
         TipoFormaMolde.TRIANGULO -> (baseTrianguloCm!! * alturaTrianguloCm!!) / 2
-        TipoFormaMolde.EXOTICO -> volumenExoticoCm3!! / alturaMoldeCm   // área despejada del volumen medido
+        TipoFormaMolde.EXOTICO -> volumenExoticoCm3!! / alturaMoldeCm!!  // área despejada del volumen medido
+        null -> error("Molde sin forma definida: no debería haber pasado la validación de 6.2")
     }
     val volumenCm3: Double get() =
-        if (tipoForma == TipoFormaMolde.EXOTICO) volumenExoticoCm3!! else areaCm2 * alturaMoldeCm
+        if (tipoForma == TipoFormaMolde.EXOTICO) volumenExoticoCm3!! else areaCm2 * alturaMoldeCm!!
 }
 
 @Entity(tableName = "moldes")
@@ -365,6 +369,27 @@ Al borrar una `Receta`, Room elimina en cascada su fila en `EmpleadoRecetaSueldo
 
 `AppDatabase.kt` declara la versión del esquema y las migraciones cuando algo cambie — a diferencia de un `schema.sql` suelto, Room **obliga** a documentar cada cambio de estructura, lo cual es una salvaguarda útil una vez que tengas datos reales guardados en el celular.
 
+### 5.5 Dos cosas que Room no hace solo (resolver en Fase 1)
+
+Las entidades de arriba están escritas en Kotlin idiomático, pero hay dos puntos donde Room necesita ayuda explícita. Si no se hacen, no es que se vea feo: no compila o revienta al guardar.
+
+**1. Los enums necesitan `TypeConverter`.** Room no sabe guardar `TipoFormaMolde` ni `TipoEvento` por sí solo — hay que darle la conversión a texto. Un solo archivo de convertidores registrado con `@TypeConverters` en `AppDatabase` cubre ambos:
+
+```kotlin
+class Convertidores {
+    @TypeConverter fun formaATexto(v: TipoFormaMolde?): String? = v?.name
+    @TypeConverter fun textoAForma(v: String?): TipoFormaMolde? = v?.let { TipoFormaMolde.valueOf(it) }
+    @TypeConverter fun eventoATexto(v: TipoEvento?): String? = v?.name
+    @TypeConverter fun textoAEvento(v: String?): TipoEvento? = v?.let { TipoEvento.valueOf(it) }
+}
+```
+
+Aprovechando esto, conviene que `RecetaDuracion.tipo` (`AMBIENTE`/`REFRIGERADA`/`CONGELADA`), `RecetaDuracion.unidad` (`HORAS`/`DIAS`/`SEMANAS`/`MESES`) y `RecetaPrecio.modo` (`TROZO`/`PRODUCTO`) también sean enums y no `String` sueltos: hoy `modo` es un texto libre comparado con `== "trozo"` en 8.5, y un typo ahí no lo cacha el compilador — lo cachas tú cuando el precio salga mal.
+
+**2. `dimensiones` no puede ser un `@Embedded` nulable con subcampos no-nulos.** En `RecetaRendimiento` el campo es `DimensionesMolde? = null` (para recetas sin molde), pero dentro de `DimensionesMolde` hay dos campos no-nulos: `tipoForma` y `alturaMoldeCm`. Room los mapea a columnas `NOT NULL`, así que al guardar una receta con `usaMolde = false` intenta escribir `NULL` en ellas y falla por restricción de la base de datos.
+
+La salida más simple, sin duplicar el `data class`: declarar **todos** los campos de `DimensionesMolde` como nulables (incluidos `tipoForma` y `alturaMoldeCm`), y que la obligatoriedad la garantice la validación de 6.2 en `logica/` — que es donde ya vive el resto de las reglas. Los `getter` de `areaCm2`/`volumenCm3` ya usan `!!`, así que fallarían ruidosamente si alguien construye un molde inválido saltándose la validación, que es el comportamiento correcto.
+
 ---
 
 ## 6. Reglas transversales
@@ -376,15 +401,26 @@ Punto para miles, coma para decimales, redondeo a 2 decimales, se omite la coma 
 ```kotlin
 fun formatearNumero(valor: Double): String {
     val redondeado = Math.round(valor * 100) / 100.0
-    val entero = redondeado.toInt()
-    val decimal = Math.round(Math.abs(redondeado - entero) * 100).toInt()
-    val enteroFmt = "%,d".format(entero).replace(",", ".")
-    return if (decimal == 0) enteroFmt else "$enteroFmt,${decimal.toString().padStart(2, '0')}"
+    val negativo = redondeado < 0
+    val absoluto = Math.abs(redondeado)          // se trabaja en positivo y el signo se pega al final:
+    val entero = absoluto.toLong()               // (-0,56).toInt() da 0 y perdería el "-", mostrando
+    val decimal = Math.round((absoluto - entero) * 100).toInt()  // una pérdida como si fuera ganancia
+    // Locale.US fija "," como separador de miles para poder cambiarlo por "." de forma predecible.
+    // Sin fijarlo se usa el idioma del celular, donde el separador puede ser otro (un espacio, por
+    // ejemplo) y entonces el .replace() no encuentra nada que reemplazar.
+    val enteroFmt = String.format(Locale.US, "%,d", entero).replace(",", ".")
+    val signo = if (negativo) "-" else ""
+    return if (decimal == 0) "$signo$enteroFmt"
+           else "$signo$enteroFmt,${decimal.toString().padStart(2, '0')}"
 }
-// formatearNumero(1000.0) -> "1.000"
-// formatearNumero(1.55)   -> "1,55"
-// formatearNumero(250.0)  -> "250"
+// formatearNumero(1000.0)  -> "1.000"
+// formatearNumero(1.55)    -> "1,55"
+// formatearNumero(250.0)   -> "250"
+// formatearNumero(-0.56)   -> "-0,56"      (no "0,56")
+// formatearNumero(-1234.56)-> "-1.234,56"
 ```
+
+Los negativos importan de verdad acá: `gananciaPorTrozo`, `gananciaFinal` y el resultado de la simulación pueden dar negativos cuando el precio no alcanza a cubrir el costo, y ese es justamente el caso que hay que ver bien.
 
 Vive en `logica/Formato.kt`, sin dependencias de Android — se puede probar con JUnit puro.
 
@@ -392,11 +428,14 @@ Vive en `logica/Formato.kt`, sin dependencias de Android — se puede probar con
 
 - Ingrediente: nombre único, `valorPorGramo >= 0`.
 - Ingrediente (borrado): si `recetaRepo.obtenerRecetasQueUsan(ingredienteId)` no está vacío, la UI **debe** mostrar la advertencia con esa lista y pedir confirmación explícita antes de llamar a `confirmarEliminacionIngrediente` (7.1). Si está vacío, se borra directo (igual queda el evento en el historial).
-- Rendimiento: `trozos >= 1` siempre; si `usaMolde = false`, `pesoFinalG` es obligatorio.
-- Molde: `alturaMoldeCm > 0` siempre; el resto de los campos de `DimensionesMolde` obligatorios según `tipoForma` (para `EXOTICO`, solo `volumenExoticoCm3` y `alturaMoldeCm`).
+- Rendimiento: `trozos >= 1` siempre; si `usaMolde = false`, `pesoFinalG` es obligatorio **y `> 0`** (si fuera 0, `reescalarRecetaPorPeso` divide por cero).
+- Molde: los campos de `DimensionesMolde` que correspondan a `tipoForma` son obligatorios **y todos `> 0`**, incluida `alturaMoldeCm` (para `EXOTICO`, solo `volumenExoticoCm3` y `alturaMoldeCm`). No basta con "obligatorio": una medida en 0 deja el área o el volumen en 0 y hace que `factorEscala` divida por cero.
 - Reescalado Modo Altura: `nuevo.alturaMoldeCm >= original.alturaMoldeCm` — si no se cumple, error de validación antes de calcular el factor (8.3.1).
 - Duración: si `apto = false`, se ignoran cantidad/unidad.
 - Precio/promoción (`RecetaPrecio`): `precioTotal > 0` y `cantidad >= 1` siempre — sin esto, un precio en $0 o una promo con `cantidad = 0` produce división por cero en `trozoGanador` (8.5).
+- Precio/promoción en modo trozo: además, `cantidad <= trozos` de la receta — es el **"tope del último trozo"**: no tiene sentido una promo de "3 trozos por $1.500" en una receta que rinde 2. En modo producto no aplica tope (sí puedes vender 2, 3 o 10 productos completos).
+- Al bajar `trozos` en el paso Rendimiento: si alguna promo en modo trozo quedaría con `cantidad > trozos`, se avisa antes de guardar y se pide ajustar o eliminar esa promo — misma lógica de "avisar antes de romper algo" que el borrado de ingredientes (7.1).
+- `unidadesPorDia`: `>= 0`. Se permite 0 a propósito: en la simulación múltiple (10.3) significa "esta receta no se vende", que es el caso que ya estaba previsto ("si no está asignado, queda en 0").
 - Sueldo empleado: `gananciaEmpleado` entre `0` y `gananciaTotal` de la receta (el tope real es "no bajar de `costoTotal` para mí" — matemáticamente equivalente, ver nota en 10.1).
 - `diasPorSemana` en `RecetaSimulacionVenta`, `EmpleadoRecetaSueldo` y `EmpleadoSimulacionMultiple`: entre `1` y `7` siempre — una semana no tiene más de 7 días.
 
@@ -553,7 +592,7 @@ suspend fun gananciaPorTrozoDe(precio: RecetaPrecio, recetaId: Long): Double {
     val trozos = recetaRepo.obtenerTrozos(recetaId)
     val trozosCubiertos = if (precio.modo == "trozo") precio.cantidad else precio.cantidad * trozos
     val precioPorTrozo = precio.precioTotal / trozosCubiertos
-    val costoPorTrozo = recetaRepo.costoTotal(recetaId) / trozos
+    val costoPorTrozo = recetaRepo.costoTotalReceta(recetaId) / trozos
     return precioPorTrozo - costoPorTrozo
 }
 
@@ -573,16 +612,34 @@ suspend fun precioEfectivoPorTrozo(recetaId: Long): Double {
     return minimo.precioTotal / trozosCubiertos
 }
 
-fun trozoGanador(costoTotal: Double, precioTrozo: Double): Pair<Int, Double> {
+// El trozo ganador puede caer FUERA de la receta: si el precio no alcanza a cubrir el costo
+// dentro de los trozos que existen, n > trozos y la receta pierde plata. Por eso se devuelve
+// también ese dato, en vez de mostrar un "N° del trozo ganador: 11" en una receta de 8 trozos.
+data class TrozoGanador(val numero: Int, val ganancia: Double, val alcanzable: Boolean)
+
+fun trozoGanador(costoTotal: Double, precioTrozo: Double, trozos: Int): TrozoGanador {
     val n = (costoTotal / precioTrozo).toInt() + 1
     val ganancia = n * precioTrozo - costoTotal
-    return n to ganancia
+    return TrozoGanador(n, ganancia, alcanzable = n <= trozos)
 }
-// sin promo: costoTotal=1400, precioTrozo=500  -> n=3, ganancia=100
-// con promo "2 trozos por $1.500": precioTrozo=750 -> n=2, ganancia=100
+// sin promo: costoTotal=1400, precioTrozo=500, trozos=6  -> n=3, ganancia=100, alcanzable=true
+// con promo "2 trozos por $1.500": precioTrozo=750       -> n=2, ganancia=100, alcanzable=true
+// caso malo: costoTotal=5000, precioTrozo=500, trozos=8  -> n=11, alcanzable=FALSE
+//            (habría que vender 11 trozos de una receta que solo da 8: se vende a pérdida)
 ```
 
-`costoPorTrozo`, `gananciaPorTrozo`, `gananciaFinal` e `ingresoBruto` se derivan de la misma forma que en el diseño original, todos de solo lectura, siempre alimentados por `precioDeMenorGanancia`.
+Cuando `alcanzable = false`, la pantalla no muestra el número como si fuera un dato normal: muestra la advertencia *"Con este precio la receta no alcanza a cubrir su costo"*. Es justamente el caso que más importa ver.
+
+**Los cuatro campos automáticos restantes** (todos de solo lectura, todos alimentados por `precioDeMenorGanancia`):
+
+```kotlin
+costoPorTrozo    = costoTotalReceta(recetaId) / trozos
+gananciaPorTrozo = precioEfectivoPorTrozo(recetaId) - costoPorTrozo
+ingresoBruto     = precioEfectivoPorTrozo(recetaId) * trozos      // el producto completo
+gananciaFinal    = ingresoBruto - costoTotalReceta(recetaId)
+```
+
+`gananciaPorTrozo` y `gananciaFinal` pueden ser negativos, y así deben mostrarse (por eso `formatearNumero` conserva el signo, 6.1).
 
 ### 8.6 Precios y promociones
 
@@ -649,7 +706,9 @@ En el paso "Rendimiento" de una receta (8.3.1), al reescalar se elige el molde n
 1. **Molde guardado:** selector tipo `ComboBuscable` sobre el catálogo de moldes (9.2). Deja la receta **enlazada** a ese molde (`moldeOrigenId` apunta a él), activando la sincronización de 5.2: si más adelante corriges una medida de ese molde en el catálogo, se propaga solo a esta receta.
 2. **Modo prueba:** se ingresan las dimensiones directamente en el mismo formulario de 9.2, sin persistirlas como `Molde` — pensado para cuando reescalas una receta ajena y no necesariamente quieres guardar ese molde en tu catálogo. Deja la receta **sin vínculo** (`moldeOrigenId = null`), incluso si antes estaba enlazada a otro molde — sus dimensiones quedan fijas hasta el próximo reescalado.
 
-Con el molde nuevo (guardado o de prueba) ya definido, se elige el modo (Altura o Capacidad, 8.3.1) y se aplica `factorEscala()`. Este mismo selector (guardado vs. prueba) es el que se usa también al definir el molde por primera vez en el paso Rendimiento (8.3) para una receta nueva — no es exclusivo del reescalado.
+Con el molde nuevo (guardado o de prueba) ya definido, se elige el modo (Altura o Capacidad, 8.3.1) y se aplica `factorEscala()`.
+
+**Primera vez ≠ reescalado.** El mismo selector (guardado vs. prueba) se reutiliza al definir el molde por primera vez en una receta nueva (8.3), pero ahí **no se reescala nada**: no hay molde original contra el cual comparar, así que no hay factor, no se elige modo, y las cantidades de ingredientes quedan tal como las escribiste. Solo se guardan `dimensiones` + `moldeOrigenId`. Por eso `reescalarRecetaPorMolde()` (8.3.1) corta con un error si la receta todavía no tiene molde: esa función es exclusivamente para el segundo molde en adelante.
 
 ---
 
@@ -665,8 +724,15 @@ data class Sueldo(val ingresoBruto: Double, val yoMeLlevo: Double, val gananciaE
 
 suspend fun calcularSueldo(recetaId: Long, gananciaEmpleado: Double): Sueldo {
     val ingresoBruto = ingresoBrutoProducto(recetaId)
-    val costoTotal = recetaRepo.costoTotal(recetaId)
+    val costoTotal = recetaRepo.costoTotalReceta(recetaId)
     val gananciaTotal = ingresoBruto - costoTotal
+    // OJO: si gananciaTotal es negativa (la receta se vende bajo su costo), el rango
+    // 0.0..gananciaTotal queda VACÍO en Kotlin y `in` devuelve false incluso para 0.0 --
+    // el require de abajo fallaría siempre, con un mensaje que no explica el problema real.
+    // Por eso ese caso se valida aparte y primero.
+    require(gananciaTotal >= 0) {
+        "La receta no cubre su costo con el precio actual: no hay ganancia que repartir"
+    }
     require(gananciaEmpleado in 0.0..gananciaTotal) { "Excede la ganancia total de la receta" }
     val yoMeLlevo = costoTotal + (gananciaTotal - gananciaEmpleado)
     return Sueldo(ingresoBruto, yoMeLlevo, gananciaEmpleado)
@@ -682,7 +748,8 @@ Simulación día/semana/mes idéntica a 8.7, usando `diasPorSemana`/`unidadesPor
 ### 10.2 Empleado genérico vs. específicos
 
 - Registro `esGenerico = true` sembrado una sola vez (en la migración inicial de Room), fijo en segundo lugar de la lista (después del botón "+ nuevo empleado", fijo primero).
-- Empleados específicos: título editable, se agregan libremente.
+- **El empleado genérico no se puede eliminar ni renombrar** — es el modelo estándar y el glosario lo define como "siempre presente", así que la UI no le ofrece esas acciones. Sí se le editan libremente los sueldos por receta, que es su función. Los sueldos que tenga asignados sí se pueden borrar uno por uno.
+- Empleados específicos: título editable, se agregan y se eliminan libremente.
 - Desplegable de recetas por empleado para ir asignando `gananciaEmpleado`. Solo lista recetas que aún existen (las eliminadas ya no aparecen, por la cascada de 5.4).
 
 ### 10.3 Simulación múltiple
@@ -703,6 +770,8 @@ suspend fun simulacionMultiple(empleadoId: Long): SimulacionMultipleResultado {
 ```
 
 No se reasigna sueldo aquí — solo se lee lo ya configurado en 10.1, agregado por día/semana/mes.
+
+**Una receta a medio configurar no puede voltear la simulación completa.** `ingresoBrutoProducto` termina llamando a `precioDeMenorGanancia` (8.5), que lanza error si esa receta todavía no tiene ningún precio guardado. Eso está bien en la pantalla de esa receta —ahí quieres saberlo—, pero acá haría fallar el total de las 10 recetas por culpa de una. En este agregado (y en el de 10.1) esas recetas se saltan aportando 0 y se listan aparte como *"sin precio definido, no se incluyeron"*, en la misma línea de lo ya previsto para las recetas sin sueldo asignado.
 
 **Ojo, son dos "días" independientes:** el `diasPorSemana` de `EmpleadoRecetaSueldo` (10.1) es propio de cada receta individual y no tiene relación con `EmpleadoSimulacionMultiple.diasPorSemana` (`obtenerDiasCompartidos`) usado acá — este último es **uno solo, compartido entre todas las recetas** de ese empleado, tal como en el ejemplo original ("venderé 4 días, y esos 4 días serán 2 bizcochos, 1 torta, 5 chocolates por día"). Cambiar uno no afecta al otro.
 
@@ -738,12 +807,18 @@ Las creaciones y eliminaciones siempre generan evento. Para ediciones, solo esto
 
 ### 12.2 Buscador
 
-`BarraBusqueda.kt`, un solo Composable reutilizado en las 4 secciones. Filtro por coincidencia parcial, insensible a mayúsculas:
+`BarraBusqueda.kt`, un solo Composable reutilizado en las 4 secciones. Filtro por coincidencia parcial, insensible a mayúsculas **y a tildes** — en español hace falta: escribiendo `limon` tiene que aparecer "Mousse de limón", y escribiendo `platano` tiene que aparecer "Plátano".
 
 ```kotlin
+private fun sinTildes(texto: String): String =
+    java.text.Normalizer.normalize(texto, java.text.Normalizer.Form.NFD)
+        .replace(Regex("\\p{Mn}+"), "")   // saca los acentos, deja la letra base
+
 fun coincide(textoBusqueda: String, campo: String) =
-    campo.contains(textoBusqueda, ignoreCase = true)
+    sinTildes(campo).contains(sinTildes(textoBusqueda), ignoreCase = true)
 ```
+
+Vive en `logica/`, no en el Composable, para que las 4 pantallas busquen igual y se pueda probar con JUnit.
 
 ### 12.3 Responsividad
 
@@ -813,6 +888,8 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 
 16 fases (0 a 15), cada una con algo concreto y probable al final. Se prueba en Android Studio, emulador y celular real; la Fase 15 termina en un **APK firmado**.
 
+**Condición de cierre que aplica a todas las fases:** ninguna fase se da por terminada sin haber actualizado `registro_funciones.md` con las funciones y variables de módulo que esa fase agregó, en el formato exacto de `CLAUDE.md`. Este documento ya nombra ~20 funciones (`formatearNumero`, `factorEscala`, `precioDeMenorGanancia`, `calcularSueldo`, `trozoGanador`, `SEMANAS_POR_MES`…) y el registro está vacío, así que el desfase parte en cero y solo crece si no se cierra fase por fase. Es la única forma de que la regla de "revisar el registro antes de escribir algo nuevo" sirva de algo: un registro incompleto es peor que no tenerlo, porque da falsa confianza de que algo no existe.
+
 ### Fase 0 — Validar Google Sign-In + Drive API en un proyecto vacío
 
 - **Construyes:** un proyecto Android nuevo y mínimo, con un botón de inicio de sesión de Google y una llamada a la Drive API para subir/bajar un archivo de prueba.
@@ -827,7 +904,7 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 ### Fase 2 — Ingredientes (módulo completo)
 
 - **Construyes:** `Formato.kt`, CRUD con Compose, `ComboBuscable` con alta rápida, y la política de borrado con advertencia (7.1).
-- **Hecho cuando:** desde el celular agregas/editas/eliminas ingredientes, los buscas por coincidencia parcial, los montos respetan tu formato exacto, y borrar uno en uso muestra la advertencia con las recetas afectadas antes de confirmar.
+- **Hecho cuando:** desde el celular agregas/editas/eliminas ingredientes, los buscas por coincidencia parcial (incluso escribiendo sin tildes), los montos respetan tu formato exacto —negativos incluidos, con su signo— y borrar uno en uso muestra la advertencia con las recetas afectadas antes de confirmar.
 
 ### Fase 3 — Receta: Cantidades y precios
 
@@ -852,7 +929,7 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 ### Fase 7 — Receta: Gastos y Ganancias + Precios/Promociones
 
 - **Construyes:** precio base (primera fila de `RecetaPrecio`, sin campo `activo`), `precioDeMenorGanancia`, `precioEfectivoPorTrozo`, `trozoGanador`, lista visual de todos los precios guardados.
-- **Hecho cuando:** el ejemplo base (costo 1.400, precio 500 → trozo 3, ganancia 100) y el ejemplo con promo (2×1.500 → trozo 2, ganancia 100) dan esos resultados exactos, y agregar una segunda promo con más ganancia no cambia los campos automáticos (siguen usando la de menor ganancia).
+- **Hecho cuando:** el ejemplo base (costo 1.400, precio 500 → trozo 3, ganancia 100) y el ejemplo con promo (2×1.500 → trozo 2, ganancia 100) dan esos resultados exactos; agregar una segunda promo con más ganancia no cambia los campos automáticos (siguen usando la de menor ganancia); una receta que se vende bajo su costo muestra la advertencia de "no alcanza a cubrir su costo" en vez de un trozo ganador imposible; y el tope del último trozo rechaza una promo de más trozos de los que rinde la receta.
 
 ### Fase 8 — Receta: Ganancias simuladas
 
