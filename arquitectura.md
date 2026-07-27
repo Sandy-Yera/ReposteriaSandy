@@ -274,7 +274,7 @@ data class RecetaRendimiento(
     val usaMolde: Boolean,
     val moldeOrigenId: Long? = null,                          // solo trazabilidad ("basado en: Molde X")
     @Embedded(prefix = "molde_") val dimensiones: DimensionesMolde? = null, // null si usaMolde = false
-    val pesoFinalG: Double? = null,                           // obligatorio si usaMolde = false
+    val pesoFinalG: Double? = null,                           // peso real del producto, manual; opcional si usaMolde=true, obligatorio si usaMolde=false
     val trozos: Int
 )
 ```
@@ -434,9 +434,9 @@ Una o más `RecetaSeccion` (recetas de un solo conjunto crean automáticamente u
 
 ### 8.3 Paso 2 — Rendimiento (con moldes)
 
-| Caso | Molde | Peso final |
+| Caso | Molde | Peso final (del producto) |
 |---|---|---|
-| Con molde | Obligatorio (se define con el módulo Moldes — 9) | Se calcula, no se pide |
+| Con molde | Obligatorio (se define con el módulo Moldes — 9) | Opcional → si vacío, "No especificado" |
 | Sin molde (ej. salsa) | Fijo: "No utiliza molde" | Obligatorio |
 
 ```kotlin
@@ -444,7 +444,7 @@ fun pesoPorTrozo(pesoFinalG: Double?, trozos: Int): String =
     if (pesoFinalG == null) "No especificado" else formatearNumero(pesoFinalG / trozos)
 ```
 
-Si `usaMolde = true`, el peso final ya no se escribe a mano: se calcula desde `dimensiones.volumenCm3` (asumiendo densidad ≈ 1 g/cm³ como referencia visual) o simplemente se muestra "No especificado" si no aplica; lo relevante para el costeo son los gramos por ingrediente, no el peso final del molde. Si `usaMolde = false` (salsas y similares), se mantiene el campo `pesoFinalG` manual tal como antes.
+`pesoFinalG` es siempre un campo manual — el peso real del producto ya terminado (pesado, no calculado), independiente de las dimensiones del molde: el mismo molde puede dar pesos finales distintos según la receta (una salsa vs. un queque en el mismo molde, por ejemplo). El módulo Moldes (9) solo aporta el área/volumen del molde para el reescalado (8.3.1) — nunca reemplaza ni deriva este campo. Con molde es opcional ("No especificado" si se deja vacío); sin molde es obligatorio, igual que antes.
 
 **Reescalado — dos rutas separadas:**
 
