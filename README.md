@@ -30,7 +30,6 @@ logica/   Kotlin puro: las fórmulas (costos, precios, moldes, sueldos, simulaci
           prueba con JUnit sin emulador ni celular.
 
 app/      La app Android: Room, pantallas con Compose y respaldo a Drive.
-          (se agrega en el siguiente paso del plan)
 ```
 
 ## Estado
@@ -38,6 +37,6 @@ app/      La app Android: Room, pantallas con Compose y respaldo a Drive.
 | | |
 |---|---|
 | Lógica pura | implementada, 69 tests |
-| Base de datos (Room) | entidades, DAOs y primeros repositorios |
+| Base de datos (Room) | 15 tablas, DAOs y primeros repositorios; compila e instala en el celular |
 | Pantallas | pendiente |
 | Respaldo en Drive | pendiente |

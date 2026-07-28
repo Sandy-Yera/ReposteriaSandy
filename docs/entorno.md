@@ -208,6 +208,7 @@ Es más rápido que el emulador, no consume RAM, y es donde la app va a vivir de
    - Aparece en `lsusb` pero `groups` no incluye `adbusers` → falta el paso 2.
    - Todo lo anterior está bien → la depuración USB sigue apagada, o el modo del cable
      quedó en "Solo cargar" en vez de "Transferir archivos".
+   - **Todo lo anterior está bien y aun así nada** → ver USBGuard, más abajo.
 
    Si aparece `unauthorized`, va bien: revisa la pantalla del celular, hay un cuadro
    esperando que autorices el computador.
@@ -217,6 +218,48 @@ Es más rápido que el emulador, no consume RAM, y es donde la app va a vivir de
    ```bash
    ./gradlew :app:installDebug
    ```
+
+### Si usas USBGuard
+
+Este fue el caso real acá, y cuesta dar con él porque no aparece en ningún tutorial de
+Android: **USBGuard bloquea el teléfono justamente al activar la depuración USB**.
+
+El motivo es que autoriza dispositivos por su **conjunto de interfaces**. Al conectar el
+celular por primera vez lo autorizaste en modo transferencia de archivos; al encender la
+depuración, el teléfono empieza a ofrecer una interfaz más (`ff:42:01`, que es adb), y
+para USBGuard eso ya no es el dispositivo que aprobó. Lo bloquea.
+
+Lo confuso es que **todo lo demás parece correcto**: el teléfono aparece en `lsusb`, los
+permisos del dispositivo están bien, el grupo está bien, y la interfaz de adb existe en
+los descriptores. Solo que nadie puede usarla. Y como el celular únicamente pregunta
+"¿autorizar este equipo?" cuando alguien logra hablarle, tampoco pregunta nunca — lo que
+hace pensar que el problema está en el teléfono cuando está en el PC.
+
+Para comprobarlo:
+
+```bash
+systemctl status usbguard          # ¿está corriendo?
+sudo usbguard list-devices | grep -i android
+```
+
+Si la línea empieza con un número y dice `block`, es esto. Se desbloquea con ese número:
+
+```bash
+sudo usbguard allow-device <número>
+adb kill-server && adb devices
+```
+
+Ahí sí aparece el cuadro de autorización en el celular.
+
+Ese permiso dura hasta desconectar. Para dejarlo fijo:
+
+```bash
+sudo usbguard allow-device <número> -p
+```
+
+La regla que genera queda amarrada al número de serie del teléfono, no a "cualquier
+Samsung", así que es específica. Aun así es bajar una protección puesta a propósito:
+usar el comando sin `-p` cada vez que toque instalar son dos segundos y no cede nada.
 
 ### Opción alternativa: emulador
 
