@@ -15,6 +15,19 @@ enum class ModoReescalado {
 }
 
 /**
+ * Cuánto más alto puede ser el molde nuevo que el original en Modo Altura.
+ *
+ * Modo Altura no toca la altura al calcular el factor: la masa sube lo mismo que antes.
+ * Si el molde nuevo es bastante más alto, esa masa queda perdida al fondo de un molde
+ * grande, y el resultado no se parece al que se quería repetir. Pasado este margen la
+ * app no deja seguir y manda a usar Modo Capacidad.
+ */
+const val MAX_DIFERENCIA_ALTURA_CM = 3.0
+
+/** Advertencia cuando el molde nuevo excede el margen de altura permitido. */
+const val MENSAJE_ALTURA_RIESGOSA = "Demasiado riesgo. Mejor escale con el otro método"
+
+/**
  * Geometría de un molde. Calcula sola su área y su volumen.
  *
  * Todos los campos son nulables por una razón técnica, no de diseño: este mismo tipo se
@@ -85,6 +98,7 @@ fun factorEscala(
             "En Modo Altura el molde nuevo no puede ser más bajo que el original " +
                 "($alturaNueva cm contra $alturaOriginal cm)"
         }
+        require(alturaNueva - alturaOriginal <= MAX_DIFERENCIA_ALTURA_CM) { MENSAJE_ALTURA_RIESGOSA }
         dividir(nuevo.areaCm2, original.areaCm2, "área")
     }
 

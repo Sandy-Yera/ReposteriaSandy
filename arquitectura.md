@@ -504,7 +504,12 @@ Vive en `logica/Formato.kt`, sin dependencias de Android — se puede probar con
 - Ingrediente (borrado): si `recetaRepo.obtenerRecetasQueUsan(ingredienteId)` no está vacío, la UI **debe** mostrar la advertencia con esa lista y pedir confirmación explícita antes de llamar a `confirmarEliminacionIngrediente` (7.1). Si está vacío, se borra directo (igual queda el evento en el historial).
 - Rendimiento: `trozos >= 1` siempre; si `usaMolde = false`, `pesoFinalG` es obligatorio **y `> 0`** (si fuera 0, `reescalarRecetaPorPeso` divide por cero).
 - Molde: los campos de `DimensionesMolde` que correspondan a `tipoForma` son obligatorios **y todos `> 0`**, incluida `alturaMoldeCm` (para `EXOTICO`, solo `volumenExoticoCm3` y `alturaMoldeCm`). No basta con "obligatorio": una medida en 0 deja el área o el volumen en 0 y hace que `factorEscala` divida por cero.
-- Reescalado Modo Altura: `nuevo.alturaMoldeCm >= original.alturaMoldeCm` — si no se cumple, error de validación antes de calcular el factor (8.3.1).
+- Reescalado Modo Altura — la altura del molde nuevo tiene que caer en una **ventana**, no solo ser mayor:
+  - Más bajo que el original: se rechaza, la masa no cabría a la misma altura.
+  - Más de **3 cm** por encima (`MAX_DIFERENCIA_ALTURA_CM`): se rechaza con el mensaje *"Demasiado riesgo. Mejor escale con el otro método"*. Modo Altura no toca la altura al calcular el factor, así que en un molde bastante más alto la masa sube lo mismo de siempre y queda perdida al fondo: el resultado ya no se parece al que se quería repetir.
+  - Entre 0 y 3 cm más alto: se permite.
+  - El margen se mide en centímetros, no en proporción: de 2 a 5 cm se acepta (3 cm) aunque sea más del doble, y de 20 a 24 se rechaza (4 cm) aunque proporcionalmente sea menos.
+  - Modo Capacidad **no** tiene este límite: como sí toma la altura para calcular, un molde mucho más alto es precisamente el caso que resuelve.
 - Duración: si `apto = false`, se ignoran cantidad/unidad.
 - Precio/promoción (`RecetaPrecio`): `precioTotal > 0` y `cantidad >= 1` siempre — sin esto, un precio en $0 o una promo con `cantidad = 0` produce división por cero en `trozoGanador` (8.5).
 - Precio/promoción en modo trozo: además, `cantidad <= trozos` de la receta — es el **"tope del último trozo"**: no tiene sentido una promo de "3 trozos por $1.500" en una receta que rinde 2. En modo producto no aplica tope (sí puedes vender 2, 3 o 10 productos completos).
@@ -726,7 +731,7 @@ suspend fun reescalarRecetaPorMolde(
 }
 ```
 
-- **Modo Altura (Modo Estructura):** `factor = áreaNueva / áreaOriginal`. Úsalo cuando la receta te gustó como quedó y quieres que se vea/sienta igual — mismo grosor de tajada, misma proporción de capas (queques, bizcochos, milhojas). Exige conocer la altura de ambos moldes, y **no permite** elegir un molde nuevo más bajo que el original.
+- **Modo Altura (Modo Estructura):** `factor = áreaNueva / áreaOriginal`. Úsalo cuando la receta te gustó como quedó y quieres que se vea/sienta igual — mismo grosor de tajada, misma proporción de capas (queques, bizcochos, milhojas). Exige conocer la altura de ambos moldes, y solo acepta moldes nuevos **entre 0 y 3 cm más altos** que el original (6.2): ni más bajos, ni bastante más altos.
 - **Modo Capacidad (Modo Volumen):** `factor = volumenNuevo / volumenOriginal`. Úsalo para rellenos o masas densas sin estructura de aire crítica, o cuando quieres que la receta rinda más/sea más grande aceptando que la altura cambie como parte de ese crecimiento. No tiene restricción de altura.
 - En ambos casos: `ingredienteNuevo = ingredienteOriginal × factor`.
 - La UI muestra un ícono "?" (`InfoTooltip.kt`) junto al selector de modo, con el texto de arriba, para no tener que memorizar cuál usar.

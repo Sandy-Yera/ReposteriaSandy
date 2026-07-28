@@ -56,7 +56,17 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 ### factorEscala ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/moldes/Moldes.kt
 - Qué hace: calcula por cuánto hay que multiplicar cada ingrediente al pasar una receta de un molde a otro.
-- Cómo funciona: recibe `original` y `nuevo` (ambos `DimensionesMolde`) más el `modo`, devuelve `Double`. En `ALTURA` divide áreas y **lanza excepción** si el molde nuevo es más bajo que el original; en `CAPACIDAD` divide volúmenes sin esa restricción. Lanza excepción si el molde original tiene área o volumen cero, en vez de devolver infinito en silencio, y si a alguno de los dos moldes le falta la altura.
+- Cómo funciona: recibe `original` y `nuevo` (ambos `DimensionesMolde`) más el `modo`, devuelve `Double`. En `ALTURA` divide áreas y solo acepta moldes nuevos **entre 0 y `MAX_DIFERENCIA_ALTURA_CM` (3 cm) más altos**: si es más bajo lanza excepción, y si se pasa del margen lanza excepción con el texto de `MENSAJE_ALTURA_RIESGOSA`. En `CAPACIDAD` divide volúmenes sin ninguna restricción de altura. En ambos modos lanza excepción si al molde le falta la altura, o si el original tiene área o volumen cero, en vez de devolver infinito en silencio.
+
+### MAX_DIFERENCIA_ALTURA_CM ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/moldes/Moldes.kt
+- Qué hace: cuánto más alto puede ser el molde nuevo que el original al reescalar en Modo Altura.
+- Cómo funciona: constante `3.0`, en centímetros. Modo Altura no usa la altura para calcular el factor, así que en un molde bastante más alto la masa sube lo mismo de siempre y queda perdida al fondo. Se mide como diferencia absoluta, no como proporción. Solo aplica a `ModoReescalado.ALTURA`.
+
+### MENSAJE_ALTURA_RIESGOSA ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/moldes/Moldes.kt
+- Qué hace: el texto que se muestra cuando el molde nuevo supera el margen de altura.
+- Cómo funciona: constante con el texto `"Demasiado riesgo. Mejor escale con el otro método"`. Es una constante y no un texto suelto para que la pantalla pueda mostrar exactamente el mismo mensaje que produce la validación, sin copiarlo a mano.
 
 ### trozosCubiertosPor ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/precios/Precios.kt

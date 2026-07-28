@@ -77,15 +77,65 @@ class MoldesTest {
     }
 
     @Test
-    fun `modo altura ignora que el molde nuevo sea mas alto`() {
+    fun `modo altura ignora el alto extra dentro del margen permitido`() {
         // El alto extra no entra en el factor: solo importa el área, para no cambiar el grosor.
-        val factor = factorEscala(cuadrado(10.0, 5.0), cuadrado(10.0, 20.0), ModoReescalado.ALTURA)
+        val factor = factorEscala(cuadrado(10.0, 5.0), cuadrado(10.0, 7.0), ModoReescalado.ALTURA)
         assertEquals(1.0, factor, 0.001)
     }
 
     @Test(expected = IllegalArgumentException::class)
     fun `modo altura rechaza un molde nuevo mas bajo`() {
         factorEscala(cuadrado(10.0, 10.0), cuadrado(20.0, 5.0), ModoReescalado.ALTURA)
+    }
+
+    // --- Margen de altura: hasta 3 cm más alto, no más ---
+
+    @Test
+    fun `modo altura acepta hasta 3 centimetros de diferencia`() {
+        // Justo en el límite todavía se puede.
+        val factor = factorEscala(cuadrado(10.0, 5.0), cuadrado(10.0, 8.0), ModoReescalado.ALTURA)
+        assertEquals(1.0, factor, 0.001)
+    }
+
+    @Test
+    fun `modo altura rechaza pasar de 3 centimetros con la advertencia acordada`() {
+        // 5 -> 8,1 cm: apenas por sobre el margen, y ya no se permite.
+        val error = runCatching {
+            factorEscala(cuadrado(10.0, 5.0), cuadrado(10.0, 8.1), ModoReescalado.ALTURA)
+        }.exceptionOrNull()
+
+        assertEquals(IllegalArgumentException::class.java, error!!::class.java)
+        assertEquals(MENSAJE_ALTURA_RIESGOSA, error.message)
+    }
+
+    @Test
+    fun `un molde mucho mas alto se rechaza aunque el area calce`() {
+        val error = runCatching {
+            factorEscala(cuadrado(10.0, 5.0), cuadrado(10.0, 20.0), ModoReescalado.ALTURA)
+        }.exceptionOrNull()
+
+        assertEquals(MENSAJE_ALTURA_RIESGOSA, error!!.message)
+    }
+
+    @Test
+    fun `el margen de altura no aplica en modo capacidad`() {
+        // Modo Capacidad sí toma en cuenta la altura al calcular, así que no corre riesgo:
+        // 5 -> 20 cm es exactamente lo que este modo está pensado para resolver.
+        val factor = factorEscala(cuadrado(10.0, 5.0), cuadrado(10.0, 20.0), ModoReescalado.CAPACIDAD)
+        assertEquals(4.0, factor, 0.001)
+    }
+
+    @Test
+    fun `el margen se mide en centimetros y no en proporcion`() {
+        // De 2 a 5 cm son 3 cm de diferencia: se permite, aunque sea más del doble de alto.
+        val ok = factorEscala(cuadrado(10.0, 2.0), cuadrado(10.0, 5.0), ModoReescalado.ALTURA)
+        assertEquals(1.0, ok, 0.001)
+
+        // De 20 a 24 cm son 4 cm: se rechaza, aunque proporcionalmente sea un cambio menor.
+        val error = runCatching {
+            factorEscala(cuadrado(10.0, 20.0), cuadrado(10.0, 24.0), ModoReescalado.ALTURA)
+        }.exceptionOrNull()
+        assertEquals(MENSAJE_ALTURA_RIESGOSA, error!!.message)
     }
 
     @Test
