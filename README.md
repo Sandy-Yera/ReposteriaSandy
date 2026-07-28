@@ -36,7 +36,7 @@ app/      La app Android: Room, pantallas con Compose y respaldo a Drive.
 
 | | |
 |---|---|
-| Lógica pura | implementada, 69 tests |
+| Lógica pura | implementada, 83 tests |
 | Base de datos (Room) | 15 tablas, DAOs y primeros repositorios; compila e instala en el celular |
 | Pantallas | pendiente |
 | Respaldo en Drive | pendiente |

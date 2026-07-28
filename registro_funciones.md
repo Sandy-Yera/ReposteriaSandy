@@ -11,7 +11,7 @@ Cada entrada nueva va al final de su sección, con el mismo formato.
 >   vivir según la sección 4, pero ese archivo todavía no existe. Para el paso 2 de `CLAUDE.md`
 >   significa "ya está diseñado, reutiliza este diseño", no "ábrelo".
 >
-> **Sobre "compila":** lo de `logica/` está compilado y cubierto por 69 pruebas. Lo de `app/`
+> **Sobre "compila":** lo de `logica/` está compilado y cubierto por 83 pruebas. Lo de `app/`
 > se compila en el equipo de Sandy, porque el entorno donde se escribe no tiene el Android
 > SDK. Las entidades, los conversores y la base de datos ya pasaron esa compilación; lo que
 > se agregue después queda sin verificar hasta la siguiente.
@@ -57,6 +57,26 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/busqueda/Busqueda.kt
 - Qué hace: dice si dos textos son el mismo nombre, ignorando mayúsculas, tildes y espacios sobrantes.
 - Cómo funciona: recibe dos `String` y devuelve `Boolean`. A diferencia de `coincide`, que busca una parte dentro de otra, acá tienen que ser el texto completo: "Azúcar" y "azucar " son iguales, pero "azúcar flor" no. Sirve para avisar de un ingrediente repetido antes de crearlo, algo que la base no puede hacer sola porque para ella "azucar" y "azúcar" son distintos.
+
+### errorEnNombreIngrediente ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Validaciones.kt
+- Qué hace: revisa si el nombre escrito para un ingrediente sirve.
+- Cómo funciona: recibe `String` y devuelve el motivo del problema, o `null` si está bien — ese formato encaja directo con los campos de Compose, que muestran el mensaje bajo el campo. Rechaza vacíos, solo espacios, y más de `LARGO_MAXIMO_NOMBRE` caracteres. **No comprueba repetidos**: eso necesita la base de datos y lo hace el repositorio.
+
+### errorEnValorPorGramo ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Validaciones.kt
+- Qué hace: revisa si el valor por gramo escrito sirve.
+- Cómo funciona: recibe `Double` y devuelve el motivo o `null`. Rechaza negativos y valores que no son número (NaN, infinito). **Acepta el 0 a propósito**: hay ingredientes que no se costean y ponerlos en cero es la forma de decirlo.
+
+### textoANumero ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Validaciones.kt
+- Qué hace: convierte a número lo que la persona escribió, con el formato de la app.
+- Cómo funciona: recibe `String` y devuelve `Double?`. Acepta la coma como separador decimal y el punto como separador de miles ("1.234,56"), que es como se escribe en el teclado del celular y no como lo espera Kotlin. Devuelve `null` si el texto no es un número. Es la operación inversa de `formatearNumero`, y hay un test que comprueba que ir y volver da lo mismo.
+
+### LARGO_MAXIMO_NOMBRE ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Validaciones.kt
+- Qué hace: cuántos caracteres puede tener el nombre de un ingrediente.
+- Cómo funciona: constante `60`. Lo usa `errorEnNombreIngrediente` y también sirve para poner el tope en el campo de texto de la pantalla.
 
 ### pesoPorTrozo ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/rendimiento/Rendimiento.kt
@@ -357,6 +377,21 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/HistorialRepositorio.kt
 - Qué hace: anota un cambio en el historial y de paso limpia lo más viejo que seis meses.
 - Cómo funciona: `suspend`, recibe tipo, entidad, descripción y un detalle opcional. **La descripción siempre debe nombrar lo afectado**, nunca un texto genérico, lo que obliga a leer el nombre antes de borrar nada. Tras insertar, borra los eventos anteriores a `RETENCION_HISTORIAL_MS`.
+
+### ResultadoGuardarIngrediente ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/IngredienteRepositorio.kt
+- Qué hace: dice cómo terminó un intento de guardar un ingrediente.
+- Cómo funciona: tipo cerrado con `Guardado(id)`, `YaExiste(existente)` y `NoValido(motivo)`. Es un tipo cerrado y no un simple `Long` para que la pantalla **no pueda ignorar** los casos que no son éxito: si `crear` devolviera solo el id, olvidar comprobar el nombre repetido cerraría la app, porque el índice único de la base lanza excepción al insertar.
+
+### IngredienteRepositorio.crear ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/IngredienteRepositorio.kt
+- Qué hace: crea un ingrediente, comprobando antes que el dato sirva y que no esté repetido.
+- Cómo funciona: `suspend`, recibe nombre y valor por gramo, devuelve `ResultadoGuardarIngrediente`. Valida nombre y valor con las funciones de `logica/validaciones`, busca repetidos con `buscarParecido`, y solo entonces inserta y registra en el historial. Las comprobaciones van acá y no en la pantalla porque hay dos formas de crear un ingrediente —el catálogo y el alta rápida desde una receta— y ambas deben comportarse igual.
+
+### IngredienteRepositorio.actualizar ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/IngredienteRepositorio.kt
+- Qué hace: guarda los cambios de un ingrediente que ya existe.
+- Cómo funciona: `suspend`, recibe el `Ingrediente` completo y devuelve `ResultadoGuardarIngrediente`. Hace las mismas comprobaciones que `crear`, salvo que al buscar repetidos se excluye a sí mismo con `exceptoId`: cambiarle solo el precio a "Harina" no debe chocar con "Harina".
 
 ### IngredienteRepositorio.buscarParecido ✅ IMPLEMENTADA
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/IngredienteRepositorio.kt
