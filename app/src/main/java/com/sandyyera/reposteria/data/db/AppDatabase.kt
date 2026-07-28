@@ -5,6 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.sandyyera.reposteria.data.db.dao.EmpleadoDao
 import com.sandyyera.reposteria.data.db.dao.HistorialDao
 import com.sandyyera.reposteria.data.db.dao.IngredienteDao
@@ -83,13 +84,47 @@ abstract class AppDatabase : RoomDatabase() {
                 instancia ?: construir(context).also { instancia = it }
             }
 
+        /** Nombre del empleado estándar, el que siempre existe y no se puede borrar. */
+        const val NOMBRE_EMPLEADO_GENERICO = "Empleado genérico"
+
         // Room ya activa las claves foráneas y el modo WAL por su cuenta, así que las
         // cascadas de las entidades funcionan sin configurar nada extra acá.
+        //
+        // Tampoco se llama a fallbackToDestructiveMigration(), y es a propósito: sin
+        // migración declarada, subir la versión hace que la app falle al abrir en vez de
+        // borrar la base en silencio. Es preferible una falla ruidosa en desarrollo a
+        // perder recetas y costos reales del celular. Cada cambio de esquema tiene que
+        // traer su propia migración.
         private fun construir(context: Context): AppDatabase =
             Room.databaseBuilder(
                 context.applicationContext,
                 AppDatabase::class.java,
                 NOMBRE_ARCHIVO
-            ).build()
+            )
+                .addCallback(SembrarDatosIniciales)
+                .build()
+
+        /**
+         * Corre una sola vez, cuando la base se crea por primera vez.
+         *
+         * Siembra el empleado genérico, que el diseño da por existente siempre: es el
+         * modelo estándar de reparto, va fijo al principio de la lista y no se puede
+         * eliminar ni renombrar. Si no se creara acá, la sección Empleados arrancaría
+         * vacía y esa garantía sería falsa.
+         *
+         * Se hace con SQL directo porque en este punto los DAO todavía no están
+         * disponibles: la base se está construyendo.
+         */
+        private object SembrarDatosIniciales : Callback() {
+            override fun onCreate(db: SupportSQLiteDatabase) {
+                super.onCreate(db)
+                val ahora = System.currentTimeMillis()
+                db.execSQL(
+                    "INSERT INTO empleados (nombre, esGenerico, creadoEn, actualizadoEn) " +
+                        "VALUES (?, 1, ?, ?)",
+                    arrayOf(NOMBRE_EMPLEADO_GENERICO, ahora, ahora)
+                )
+            }
+        }
     }
 }

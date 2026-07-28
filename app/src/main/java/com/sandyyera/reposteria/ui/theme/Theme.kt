@@ -65,6 +65,7 @@ fun ReposteriaTheme(
     CompositionLocalProvider(LocalColoresHistorial provides historial) {
         MaterialTheme(
             colorScheme = if (oscuro) EsquemaOscuro else EsquemaClaro,
+            typography = TipografiaReposteria,
             content = contenido
         )
     }

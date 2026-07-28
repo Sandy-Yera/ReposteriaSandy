@@ -28,13 +28,13 @@ class IngredienteRepositorio(
      *
      * Devuelve `null` si no hay ninguno parecido.
      */
-    suspend fun buscarParecido(nombre: String, exceptoId: Long? = null): Ingrediente? {
-        dao.buscarPorNombre(nombre)?.let { if (it.id != exceptoId) return it }
-        // La comparación sin tildes no la puede hacer SQLite, así que se hace en memoria.
-        // Con un catálogo de ingredientes personales la lista es corta y no pesa.
-        return dao.obtenerTodosUnaVez()
+    suspend fun buscarParecido(nombre: String, exceptoId: Long? = null): Ingrediente? =
+        // La comparación sin tildes no la puede hacer SQLite, así que se trae la lista y
+        // se compara en memoria. Con un catálogo de ingredientes personales son pocas
+        // filas y no pesa. No se consulta antes por nombre exacto porque sería redundante:
+        // cualquier cosa que encontrara esa consulta la encuentra también esta.
+        dao.obtenerTodosUnaVez()
             .firstOrNull { it.id != exceptoId && sonElMismoTexto(it.nombre, nombre) }
-    }
 
     suspend fun crear(nombre: String, valorPorGramo: Double): Long {
         val id = dao.insertar(Ingrediente(nombre = nombre.trim(), valorPorGramo = valorPorGramo))

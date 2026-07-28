@@ -361,7 +361,7 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 ### IngredienteRepositorio.buscarParecido ✅ IMPLEMENTADA
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/IngredienteRepositorio.kt
 - Qué hace: busca un ingrediente que se llame igual, para avisar antes de crear un repetido.
-- Cómo funciona: `suspend`, recibe el nombre y opcionalmente un id a excluir (al editar). Primero pregunta a la base, que ignora mayúsculas; después compara en memoria con `sonElMismoTexto`, porque SQLite no sabe ignorar tildes y para ella "azucar" y "azúcar" son distintos. Devuelve `null` si no hay parecido.
+- Cómo funciona: `suspend`, recibe el nombre y opcionalmente un id a excluir (al editar). Trae la lista y compara en memoria con `sonElMismoTexto`, porque SQLite no sabe ignorar tildes y para ella "azucar" y "azúcar" son distintos. No consulta antes por nombre exacto: sería redundante, ya que todo lo que encontraría esa consulta lo encuentra también esta. Devuelve `null` si no hay parecido.
 
 ### IngredienteRepositorio.recetasAfectadasPorBorrar ✅ IMPLEMENTADA
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/IngredienteRepositorio.kt
@@ -372,6 +372,31 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/IngredienteRepositorio.kt
 - Qué hace: borra el ingrediente de verdad, una vez que el usuario ya confirmó.
 - Cómo funciona: `suspend`, recibe el id. Lee el nombre y las recetas afectadas **antes** de borrar, porque después ya no se pueden consultar y el historial los necesita. Quita las filas que lo referencian (no hay clave foránea que lo haga solo) y recién ahí borra la fila. No vuelve a preguntar: la confirmación es de la pantalla.
+
+### AppContainer ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/AppContainer.kt
+- Qué hace: arma y guarda las piezas compartidas de la app — la base de datos y los repositorios.
+- Cómo funciona: se crea una vez desde `ReposteriaApp` y expone `historial` e `ingredientes`, todos con `by lazy` para no construir nada hasta que se pida. Hace el trabajo de una librería de inyección de dependencias pero escrito a mano: en un solo archivo se ve qué depende de qué. **Acá se agregan los repositorios de recetas, moldes y empleados al llegar sus fases.**
+
+### ReposteriaApp ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ReposteriaApp.kt
+- Qué hace: el punto de entrada de la app.
+- Cómo funciona: extiende `Application` y su única tarea es exponer el `contenedor` (`AppContainer`). Las pantallas llegan a los repositorios desde el contexto de la aplicación.
+
+### AppDatabase.SembrarDatosIniciales ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/db/AppDatabase.kt
+- Qué hace: crea el empleado genérico la primera vez que se arma la base de datos.
+- Cómo funciona: `RoomDatabase.Callback` cuyo `onCreate` inserta con SQL directo la fila con `esGenerico = 1` (los DAO todavía no existen en ese momento). Sin esto, la garantía de que el empleado genérico "siempre está" sería falsa y la sección Empleados arrancaría vacía.
+
+### TipografiaReposteria ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/theme/Type.kt
+- Qué hace: define los tamaños de letra de la app.
+- Cómo funciona: `Typography` de Material 3 que ajusta solo cuatro estilos (`headlineMedium`, `titleMedium`, `bodyMedium`, `bodySmall`) y hereda el resto. Todo en `sp` y no en `dp`, para que los textos crezcan si el celular tiene configurada una letra más grande por accesibilidad.
+
+### Medidas ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/theme/Medidas.kt
+- Qué hace: las separaciones y tamaños que usan todas las pantallas.
+- Cómo funciona: objeto con `minimo` (4dp), `chico` (8dp), `medio` (16dp), `grande` (24dp) y `objetivoTactil` (48dp). Existe para que ninguna pantalla invente sus propios números: si cada una elige cuánto separar, la app termina desalineada sin que nadie lo haya decidido. `objetivoTactil` es el alto mínimo de cualquier cosa que se toque.
 
 ---
 

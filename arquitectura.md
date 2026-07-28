@@ -396,6 +396,8 @@ Al borrar una `Receta`, Room elimina en cascada su fila en `EmpleadoRecetaSueldo
 
 `AppDatabase.kt` declara la versión del esquema y las migraciones cuando algo cambie — a diferencia de un `schema.sql` suelto, Room **obliga** a documentar cada cambio de estructura, lo cual es una salvaguarda útil una vez que tengas datos reales guardados en el celular.
 
+**Deliberadamente no se usa `fallbackToDestructiveMigration()`.** Con esa opción, subir la versión sin migración borra la base y la recrea vacía, en silencio. Sin ella, la app falla al abrir. Se prefiere la falla ruidosa: perder recetas y costos reales es mucho peor que un error visible durante el desarrollo. Cada cambio de esquema tiene que traer su migración.
+
 ### 5.5 Dos cosas que Room no hace solo (resolver en Fase 1)
 
 Las entidades de arriba están escritas en Kotlin idiomático, pero hay dos puntos donde Room necesita ayuda explícita. Si no se hacen, no es que se vea feo: no compila o revienta al guardar.
@@ -943,7 +945,7 @@ Simulación día/semana/mes idéntica a 8.7, usando `diasPorSemana`/`unidadesPor
 
 ### 10.2 Empleado genérico vs. específicos
 
-- Registro `esGenerico = true` sembrado una sola vez (en la migración inicial de Room), fijo en segundo lugar de la lista (después del botón "+ nuevo empleado", fijo primero).
+- Registro `esGenerico = true` sembrado una sola vez, con un `RoomDatabase.Callback` que corre al crearse la base (`AppDatabase.SembrarDatosIniciales`). Va fijo en segundo lugar de la lista, después del botón "+ nuevo empleado". **Sin este sembrado la garantía de "siempre presente" sería falsa**, porque la sección arrancaría vacía.
 - **El empleado genérico no se puede eliminar ni renombrar** — es el modelo estándar y el glosario lo define como "siempre presente", así que la UI no le ofrece esas acciones. Sí se le editan libremente los sueldos por receta, que es su función. Los sueldos que tenga asignados sí se pueden borrar uno por uno.
 - Empleados específicos: título editable, se agregan y se eliminan libremente.
 - Desplegable de recetas por empleado para ir asignando `gananciaEmpleado`. Solo lista recetas que aún existen (las eliminadas ya no aparecen, por la cascada de 5.4).

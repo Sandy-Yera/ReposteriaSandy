@@ -27,10 +27,6 @@ interface IngredienteDao {
     @Query("SELECT * FROM ingredientes WHERE id = :ingredienteId")
     suspend fun obtener(ingredienteId: Long): Ingrediente?
 
-    /** Busca por nombre exacto sin distinguir mayúsculas, para avisar de repetidos. */
-    @Query("SELECT * FROM ingredientes WHERE nombre = :nombre COLLATE NOCASE LIMIT 1")
-    suspend fun buscarPorNombre(nombre: String): Ingrediente?
-
     @Insert
     suspend fun insertar(ingrediente: Ingrediente): Long
 
