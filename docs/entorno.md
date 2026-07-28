@@ -5,7 +5,7 @@ no necesitas todo desde el día uno, y cada nivel sirve para algo concreto.
 
 | Nivel | Qué instalas | Qué te permite | ¿Ya lo necesitas? |
 |---|---|---|---|
-| **1** | Java (JDK) | Correr los 61 tests de la lógica | **Sí, ahora** |
+| **1** | Java (JDK) | Correr los 69 tests de la lógica | **Sí, ahora** |
 | **2** | Android SDK | Compilar la app de verdad | Cuando lleguemos a Room |
 | **3** | Celular por USB, o emulador | Ver la app funcionando | Al tener las primeras pantallas |
 
