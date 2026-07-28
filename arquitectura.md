@@ -1076,10 +1076,18 @@ Todo vive en `res/` + `ui/theme/` (`Color.kt`, `Theme.kt`, `Type.kt`), nunca com
 | Rol | Claro | Oscuro | Dónde se usa |
 |---|---|---|---|
 | Fondo | Crema `#FFF8F0` | Chocolate muy oscuro `#1C1512` | Fondo de pantalla |
-| Superficie | Blanco cálido `#FFFCF8` | `#2A211C` | Tarjetas de receta, secciones colapsables |
-| Primario | Caramelo `#B0762F` | Caramelo claro `#E0A96D` | Botones principales, "+ Nueva receta", barra superior |
+| Superficie | Blanco cálido `#FFFCF8` | `#2A211C` | Cuadros de diálogo, campos de texto |
+| Superficie elevada | Crema tostada `#F1E7DA` | `#40342C` | Tarjetas de la lista (`surfaceContainerHighest`) |
+| Primario | Caramelo `#996729` | Caramelo claro `#E0A96D` | Botones principales, "+ Nueva receta", barra superior |
 | Texto | Chocolate `#3E2A22` | Crema `#F2E4D6` | Títulos y cuerpo |
-| Texto tenue | Chocolate 60% | Crema 65% | Subtítulos, "$12.400 · 8 trozos" |
+| Texto tenue | Chocolate tenue `#6E5E58` | Crema tenue `#ACA095` | Subtítulos, "$12.400 · 8 trozos" (`onSurfaceVariant`) |
+
+**Dos correcciones a esta tabla, medidas y no estimadas** (`herramientas/contraste.py`):
+
+- El primario era `#B0762F`. Con el texto blanco que lleva encima el botón principal daba **3,83:1**, por debajo del 4,5:1 que exige la regla de más abajo. Se oscureció a `#996729`, que da 4,85:1 — es el mismo caramelo, un punto más tostado.
+- El texto tenue era "Chocolate 60%". Daba 3,84:1 sobre la superficie y 4,30:1 sobre una tarjeta, las dos por debajo del mínimo. Ahora es un color sólido equivalente al 75%: 6,03:1 y 5,05:1. Es sólido y no una transparencia justamente para que el contraste no cambie según sobre qué fondo caiga.
+
+**Los dos esquemas definen todos los roles de Material, no solo los de la tabla.** Material tiene unos 30 roles de color y usa el valor de fábrica —gris violáceo— para los que uno no define. Eso no falla al compilar ni se ve en el código: aparece cuando algún componente lo pide. Pasó con las tarjetas de la lista de ingredientes, que usan `surfaceContainerHighest`.
 
 **Los tres colores del historial (11) son parte del sistema, no decorativos**, y por eso ninguno de los colores base compite con ellos: la paleta es cálida (cremas y marrones) justamente para dejar libres el azul, el verde y el rojo:
 
@@ -1094,7 +1102,7 @@ El frambuesa cumple **a la vez** de color de eliminación y de `error` de Materi
 **Reglas que valen para todas las pantallas:**
 
 - **Nada de colores fijos en los Composables.** Siempre `MaterialTheme.colorScheme.*`, para que el modo oscuro salga solo. Un `Color(0xFF...)` dentro de una pantalla es un error a corregir, no un atajo.
-- **Contraste mínimo 4.5:1** entre texto y su fondo, en los dos modos. La app se usa en la cocina, muchas veces con las manos ocupadas y sin mirar de cerca.
+- **Contraste mínimo 4.5:1** entre texto y su fondo, en los dos modos (3:1 para bordes e íconos). La app se usa en la cocina, muchas veces con las manos ocupadas y sin mirar de cerca. **Esto se mide, no se estima**: al agregar un color a `Color.kt` va también su par a `herramientas/contraste.py`, que se corre con `python3 herramientas/contraste.py` y falla si alguno queda por debajo.
 - **Objetivos táctiles de al menos 48dp.** Se usa con las manos sucias o apuradas; los botones chicos se fallan.
 - **Espaciado en múltiplos de 8dp** (4dp para ajustes finos), para que todo quede alineado sin decidirlo pantalla por pantalla.
 - **El dinero siempre pasa por `formatearNumero`** (6.1) y nunca se concatena a mano.
@@ -1178,6 +1186,7 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 
 - **Construyes:** `Formato.kt`, CRUD con Compose, `ComboBuscable` con alta rápida, y la política de borrado con advertencia (7.1).
 - **Hecho cuando:** desde el celular agregas/editas/eliminas ingredientes, los buscas por coincidencia parcial (incluso escribiendo sin tildes), los montos respetan tu formato exacto —negativos incluidos, con su signo— y borrar uno en uso muestra la advertencia con las recetas afectadas antes de confirmar.
+- **Nota:** el `ComboBuscable` queda construido y con vista previa, pero **sin usar hasta la Fase 3** — su primer consumidor real es el paso "Cantidades y precios" de una receta. Que la vista previa se vea bien no garantiza que la forma de sus parámetros sea la correcta; si al conectarlo en la Fase 3 hace falta ajustarla, es esperable y no un error de esta fase.
 
 ### Fase 3 — Receta: Cantidades y precios
 

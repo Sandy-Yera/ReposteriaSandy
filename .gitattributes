@@ -11,6 +11,9 @@
 # gradlew con CRLF no arranca en Linux ni en Mac; gradlew.bat con LF falla en Windows.
 /gradlew     text eol=lf
 *.sh         text eol=lf
+# Los scripts de herramientas/ se corren con `python3 archivo.py`. Con CRLF, la línea
+# del intérprete queda con un retorno de carro pegado y Linux no encuentra el programa.
+*.py         text eol=lf
 /gradlew.bat text eol=crlf
 *.bat        text eol=crlf
 *.cmd        text eol=crlf
@@ -43,6 +46,7 @@
 *.kts  diff=kotlin
 *.java diff=java
 *.md   diff=markdown
+*.py   diff=python
 
 # ---- Estadísticas de GitHub ----
 # El wrapper de Gradle no es código nuestro: sin esto GitHub cuenta gradlew.bat y

@@ -30,4 +30,13 @@ object Medidas {
      * usa apurada y a veces con las manos sucias, donde los botones chicos se fallan.
      */
     val objetivoTactil = 48.dp
+
+    /**
+     * Hasta dónde puede crecer una lista que va **dentro** de otra cosa: 200dp.
+     *
+     * Pasado ese alto se desplaza sola por dentro, en vez de empujar lo que tiene debajo.
+     * Sin un tope, la advertencia de borrar un ingrediente usado en veinte recetas
+     * crecería hasta dejar los botones de Cancelar y Eliminar fuera de la pantalla.
+     */
+    val altoMaximoDeLista = 200.dp
 }

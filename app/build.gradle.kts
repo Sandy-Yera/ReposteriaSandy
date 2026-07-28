@@ -50,6 +50,10 @@ dependencies {
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    // Da `collectAsStateWithLifecycle`, que deja de leer el estado cuando la pantalla no
+    // se ve. Con `collectAsState` a secas la app seguiría consultando la base con la
+    // pantalla en segundo plano, gastando batería sin que nadie lo mire.
+    implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.navigation.compose)
 

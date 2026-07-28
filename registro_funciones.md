@@ -11,7 +11,7 @@ Cada entrada nueva va al final de su sección, con el mismo formato.
 >   vivir según la sección 4, pero ese archivo todavía no existe. Para el paso 2 de `CLAUDE.md`
 >   significa "ya está diseñado, reutiliza este diseño", no "ábrelo".
 >
-> **Sobre "compila":** lo de `logica/` está compilado y cubierto por 83 pruebas. Lo de `app/`
+> **Sobre "compila":** lo de `logica/` está compilado y cubierto por 98 pruebas. Lo de `app/`
 > se compila en el equipo de Sandy, porque el entorno donde se escribe no tiene el Android
 > SDK. Las entidades, los conversores y la base de datos ya pasaron esa compilación; lo que
 > se agregue después queda sin verificar hasta la siguiente.
@@ -58,6 +58,11 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Qué hace: dice si dos textos son el mismo nombre, ignorando mayúsculas, tildes y espacios sobrantes.
 - Cómo funciona: recibe dos `String` y devuelve `Boolean`. A diferencia de `coincide`, que busca una parte dentro de otra, acá tienen que ser el texto completo: "Azúcar" y "azucar " son iguales, pero "azúcar flor" no. Sirve para avisar de un ingrediente repetido antes de crearlo, algo que la base no puede hacer sola porque para ella "azucar" y "azúcar" son distintos.
 
+### filtrarPor ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/busqueda/Busqueda.kt
+- Qué hace: deja de una lista solo los elementos que coinciden con lo escrito en el buscador.
+- Cómo funciona: genérica — recibe `List<T>`, el texto buscado y una función que dice de dónde sacar el texto de cada elemento (`{ it.nombre }`, `{ it.titulo }`…); devuelve `List<T>` conservando el orden original. Con el buscador en blanco devuelve la lista completa, porque no haber escrito nada no es lo mismo que no encontrar nada. Es genérica a propósito: las 4 secciones filtran tipos distintos pero la regla de coincidencia (`coincide`) tiene que ser una sola.
+
 ### errorEnNombreIngrediente ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Validaciones.kt
 - Qué hace: revisa si el nombre escrito para un ingrediente sirve.
@@ -72,6 +77,16 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Validaciones.kt
 - Qué hace: convierte a número lo que la persona escribió, con el formato de la app.
 - Cómo funciona: recibe `String` y devuelve `Double?`. Acepta la coma como separador decimal y el punto como separador de miles ("1.234,56"), que es como se escribe en el teclado del celular y no como lo espera Kotlin. Devuelve `null` si el texto no es un número. Es la operación inversa de `formatearNumero`, y hay un test que comprueba que ir y volver da lo mismo.
+
+### errorEnValorPorGramoTexto ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Validaciones.kt
+- Qué hace: revisa el valor por gramo **tal como está escrito en el campo**, no ya convertido a número.
+- Cómo funciona: recibe `String` y devuelve el motivo o `null`. Es el puente entre `textoANumero` y `errorEnValorPorGramo`: distingue los tres problemas posibles —vacío, no es número, número que no sirve— con un mensaje distinto para cada uno. **Rechaza el campo en blanco aunque `errorEnValorPorGramo` acepte el 0**: dejarlo vacío suele ser un olvido y escribir 0 es una decisión.
+
+### revisarIngrediente ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Validaciones.kt
+- Qué hace: revisa de una vez los dos campos del formulario de un ingrediente.
+- Cómo funciona: recibe el nombre y el valor por gramo escritos, devuelve `ErroresIngrediente`. Se llama en cada tecla para habilitar o no el botón de guardar. **No reemplaza la validación del repositorio**, que es la que decide de verdad y además comprueba lo único que acá no se puede saber: si ya existe otro ingrediente con ese nombre.
 
 ### LARGO_MAXIMO_NOMBRE ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Validaciones.kt
@@ -303,15 +318,10 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Qué hace: entrega la base de datos, creándola la primera vez que se pide.
 - Cómo funciona: recibe un `Context` y devuelve la instancia única de `AppDatabase`, guardándola para las siguientes llamadas. Usa el `applicationContext` para no retener una pantalla en memoria.
 
-### ReposteriaApp ✅ IMPLEMENTADA
-- Ubicación: app/src/main/java/com/sandyyera/reposteria/ReposteriaApp.kt
-- Qué hace: el punto de entrada de la app; arma las piezas compartidas.
-- Cómo funciona: extiende `Application` y expone `base`, la instancia de `AppDatabase`, creada con `by lazy` para no abrir la base hasta que alguien la use. Cumple el rol de contenedor de dependencias sin necesitar una librería aparte.
-
 ### ReposteriaTheme ✅ IMPLEMENTADA
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/theme/Theme.kt
 - Qué hace: aplica la paleta de la app a todo lo que envuelve, en modo claro u oscuro.
-- Cómo funciona: Composable que recibe si va en oscuro (por defecto, lo que tenga el celular) y el contenido. Elige entre `EsquemaClaro` y `EsquemaOscuro`, y además provee `LocalColoresHistorial` con la versión correspondiente de los tres colores del historial. Toda pantalla debe ir dentro de este Composable y usar `MaterialTheme.colorScheme.*`, nunca colores fijos.
+- Cómo funciona: Composable que recibe si va en oscuro (por defecto, lo que tenga el celular) y el contenido. Elige entre `EsquemaClaro` y `EsquemaOscuro`, y además provee `LocalColoresHistorial` con la versión correspondiente de los tres colores del historial. Toda pantalla debe ir dentro de este Composable y usar `MaterialTheme.colorScheme.*`, nunca colores fijos. Los dos esquemas definen **todos** los roles de Material, no solo los principales: los que se dejan sin definir toman el gris violáceo de fábrica y aparecen sin aviso en el primer componente que los use (pasó con las tarjetas, que usan `surfaceContainerHighest`). Para texto secundario se usa `onSurfaceVariant`, que ya es el tono tenue correcto en los dos modos — no hay que aplicarle transparencia al color de texto normal.
 
 ### ColoresHistorial ✅ IMPLEMENTADA
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/theme/Theme.kt
@@ -431,7 +441,52 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 ### Medidas ✅ IMPLEMENTADA
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/theme/Medidas.kt
 - Qué hace: las separaciones y tamaños que usan todas las pantallas.
-- Cómo funciona: objeto con `minimo` (4dp), `chico` (8dp), `medio` (16dp), `grande` (24dp) y `objetivoTactil` (48dp). Existe para que ninguna pantalla invente sus propios números: si cada una elige cuánto separar, la app termina desalineada sin que nadie lo haya decidido. `objetivoTactil` es el alto mínimo de cualquier cosa que se toque.
+- Cómo funciona: objeto con `minimo` (4dp), `chico` (8dp), `medio` (16dp), `grande` (24dp), `objetivoTactil` (48dp) y `altoMaximoDeLista` (200dp). Existe para que ninguna pantalla invente sus propios números: si cada una elige cuánto separar, la app termina desalineada sin que nadie lo haya decidido. `objetivoTactil` es el alto mínimo de cualquier cosa que se toque; `altoMaximoDeLista` es el tope de una lista metida dentro de otra cosa (la advertencia de borrado, el `ComboBuscable`), que pasado ese alto se desplaza por dentro en vez de empujar los botones fuera de la pantalla.
+
+### BarraBusqueda ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/componentes/BarraBusqueda.kt
+- Qué hace: el campo de búsqueda que usan las cuatro secciones.
+- Cómo funciona: Composable que recibe el texto actual y qué hacer al cambiar; la pantalla es dueña del texto, no él. Lleva lupa, y una X para limpiar que aparece **solo cuando hay algo escrito**. No filtra nada por su cuenta: la regla de qué cuenta como coincidencia vive en `logica/busqueda` para que las 4 pantallas busquen igual.
+
+### ComboBuscable ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/componentes/ComboBuscable.kt
+- Qué hace: un buscador que además deja elegir de la lista y crear ahí mismo lo que no aparece.
+- Cómo funciona: Composable **genérico** — recibe las opciones, cómo sacar el texto de cada una, el texto buscado y qué hacer al elegir; opcionalmente un `alCrear` que habilita el alta rápida. Filtra con `filtrarPor`. La fila de "Crear «x»" aparece solo si hay algo escrito que no coincide exactamente con una opción existente. Muestra la lista **debajo** y no en un menú flotante: en un celular un desplegable tapa justo el formulario que se está llenando y pelea con el teclado. Se usa para agregar un ingrediente a una receta (7) y para elegir un molde del catálogo (9.3).
+
+### ListaIngredientesScreen ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/ingredientes/ListaIngredientesScreen.kt
+- Qué hace: conecta la pantalla de ingredientes con su ViewModel.
+- Cómo funciona: Composable que recibe el `IngredientesViewModel`, lee su estado con `collectAsStateWithLifecycle` (deja de leer la base cuando la pantalla no se ve) y reparte cada acción. **No dibuja nada**: eso lo hace `ListaIngredientes`.
+
+### ListaIngredientes ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/ingredientes/ListaIngredientesScreen.kt
+- Qué hace: dibuja la pantalla de ingredientes — botón fijo arriba, buscador, y la lista debajo.
+- Cómo funciona: Composable que recibe **solo datos y funciones**, nunca el ViewModel ni el repositorio, así que se puede ver en la vista previa de Android Studio con ingredientes inventados y no puede tocar la base por accidente. El botón de agregar va fuera del área que se desplaza (patrón de 8.1, el mismo de recetas y moldes). Distingue "no hay ingredientes" de "la búsqueda no encontró nada", que son dos mensajes distintos. Cada monto pasa por `formatearNumero`.
+
+### FormularioIngrediente ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/ingredientes/DialogosIngrediente.kt
+- Qué hace: el cuadro para crear o editar un ingrediente.
+- Cómo funciona: Composable único para los dos casos —piden los mismos dos datos—; lo que cambia es el título y qué hace el ViewModel al confirmar. No valida por su cuenta: muestra los errores que ya vienen calculados en `DialogoIngrediente.Formulario`. El hueco del mensaje de error se reserva siempre, para que el cuadro no dé un salto mientras se escribe.
+
+### ConfirmarBorradoIngrediente ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/ingredientes/DialogosIngrediente.kt
+- Qué hace: la advertencia obligatoria antes de borrar un ingrediente (política de 7.1).
+- Cómo funciona: Composable que lista las recetas afectadas y solo entonces habilita el botón de eliminar. **Mientras la lista es `null` el botón está deshabilitado**: `null` significa "todavía se está consultando" y lista vacía significa "no lo usa ninguna receta"; confundirlos dejaría borrar sin haber mostrado la advertencia completa.
+
+### IngredientesViewModel ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/ingredientes/IngredientesViewModel.kt
+- Qué hace: guarda lo que se ve en la pantalla de ingredientes y ejecuta lo que se pide desde ella.
+- Cómo funciona: expone `estado: StateFlow<EstadoIngredientes>`, armado con `combine` de cuatro fuentes (la lista de la base, el texto buscado, el diálogo abierto y el mensaje pendiente) — así el filtro se calcula una vez por cambio real y no en cada redibujado. `WhileSubscribed(5s)` corta la consulta cuando la pantalla deja de mirarse, con margen para que girar el teléfono no la reinicie. Sus acciones: `buscar`, `abrirAlta`, `abrirEdicion`, `cambiarNombre`, `cambiarValor`, `guardar`, `pedirBorrado`, `confirmarBorrado`, `cerrarDialogo` y `mensajeMostrado`. `guardar` traduce el `ResultadoGuardarIngrediente` del repositorio a algo visible; `pedirBorrado` abre la advertencia al instante y completa la lista de recetas cuando la consulta vuelve, comprobando que el cuadro siga abierto y sea el mismo ingrediente.
+
+### IngredientesViewModel.fabrica ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/ingredientes/IngredientesViewModel.kt
+- Qué hace: dice cómo construir el `IngredientesViewModel`, que necesita un repositorio y no tiene constructor vacío.
+- Cómo funciona: función del `companion object` que recibe el `IngredienteRepositorio` y devuelve un `ViewModelProvider.Factory` armado con `viewModelFactory { initializer { … } }`. Existe porque el proyecto no usa una librería de inyección de dependencias (ver `AppContainer`). **Cada ViewModel nuevo necesita la suya**, con este mismo patrón.
+
+### luminancia y contraste ✅ IMPLEMENTADAS
+- Ubicación: herramientas/contraste.py
+- Qué hacen: miden si un color de texto se lee sobre su fondo, según la fórmula de la WCAG que sigue Android.
+- Cómo funcionan: `luminancia(hexadecimal)` devuelve la luminancia relativa de un color; `contraste(frente, fondo)` devuelve la razón entre los dos (4,5:1 es el mínimo para texto normal, 3:1 para bordes). La lista `PARES` enumera cada combinación real de la paleta y el script termina con código 1 si alguna queda por debajo. **Al agregar un color a `Color.kt` hay que agregar su par acá**: a ojo esto no se puede evaluar — el caramelo original parecía perfectamente legible con texto blanco y daba 3,83:1.
 
 ---
 
@@ -468,6 +523,21 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Qué hace: el total de una simulación con varias recetas a la vez, en versión diaria, semanal y mensual, más la lista de las que quedaron fuera.
 - Cómo funciona: `data class` que guarda solo las 3 cifras **diarias** más `diasPorSemana` y `omitidas: List<String>` (títulos de recetas sin precio). Las 6 cifras semanales y mensuales son propiedades calculadas: guardar las tres versiones permitiría que quedaran desincronizadas entre sí.
 
+### ErroresIngrediente ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Validaciones.kt
+- Qué hace: los problemas de un formulario de ingrediente, uno por campo.
+- Cómo funciona: `data class` con `nombre: String?` y `valorPorGramo: String?` (`null` = ese campo está bien), más `sirve` que dice si no hay nada que corregir. Va por campo y no como un solo mensaje porque la pantalla tiene que poder mostrar cada aviso **bajo el campo que lo causó**.
+
+### EstadoIngredientes ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/ingredientes/IngredientesViewModel.kt
+- Qué hace: todo lo que la pantalla de ingredientes necesita para dibujarse.
+- Cómo funciona: `data class` con `visibles` (la lista **ya filtrada** por el buscador — la pantalla no vuelve a filtrar), `hayIngredientes`, `busqueda`, `dialogo`, `mensaje` y `cargando`. Expone `catalogoVacio` y `busquedaSinResultados`, que son dos situaciones distintas y necesitan mensajes distintos: "todavía no agregaste nada" no es lo mismo que "no encontré eso".
+
+### DialogoIngrediente ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/ingredientes/IngredientesViewModel.kt
+- Qué hace: dice qué hay abierto encima de la lista de ingredientes.
+- Cómo funciona: tipo cerrado con `Ninguno`, `Formulario` y `ConfirmarBorrado`. Es cerrado y no varios booleanos sueltos porque con booleanos nada impide que dos queden en `true` y aparezcan dos cuadros superpuestos. `Formulario` guarda los campos escritos, si cada uno ya se tocó (para no mostrar errores antes de tiempo) y el aviso de nombre repetido que llega desde la base. `ConfirmarBorrado` guarda las recetas afectadas como `List<Receta>?`, donde `null` es "todavía consultando" y lista vacía es "no lo usa ninguna receta".
+
 ### PrecioVigente ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/precios/Precios.kt
 - Qué hace: un precio o promoción tal como lo ven las fórmulas: "vender N trozos (o N productos) por X en total".
@@ -498,7 +568,4 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Qué hace: sobre qué tipo de cosa fue un evento del historial.
 - Cómo funciona: `enum` con `INGREDIENTE`, `RECETA`, `MOLDE` y `EMPLEADO`. Era un `String` libre y se pasó a enum por la misma razón que `ModoPrecio` (5.5). Necesita `TypeConverter`.
 
-### Convertidores
-- Ubicación: data/db/Convertidores.kt
-- Qué hace: le enseña a Room a guardar y leer los enums, que por sí solo no sabe manejar.
-- Cómo funciona: clase con pares de `@TypeConverter` por cada enum, registrada con `@TypeConverters` en `AppDatabase`. Convierte a texto con `.name` y de vuelta con `valueOf`. **Por nombre y no por ordinal a propósito**: si algún día se agrega un valor en medio del enum, los ordinales ya guardados cambiarían de significado en silencio.
+> `Convertidores` está registrado más arriba, en **Acceso a datos**, que es donde vive.

@@ -22,21 +22,30 @@ Solo necesitas Java 17 o superior. No hace falta Android Studio.
 ./gradlew :logica:test
 ```
 
+Y para comprobar que la paleta cumple el contraste mínimo de la sección 12.6 (no necesita
+nada instalado más que Python):
+
+```bash
+python3 herramientas/contraste.py
+```
+
 ## Estructura
 
 ```
-logica/   Kotlin puro: las fórmulas (costos, precios, moldes, sueldos, simulaciones).
-          Es un módulo aparte a propósito -- sin Android ni base de datos, así se
-          prueba con JUnit sin emulador ni celular.
+logica/         Kotlin puro: las fórmulas (costos, precios, moldes, sueldos, simulaciones)
+                y las validaciones. Es un módulo aparte a propósito -- sin Android ni base
+                de datos, así se prueba con JUnit sin emulador ni celular.
 
-app/      La app Android: Room, pantallas con Compose y respaldo a Drive.
+app/            La app Android: Room, pantallas con Compose y respaldo a Drive.
+
+herramientas/   Scripts sueltos de apoyo, que no son parte de la app.
 ```
 
 ## Estado
 
 | | |
 |---|---|
-| Lógica pura | implementada, 83 tests |
+| Lógica pura | implementada, 98 tests |
 | Base de datos (Room) | 15 tablas, DAOs y primeros repositorios; compila e instala en el celular |
-| Pantallas | pendiente |
+| Pantallas | Ingredientes lista (alta, edición, búsqueda y borrado con advertencia); el resto pendiente |
 | Respaldo en Drive | pendiente |

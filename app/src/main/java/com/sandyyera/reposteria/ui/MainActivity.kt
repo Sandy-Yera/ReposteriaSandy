@@ -3,63 +3,45 @@ package com.sandyyera.reposteria.ui
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.sandyyera.reposteria.ReposteriaApp
+import com.sandyyera.reposteria.ui.ingredientes.IngredientesViewModel
+import com.sandyyera.reposteria.ui.ingredientes.ListaIngredientesScreen
 import com.sandyyera.reposteria.ui.theme.ReposteriaTheme
 
 /**
- * Pantalla provisional, solo para confirmar que el proyecto compila, arranca y aplica
- * el tema. Se reemplaza por la navegación real en el siguiente paso.
+ * La única pantalla de la app por ahora: el catálogo de ingredientes.
+ *
+ * Todavía no hay navegación ni menú de 3 líneas (12.1), porque no hay una segunda sección
+ * a la que ir. Se agregan al llegar la lista de recetas, y esta pantalla pasa a ser una de
+ * las cuatro sin tener que reescribirla: ya recibe todo lo que necesita desde afuera.
  */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // El repositorio se toma del contenedor de la aplicación, que es donde vive la
+        // base de datos. La Activity no la abre ni la conoce: solo pasa la pieza que hace
+        // falta, y por eso girar el teléfono no vuelve a abrir nada.
+        val repositorioIngredientes =
+            (application as ReposteriaApp).contenedor.ingredientes
+
         setContent {
             ReposteriaTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    PantallaProvisional()
+                    val modelo: IngredientesViewModel = viewModel(
+                        factory = IngredientesViewModel.fabrica(repositorioIngredientes)
+                    )
+                    ListaIngredientesScreen(modelo = modelo)
                 }
             }
         }
     }
-}
-
-@Composable
-private fun PantallaProvisional() {
-    Column(modifier = Modifier.padding(24.dp)) {
-        Text(
-            text = "Repostería",
-            style = MaterialTheme.typography.headlineMedium,
-            color = MaterialTheme.colorScheme.primary
-        )
-        Text(
-            text = "Base de datos lista. Las pantallas vienen en el siguiente paso.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.padding(top = 8.dp)
-        )
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-private fun PantallaProvisionalClaro() {
-    ReposteriaTheme(oscuro = false) { PantallaProvisional() }
-}
-
-@Preview(showBackground = true)
-@Composable
-private fun PantallaProvisionalOscuro() {
-    ReposteriaTheme(oscuro = true) { PantallaProvisional() }
 }

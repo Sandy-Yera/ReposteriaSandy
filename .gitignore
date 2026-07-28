@@ -55,6 +55,12 @@ secrets.properties
 *.sqlite
 *.sqlite3
 
+# ---- Python (los scripts de herramientas/) ----
+# Se corren con python3 directamente, pero basta con que alguien importe uno para que
+# Python deje su caché compilada al lado del archivo.
+__pycache__/
+*.pyc
+
 # ---- Varios del sistema y logs ----
 .DS_Store
 Thumbs.db

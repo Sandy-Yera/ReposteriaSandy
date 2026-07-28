@@ -39,3 +39,22 @@ fun coincide(textoBusqueda: String, campo: String): Boolean =
  */
 fun sonElMismoTexto(a: String, b: String): Boolean =
     sinTildes(a.trim()).equals(sinTildes(b.trim()), ignoreCase = true)
+
+/**
+ * Deja de una lista solo lo que coincide con lo buscado.
+ *
+ * Con el buscador vacío devuelve la lista completa, que es lo que corresponde: no haber
+ * escrito nada no es lo mismo que no encontrar nada.
+ *
+ * Es genérica a propósito. Las cuatro secciones con buscador —ingredientes, recetas,
+ * moldes y empleados— filtran listas de tipos distintos por un texto distinto, pero la
+ * regla de qué cuenta como coincidencia tiene que ser una sola. [texto] dice de dónde
+ * sacar lo que se compara en cada caso.
+ *
+ *     filtrarPor(ingredientes, "limon") { it.nombre }
+ *     filtrarPor(recetas, "torta") { it.titulo }
+ */
+fun <T> filtrarPor(items: List<T>, busqueda: String, texto: (T) -> String): List<T> {
+    if (busqueda.isBlank()) return items
+    return items.filter { coincide(busqueda, texto(it)) }
+}

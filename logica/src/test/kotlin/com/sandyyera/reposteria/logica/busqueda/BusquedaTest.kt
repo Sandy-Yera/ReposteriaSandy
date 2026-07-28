@@ -1,5 +1,6 @@
 package com.sandyyera.reposteria.logica.busqueda
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -71,6 +72,54 @@ class BusquedaTest {
     fun `nombres distintos no se confunden`() {
         assertFalse(sonElMismoTexto("harina", "maicena"))
         assertFalse(sonElMismoTexto("crema", "cremor"))
+    }
+
+    // --- filtrarPor: lo que usan las pantallas con buscador ---
+
+    private val ingredientes = listOf("Azúcar flor", "Harina", "Limón", "Manjar", "Plátano")
+
+    @Test
+    fun `el buscador vacio muestra la lista completa`() {
+        // No haber escrito nada no es lo mismo que no encontrar nada.
+        assertEquals(ingredientes, filtrarPor(ingredientes, "") { it })
+        assertEquals(ingredientes, filtrarPor(ingredientes, "   ") { it })
+    }
+
+    @Test
+    fun `filtra por coincidencia parcial sin tildes`() {
+        assertEquals(listOf("Limón"), filtrarPor(ingredientes, "limon") { it })
+        assertEquals(listOf("Plátano"), filtrarPor(ingredientes, "PLATANO") { it })
+    }
+
+    @Test
+    fun `filtra por una parte del medio de la palabra`() {
+        // "an" está en Manjar y en Plátano
+        assertEquals(listOf("Manjar", "Plátano"), filtrarPor(ingredientes, "an") { it })
+    }
+
+    @Test
+    fun `sin coincidencias devuelve lista vacia`() {
+        assertEquals(emptyList<String>(), filtrarPor(ingredientes, "chocolate") { it })
+    }
+
+    @Test
+    fun `respeta el orden original`() {
+        // La lista viene ordenada de la base; filtrar no debe reordenarla.
+        val resultado = filtrarPor(ingredientes, "a") { it }
+        assertEquals(resultado.sortedBy { ingredientes.indexOf(it) }, resultado)
+    }
+
+    @Test
+    fun `funciona sobre cualquier tipo de dato`() {
+        // Las cuatro secciones filtran listas distintas con la misma regla.
+        data class Receta(val titulo: String, val trozos: Int)
+        val recetas = listOf(Receta("Torta de manjar", 8), Receta("Bizcocho", 6))
+        assertEquals(listOf(recetas[0]), filtrarPor(recetas, "MANJAR") { it.titulo })
+    }
+
+    @Test
+    fun `una lista vacia sigue vacia`() {
+        assertEquals(emptyList<String>(), filtrarPor(emptyList<String>(), "algo") { it })
     }
 
     @Test

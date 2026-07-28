@@ -9,30 +9,98 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
+// Los dos esquemas definen **todos** los roles que Material puede pedir, no solo los
+// principales. Los que se dejan sin definir no quedan vacíos: toman el valor de fábrica,
+// que es gris violáceo, y aparecen sin aviso en el primer componente que los use. Así pasó
+// con las tarjetas de la lista de ingredientes, que usan `surfaceContainerHighest`.
 private val EsquemaClaro = lightColorScheme(
     primary = Caramelo,
     onPrimary = Color.White,
+    primaryContainer = CarameloContenedor,
+    onPrimaryContainer = CarameloContenedorTexto,
+    inversePrimary = CarameloClaro,
+
     secondary = Caramelo,
     onSecondary = Color.White,
+    secondaryContainer = CarameloContenedor,
+    onSecondaryContainer = CarameloContenedorTexto,
+
+    tertiary = Caramelo,
+    onTertiary = Color.White,
+    tertiaryContainer = CarameloContenedor,
+    onTertiaryContainer = CarameloContenedorTexto,
+
     background = CremaFondo,
     onBackground = Chocolate,
     surface = CremaSuperficie,
     onSurface = Chocolate,
+
+    // Material usa este color para todo lo secundario: subtítulos, etiquetas de los campos
+    // de texto, íconos de apoyo. Definirlo acá evita que cada pantalla invente su propio
+    // "chocolate con transparencia" y que el contraste dependa de sobre qué fondo caiga.
+    surfaceVariant = CremaNivel3,
+    onSurfaceVariant = ChocolateTenue,
+
+    surfaceContainerLowest = CremaNivel0,
+    surfaceContainerLow = CremaNivel1,
+    surfaceContainer = CremaNivel2,
+    surfaceContainerHigh = CremaNivel3,
+    surfaceContainerHighest = CremaNivel4,
+
+    outline = Borde,
+    outlineVariant = BordeSuave,
+
+    // El fondo de los avisos emergentes (Snackbar), que Material dibuja invertido.
+    inverseSurface = Chocolate,
+    inverseOnSurface = CremaFondo,
+
     error = FrambuesaEliminacion,
-    onError = Color.White
+    onError = Color.White,
+    errorContainer = FrambuesaContenedor,
+    onErrorContainer = FrambuesaContenedorTexto
 )
 
 private val EsquemaOscuro = darkColorScheme(
     primary = CarameloClaro,
     onPrimary = ChocolateOscuroFondo,
+    primaryContainer = CarameloContenedorOscuro,
+    onPrimaryContainer = CarameloContenedorOscuroTexto,
+    inversePrimary = Caramelo,
+
     secondary = CarameloClaro,
     onSecondary = ChocolateOscuroFondo,
+    secondaryContainer = CarameloContenedorOscuro,
+    onSecondaryContainer = CarameloContenedorOscuroTexto,
+
+    tertiary = CarameloClaro,
+    onTertiary = ChocolateOscuroFondo,
+    tertiaryContainer = CarameloContenedorOscuro,
+    onTertiaryContainer = CarameloContenedorOscuroTexto,
+
     background = ChocolateOscuroFondo,
     onBackground = CremaTexto,
     surface = ChocolateOscuroSuperficie,
     onSurface = CremaTexto,
+
+    surfaceVariant = ChocolateNivel3,
+    onSurfaceVariant = CremaTenue,
+
+    surfaceContainerLowest = ChocolateNivel0,
+    surfaceContainerLow = ChocolateNivel1,
+    surfaceContainer = ChocolateNivel2,
+    surfaceContainerHigh = ChocolateNivel3,
+    surfaceContainerHighest = ChocolateNivel4,
+
+    outline = BordeOscuro,
+    outlineVariant = BordeSuaveOscuro,
+
+    inverseSurface = CremaTexto,
+    inverseOnSurface = ChocolateOscuroFondo,
+
     error = FrambuesaEliminacionOscuro,
-    onError = ChocolateOscuroFondo
+    onError = ChocolateOscuroFondo,
+    errorContainer = FrambuesaContenedorOscuro,
+    onErrorContainer = FrambuesaContenedorOscuroTexto
 )
 
 /**
