@@ -163,13 +163,30 @@ Es más rápido que el emulador, no consume RAM, y es donde la app va a vivir de
    sudo pacman -S android-tools android-udev
    ```
 
-2. En el celular, activa las opciones de desarrollador:
+2. **Agrégate al grupo `adbusers`.** El paquete crea el grupo pero no mete a nadie en él,
+   y sin esto `adb` no puede hablarle al teléfono aunque el sistema lo detecte:
+
+   ```bash
+   sudo usermod -aG adbusers $USER
+   ```
+
+   El cambio recién aplica al volver a iniciar sesión. Para probarlo de inmediato, sin
+   reiniciar, se puede abrir una shell con el grupo ya activo:
+
+   ```bash
+   newgrp adbusers
+   adb kill-server && adb devices
+   ```
+
+   Igual conviene reiniciar después, para que quede activo en todas las terminales.
+
+3. En el celular, activa las opciones de desarrollador:
    - **Ajustes → Información del teléfono**
    - Toca **7 veces** seguidas sobre *Número de compilación*
    - Vuelve atrás: aparece **Opciones de desarrollador**
    - Actívalas y enciende **Depuración por USB**
 
-3. Conecta el cable y verifica:
+4. Conecta el cable y verifica:
 
    ```bash
    adb devices
@@ -178,13 +195,27 @@ Es más rápido que el emulador, no consume RAM, y es donde la app va a vivir de
    Debe aparecer tu teléfono. La primera vez el celular pregunta si autorizas al
    computador: acepta y marca *Siempre permitir*.
 
-   Si aparece `unauthorized`, revisa la pantalla del celular. Si no aparece nada, prueba
-   otro cable — muchos cables son solo de carga y no llevan datos.
-
-4. Para instalar la app cuando la tengamos:
+   **Si la lista sale vacía**, estos tres comandos dicen dónde está el problema:
 
    ```bash
-   ./gradlew installDebug
+   lsusb                  # ¿lo ve el sistema?
+   groups                 # ¿estás en adbusers?
+   pacman -Q android-udev android-tools
+   ```
+
+   - El teléfono no aparece en `lsusb` → es el cable o el puerto. Muchos cables son solo
+     de carga y no llevan datos.
+   - Aparece en `lsusb` pero `groups` no incluye `adbusers` → falta el paso 2.
+   - Todo lo anterior está bien → la depuración USB sigue apagada, o el modo del cable
+     quedó en "Solo cargar" en vez de "Transferir archivos".
+
+   Si aparece `unauthorized`, va bien: revisa la pantalla del celular, hay un cuadro
+   esperando que autorices el computador.
+
+5. Para instalar la app cuando la tengamos:
+
+   ```bash
+   ./gradlew :app:installDebug
    ```
 
 ### Opción alternativa: emulador
