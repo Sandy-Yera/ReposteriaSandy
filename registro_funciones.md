@@ -153,6 +153,11 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Qué hace: calcula cuánto pesa cada trozo dividiendo el peso final del producto entre la cantidad de trozos.
 - Cómo funciona: recibe `pesoFinalG: Double?` y `trozos: Int`, devuelve `String` ya formateado. Si `pesoFinalG` es `null` devuelve la constante `PESO_NO_ESPECIFICADO` en vez de un número — por eso retorna `String` y no `Double`. Valida `trozos >= 1` y lanza excepción si no, en vez de dividir por cero.
 
+### SIN_MOLDE ✅ IMPLEMENTADA (sin usar todavía)
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/rendimiento/Rendimiento.kt
+- Qué hace: el texto fijo del campo molde cuando la receta no usa ninguno (una salsa, por ejemplo).
+- Cómo funciona: constante con el texto `"No utiliza molde"`, especificado en la tabla de la sección 8.3. **Todavía no la usa nadie**: su consumidor es el paso "Rendimiento" de la Fase 5. Queda registrada justamente para que ahí se reutilice en vez de escribir el texto suelto en el Composable.
+
 ### factorEscala ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/moldes/Moldes.kt
 - Qué hace: calcula por cuánto hay que multiplicar cada ingrediente al pasar una receta de un molde a otro.
@@ -552,6 +557,11 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/ingredientes/IngredientesViewModel.kt
 - Qué hace: dice cómo construir el `IngredientesViewModel`, que necesita un repositorio y no tiene constructor vacío.
 - Cómo funciona: función del `companion object` que recibe el `IngredienteRepositorio` y devuelve un `ViewModelProvider.Factory` armado con `viewModelFactory { initializer { … } }`. Existe porque el proyecto no usa una librería de inyección de dependencias (ver `AppContainer`). **Cada ViewModel nuevo necesita la suya**, con este mismo patrón.
+
+### IngredienteDaoFalso, HistorialDaoFalso y RecetaDaoFalso ✅ IMPLEMENTADAS
+- Ubicación: app/src/test/java/com/sandyyera/reposteria/data/DaosFalsos.kt
+- Qué hacen: reemplazan a los DAO de Room con datos en memoria, para probar repositorios y ViewModel sin base de datos ni celular (`./gradlew :app:test`).
+- Cómo funcionan: los DAO de Room son interfaces, así que se sustituyen sin tocar el código de la app. **`IngredienteDaoFalso` imita el índice único de la tabla** y lanza excepción ante un nombre repetido, igual que la base de verdad: sin eso, la prueba de "no se puede crear un duplicado" pasaría aunque la comprobación no existiera. `HistorialDaoFalso` expone `eventos` y `limpiezasPedidas` para revisarlos. `RecetaDaoFalso` solo implementa lo que hoy se usa (`obtenerRecetasQueUsan`, `quitarIngredienteDeTodasLasSecciones`, más `declararUso` para preparar el escenario) y **el resto falla ruidosamente**: un `emptyList()` de relleno haría pasar pruebas que no probaron nada. **Al necesitar una consulta nueva se implementa acá, con datos reales en memoria.**
 
 ### luminancia y contraste ✅ IMPLEMENTADAS
 - Ubicación: herramientas/contraste.py

@@ -601,6 +601,24 @@ El tercer grupo es el que se presta a confusión: `reescalarRecetaPorMolde` *par
 
 La regla práctica: **si una función tiene `suspend` en la firma, no va en `logica/`.**
 
+### 6.6 Cómo se prueba cada cosa
+
+Hay tres niveles, y cada uno cubre lo que el anterior no puede. Los dos primeros corren en el computador, sin celular:
+
+| Nivel | Comando | Qué cubre | Qué **no** puede cubrir |
+|---|---|---|---|
+| **Lógica pura** | `./gradlew :logica:test` | Las fórmulas, el formato, las validaciones, la búsqueda | Nada que necesite mirar datos guardados |
+| **App con base falsa** | `./gradlew :app:test` | Repositorios y ViewModel sobre DAO en memoria: nombres repetidos, orden de las operaciones al borrar, el estado de la pantalla | Que el SQL sea correcto; que Room mapee bien las tablas |
+| **En el celular** | `./gradlew :app:installDebug` | Que las consultas de verdad devuelvan lo que se espera, y que la pantalla se vea y se toque bien | — |
+
+**El nivel 2 usa el repositorio de verdad sobre DAO falsos**, no un repositorio falso. Probar contra una imitación del repositorio dejaría sin probar justamente la parte que se escribió.
+
+**Los DAO falsos imitan lo que la base hace mal a propósito.** `IngredienteDaoFalso` lanza excepción ante un nombre repetido igual que el índice único de SQLite. Sin eso, la prueba de "no se puede crear un duplicado" pasaría aunque la comprobación no existiera — y eso es exactamente lo que cierra la app.
+
+**Lo que un DAO falso no implementa falla ruidosamente**, con un mensaje que dice qué hacer. Devolver `emptyList()` "para salir del paso" produce pruebas que aprueban código roto, que es peor que no tener prueba.
+
+**Al escribir una función nueva, la pregunta es en qué nivel se prueba.** Si la respuesta es "en ninguno de los dos primeros", casi siempre significa que hay lógica pura mezclada con acceso a datos y conviene separarla — la misma regla de 6.5, mirada desde las pruebas.
+
 ---
 
 ## 7. Módulo Ingredientes

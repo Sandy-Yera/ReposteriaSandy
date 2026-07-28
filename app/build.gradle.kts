@@ -70,6 +70,10 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
 
     testImplementation(libs.junit)
+    // Deja adelantar el tiempo y controlar en qué hilo corren las corrutinas. Hace falta
+    // para probar un ViewModel: `viewModelScope` usa el hilo principal de Android, que en
+    // una prueba de escritorio no existe y hay que reemplazar por uno de mentira.
+    testImplementation(libs.kotlinx.coroutines.test)
     // room-testing y el runner de pruebas instrumentadas se suman al escribir los tests
     // de migración, para no arrastrar dependencias que todavía no se usan.
 }

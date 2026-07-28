@@ -18,8 +18,17 @@ Con respaldo en Google Drive.
 
 Solo necesitas Java 17 o superior. No hace falta Android Studio.
 
+Las fórmulas y validaciones, sin nada de Android:
+
 ```bash
 ./gradlew :logica:test
+```
+
+Los repositorios y el ViewModel, con la base de datos reemplazada por una de mentira en
+memoria. Tampoco necesita celular, pero sí el Android SDK:
+
+```bash
+./gradlew :app:test
 ```
 
 Y para comprobar que la paleta cumple el contraste mínimo de la sección 12.6 (no necesita
@@ -46,6 +55,6 @@ herramientas/   Scripts sueltos de apoyo, que no son parte de la app.
 | | |
 |---|---|
 | Lógica pura | implementada, 140 tests |
-| Base de datos (Room) | 15 tablas, DAOs y primeros repositorios; compila e instala en el celular |
+| Base de datos (Room) | 15 tablas, DAOs y primeros repositorios; 43 tests sobre una base de mentira en memoria |
 | Pantallas | Ingredientes lista (alta, edición, búsqueda, borrado con advertencia y calculadora de valor por gramo); el resto pendiente |
 | Respaldo en Drive | pendiente |
