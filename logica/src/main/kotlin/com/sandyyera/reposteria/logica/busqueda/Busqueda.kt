@@ -25,3 +25,17 @@ internal fun sinTildes(texto: String): String =
  */
 fun coincide(textoBusqueda: String, campo: String): Boolean =
     sinTildes(campo).contains(sinTildes(textoBusqueda), ignoreCase = true)
+
+/**
+ * Dice si dos textos son el mismo nombre, ignorando mayúsculas, tildes y espacios sobrantes.
+ *
+ * A diferencia de [coincide], que busca una parte dentro de otra, acá los dos textos tienen
+ * que ser el mismo completo: "Azúcar" y "azucar " son el mismo ingrediente, pero "azúcar
+ * flor" no lo es.
+ *
+ * Sirve para avisar de un ingrediente repetido antes de crearlo. La base de datos por su
+ * cuenta no alcanza: sabe ignorar mayúsculas, pero para ella "azucar" y "azúcar" son
+ * nombres distintos.
+ */
+fun sonElMismoTexto(a: String, b: String): Boolean =
+    sinTildes(a.trim()).equals(sinTildes(b.trim()), ignoreCase = true)

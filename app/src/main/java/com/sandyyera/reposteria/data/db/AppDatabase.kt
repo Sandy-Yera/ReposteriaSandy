@@ -5,7 +5,11 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import com.sandyyera.reposteria.data.db.dao.EmpleadoDao
+import com.sandyyera.reposteria.data.db.dao.HistorialDao
 import com.sandyyera.reposteria.data.db.dao.IngredienteDao
+import com.sandyyera.reposteria.data.db.dao.MoldeDao
+import com.sandyyera.reposteria.data.db.dao.RecetaDao
 import com.sandyyera.reposteria.data.db.entidades.Empleado
 import com.sandyyera.reposteria.data.db.entidades.EmpleadoRecetaSueldo
 import com.sandyyera.reposteria.data.db.entidades.EmpleadoSimulacionMultiple
@@ -57,6 +61,10 @@ import com.sandyyera.reposteria.data.db.entidades.RecetaSimulacionVenta
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun ingredienteDao(): IngredienteDao
+    abstract fun recetaDao(): RecetaDao
+    abstract fun moldeDao(): MoldeDao
+    abstract fun empleadoDao(): EmpleadoDao
+    abstract fun historialDao(): HistorialDao
 
     companion object {
         private const val NOMBRE_ARCHIVO = "reposteria.db"

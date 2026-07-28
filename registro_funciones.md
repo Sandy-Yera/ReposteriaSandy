@@ -11,10 +11,10 @@ Cada entrada nueva va al final de su sección, con el mismo formato.
 >   vivir según la sección 4, pero ese archivo todavía no existe. Para el paso 2 de `CLAUDE.md`
 >   significa "ya está diseñado, reutiliza este diseño", no "ábrelo".
 >
-> **Sobre "compila":** lo de `logica/` está compilado y cubierto por 66 pruebas. Lo de `app/`
-> está escrito pero **todavía no se ha compilado ni una vez** — el entorno donde se escribió no
-> tiene el Android SDK. Hasta que la primera compilación pase en el equipo de Sandy, esas
-> entradas describen la intención, no un hecho verificado.
+> **Sobre "compila":** lo de `logica/` está compilado y cubierto por 69 pruebas. Lo de `app/`
+> se compila en el equipo de Sandy, porque el entorno donde se escribe no tiene el Android
+> SDK. Las entidades, los conversores y la base de datos ya pasaron esa compilación; lo que
+> se agregue después queda sin verificar hasta la siguiente.
 >
 > **Al implementar cada función hay que volver a su entrada, marcarla y confirmar que la firma
 > real coincide con la documentada.** Si cambió, se actualiza acá en el mismo cambio, no después.
@@ -52,6 +52,11 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/busqueda/Busqueda.kt
 - Qué hace: quita los acentos de un texto dejando la letra base ("plátano" → "platano").
 - Cómo funciona: recibe `String` y devuelve `String`. Normaliza a NFD (separa la letra de su acento) y borra los caracteres de marca con `Regex("\\p{Mn}+")`. Es `internal`: solo se usa dentro del módulo, a través de `coincide`.
+
+### sonElMismoTexto ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/busqueda/Busqueda.kt
+- Qué hace: dice si dos textos son el mismo nombre, ignorando mayúsculas, tildes y espacios sobrantes.
+- Cómo funciona: recibe dos `String` y devuelve `Boolean`. A diferencia de `coincide`, que busca una parte dentro de otra, acá tienen que ser el texto completo: "Azúcar" y "azucar " son iguales, pero "azúcar flor" no. Sirve para avisar de un ingrediente repetido antes de crearlo, algo que la base no puede hacer sola porque para ella "azucar" y "azúcar" son distintos.
 
 ### pesoPorTrozo ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/rendimiento/Rendimiento.kt
@@ -298,6 +303,26 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Qué hace: las consultas y escrituras de la tabla de ingredientes.
 - Cómo funciona: `observarTodos()` devuelve un `Flow` ordenado alfabéticamente, así la pantalla se actualiza sola sin volver a preguntar; `buscarPorNombre` compara sin distinguir mayúsculas para avisar de repetidos; `eliminarPorId` es el borrado crudo, **sin** advertencia ni historial — eso lo hace el repositorio, que es lo que debe llamarse desde la pantalla.
 
+### RecetaDao ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/db/dao/RecetaDao.kt
+- Qué hace: todas las consultas de recetas, sus secciones, ingredientes, rendimiento, precios y simulación.
+- Cómo funciona: incluye `costoTotalReceta` (suma en SQL con COALESCE, porque SUM sobre cero filas da NULL), su versión en lote `costoDeVariasRecetas` —**ojo: una receta sin ingredientes no aparece en el resultado y hay que tomarla como 0**—, `obtenerRecetasQueUsan` para la advertencia de borrado, `obtenerRecetasConMoldeOrigen` para propagar ediciones de molde, y `crearReceta`, que en una transacción siembra rendimiento (trozos = 1), simulación y primera sección.
+
+### MoldeDao ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/db/dao/MoldeDao.kt
+- Qué hace: el catálogo de moldes.
+- Cómo funciona: CRUD simple con `observarTodos` como `Flow`. Borrar un molde no rompe las recetas enlazadas: su `moldeOrigenId` pasa a `null` por la clave foránea y conservan sus medidas.
+
+### EmpleadoDao ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/db/dao/EmpleadoDao.kt
+- Qué hace: empleados, sus sueldos por receta y su simulación múltiple.
+- Cómo funciona: `observarTodos` deja al genérico primero (`esGenerico DESC`). `eliminarPorId` lleva `AND esGenerico = 0` como red de seguridad, para que el genérico no pueda borrarse ni por error. `guardarSueldo` usa REPLACE apoyándose en el índice único (empleadoId, recetaId), así nunca quedan dos sueldos para la misma receta.
+
+### HistorialDao ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/db/dao/HistorialDao.kt
+- Qué hace: guarda y lee los eventos del historial de cambios.
+- Cómo funciona: `observarTodos` los devuelve del más reciente al más antiguo. `borrarAnterioresA` implementa la retención, y se llama al insertar cada evento para no necesitar un proceso aparte.
+
 ---
 
 <a name="orquestacion"></a>
@@ -327,6 +352,26 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Ubicación: data/repositorio/EmpleadoRepositorio.kt
 - Qué hace: suma lo que un empleado vendería y ganaría con **todas** sus recetas asignadas a la vez, no receta por receta.
 - Cómo funciona: `suspend`, recibe `empleadoId` y devuelve `SimulacionMultipleResultado`. Hace toda la lectura al principio —días, detalle, sueldos y `obtenerDatosCalculo` en lote— y el bucle ya no toca la base. Las recetas sin precio guardado se saltan y se devuelven en `omitidas`, para que una receta a medio configurar no voltee el total. Ojo: usa el `diasPorSemana` **compartido** del empleado, que es distinto del que tiene cada `EmpleadoRecetaSueldo` por separado.
+
+### HistorialRepositorio.registrar ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/HistorialRepositorio.kt
+- Qué hace: anota un cambio en el historial y de paso limpia lo más viejo que seis meses.
+- Cómo funciona: `suspend`, recibe tipo, entidad, descripción y un detalle opcional. **La descripción siempre debe nombrar lo afectado**, nunca un texto genérico, lo que obliga a leer el nombre antes de borrar nada. Tras insertar, borra los eventos anteriores a `RETENCION_HISTORIAL_MS`.
+
+### IngredienteRepositorio.buscarParecido ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/IngredienteRepositorio.kt
+- Qué hace: busca un ingrediente que se llame igual, para avisar antes de crear un repetido.
+- Cómo funciona: `suspend`, recibe el nombre y opcionalmente un id a excluir (al editar). Primero pregunta a la base, que ignora mayúsculas; después compara en memoria con `sonElMismoTexto`, porque SQLite no sabe ignorar tildes y para ella "azucar" y "azúcar" son distintos. Devuelve `null` si no hay parecido.
+
+### IngredienteRepositorio.recetasAfectadasPorBorrar ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/IngredienteRepositorio.kt
+- Qué hace: dice qué recetas usan un ingrediente, para la advertencia previa al borrado.
+- Cómo funciona: `suspend`, recibe el id y devuelve `List<Receta>`. La pantalla **debe** llamarla antes de ofrecer el borrado definitivo. Si viene vacía igual se pide confirmación, pero sin listado.
+
+### IngredienteRepositorio.confirmarEliminacion ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/IngredienteRepositorio.kt
+- Qué hace: borra el ingrediente de verdad, una vez que el usuario ya confirmó.
+- Cómo funciona: `suspend`, recibe el id. Lee el nombre y las recetas afectadas **antes** de borrar, porque después ya no se pueden consultar y el historial los necesita. Quita las filas que lo referencian (no hay clave foránea que lo haga solo) y recién ahí borra la fila. No vuelve a preguntar: la confirmación es de la pantalla.
 
 ---
 

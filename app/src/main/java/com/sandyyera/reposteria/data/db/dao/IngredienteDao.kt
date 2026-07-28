@@ -20,6 +20,10 @@ interface IngredienteDao {
     @Query("SELECT * FROM ingredientes ORDER BY nombre COLLATE NOCASE")
     fun observarTodos(): Flow<List<Ingrediente>>
 
+    /** La lista completa una sola vez, sin quedar observando. */
+    @Query("SELECT * FROM ingredientes ORDER BY nombre COLLATE NOCASE")
+    suspend fun obtenerTodosUnaVez(): List<Ingrediente>
+
     @Query("SELECT * FROM ingredientes WHERE id = :ingredienteId")
     suspend fun obtener(ingredienteId: Long): Ingrediente?
 

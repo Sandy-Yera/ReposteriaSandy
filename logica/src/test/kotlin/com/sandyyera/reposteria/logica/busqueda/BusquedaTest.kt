@@ -51,6 +51,28 @@ class BusquedaTest {
         assertTrue(coincide("", ""))
     }
 
+    // --- sonElMismoTexto: para detectar ingredientes repetidos ---
+
+    @Test
+    fun `son el mismo texto ignorando mayusculas tildes y espacios`() {
+        assertTrue(sonElMismoTexto("Azúcar", "azucar"))
+        assertTrue(sonElMismoTexto("azucar ", "  Azúcar"))
+        assertTrue(sonElMismoTexto("PLÁTANO", "platano"))
+    }
+
+    @Test
+    fun `no son el mismo texto si uno es solo una parte del otro`() {
+        // Acá está la diferencia con coincide: "azúcar flor" es otro ingrediente.
+        assertFalse(sonElMismoTexto("azucar", "azúcar flor"))
+        assertTrue("coincide sí lo encuentra, y debe seguir haciéndolo", coincide("azucar", "azúcar flor"))
+    }
+
+    @Test
+    fun `nombres distintos no se confunden`() {
+        assertFalse(sonElMismoTexto("harina", "maicena"))
+        assertFalse(sonElMismoTexto("crema", "cremor"))
+    }
+
     @Test
     fun `funciona con nombres de ingredientes reales`() {
         assertTrue(coincide("azucar", "Azúcar flor"))
