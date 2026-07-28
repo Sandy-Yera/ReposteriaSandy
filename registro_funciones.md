@@ -5,11 +5,16 @@ Cada entrada nueva va al final de su sección, con el mismo formato.
 
 > **Cómo leer el estado de cada entrada:**
 >
-> - **`✅ IMPLEMENTADA`** — el archivo existe y compila. La ruta es real: ábrelo y léelo, tal
->   como pide el paso 2 de `CLAUDE.md`.
+> - **`✅ IMPLEMENTADA`** — el archivo existe. La ruta es real: ábrelo y léelo, tal como pide
+>   el paso 2 de `CLAUDE.md`.
 > - **Sin marca** — está solo ESPECIFICADA en `arquitectura.md`. La ruta indica dónde va a
 >   vivir según la sección 4, pero ese archivo todavía no existe. Para el paso 2 de `CLAUDE.md`
 >   significa "ya está diseñado, reutiliza este diseño", no "ábrelo".
+>
+> **Sobre "compila":** lo de `logica/` está compilado y cubierto por 66 pruebas. Lo de `app/`
+> está escrito pero **todavía no se ha compilado ni una vez** — el entorno donde se escribió no
+> tiene el Android SDK. Hasta que la primera compilación pase en el equipo de Sandy, esas
+> entradas describen la intención, no un hecho verificado.
 >
 > **Al implementar cada función hay que volver a su entrada, marcarla y confirmar que la firma
 > real coincide con la documentada.** Si cambió, se actualiza acá en el mismo cambio, no después.
@@ -252,6 +257,46 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Ubicación: data/repositorio/HistorialRepositorio.kt
 - Qué hace: deja anotado en el historial que algo se creó, se editó o se eliminó.
 - Cómo funciona: `suspend`, recibe `tipo`, `entidad`, `descripcion` y un `detalleAdicional` opcional. **La descripción siempre debe nombrar la entidad afectada** (`"Se eliminó el ingrediente 'Harina'"`), nunca un texto genérico, lo que obliga a leer el nombre antes de borrar. Aprovecha la llamada para borrar los eventos más viejos que `RETENCION_HISTORIAL_MS`.
+
+### aVigente ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/db/entidades/Precios.kt
+- Qué hace: convierte una fila de precio de la base al tipo que entienden las fórmulas.
+- Cómo funciona: función de extensión sobre `RecetaPrecio` que devuelve `PrecioVigente`, dejando fuera `id` y `recetaId`. Existe porque `logica/` no depende de Android y allá el precio no sabe nada de Room. Es el puente que se usa al armar el snapshot de una receta.
+
+### Convertidores ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/db/Convertidores.kt
+- Qué hace: le enseña a Room a guardar y leer los seis enums del proyecto.
+- Cómo funciona: clase con un par de `@TypeConverter` por enum (`TipoFormaMolde`, `ModoPrecio`, `TipoEvento`, `EntidadEvento`, `TipoDuracion`, `UnidadDuracion`), registrada con `@TypeConverters` en `AppDatabase`. Convierte a texto con `.name` y de vuelta con `valueOf`. **Por nombre y no por posición a propósito**: si se agrega un valor en medio de un enum, las posiciones ya guardadas cambiarían de significado en silencio.
+
+### AppDatabase ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/db/AppDatabase.kt
+- Qué hace: la base de datos de la app; reúne las 15 tablas y da acceso a los DAO.
+- Cómo funciona: clase `@Database` en versión 1 con `exportSchema = true`, que deja el esquema en `app/schemas/` — esos archivos se versionan porque son el registro de las migraciones. `obtener(context)` devuelve una única instancia compartida (doble chequeo con `@Volatile`), ya que abrir varias sobre el mismo archivo puede corromper datos. Room activa por su cuenta las claves foráneas y el modo WAL.
+
+### AppDatabase.obtener ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/db/AppDatabase.kt
+- Qué hace: entrega la base de datos, creándola la primera vez que se pide.
+- Cómo funciona: recibe un `Context` y devuelve la instancia única de `AppDatabase`, guardándola para las siguientes llamadas. Usa el `applicationContext` para no retener una pantalla en memoria.
+
+### ReposteriaApp ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ReposteriaApp.kt
+- Qué hace: el punto de entrada de la app; arma las piezas compartidas.
+- Cómo funciona: extiende `Application` y expone `base`, la instancia de `AppDatabase`, creada con `by lazy` para no abrir la base hasta que alguien la use. Cumple el rol de contenedor de dependencias sin necesitar una librería aparte.
+
+### ReposteriaTheme ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/theme/Theme.kt
+- Qué hace: aplica la paleta de la app a todo lo que envuelve, en modo claro u oscuro.
+- Cómo funciona: Composable que recibe si va en oscuro (por defecto, lo que tenga el celular) y el contenido. Elige entre `EsquemaClaro` y `EsquemaOscuro`, y además provee `LocalColoresHistorial` con la versión correspondiente de los tres colores del historial. Toda pantalla debe ir dentro de este Composable y usar `MaterialTheme.colorScheme.*`, nunca colores fijos.
+
+### ColoresHistorial ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/theme/Theme.kt
+- Qué hace: agrupa los tres colores del historial de cambios, que no caben en la paleta de Material.
+- Cómo funciona: `data class` con `creacion` (azul), `edicion` (verde) y `eliminacion` (frambuesa). Se accede con `LocalColoresHistorial.current` y cambia solo entre claro y oscuro. El frambuesa es además el color de `error` del tema: si fuera un acento decorativo aparte, un rojo de adorno se confundiría con un aviso de borrado.
+
+### IngredienteDao ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/db/dao/IngredienteDao.kt
+- Qué hace: las consultas y escrituras de la tabla de ingredientes.
+- Cómo funciona: `observarTodos()` devuelve un `Flow` ordenado alfabéticamente, así la pantalla se actualiza sola sin volver a preguntar; `buscarPorNombre` compara sin distinguir mayúsculas para avisar de repetidos; `eliminarPorId` es el borrado crudo, **sin** advertencia ni historial — eso lo hace el repositorio, que es lo que debe llamarse desde la pantalla.
 
 ---
 

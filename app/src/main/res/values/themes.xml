@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Tema base solo para el arranque. Los colores reales los pone Compose en ui/theme. -->
+    <style name="Theme.Reposteria" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

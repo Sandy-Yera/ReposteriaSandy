@@ -21,6 +21,6 @@ rootProject.name = "ReposteriaSandy"
 // Android, que es lo que garantiza que se pueda probar con JUnit sin emulador.
 include(":logica")
 
-// El módulo :app (Android + Room + Compose) se agrega en el siguiente paso.
-// Requiere el Android SDK instalado, así que solo compila desde Android Studio.
-// include(":app")
+// La app Android: Room, pantallas con Compose y respaldo a Drive.
+// Necesita el Android SDK instalado (ver docs/entorno.md, nivel 2).
+include(":app")

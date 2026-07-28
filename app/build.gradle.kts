@@ -15,7 +15,6 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1"
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     // Room guarda acá el esquema de cada versión. Estos archivos SÍ se versionan:
@@ -67,5 +66,6 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
 
     testImplementation(libs.junit)
-    androidTestImplementation(libs.androidx.room.testing)
+    // room-testing y el runner de pruebas instrumentadas se suman al escribir los tests
+    // de migración, para no arrastrar dependencias que todavía no se usan.
 }
