@@ -11,7 +11,7 @@ Cada entrada nueva va al final de su sección, con el mismo formato.
 >   vivir según la sección 4, pero ese archivo todavía no existe. Para el paso 2 de `CLAUDE.md`
 >   significa "ya está diseñado, reutiliza este diseño", no "ábrelo".
 >
-> **Sobre "compila":** lo de `logica/` está compilado y cubierto por 133 pruebas. Lo de `app/`
+> **Sobre "compila":** lo de `logica/` está compilado y cubierto por 140 pruebas. Lo de `app/`
 > se compila en el equipo de Sandy, porque el entorno donde se escribe no tiene el Android
 > SDK. Las entidades, los conversores y la base de datos ya pasaron esa compilación; lo que
 > se agregue después queda sin verificar hasta la siguiente.
@@ -47,6 +47,16 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/formato/Formato.kt
 - Qué hace: pone los puntos de mil **mientras se escribe**, sin tocar lo que todavía no está escrito.
 - Cómo funciona: recibe `String` y devuelve `String`. **`formatearNumero` NO sirve para esto** y ya se comprobó: aplicada tecla por tecla convierte "1000," en "1.000" (se come la coma y deja imposible el decimal), "1000,5" en "1.000,50" (inventa un cero) y "1,555" en "1,56" (redondea antes de tiempo). Esta agrupa solo la parte entera y deja intacta la decimal; descarta los puntos que reciba —los pone ella—, corta en `MAXIMO_DECIMALES` y descarta el signo menos. Aplicarla sobre su propio resultado no cambia nada, que es lo que permite llamarla en cada tecla. Lo que deja escrito siempre lo entiende `textoANumero`. La usan los tres campos numéricos de Ingredientes, desde el ViewModel (`cambiarValor`, `cambiarPrecio`, `cambiarCantidad`), no desde el Composable.
+
+### formatearMientrasSeEscribe (con cursor) ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/formato/Formato.kt
+- Qué hace: lo mismo que la anterior, **y además dice dónde queda el cursor**. Es la que hay que usar desde un campo de texto.
+- Cómo funciona: recibe `(texto: String, cursor: Int)` y devuelve `TextoConCursor`. La posición no se puede conservar como número porque el texto cambia de largo: al escribir "1234" el texto pasa a "1.234" y la posición 4, que era el final, cae entre el "3" y el "4" — **esto pasó de verdad** y lo que se escribía después entraba en medio del número. Lo que conserva es cuántos caracteres escritos por la persona (dígitos y coma, sin contar los puntos) hay antes del cursor, y busca esa misma cantidad en el texto formateado. Si el texto se acorta, el cursor queda al final. Hay un test que barre todas las posiciones de varios textos para que nunca devuelva un cursor fuera de rango, que cerraría la app.
+
+### TextoConCursor ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/formato/Formato.kt
+- Qué hace: un texto y dónde quedó el cursor dentro de él.
+- Cómo funciona: `data class` con `texto: String` y `cursor: Int`. Es lo que devuelve `formatearMientrasSeEscribe` con cursor. Está en `logica/` y no usa nada de Compose, así que se puede probar con JUnit; el Composable lo convierte a `TextFieldValue`.
 
 ### MAXIMO_DECIMALES ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/formato/Formato.kt
@@ -492,6 +502,11 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/componentes/BarraBusqueda.kt
 - Qué hace: el campo de búsqueda que usan las cuatro secciones.
 - Cómo funciona: Composable que recibe el texto actual y qué hacer al cambiar; la pantalla es dueña del texto, no él. Lleva lupa, y una X para limpiar que aparece **solo cuando hay algo escrito**. No filtra nada por su cuenta: la regla de qué cuenta como coincidencia vive en `logica/busqueda` para que las 4 pantallas busquen igual.
+
+### CampoNumerico ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/componentes/CampoNumerico.kt
+- Qué hace: el campo donde se escribe un monto o una cantidad. Pone el punto de mil solo y deja el cursor donde corresponde.
+- Cómo funciona: Composable que recibe el valor, qué hacer al cambiar, la etiqueta y opcionalmente un error y un texto de ayuda. Guarda un `TextFieldValue` y no un `String` porque el `String` no lleva la posición del cursor: el campo la conserva como un número, y ese número deja de significar lo mismo cuando el texto se alarga con el punto de mil. Dónde va el cursor lo decide `formatearMientrasSeEscribe(texto, cursor)`, en `logica/`. **Es la única puerta de entrada de números de la app**: cualquier campo numérico nuevo va por acá y no con un `OutlinedTextField` suelto, porque si no hay que volver a resolver lo del cursor en cada pantalla.
 
 ### ComboBuscable ✅ IMPLEMENTADA
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/componentes/ComboBuscable.kt

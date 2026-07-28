@@ -24,11 +24,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import com.sandyyera.reposteria.data.db.entidades.Ingrediente
 import com.sandyyera.reposteria.data.db.entidades.Receta
 import com.sandyyera.reposteria.logica.formato.formatearNumero
+import com.sandyyera.reposteria.ui.componentes.CampoNumerico
 import com.sandyyera.reposteria.logica.validaciones.LARGO_MAXIMO_NOMBRE
 import com.sandyyera.reposteria.ui.theme.LocalColoresHistorial
 import com.sandyyera.reposteria.ui.theme.Medidas
@@ -82,22 +82,15 @@ fun FormularioIngrediente(
                     )
                 )
 
-                OutlinedTextField(
-                    value = estado.valorPorGramo,
-                    onValueChange = alCambiarValor,
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Valor por gramo (en $)") },
-                    singleLine = true,
-                    isError = errorValor != null,
-                    supportingText = {
-                        // Sin error se explica el formato: es la primera vez que alguien ve
-                        // este campo y no tiene por qué adivinar si va con coma o con punto.
-                        Text(errorValor ?: "Se escribe con coma: 1,55")
-                    },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Decimal,
-                        imeAction = ImeAction.Done
-                    )
+                CampoNumerico(
+                    valor = estado.valorPorGramo,
+                    alCambiar = alCambiarValor,
+                    etiqueta = "Valor por gramo (en $)",
+                    error = errorValor,
+                    // Sin error se explica el formato: es la primera vez que alguien ve
+                    // este campo y no tiene por qué adivinar si va con coma o con punto.
+                    ayuda = "Se escribe con coma: 1,55",
+                    accionDelTeclado = ImeAction.Done
                 )
             }
         },

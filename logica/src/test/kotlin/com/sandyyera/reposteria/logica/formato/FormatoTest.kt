@@ -1,6 +1,7 @@
 package com.sandyyera.reposteria.logica.formato
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FormatoTest {
@@ -166,6 +167,93 @@ class FormatoTest {
         val numero = com.sandyyera.reposteria.logica.validaciones.textoANumero(aLaVista)
         assertEquals(1000.5, numero!!, 0.0)
         assertEquals("1.000,50", formatearNumero(numero))
+    }
+
+    // --- Dónde queda el cursor ---
+    // El bug que hubo: escribiendo "1234", el texto pasaba a "1.234" pero el cursor se
+    // quedaba en la posición 4, que en el texto nuevo cae entre el "3" y el "4". Lo que se
+    // escribiera después entraba en el medio del número.
+
+    /** Escribe [tecla] al final de [antes] y devuelve cómo queda el campo. */
+    private fun teclear(antes: String, tecla: String): String {
+        val escrito = antes + tecla
+        val resultado = formatearMientrasSeEscribe(escrito, escrito.length)
+        // Se marca el cursor con "|" para que el test se lea como se ve la pantalla.
+        return resultado.texto.substring(0, resultado.cursor) + "|" +
+            resultado.texto.substring(resultado.cursor)
+    }
+
+    @Test
+    fun `al aparecer el punto de mil el cursor queda al final`() {
+        // Este es el caso exacto que falló en el celular.
+        assertEquals("1.234|", teclear("123", "4"))
+        assertEquals("1.000|", teclear("100", "0"))
+        assertEquals("12.345|", teclear("1.234", "5"))
+    }
+
+    @Test
+    fun `escribir de corrido deja siempre el cursor al final`() {
+        var campo = ""
+        for (tecla in listOf("1", "2", "3", "4", "5", ",", "5")) {
+            val conCursor = teclear(campo, tecla)
+            assertTrue(
+                "tras escribir '$tecla' el cursor quedó en el medio: $conCursor",
+                conCursor.endsWith("|")
+            )
+            campo = conCursor.dropLast(1)
+        }
+        assertEquals("12.345,5", campo)
+    }
+
+    @Test
+    fun `el cursor en el medio se queda donde estaba`() {
+        // "12|34" -> se agrega el punto -> el cursor sigue después del "2".
+        val resultado = formatearMientrasSeEscribe("1234", 2)
+        assertEquals("1.234", resultado.texto)
+        assertEquals(3, resultado.cursor)
+        assertEquals("1.2", resultado.texto.substring(0, resultado.cursor))
+    }
+
+    @Test
+    fun `el cursor al principio se queda al principio`() {
+        val resultado = formatearMientrasSeEscribe("1234", 0)
+        assertEquals("1.234", resultado.texto)
+        assertEquals(0, resultado.cursor)
+    }
+
+    @Test
+    fun `si el texto se acorta el cursor no se sale`() {
+        // Los ceros de más desaparecen: el cursor no puede quedar en una posición que ya
+        // no existe.
+        val resultado = formatearMientrasSeEscribe("000123", 6)
+        assertEquals("123", resultado.texto)
+        assertTrue(resultado.cursor <= resultado.texto.length)
+        assertEquals(3, resultado.cursor)
+    }
+
+    @Test
+    fun `borrar el ultimo digito deja el cursor al final`() {
+        // "1.234|" + borrar -> el campo entrega "1.23" con el cursor en 4.
+        val resultado = formatearMientrasSeEscribe("1.23", 4)
+        assertEquals("123", resultado.texto)
+        assertEquals(3, resultado.cursor)
+    }
+
+    @Test
+    fun `el cursor nunca queda fuera del texto`() {
+        // Barrido: cualquier posición de cualquiera de estos textos tiene que dar un
+        // cursor válido. Un cursor fuera de rango cierra la app.
+        val textos = listOf("", "1", "1234", "1.234", "1.234,56", "0,5", ",", "000", "abc12")
+        for (texto in textos) {
+            for (posicion in -2..texto.length + 2) {
+                val resultado = formatearMientrasSeEscribe(texto, posicion)
+                assertTrue(
+                    "texto='$texto' posicion=$posicion dio cursor=${resultado.cursor} " +
+                        "sobre '${resultado.texto}'",
+                    resultado.cursor in 0..resultado.texto.length
+                )
+            }
+        }
     }
 
     @Test

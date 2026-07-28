@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
@@ -26,11 +25,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -38,12 +35,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import com.sandyyera.reposteria.data.db.entidades.Ingrediente
 import com.sandyyera.reposteria.logica.calculadora.UnidadDeCompra
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.ui.componentes.BarraBusqueda
+import com.sandyyera.reposteria.ui.componentes.CampoNumerico
 import com.sandyyera.reposteria.ui.theme.Medidas
 import com.sandyyera.reposteria.ui.theme.ReposteriaTheme
 
@@ -231,32 +228,21 @@ private fun CuentaDeLaCompra(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
-        OutlinedTextField(
-            value = estado.precio,
-            onValueChange = alCambiarPrecio,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Lo que pagaste (en $)") },
-            singleLine = true,
-            isError = errorPrecio != null,
-            supportingText = { if (errorPrecio != null) Text(errorPrecio) },
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Decimal,
-                imeAction = ImeAction.Next
-            )
+        CampoNumerico(
+            valor = estado.precio,
+            alCambiar = alCambiarPrecio,
+            etiqueta = "Lo que pagaste (en $)",
+            error = errorPrecio,
+            accionDelTeclado = ImeAction.Next
         )
 
-        OutlinedTextField(
-            value = estado.cantidad,
-            onValueChange = alCambiarCantidad,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Lo que trae el paquete") },
-            singleLine = true,
-            isError = errorCantidad != null,
-            supportingText = { if (errorCantidad != null) Text(errorCantidad) },
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Decimal,
-                imeAction = ImeAction.Done
-            )
+        CampoNumerico(
+            valor = estado.cantidad,
+            alCambiar = alCambiarCantidad,
+            etiqueta = "Lo que trae el paquete",
+            error = errorCantidad,
+            ayuda = "Se escribe con coma: 1,5",
+            accionDelTeclado = ImeAction.Done
         )
 
         Row(horizontalArrangement = Arrangement.spacedBy(Medidas.chico)) {

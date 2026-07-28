@@ -107,6 +107,52 @@ fun formatearMientrasSeEscribe(texto: String): String {
     return if (hayComa) "$agrupada,$decimales" else agrupada
 }
 
+/**
+ * Un texto y dónde quedó el cursor dentro de él.
+ *
+ * Existe porque al agregar un punto de mil el texto se alarga, y si el cursor se queda en
+ * el mismo número de posición deja de estar donde la persona lo dejó: escribiendo "1234",
+ * el texto pasa a "1.234" —cinco caracteres— y la posición 4, que era el final, ahora cae
+ * entre el "3" y el "4". Lo que se escriba después entra en el medio del número.
+ */
+data class TextoConCursor(val texto: String, val cursor: Int)
+
+/**
+ * Formatea lo escrito **y dice dónde queda el cursor**, que es lo que hay que usar desde
+ * un campo de texto.
+ *
+ * La posición no se puede conservar como número, porque el texto cambia de largo. Lo que
+ * se conserva es **cuántos caracteres que la persona escribió** hay antes del cursor —los
+ * dígitos y la coma—, sin contar los puntos, que los pone la app. Después se busca esa
+ * misma cantidad en el texto ya formateado.
+ *
+ * Escribiendo "1234" con el cursor al final: hay 4 caracteres escritos antes del cursor;
+ * en "1.234" el cuarto dígito termina en la posición 5, y ahí va el cursor. Al final, como
+ * corresponde.
+ *
+ * Si el texto se acorta (al sacar ceros de más), el cursor queda al final en vez de en una
+ * posición que ya no existe.
+ */
+fun formatearMientrasSeEscribe(texto: String, cursor: Int): TextoConCursor {
+    val formateado = formatearMientrasSeEscribe(texto)
+
+    val hastaElCursor = texto.take(cursor.coerceIn(0, texto.length))
+    val escritosAntes = hastaElCursor.count(::loEscribioLaPersona)
+    if (escritosAntes == 0) return TextoConCursor(formateado, 0)
+
+    var contados = 0
+    for (posicion in formateado.indices) {
+        if (!loEscribioLaPersona(formateado[posicion])) continue
+        contados++
+        // El cursor va justo después del último carácter escrito que quedaba antes.
+        if (contados == escritosAntes) return TextoConCursor(formateado, posicion + 1)
+    }
+    return TextoConCursor(formateado, formateado.length)
+}
+
+/** Los caracteres que salen del teclado. El punto no: ese lo pone la app. */
+private fun loEscribioLaPersona(caracter: Char): Boolean = caracter.isDigit() || caracter == ','
+
 /** Mete un punto cada tres dígitos, contando desde la derecha: "1000" -> "1.000". */
 private fun agruparDeTresEnTres(digitos: String): String {
     if (digitos.length <= 3) return digitos

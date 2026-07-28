@@ -509,7 +509,13 @@ Vive en `logica/Formato.kt`, sin dependencias de Android — se puede probar con
 
 La de escritura agrupa **solo la parte entera** y deja intacto lo que va después de la coma; descarta los puntos que reciba (los pone ella), corta en 2 decimales (los que la app guarda) y descarta el signo menos, porque los campos que la usan no aceptan negativos. Aplicarla sobre su propio resultado no cambia nada, que es lo que permite llamarla en cada tecla.
 
-La conversión se hace transformando el texto en `onValueChange`, no con un `VisualTransformation`. El costo aceptado es que el cursor salta al final cuando el texto cambia de largo; a cambio no hay que mantener un mapa de posiciones entre lo escrito y lo mostrado, que es donde ese patrón se rompe con un `IndexOutOfBounds`. En campos cortos que se escriben de izquierda a derecha, el cursor al final es además donde uno lo quiere.
+**El cursor hay que moverlo a mano, y no es opcional.** Un campo de texto guarda la posición del cursor como un número, y ese número deja de significar lo mismo cuando el texto cambia de largo: al escribir `1234` el texto pasa a `1.234` —un carácter más— y el cursor, que estaba en la posición 4 (el final), queda entre el `3` y el `4`. Lo que se escriba después entra en medio del número. Esto **pasó de verdad** en la primera versión y no es cosmético: el monto queda mal sin que se note.
+
+La solución es no conservar la posición sino **cuántos caracteres escritos por la persona** —dígitos y coma, sin contar los puntos— hay antes del cursor, y buscar esa misma cantidad en el texto ya formateado. Lo resuelve la sobrecarga `formatearMientrasSeEscribe(texto, cursor): TextoConCursor`, que vive en `logica/` justamente para poder probarla.
+
+Todo esto está encapsulado en **`CampoNumerico.kt`**, que es la única puerta de entrada de números de la app. Cualquier campo numérico nuevo va por ahí y no con un `OutlinedTextField` suelto: si no, hay que volver a resolver lo del cursor en cada pantalla, y basta olvidarlo una vez.
+
+Se transforma el texto en `onValueChange` y no con un `VisualTransformation`. Ese otro camino guarda los dígitos crudos y formatea solo al dibujar, pero exige mantener un mapa de posiciones entre lo escrito y lo mostrado, y un mapa mal hecho no se ve raro: cierra la app con un `IndexOutOfBounds`.
 
 ### 6.2 Validaciones comunes
 
