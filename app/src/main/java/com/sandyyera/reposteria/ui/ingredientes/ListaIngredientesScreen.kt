@@ -22,6 +22,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -38,10 +39,47 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sandyyera.reposteria.data.db.entidades.Ingrediente
+import com.sandyyera.reposteria.logica.calculadora.UnidadDeCompra
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.ui.componentes.BarraBusqueda
 import com.sandyyera.reposteria.ui.theme.Medidas
 import com.sandyyera.reposteria.ui.theme.ReposteriaTheme
+
+/**
+ * Todo lo que se puede pedir desde la pantalla de ingredientes.
+ *
+ * Van agrupadas en un solo objeto porque sueltas ya eran diecinueve, y una lista así de
+ * larga se equivoca sola: basta cambiar dos de orden para conectar el botón de borrar con
+ * el de editar, y el compilador no diría nada porque tienen la misma forma.
+ *
+ * Todas traen una implementación vacía por defecto para que las vistas previas solo
+ * escriban las que les importan.
+ */
+data class AccionesIngredientes(
+    val buscar: (String) -> Unit = {},
+    val pedirAlta: () -> Unit = {},
+    val editar: (Ingrediente) -> Unit = {},
+    val pedirBorrado: (Ingrediente) -> Unit = {},
+
+    val cambiarNombre: (String) -> Unit = {},
+    val cambiarValor: (String) -> Unit = {},
+    val guardar: () -> Unit = {},
+
+    val confirmarBorrado: () -> Unit = {},
+    val confirmarReemplazo: () -> Unit = {},
+    val cerrarDialogo: () -> Unit = {},
+
+    val abrirCalculadora: () -> Unit = {},
+    val cambiarPrecio: (String) -> Unit = {},
+    val cambiarCantidad: (String) -> Unit = {},
+    val cambiarUnidad: (UnidadDeCompra) -> Unit = {},
+    val buscarDestino: (String) -> Unit = {},
+    val elegirDestino: (DestinoDelValor) -> Unit = {},
+    val terminarCalculadora: () -> Unit = {},
+    val cerrarCalculadora: () -> Unit = {},
+
+    val mensajeMostrado: () -> Unit = {}
+)
 
 /**
  * La pantalla de ingredientes, conectada al [IngredientesViewModel].
@@ -58,46 +96,47 @@ fun ListaIngredientesScreen(
 ) {
     val estado by modelo.estado.collectAsStateWithLifecycle()
 
-    ListaIngredientes(
-        estado = estado,
-        alBuscar = modelo::buscar,
-        alPedirAlta = modelo::abrirAlta,
-        alEditar = modelo::abrirEdicion,
-        alPedirBorrado = modelo::pedirBorrado,
-        alCambiarNombre = modelo::cambiarNombre,
-        alCambiarValor = modelo::cambiarValor,
-        alGuardar = modelo::guardar,
-        alConfirmarBorrado = modelo::confirmarBorrado,
-        alCerrarDialogo = modelo::cerrarDialogo,
-        alMensajeMostrado = modelo::mensajeMostrado,
-        modifier = modifier
-    )
+    val acciones = remember(modelo) {
+        AccionesIngredientes(
+            buscar = modelo::buscar,
+            pedirAlta = modelo::abrirAlta,
+            editar = modelo::abrirEdicion,
+            pedirBorrado = modelo::pedirBorrado,
+            cambiarNombre = modelo::cambiarNombre,
+            cambiarValor = modelo::cambiarValor,
+            guardar = modelo::guardar,
+            confirmarBorrado = modelo::confirmarBorrado,
+            confirmarReemplazo = modelo::confirmarReemplazo,
+            cerrarDialogo = modelo::cerrarDialogo,
+            abrirCalculadora = modelo::abrirCalculadora,
+            cambiarPrecio = modelo::cambiarPrecio,
+            cambiarCantidad = modelo::cambiarCantidad,
+            cambiarUnidad = modelo::cambiarUnidad,
+            buscarDestino = modelo::buscarDestino,
+            elegirDestino = modelo::elegirDestino,
+            terminarCalculadora = modelo::terminarCalculadora,
+            cerrarCalculadora = modelo::cerrarCalculadora,
+            mensajeMostrado = modelo::mensajeMostrado
+        )
+    }
+
+    ListaIngredientes(estado = estado, acciones = acciones, modifier = modifier)
 }
 
 /**
- * El dibujo de la pantalla de ingredientes: botón fijo arriba, buscador, y la lista debajo.
- *
- * El botón de agregar va **fuera** del área que se desplaza (patrón de 8.1, el mismo de
- * recetas y moldes): con cuarenta ingredientes, un botón dentro del scroll obligaría a
- * subir hasta arriba cada vez que se quiere agregar uno.
+ * El dibujo de la sección de ingredientes: la lista, la calculadora y los avisos.
  *
  * No recibe el ViewModel ni el repositorio a propósito — solo datos y funciones —, así que
  * se puede dibujar en la vista previa y no puede tocar la base de datos por accidente.
+ *
+ * Cuando la calculadora está abierta ocupa la pantalla entera en vez de aparecer como un
+ * cuadro encima de la lista: tiene dos partes (la cuenta y a quién aplicársela) y no cabe
+ * en un cuadro flotante con el teclado abierto.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ListaIngredientes(
     estado: EstadoIngredientes,
-    alBuscar: (String) -> Unit,
-    alPedirAlta: () -> Unit,
-    alEditar: (Ingrediente) -> Unit,
-    alPedirBorrado: (Ingrediente) -> Unit,
-    alCambiarNombre: (String) -> Unit,
-    alCambiarValor: (String) -> Unit,
-    alGuardar: () -> Unit,
-    alConfirmarBorrado: () -> Unit,
-    alCerrarDialogo: () -> Unit,
-    alMensajeMostrado: () -> Unit,
+    acciones: AccionesIngredientes,
     modifier: Modifier = Modifier
 ) {
     val anfitrionDeMensajes = remember { SnackbarHostState() }
@@ -107,9 +146,73 @@ fun ListaIngredientes(
     LaunchedEffect(estado.mensaje) {
         val texto = estado.mensaje ?: return@LaunchedEffect
         anfitrionDeMensajes.showSnackbar(texto)
-        alMensajeMostrado()
+        acciones.mensajeMostrado()
     }
 
+    val calculadora = estado.calculadora
+    if (calculadora != null) {
+        CalculadoraValorPorGramo(
+            estado = calculadora,
+            alCambiarPrecio = acciones.cambiarPrecio,
+            alCambiarCantidad = acciones.cambiarCantidad,
+            alCambiarUnidad = acciones.cambiarUnidad,
+            alBuscarDestino = acciones.buscarDestino,
+            alElegirDestino = acciones.elegirDestino,
+            alTerminar = acciones.terminarCalculadora,
+            alCerrar = acciones.cerrarCalculadora,
+            modifier = modifier
+        )
+    } else {
+        Catalogo(
+            estado = estado,
+            acciones = acciones,
+            anfitrionDeMensajes = anfitrionDeMensajes,
+            modifier = modifier
+        )
+    }
+
+    // Los avisos van fuera del `if`: la confirmación de reemplazo aparece **encima de la
+    // calculadora**, sin cerrarla, para que cancelar devuelva a donde se estaba.
+    when (val dialogo = estado.dialogo) {
+        is DialogoIngrediente.Ninguno -> Unit
+
+        is DialogoIngrediente.Formulario -> FormularioIngrediente(
+            estado = dialogo,
+            alCambiarNombre = acciones.cambiarNombre,
+            alCambiarValor = acciones.cambiarValor,
+            alGuardar = acciones.guardar,
+            alCerrar = acciones.cerrarDialogo
+        )
+
+        is DialogoIngrediente.ConfirmarBorrado -> ConfirmarBorradoIngrediente(
+            estado = dialogo,
+            alConfirmar = acciones.confirmarBorrado,
+            alCerrar = acciones.cerrarDialogo
+        )
+
+        is DialogoIngrediente.ConfirmarReemplazo -> ConfirmarReemplazoValor(
+            estado = dialogo,
+            alConfirmar = acciones.confirmarReemplazo,
+            alCerrar = acciones.cerrarDialogo
+        )
+    }
+}
+
+/**
+ * El catálogo propiamente tal: los dos botones fijos arriba, el buscador, y la lista.
+ *
+ * Los botones van **fuera** del área que se desplaza (patrón de 8.1, el mismo de recetas y
+ * moldes): con cuarenta ingredientes, un botón dentro del scroll obligaría a subir hasta
+ * arriba cada vez que se quiere agregar uno.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun Catalogo(
+    estado: EstadoIngredientes,
+    acciones: AccionesIngredientes,
+    anfitrionDeMensajes: SnackbarHostState,
+    modifier: Modifier = Modifier
+) {
     Scaffold(
         modifier = modifier,
         topBar = {
@@ -131,10 +234,10 @@ fun ListaIngredientes(
                 .fillMaxSize()
                 .padding(horizontal = Medidas.grande)
                 .padding(top = Medidas.medio),
-            verticalArrangement = Arrangement.spacedBy(Medidas.medio)
+            verticalArrangement = Arrangement.spacedBy(Medidas.chico)
         ) {
             Button(
-                onClick = alPedirAlta,
+                onClick = acciones.pedirAlta,
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = Medidas.objetivoTactil)
@@ -144,9 +247,20 @@ fun ListaIngredientes(
                 Text("Nuevo ingrediente")
             }
 
+            // Va con borde y no relleno para que se lea como lo que es: una herramienta de
+            // apoyo, no la acción principal de la pantalla.
+            OutlinedButton(
+                onClick = acciones.abrirCalculadora,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = Medidas.objetivoTactil)
+            ) {
+                Text("Calculadora de valor por gramo")
+            }
+
             BarraBusqueda(
                 texto = estado.busqueda,
-                alCambiar = alBuscar,
+                alCambiar = acciones.buscar,
                 marcador = "Buscar ingrediente"
             )
 
@@ -172,35 +286,17 @@ fun ListaIngredientes(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(Medidas.chico),
                     // Aire al final para que la última tarjeta no quede pegada al borde.
-                    contentPadding = PaddingValues(bottom = Medidas.grande)
+                    contentPadding = PaddingValues(top = Medidas.chico, bottom = Medidas.grande)
                 ) {
                     items(estado.visibles, key = { it.id }) { ingrediente ->
                         TarjetaIngrediente(
                             ingrediente = ingrediente,
-                            alEditar = { alEditar(ingrediente) },
-                            alBorrar = { alPedirBorrado(ingrediente) }
+                            alEditar = { acciones.editar(ingrediente) },
+                            alBorrar = { acciones.pedirBorrado(ingrediente) }
                         )
                     }
                 }
             }
-        }
-
-        when (val dialogo = estado.dialogo) {
-            is DialogoIngrediente.Ninguno -> Unit
-
-            is DialogoIngrediente.Formulario -> FormularioIngrediente(
-                estado = dialogo,
-                alCambiarNombre = alCambiarNombre,
-                alCambiarValor = alCambiarValor,
-                alGuardar = alGuardar,
-                alCerrar = alCerrarDialogo
-            )
-
-            is DialogoIngrediente.ConfirmarBorrado -> ConfirmarBorradoIngrediente(
-                estado = dialogo,
-                alConfirmar = alConfirmarBorrado,
-                alCerrar = alCerrarDialogo
-            )
         }
     }
 }
@@ -314,12 +410,7 @@ private fun estadoDeEjemplo(
 
 @Composable
 private fun PrevisualizarLista(estado: EstadoIngredientes) {
-    ListaIngredientes(
-        estado = estado,
-        alBuscar = {}, alPedirAlta = {}, alEditar = {}, alPedirBorrado = {},
-        alCambiarNombre = {}, alCambiarValor = {}, alGuardar = {},
-        alConfirmarBorrado = {}, alCerrarDialogo = {}, alMensajeMostrado = {}
-    )
+    ListaIngredientes(estado = estado, acciones = AccionesIngredientes())
 }
 
 @Preview(showBackground = true, name = "Lista - claro")

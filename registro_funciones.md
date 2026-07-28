@@ -11,7 +11,7 @@ Cada entrada nueva va al final de su sección, con el mismo formato.
 >   vivir según la sección 4, pero ese archivo todavía no existe. Para el paso 2 de `CLAUDE.md`
 >   significa "ya está diseñado, reutiliza este diseño", no "ábrelo".
 >
-> **Sobre "compila":** lo de `logica/` está compilado y cubierto por 98 pruebas. Lo de `app/`
+> **Sobre "compila":** lo de `logica/` está compilado y cubierto por 121 pruebas. Lo de `app/`
 > se compila en el equipo de Sandy, porque el entorno donde se escribe no tiene el Android
 > SDK. Las entidades, los conversores y la base de datos ya pasaron esa compilación; lo que
 > se agregue después queda sin verificar hasta la siguiente.
@@ -92,6 +92,41 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Validaciones.kt
 - Qué hace: cuántos caracteres puede tener el nombre de un ingrediente.
 - Cómo funciona: constante `60`. Lo usa `errorEnNombreIngrediente` y también sirve para poner el tope en el campo de texto de la pantalla.
+
+### redondearADosDecimales ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/formato/Formato.kt
+- Qué hace: redondea a 2 decimales, la precisión con la que la app guarda y muestra números.
+- Cómo funciona: recibe `Double` y devuelve `Double` (`(valor * 100).roundToLong() / 100.0`). Es la misma cuenta que hace `formatearNumero` antes de armar el texto, separada porque también hace falta **antes de guardar**: si se guardara 1,6666… y la pantalla mostrara "1,67", multiplicar por los gramos de una receta no daría el número que se vio. La usan `valorPorGramo` (7.2) y los reescalados de receta (8.3.1).
+
+### valorPorGramo ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/calculadora/ValorPorGramo.kt
+- Qué hace: calcula cuánto cuesta un gramo a partir de lo que se pagó por un paquete y de cuánto trae.
+- Cómo funciona: recibe `precioTotal`, `cantidad` y la `UnidadDeCompra`, devuelve `Double` **ya redondeado a 2 decimales** (lo mismo que se va a mostrar y a guardar). Lanza excepción si los gramos no son mayores que cero, en vez de devolver infinito. **No confundir con `costoPorTrozo`**, que reparte un costo ya conocido; esta saca el costo unitario de una compra.
+
+### calcularValorPorGramo ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/calculadora/ValorPorGramo.kt
+- Qué hace: hace la cuenta a partir de lo escrito en los campos, o devuelve `null` si todavía no se puede.
+- Cómo funciona: recibe los dos textos y la unidad, devuelve `Double?`. Es lo que la pantalla llama en cada tecla para mostrar el resultado en vivo. **No lanza excepción**: mientras se escribe, "todavía no alcanza" es lo normal y no un error — a diferencia de `valorPorGramo`, que sí lanza porque es la última red.
+
+### errorEnPrecioTexto ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/calculadora/ValorPorGramo.kt
+- Qué hace: revisa el precio pagado tal como está escrito en el campo de la calculadora.
+- Cómo funciona: recibe `String` y devuelve el motivo o `null`. Rechaza vacíos, negativos y lo que no sea número. **Acepta el 0**, por lo mismo que `errorEnValorPorGramo`: un ingrediente regalado cuesta 0 y eso es un dato válido.
+
+### errorEnCantidadTexto ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/calculadora/ValorPorGramo.kt
+- Qué hace: revisa la cantidad que trae el paquete.
+- Cómo funciona: recibe `String` y devuelve el motivo o `null`. A diferencia de `errorEnPrecioTexto`, **el cero no se acepta**: no es un dato raro pero válido, es una división por cero.
+
+### revisarCalculadora ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/calculadora/ValorPorGramo.kt
+- Qué hace: revisa de una vez los dos campos de la calculadora, mientras se escribe.
+- Cómo funciona: recibe los dos textos y devuelve `ErroresCalculadora`. Es el equivalente de `revisarIngrediente` para la otra pantalla; misma idea, campos distintos.
+
+### GRAMOS_POR_KILO ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/calculadora/ValorPorGramo.kt
+- Qué hace: cuántos gramos tiene un kilo.
+- Cómo funciona: constante `1000.0`. La usa `UnidadDeCompra.aGramos`. Es constante y no un `1000` suelto porque es justo el número que se equivoca uno al convertir de cabeza, y así hay un solo lugar donde puede estar mal.
 
 ### pesoPorTrozo ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/rendimiento/Rendimiento.kt
@@ -473,6 +508,16 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Qué hace: la advertencia obligatoria antes de borrar un ingrediente (política de 7.1).
 - Cómo funciona: Composable que lista las recetas afectadas y solo entonces habilita el botón de eliminar. **Mientras la lista es `null` el botón está deshabilitado**: `null` significa "todavía se está consultando" y lista vacía significa "no lo usa ninguna receta"; confundirlos dejaría borrar sin haber mostrado la advertencia completa.
 
+### ConfirmarReemplazoValor ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/ingredientes/DialogosIngrediente.kt
+- Qué hace: la confirmación antes de pisar el valor de un ingrediente desde la calculadora (7.2).
+- Cómo funciona: Composable que muestra los dos números juntos —el que tiene y el que va a quedar—, el nuevo en el verde de "edición" del historial, que es el mismo color con que va a quedar anotado el cambio. Es la única pantalla donde se pueden comparar antes de que el viejo desaparezca: un valor por gramo pisado no se puede deshacer y el costo de todas las recetas que lo usan cambia en el mismo momento.
+
+### CalculadoraValorPorGramo ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/ingredientes/CalculadoraValorPorGramo.kt
+- Qué hace: la pantalla de la calculadora de valor por gramo (7.2).
+- Cómo funciona: Composable que recibe `EstadoCalculadora` y las funciones de la sección de la calculadora. Es una **pantalla completa** y no un cuadro de diálogo porque tiene dos partes (la cuenta y a quién aplicársela) y eso no cabe en un cuadro flotante con el teclado abierto. Todo va dentro de un solo `LazyColumn` —los campos también, como elementos— para que no queden dos zonas que se desplazan por separado y para que el teclado empuje el campo que se está llenando en vez de taparlo. Lleva `BackHandler`, así el botón de atrás del teléfono la cierra en vez de salir de la app.
+
 ### IngredientesViewModel ✅ IMPLEMENTADA
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/ingredientes/IngredientesViewModel.kt
 - Qué hace: guarda lo que se ve en la pantalla de ingredientes y ejecuta lo que se pide desde ella.
@@ -527,6 +572,31 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Validaciones.kt
 - Qué hace: los problemas de un formulario de ingrediente, uno por campo.
 - Cómo funciona: `data class` con `nombre: String?` y `valorPorGramo: String?` (`null` = ese campo está bien), más `sirve` que dice si no hay nada que corregir. Va por campo y no como un solo mensaje porque la pantalla tiene que poder mostrar cada aviso **bajo el campo que lo causó**.
+
+### UnidadDeCompra ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/calculadora/ValorPorGramo.kt
+- Qué hace: en qué unidad viene escrito el peso del paquete que se está costeando.
+- Cómo funciona: `enum` con `GRAMO` y `KILO`, más el método `aGramos(cantidad)` que hace la conversión. Existe porque en repostería casi todo se compra en kilos y se usa en gramos, y esa conversión de cabeza es el paso donde se equivoca uno. **No se guarda en la base**: es un dato de la pantalla mientras dura la cuenta, así que no necesita `TypeConverter`.
+
+### ErroresCalculadora ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/calculadora/ValorPorGramo.kt
+- Qué hace: los problemas de la calculadora, uno por campo.
+- Cómo funciona: `data class` con `precio: String?` y `cantidad: String?` (`null` = ese campo está bien), más `sirve`. Es un tipo aparte de `ErroresIngrediente` aunque tenga la misma forma: los nombres de los campos son parte de lo que significa, y un tipo genérico de "dos textos o nulos" dejaría de decir cuál es cuál justo donde importa, que es al pintarlos bajo su campo.
+
+### DestinoDelValor ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/ingredientes/IngredientesViewModel.kt
+- Qué hace: dice qué se va a hacer con el valor que salió de la calculadora.
+- Cómo funciona: tipo cerrado con `Crear` (abrir el formulario de alta con el valor puesto) y `Reemplazar(ingredienteId)`. Arranca en `null` —nada elegido— a propósito: tocar "Listo" sin elegir avisa en vez de suponer. Guarda el **id** y no el ingrediente entero para que el "valor actual" que se muestra salga siempre de la lista viva y no de una copia que quedó vieja; si ese ingrediente se borró mientras tanto, la elección deja de resolverse sola.
+
+### EstadoCalculadora ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/ingredientes/IngredientesViewModel.kt
+- Qué hace: lo que la calculadora de valor por gramo (7.2) necesita para dibujarse.
+- Cómo funciona: `data class` con lo escrito (`precio`, `cantidad`, `unidad`, `busquedaDestino`, `destino`), los `tocado…` que evitan mostrar errores antes de tiempo, `faltaElegirDestino` para el aviso de "no elegiste nada", y dos campos que **no se escriben a mano** sino que rellena el `combine` del ViewModel: `candidatos` (la lista ya filtrada) y `elegido` (el ingrediente resuelto contra la base). Expone `resultado`, `puedeTerminar` y `creandoNuevo`.
+
+### AccionesIngredientes ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/ingredientes/ListaIngredientesScreen.kt
+- Qué hace: agrupa todo lo que se puede pedir desde la sección de ingredientes.
+- Cómo funciona: `data class` de 19 funciones, todas con una implementación vacía por defecto para que las vistas previas escriban solo las que les importan. Van agrupadas porque sueltas eran diecinueve parámetros: basta cambiar dos de orden para conectar el botón de borrar con el de editar, y el compilador no diría nada porque tienen la misma forma. **Al agregar una acción nueva va acá**, no como parámetro suelto.
 
 ### EstadoIngredientes ✅ IMPLEMENTADA
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/ingredientes/IngredientesViewModel.kt

@@ -16,8 +16,21 @@ import kotlin.math.roundToLong
  *
  * Ver la sección 6.1 de arquitectura.md.
  */
+/**
+ * Redondea a 2 decimales, que es la precisión con la que la app guarda y muestra números.
+ *
+ * Es la misma cuenta que hace [formatearNumero] antes de armar el texto, separada acá
+ * porque también hace falta **antes de guardar**: un valor por gramo calculado como
+ * 1,6666… se mostraría como "1,67" y se guardaría como 1,6666…, y entonces multiplicarlo
+ * por los gramos de una receta no daría lo que la pantalla dejó ver. Guardando lo mismo
+ * que se muestra, la cuenta cierra.
+ *
+ * Lo usan la calculadora de valor por gramo (7.2) y los reescalados de receta (8.3.1).
+ */
+fun redondearADosDecimales(valor: Double): Double = (valor * 100).roundToLong() / 100.0
+
 fun formatearNumero(valor: Double): String {
-    val redondeado = (valor * 100).roundToLong() / 100.0
+    val redondeado = redondearADosDecimales(valor)
 
     // Se trabaja en positivo y el signo se pega al final. Si se usara redondeado.toLong()
     // directamente, (-0,56) daría 0 y se perdería el "-": una pérdida se vería como ganancia.

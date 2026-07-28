@@ -10,6 +10,10 @@ import com.sandyyera.reposteria.data.db.entidades.Receta
 import com.sandyyera.reposteria.data.repositorio.IngredienteRepositorio
 import com.sandyyera.reposteria.data.repositorio.ResultadoGuardarIngrediente
 import com.sandyyera.reposteria.logica.busqueda.filtrarPor
+import com.sandyyera.reposteria.logica.calculadora.ErroresCalculadora
+import com.sandyyera.reposteria.logica.calculadora.UnidadDeCompra
+import com.sandyyera.reposteria.logica.calculadora.calcularValorPorGramo
+import com.sandyyera.reposteria.logica.calculadora.revisarCalculadora
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.logica.validaciones.ErroresIngrediente
 import com.sandyyera.reposteria.logica.validaciones.revisarIngrediente
@@ -84,6 +88,74 @@ sealed interface DialogoIngrediente {
         val recetasAfectadas: List<Receta>? = null,
         val borrando: Boolean = false
     ) : DialogoIngrediente
+
+    /**
+     * La confirmación antes de pisar el valor de un ingrediente desde la calculadora (7.2).
+     *
+     * Guarda los dos valores —el que tiene y el que va a quedar— porque el aviso tiene que
+     * mostrarlos juntos. Reemplazar un valor no se puede deshacer y no avisa a nadie más:
+     * el costo de todas las recetas que usan ese ingrediente cambia en el mismo momento.
+     */
+    data class ConfirmarReemplazo(
+        val ingrediente: Ingrediente,
+        val valorNuevo: Double,
+        val guardando: Boolean = false
+    ) : DialogoIngrediente
+}
+
+/**
+ * Qué se va a hacer con el valor que salió de la calculadora.
+ *
+ * Arranca en `null` —nada elegido— a propósito: la calculadora no adivina qué ingrediente
+ * quisiste. Tocar "Listo" sin haber elegido avisa en vez de hacer algo por su cuenta.
+ */
+sealed interface DestinoDelValor {
+
+    /** Crear un ingrediente nuevo con ese valor ya puesto. Va fijo primero en la lista. */
+    data object Crear : DestinoDelValor
+
+    /**
+     * Pisar el valor de un ingrediente que ya existe.
+     *
+     * Guarda el **id** y no el ingrediente entero para que el "valor actual" que se
+     * muestra sea siempre el de la base y no una copia que quedó vieja. Si mientras tanto
+     * ese ingrediente se borró, deja de resolverse y la elección queda sin efecto, que es
+     * lo correcto.
+     */
+    data class Reemplazar(val ingredienteId: Long) : DestinoDelValor
+}
+
+/**
+ * Lo que la calculadora de valor por gramo (7.2) necesita para dibujarse.
+ *
+ * [candidatos] y [elegido] no se escriben a mano: se rellenan al armar el estado, a partir
+ * de la lista viva de ingredientes. Todo lo demás es lo que la persona escribió.
+ */
+data class EstadoCalculadora(
+    val precio: String = "",
+    val cantidad: String = "",
+    val unidad: UnidadDeCompra = UnidadDeCompra.KILO,
+    val tocadoPrecio: Boolean = false,
+    val tocadoCantidad: Boolean = false,
+    val busquedaDestino: String = "",
+    val destino: DestinoDelValor? = null,
+    val faltaElegirDestino: Boolean = false,
+    val candidatos: List<Ingrediente> = emptyList(),
+    val elegido: Ingrediente? = null
+) {
+    private val errores: ErroresCalculadora get() = revisarCalculadora(precio, cantidad)
+
+    val errorPrecioVisible: String? get() = errores.precio.takeIf { tocadoPrecio }
+    val errorCantidadVisible: String? get() = errores.cantidad.takeIf { tocadoCantidad }
+
+    /** El valor por gramo calculado, o `null` mientras falte algo por escribir. */
+    val resultado: Double? get() = calcularValorPorGramo(precio, cantidad, unidad)
+
+    /** Si el botón "Listo" está habilitado. */
+    val puedeTerminar: Boolean get() = resultado != null
+
+    /** Si "Crear un ingrediente nuevo" es lo que está elegido. */
+    val creandoNuevo: Boolean get() = destino is DestinoDelValor.Crear
 }
 
 /**
@@ -98,6 +170,8 @@ data class EstadoIngredientes(
     val hayIngredientes: Boolean = false,
     val busqueda: String = "",
     val dialogo: DialogoIngrediente = DialogoIngrediente.Ninguno,
+    /** Cuando no es `null`, en vez de la lista se muestra la calculadora (7.2). */
+    val calculadora: EstadoCalculadora? = null,
     val mensaje: String? = null,
     val cargando: Boolean = true
 ) {
@@ -121,10 +195,11 @@ class IngredientesViewModel(
 
     private val busqueda = MutableStateFlow("")
     private val dialogo = MutableStateFlow<DialogoIngrediente>(DialogoIngrediente.Ninguno)
+    private val calculadora = MutableStateFlow<EstadoCalculadora?>(null)
     private val mensaje = MutableStateFlow<String?>(null)
 
     /**
-     * Lo que se ve, armado a partir de cuatro fuentes que cambian por su cuenta.
+     * Lo que se ve, armado a partir de cinco fuentes que cambian por su cuenta.
      *
      * `combine` vuelve a calcular solo cuando alguna cambia de verdad, y el filtro queda
      * acá adentro en vez de dentro del dibujo de la pantalla. `WhileSubscribed` corta la
@@ -135,13 +210,28 @@ class IngredientesViewModel(
         repositorio.observarTodos(),
         busqueda,
         dialogo,
+        calculadora,
         mensaje
-    ) { todos, textoBuscado, dialogoActual, mensajeActual ->
+    ) { todos, textoBuscado, dialogoActual, calculadoraActual, mensajeActual ->
         EstadoIngredientes(
             visibles = filtrarPor(todos, textoBuscado) { it.nombre },
             hayIngredientes = todos.isNotEmpty(),
             busqueda = textoBuscado,
             dialogo = dialogoActual,
+            // La lista de candidatos y el ingrediente elegido se resuelven acá, contra la
+            // lista viva: así el "valor actual" que muestra la calculadora es siempre el
+            // de la base y no una copia que quedó vieja.
+            calculadora = calculadoraActual?.let { estadoCalculadora ->
+                val destino = estadoCalculadora.destino
+                estadoCalculadora.copy(
+                    candidatos = filtrarPor(todos, estadoCalculadora.busquedaDestino) { it.nombre },
+                    elegido = if (destino is DestinoDelValor.Reemplazar) {
+                        todos.firstOrNull { it.id == destino.ingredienteId }
+                    } else {
+                        null
+                    }
+                )
+            },
             mensaje = mensajeActual,
             cargando = false
         )
@@ -281,6 +371,112 @@ class IngredientesViewModel(
         dialogo.value = DialogoIngrediente.Ninguno
     }
 
+    // --- Calculadora de valor por gramo (7.2) ---
+
+    fun abrirCalculadora() {
+        calculadora.value = EstadoCalculadora()
+    }
+
+    fun cerrarCalculadora() {
+        calculadora.value = null
+    }
+
+    fun cambiarPrecio(texto: String) = enCalculadora {
+        it.copy(precio = texto, tocadoPrecio = true)
+    }
+
+    fun cambiarCantidad(texto: String) = enCalculadora {
+        it.copy(cantidad = texto, tocadoCantidad = true)
+    }
+
+    fun cambiarUnidad(unidad: UnidadDeCompra) = enCalculadora { it.copy(unidad = unidad) }
+
+    fun buscarDestino(texto: String) = enCalculadora { it.copy(busquedaDestino = texto) }
+
+    /**
+     * Elige qué hacer con el resultado, o lo desmarca si se vuelve a tocar lo ya elegido.
+     *
+     * Poder desmarcar importa: sin eso, un toque por error deja una opción puesta que ya
+     * no se puede sacar salvo cerrando y volviendo a empezar.
+     */
+    fun elegirDestino(destino: DestinoDelValor) = enCalculadora {
+        it.copy(
+            destino = if (it.destino == destino) null else destino,
+            // Al elegir algo, el reclamo de "no elegiste nada" deja de tener sentido.
+            faltaElegirDestino = false
+        )
+    }
+
+    /**
+     * El botón "Listo": lleva el valor calculado a donde se haya elegido.
+     *
+     * Si no hay nada elegido **no hace nada y avisa**, en vez de suponer. Crear abre el
+     * formulario con el valor ya puesto; reemplazar pasa antes por la confirmación, que es
+     * donde se ven el valor viejo y el nuevo juntos.
+     */
+    fun terminarCalculadora() {
+        val actual = calculadora.value ?: return
+        val valor = actual.resultado ?: return
+
+        when (val destino = actual.destino) {
+            null -> enCalculadora { it.copy(faltaElegirDestino = true) }
+
+            is DestinoDelValor.Crear -> {
+                calculadora.value = null
+                dialogo.value = DialogoIngrediente.Formulario(
+                    valorPorGramo = formatearNumero(valor),
+                    tocadoValor = true
+                )
+            }
+
+            is DestinoDelValor.Reemplazar -> {
+                // Se relee de la base en vez de usar el `elegido` del estado: ese lo
+                // rellena el `combine` y podría venir de una lectura anterior.
+                viewModelScope.launch {
+                    val ingrediente = repositorio.obtener(destino.ingredienteId)
+                    if (ingrediente == null) {
+                        // Se borró mientras la calculadora estaba abierta.
+                        enCalculadora { it.copy(destino = null, faltaElegirDestino = true) }
+                    } else {
+                        dialogo.value = DialogoIngrediente.ConfirmarReemplazo(
+                            ingrediente = ingrediente,
+                            valorNuevo = valor
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Pisa el valor del ingrediente, ya con la confirmación aceptada.
+     *
+     * Cierra la calculadora además del aviso: el trabajo que se había empezado ahí ya se
+     * terminó, y dejarla abierta invitaría a aplicar el mismo valor dos veces.
+     */
+    fun confirmarReemplazo() {
+        val aviso = dialogo.value as? DialogoIngrediente.ConfirmarReemplazo ?: return
+        if (aviso.guardando) return
+
+        dialogo.value = aviso.copy(guardando = true)
+
+        viewModelScope.launch {
+            val resultado = repositorio.actualizar(
+                aviso.ingrediente.copy(valorPorGramo = aviso.valorNuevo)
+            )
+            dialogo.value = DialogoIngrediente.Ninguno
+            calculadora.value = null
+            mensaje.value = when (resultado) {
+                is ResultadoGuardarIngrediente.Guardado ->
+                    "'${aviso.ingrediente.nombre}' quedó en $${formatearNumero(aviso.valorNuevo)} por gramo"
+                // No debería pasar: es el mismo nombre de siempre y solo cambia el número.
+                is ResultadoGuardarIngrediente.YaExiste ->
+                    "No se pudo guardar: ya hay otro ingrediente con ese nombre"
+                is ResultadoGuardarIngrediente.NoValido -> resultado.motivo
+            }
+        }
+    }
+
     /** La pantalla avisa que ya mostró el mensaje, para que no reaparezca al girar. */
     fun mensajeMostrado() {
         mensaje.value = null
@@ -293,6 +489,11 @@ class IngredientesViewModel(
         dialogo.update { actual ->
             if (actual is DialogoIngrediente.Formulario) cambio(actual) else actual
         }
+    }
+
+    /** Cambia la calculadora abierta, si es que está abierta. */
+    private fun enCalculadora(cambio: (EstadoCalculadora) -> EstadoCalculadora) {
+        calculadora.update { actual -> actual?.let(cambio) }
     }
 
     companion object {

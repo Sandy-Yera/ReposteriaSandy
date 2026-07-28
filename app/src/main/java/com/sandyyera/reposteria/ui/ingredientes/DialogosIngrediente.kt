@@ -21,13 +21,16 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import com.sandyyera.reposteria.data.db.entidades.Ingrediente
 import com.sandyyera.reposteria.data.db.entidades.Receta
+import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.logica.validaciones.LARGO_MAXIMO_NOMBRE
+import com.sandyyera.reposteria.ui.theme.LocalColoresHistorial
 import com.sandyyera.reposteria.ui.theme.Medidas
 import com.sandyyera.reposteria.ui.theme.ReposteriaTheme
 
@@ -196,6 +199,74 @@ fun ConfirmarBorradoIngrediente(
     )
 }
 
+/**
+ * La confirmación antes de pisar el valor de un ingrediente desde la calculadora (7.2).
+ *
+ * Muestra los dos números juntos —el que tiene y el que va a quedar— porque es la única
+ * pantalla donde se pueden comparar antes de que el viejo desaparezca. Un valor por gramo
+ * cambiado no se puede deshacer, y el costo de todas las recetas que usan ese ingrediente
+ * cambia en el mismo momento, sin que ninguna avise.
+ */
+@Composable
+fun ConfirmarReemplazoValor(
+    estado: DialogoIngrediente.ConfirmarReemplazo,
+    alConfirmar: () -> Unit,
+    alCerrar: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = alCerrar,
+        title = { Text("¿Cambiar el valor de '${estado.ingrediente.nombre}'?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Medidas.chico)) {
+                LineaDeValor(
+                    etiqueta = "Ahora vale",
+                    valor = estado.ingrediente.valorPorGramo,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                LineaDeValor(
+                    etiqueta = "Quedará en",
+                    valor = estado.valorNuevo,
+                    // El verde de "edición" del historial (11). Es el mismo color con que
+                    // este cambio va a quedar anotado, así que decir lo mismo acá no es
+                    // decoración: es el código de colores del sistema.
+                    color = LocalColoresHistorial.current.edicion
+                )
+                Text(
+                    text = "El costo de las recetas que lo usan cambia con esto.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = alConfirmar, enabled = !estado.guardando) {
+                Text("Cambiar el valor")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = alCerrar) { Text("Cancelar") }
+        }
+    )
+}
+
+/** Una fila "etiqueta — $monto" del aviso de reemplazo. */
+@Composable
+private fun LineaDeValor(etiqueta: String, valor: Double, color: Color) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(text = etiqueta, style = MaterialTheme.typography.bodyMedium)
+        Text(
+            // El dinero siempre pasa por formatearNumero (12.6).
+            text = "$${formatearNumero(valor)} por gramo",
+            style = MaterialTheme.typography.titleMedium,
+            color = color
+        )
+    }
+}
+
 // --- Vistas previas ---
 // Cubren lo que cuesta reproducir a mano en el celular: el nombre repetido, los campos con
 // error, y la advertencia de borrado en sus tres estados.
@@ -282,6 +353,20 @@ private fun BorradoSinRecetas() {
             estado = DialogoIngrediente.ConfirmarBorrado(
                 ingrediente = harina,
                 recetasAfectadas = emptyList()
+            ),
+            alConfirmar = {}, alCerrar = {}
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun ReemplazoDeValor() {
+    ReposteriaTheme {
+        ConfirmarReemplazoValor(
+            estado = DialogoIngrediente.ConfirmarReemplazo(
+                ingrediente = harina.copy(valorPorGramo = 1.55),
+                valorNuevo = 1.0
             ),
             alConfirmar = {}, alCerrar = {}
         )

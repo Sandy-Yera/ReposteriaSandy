@@ -622,6 +622,30 @@ suspend fun confirmarEliminacionIngrediente(ingredienteId: Long) {
 
 `costoTotalReceta()` (8.2) ya se calcula en vivo sumando los ingredientes vigentes de cada receta — al desaparecer la fila `RecetaIngrediente`, el costo total de cada receta afectada se reajusta solo, sin ningún paso adicional.
 
+### 7.2 Calculadora de valor por gramo
+
+Un botón aparte en la misma sección de Ingredientes, abajo de "+ Nuevo ingrediente". Resuelve la cuenta que hay que rehacer cada vez que sube un precio: se compró un paquete por tanto y trae tanto, y lo que la app necesita es cuánto cuesta **un gramo**.
+
+Se hace acá y no en la calculadora del celular por una razón concreta: el paso de kilos a gramos es donde se cuela el error caro. Un cero de menos deja un ingrediente mil veces más barato, y eso no se nota mirando la receta — se nota al cobrar.
+
+**La cuenta:** `valorPorGramo = precioPagado ÷ gramosQueTrae`, con un selector de **Kilos / Gramos** para la cantidad. Los dos botones están siempre a la vista, no en un desplegable, justamente porque cuál esté puesto cambia el resultado por mil.
+
+**El resultado se redondea a 2 decimales antes de guardarse**, no solo al mostrarse. Si se guardara `1,6666…` mientras la pantalla dice "1,67", multiplicar por los gramos de una receta no daría el número que se vio, y esa diferencia no tendría explicación visible. La contrapartida está aceptada y es visible: un ingrediente que sale a menos de medio centavo por gramo queda en 0, y ese 0 se ve en la calculadora **antes** de aceptar.
+
+**"Reemplazar o crear"**, debajo del resultado:
+
+1. Fijo en primer lugar, **"Crear un ingrediente nuevo"**: cierra la calculadora y abre el formulario de alta con el valor ya puesto. No lo filtra el buscador — no es un ingrediente que se pueda no encontrar, es la salida para cuando ninguno sirve.
+2. Un buscador (mismo `BarraBusqueda` de 12.2) y debajo los ingredientes en orden alfabético.
+3. Al elegir uno, su **valor actual** aparece en letra chica dentro de esa fila, y se repite en una línea de resumen al final ("«Harina» pasará de $1,55 a $1 por gramo") porque en una lista larga esa fila puede haber quedado fuera de la pantalla justo cuando se decide.
+
+**Nada viene elegido de entrada.** Tocar "Listo" sin haber elegido **avisa** en vez de suponer algo: la calculadora no adivina a qué ingrediente iba dirigido el número. Volver a tocar lo ya elegido lo desmarca, para que un toque por error se pueda deshacer sin cerrar y empezar de nuevo.
+
+**Reemplazar pasa siempre por una confirmación** que muestra los dos valores juntos —el que tiene y el que va a quedar— más el recordatorio de que el costo de las recetas que lo usan cambia con esto. Es la única pantalla donde los dos números se pueden comparar antes de que el viejo desaparezca; un valor por gramo pisado no se puede deshacer.
+
+El ingrediente elegido se guarda **por id y no como copia**, y se resuelve contra la lista viva en cada lectura. Así el "valor actual" que se muestra nunca es una copia que quedó vieja, y si ese ingrediente se borró mientras la calculadora estaba abierta, la elección simplemente deja de resolverse.
+
+Es una **pantalla completa** y no un `AlertDialog`: tiene dos partes (la cuenta y a quién aplicársela), y eso dentro de un cuadro flotante con el teclado abierto no cabe. Todo va dentro de un solo `LazyColumn` —los campos también, como elementos— para que no queden dos zonas que se desplazan por separado.
+
 ---
 
 ## 8. Módulo Recetas
@@ -1184,8 +1208,8 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 
 ### Fase 2 — Ingredientes (módulo completo)
 
-- **Construyes:** `Formato.kt`, CRUD con Compose, `ComboBuscable` con alta rápida, y la política de borrado con advertencia (7.1).
-- **Hecho cuando:** desde el celular agregas/editas/eliminas ingredientes, los buscas por coincidencia parcial (incluso escribiendo sin tildes), los montos respetan tu formato exacto —negativos incluidos, con su signo— y borrar uno en uso muestra la advertencia con las recetas afectadas antes de confirmar.
+- **Construyes:** `Formato.kt`, CRUD con Compose, `ComboBuscable` con alta rápida, la política de borrado con advertencia (7.1) y la calculadora de valor por gramo (7.2).
+- **Hecho cuando:** desde el celular agregas/editas/eliminas ingredientes, los buscas por coincidencia parcial (incluso escribiendo sin tildes), los montos respetan tu formato exacto —negativos incluidos, con su signo—, borrar uno en uso muestra la advertencia con las recetas afectadas antes de confirmar, y la calculadora saca el valor por gramo de una compra y lo aplica a un ingrediente existente (con confirmación mostrando los dos valores) o a uno nuevo.
 - **Nota:** el `ComboBuscable` queda construido y con vista previa, pero **sin usar hasta la Fase 3** — su primer consumidor real es el paso "Cantidades y precios" de una receta. Que la vista previa se vea bien no garantiza que la forma de sus parámetros sea la correcta; si al conectarlo en la Fase 3 hace falta ajustarla, es esperable y no un error de esta fase.
 
 ### Fase 3 — Receta: Cantidades y precios
