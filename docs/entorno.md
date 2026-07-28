@@ -277,6 +277,51 @@ El emulador se crea desde Android Studio (**Tools → Device Manager**).
 
 ---
 
+## Cuando el compilador dice que no existe algo que sí existe
+
+Síntoma: al compilar `:app` salen varios `Unresolved reference` de funciones de `logica/`
+que llevaban semanas funcionando, y en el mismo archivo **unos imports fallan y otros no**:
+
+```
+e: ...IngredientesViewModel.kt:12:49 Unresolved reference 'filtrarPor'
+e: ...IngredientesViewModel.kt:21:53 Unresolved reference 'textoANumero'
+```
+
+pero `ErroresIngrediente` —que vive en el mismo archivo que `textoANumero`— sí resuelve.
+
+**Eso no lo puede causar el código.** Si el paquete estuviera mal escrito o el archivo no
+existiera, fallaría el archivo completo, no la mitad. Lo que pasa es que quedó a medias la
+carpeta `logica/build/`.
+
+El motivo es cómo compila Kotlin: las funciones sueltas de un archivo van a parar a una
+clase con el nombre del archivo (`Busqueda.kt` → `BusquedaKt.class`), mientras que cada
+`class`, `data class` o `enum` va a la suya. Si una compilación incremental deja el
+directorio inconsistente, pueden quedar las clases y faltar esos `*Kt.class` — y entonces
+falla exactamente la mitad de cada import. Peor: `:logica:compileKotlin` queda `UP-TO-DATE`,
+así que Gradle está convencido de que no hay nada que rehacer.
+
+Cómo confirmarlo y arreglarlo:
+
+```bash
+# 1. ¿Está bien el código? Si los tests pasan, el problema no es lo escrito.
+./gradlew :logica:test
+
+# 2. ¿Qué falta? Tienen que estar todos los *Kt.class
+ls logica/build/classes/kotlin/main/com/sandyyera/reposteria/logica/*/
+
+# 3. El arreglo: borrar la compilación de :logica y rehacerla
+rm -rf logica/build
+./gradlew :app:installDebug
+```
+
+Si aun así falla, `./gradlew clean` borra todo y se rehace de cero. Tarda más, pero no
+falla nunca.
+
+> Vale la pena mirar el paso 1 antes que nada: separa "está mal lo que escribimos" de
+> "está mal la compilación", que son dos problemas muy distintos y se ven igual.
+
+---
+
 ## Preguntas que suelen aparecer
 
 **¿Tengo que abandonar VS Code?**
