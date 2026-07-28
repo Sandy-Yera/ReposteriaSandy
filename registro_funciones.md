@@ -11,7 +11,7 @@ Cada entrada nueva va al final de su sección, con el mismo formato.
 >   vivir según la sección 4, pero ese archivo todavía no existe. Para el paso 2 de `CLAUDE.md`
 >   significa "ya está diseñado, reutiliza este diseño", no "ábrelo".
 >
-> **Sobre "compila":** lo de `logica/` está compilado y cubierto por 121 pruebas. Lo de `app/`
+> **Sobre "compila":** lo de `logica/` está compilado y cubierto por 133 pruebas. Lo de `app/`
 > se compila en el equipo de Sandy, porque el entorno donde se escribe no tiene el Android
 > SDK. Las entidades, los conversores y la base de datos ya pasaron esa compilación; lo que
 > se agregue después queda sin verificar hasta la siguiente.
@@ -42,6 +42,16 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/formato/Formato.kt
 - Qué hace: convierte un número a texto con el formato de la app — punto para los miles, coma para los decimales, y sin coma cuando no hay decimales.
 - Cómo funciona: recibe un `Double`, redondea a 2 decimales y devuelve `String`. Trabaja sobre el valor absoluto y pega el signo al final, porque `(-0.56).toLong()` da 0 y perdería el "-" (mostraría una pérdida como ganancia). Fija `Locale.US` para que el separador de miles sea predecible y no dependa del idioma del celular. Ej: `1000.0` → `"1.000"`, `-1234.56` → `"-1.234,56"`. Cubierta por `FormatoTest` (9 casos, incluidos negativos y redondeos que llegan a entero).
+
+### formatearMientrasSeEscribe ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/formato/Formato.kt
+- Qué hace: pone los puntos de mil **mientras se escribe**, sin tocar lo que todavía no está escrito.
+- Cómo funciona: recibe `String` y devuelve `String`. **`formatearNumero` NO sirve para esto** y ya se comprobó: aplicada tecla por tecla convierte "1000," en "1.000" (se come la coma y deja imposible el decimal), "1000,5" en "1.000,50" (inventa un cero) y "1,555" en "1,56" (redondea antes de tiempo). Esta agrupa solo la parte entera y deja intacta la decimal; descarta los puntos que reciba —los pone ella—, corta en `MAXIMO_DECIMALES` y descarta el signo menos. Aplicarla sobre su propio resultado no cambia nada, que es lo que permite llamarla en cada tecla. Lo que deja escrito siempre lo entiende `textoANumero`. La usan los tres campos numéricos de Ingredientes, desde el ViewModel (`cambiarValor`, `cambiarPrecio`, `cambiarCantidad`), no desde el Composable.
+
+### MAXIMO_DECIMALES ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/formato/Formato.kt
+- Qué hace: cuántos decimales se pueden escribir en un campo numérico.
+- Cómo funciona: constante `2`, los mismos que guarda `redondearADosDecimales`. Dejar escribir un tercero mostraría una precisión que se va a perder igual al guardar.
 
 ### coincide ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/busqueda/Busqueda.kt

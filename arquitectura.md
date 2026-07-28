@@ -499,6 +499,18 @@ Los negativos importan de verdad acá: `gananciaPorTrozo`, `gananciaFinal` y el 
 
 Vive en `logica/Formato.kt`, sin dependencias de Android — se puede probar con JUnit puro.
 
+**Mientras se escribe hay que usar `formatearMientrasSeEscribe`, no `formatearNumero`.** Los campos numéricos ponen el punto de mil solos, tecla por tecla, y para eso `formatearNumero` no sirve: trabaja sobre un número ya terminado, así que aplicada a lo que se está escribiendo lo arruina.
+
+| Se escribe | `formatearNumero` | `formatearMientrasSeEscribe` |
+|---|---|---|
+| `1000,` | `1.000` — se come la coma, y entonces nunca se pueden escribir decimales | `1.000,` |
+| `1000,5` | `1.000,50` — inventa un cero que no se escribió | `1.000,5` |
+| `1,555` | `1,56` — redondea antes de que la persona termine | `1,55` |
+
+La de escritura agrupa **solo la parte entera** y deja intacto lo que va después de la coma; descarta los puntos que reciba (los pone ella), corta en 2 decimales (los que la app guarda) y descarta el signo menos, porque los campos que la usan no aceptan negativos. Aplicarla sobre su propio resultado no cambia nada, que es lo que permite llamarla en cada tecla.
+
+La conversión se hace transformando el texto en `onValueChange`, no con un `VisualTransformation`. El costo aceptado es que el cursor salta al final cuando el texto cambia de largo; a cambio no hay que mantener un mapa de posiciones entre lo escrito y lo mostrado, que es donde ese patrón se rompe con un `IndexOutOfBounds`. En campos cortos que se escriben de izquierda a derecha, el cursor al final es además donde uno lo quiere.
+
 ### 6.2 Validaciones comunes
 
 - Ingrediente: nombre no vacío y de hasta 60 caracteres, `valorPorGramo >= 0` (el 0 se permite: es cómo se dice "esto no suma al costo"). El nombre es único sin distinguir mayúsculas por el índice `NOCASE` de 5.1, pero **la comparación de tildes queda en `logica/`**: para la base "azucar" y "azúcar" son distintos y para ti son el mismo ingrediente.

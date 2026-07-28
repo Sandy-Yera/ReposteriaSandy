@@ -69,4 +69,112 @@ class FormatoTest {
         assertEquals("1,55", formatearNumero(1.5468))      // valor por gramo
         assertEquals("40.000", formatearNumero(40000.0))   // ingreso mensual simulado
     }
+
+    // --- Redondeo compartido ---
+
+    @Test
+    fun `redondear a dos decimales da el mismo numero que se muestra`() {
+        assertEquals(1.55, redondearADosDecimales(1.5468), 0.0)
+        assertEquals(1.67, redondearADosDecimales(1.6666666), 0.0)
+        assertEquals(1000.0, redondearADosDecimales(1000.0), 0.0)
+        assertEquals(-0.56, redondearADosDecimales(-0.5551), 0.0)
+    }
+
+    // --- Formato mientras se escribe ---
+    // Cada caso de acá es una tecla que se presiona; lo que importa es lo que queda a la
+    // vista justo después de presionarla.
+
+    @Test
+    fun `pone el punto de mil al llegar al cuarto digito`() {
+        assertEquals("1", formatearMientrasSeEscribe("1"))
+        assertEquals("10", formatearMientrasSeEscribe("10"))
+        assertEquals("100", formatearMientrasSeEscribe("100"))
+        assertEquals("1.000", formatearMientrasSeEscribe("1000"))
+        assertEquals("10.000", formatearMientrasSeEscribe("10000"))
+    }
+
+    @Test
+    fun `agrupa de tres en tres en numeros largos`() {
+        assertEquals("1.234.567", formatearMientrasSeEscribe("1234567"))
+        assertEquals("12.345.678", formatearMientrasSeEscribe("12345678"))
+        assertEquals("123.456.789", formatearMientrasSeEscribe("123456789"))
+    }
+
+    @Test
+    fun `no se come la coma recien escrita`() {
+        // Este es el motivo de que esta función exista. formatearNumero devolvía "1.000"
+        // y la coma desaparecía en el momento de tocarla, dejando imposible el decimal.
+        assertEquals("1.000,", formatearMientrasSeEscribe("1000,"))
+        assertEquals("0,", formatearMientrasSeEscribe("0,"))
+    }
+
+    @Test
+    fun `no inventa decimales que no se escribieron`() {
+        // formatearNumero devolvía "1.000,50" al escribir "1000,5".
+        assertEquals("1.000,5", formatearMientrasSeEscribe("1000,5"))
+        assertEquals("1.000,50", formatearMientrasSeEscribe("1000,50"))
+        assertEquals("0,0", formatearMientrasSeEscribe("0,0"))
+    }
+
+    @Test
+    fun `corta en dos decimales, que es lo que se guarda`() {
+        assertEquals("1,55", formatearMientrasSeEscribe("1,555"))
+        assertEquals("1,55", formatearMientrasSeEscribe("1,5599999"))
+    }
+
+    @Test
+    fun `aplicarla sobre su propio resultado no cambia nada`() {
+        // Importa porque se llama en cada tecla sobre el texto que ella misma dejó.
+        for (escrito in listOf("1.000", "1.000,5", "1.000,55", "0,05", "123.456.789", "0,", "")) {
+            assertEquals(
+                "reformatear '$escrito' debe devolver lo mismo",
+                escrito,
+                formatearMientrasSeEscribe(escrito)
+            )
+        }
+    }
+
+    @Test
+    fun `descarta lo que no es un digito ni la coma`() {
+        // El signo menos también: los tres campos que la usan no aceptan negativos.
+        assertEquals("15", formatearMientrasSeEscribe("1a5"))
+        assertEquals("1.000", formatearMientrasSeEscribe("-1000"))
+        assertEquals("", formatearMientrasSeEscribe("abc"))
+        assertEquals("", formatearMientrasSeEscribe(""))
+    }
+
+    @Test
+    fun `solo la primera coma cuenta`() {
+        assertEquals("1,55", formatearMientrasSeEscribe("1,5,5"))
+    }
+
+    @Test
+    fun `saca los ceros de mas pero deja el de cero coma algo`() {
+        assertEquals("5", formatearMientrasSeEscribe("05"))
+        assertEquals("1.000", formatearMientrasSeEscribe("0001000"))
+        assertEquals("0", formatearMientrasSeEscribe("000"))
+        assertEquals("0,5", formatearMientrasSeEscribe("0,5"))
+        // Empezar por la coma pone el 0 adelante solo.
+        assertEquals("0,5", formatearMientrasSeEscribe(",5"))
+    }
+
+    @Test
+    fun `lo que deja escrito se puede convertir a numero`() {
+        // La cadena completa: lo que se escribe, lo que se ve, y lo que se guarda.
+        val aLaVista = formatearMientrasSeEscribe("1000,5")
+        assertEquals("1.000,5", aLaVista)
+        val numero = com.sandyyera.reposteria.logica.validaciones.textoANumero(aLaVista)
+        assertEquals(1000.5, numero!!, 0.0)
+        assertEquals("1.000,50", formatearNumero(numero))
+    }
+
+    @Test
+    fun `borrar hacia atras deshace bien el agrupado`() {
+        // Al borrar el último dígito de "1.000" el campo queda con "1.00" y hay que
+        // devolver "100", no "1.00".
+        assertEquals("100", formatearMientrasSeEscribe("1.00"))
+        assertEquals("10", formatearMientrasSeEscribe("1.0"))
+        // Y borrar el punto en sí no debe borrar un dígito.
+        assertEquals("1.000", formatearMientrasSeEscribe("1000"))
+    }
 }

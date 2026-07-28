@@ -48,3 +48,75 @@ fun formatearNumero(valor: Double): String {
     return if (decimal == 0) "$signo$enteroFmt"
     else "$signo$enteroFmt,${decimal.toString().padStart(2, '0')}"
 }
+
+/** Cuántos decimales se pueden escribir, que son los que la app después guarda. */
+const val MAXIMO_DECIMALES = 2
+
+/**
+ * Pone los puntos de mil **mientras se escribe**, sin tocar lo que todavía no está escrito.
+ *
+ * Es la hermana de [formatearNumero], y existe porque aquella no sirve para esto. Aquella
+ * trabaja sobre un número ya terminado, y aplicada tecla por tecla arruina lo que se está
+ * escribiendo:
+ *
+ * | Escrito   | Con `formatearNumero` | Con esta   |
+ * |-----------|-----------------------|------------|
+ * | `1000,`   | `1.000` (se come la coma, no se pueden escribir decimales) | `1.000,` |
+ * | `1000,5`  | `1.000,50` (inventa un cero) | `1.000,5` |
+ * | `1,555`   | `1,56` (redondea antes de tiempo) | `1,55` |
+ *
+ * Reglas, todas al servicio de lo mismo — que lo que se ve sea lo que se escribió:
+ * - Agrupa **solo la parte entera**. Lo que va después de la coma queda tal cual, con sus
+ *   ceros a la derecha y con la coma sola si todavía no viene nada.
+ * - Descarta los puntos que vengan: son separadores de miles, los pone esta función. Por
+ *   eso aplicarla sobre su propio resultado no lo cambia.
+ * - Descarta cualquier otro carácter, incluido el signo menos. Los tres campos que la usan
+ *   no aceptan negativos, así que es una tecla que no tiene nada que hacer ahí.
+ * - Corta en [MAXIMO_DECIMALES] decimales, que es lo que la app guarda. Dejar escribir un
+ *   tercero mostraría una precisión que se va a perder igual al guardar.
+ * - Saca los ceros de más a la izquierda, pero deja el "0" de "0,5".
+ *
+ * El resultado siempre lo entiende
+ * [com.sandyyera.reposteria.logica.validaciones.textoANumero], que es lo que después lo
+ * convierte a número.
+ */
+fun formatearMientrasSeEscribe(texto: String): String {
+    val enteros = StringBuilder()
+    val decimales = StringBuilder()
+    var hayComa = false
+
+    for (caracter in texto) {
+        when {
+            caracter == ',' && !hayComa -> hayComa = true
+            !caracter.isDigit() -> Unit
+            !hayComa -> enteros.append(caracter)
+            decimales.length < MAXIMO_DECIMALES -> decimales.append(caracter)
+        }
+    }
+
+    val sinCerosSobrantes = enteros.toString().trimStart('0')
+    val parteEntera = when {
+        sinCerosSobrantes.isNotEmpty() -> sinCerosSobrantes
+        // Se escribieron solo ceros, o se empezó por la coma: hace falta un 0 adelante.
+        enteros.isNotEmpty() || hayComa -> "0"
+        // No se escribió nada todavía; el campo queda vacío y no con un 0 puesto solo.
+        else -> ""
+    }
+
+    val agrupada = agruparDeTresEnTres(parteEntera)
+    return if (hayComa) "$agrupada,$decimales" else agrupada
+}
+
+/** Mete un punto cada tres dígitos, contando desde la derecha: "1000" -> "1.000". */
+private fun agruparDeTresEnTres(digitos: String): String {
+    if (digitos.length <= 3) return digitos
+    val resultado = StringBuilder()
+    for ((posicion, digito) in digitos.withIndex()) {
+        // Cuántos dígitos quedan a la derecha de este. Se separa cada vez que es múltiplo
+        // de 3, salvo al final del todo.
+        val faltan = digitos.length - posicion
+        resultado.append(digito)
+        if (faltan > 1 && (faltan - 1) % 3 == 0) resultado.append('.')
+    }
+    return resultado.toString()
+}

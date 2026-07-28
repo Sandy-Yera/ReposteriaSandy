@@ -14,6 +14,7 @@ import com.sandyyera.reposteria.logica.calculadora.ErroresCalculadora
 import com.sandyyera.reposteria.logica.calculadora.UnidadDeCompra
 import com.sandyyera.reposteria.logica.calculadora.calcularValorPorGramo
 import com.sandyyera.reposteria.logica.calculadora.revisarCalculadora
+import com.sandyyera.reposteria.logica.formato.formatearMientrasSeEscribe
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.logica.validaciones.ErroresIngrediente
 import com.sandyyera.reposteria.logica.validaciones.revisarIngrediente
@@ -269,7 +270,7 @@ class IngredientesViewModel(
     }
 
     fun cambiarValor(texto: String) = enFormulario {
-        it.copy(valorPorGramo = texto, tocadoValor = true)
+        it.copy(valorPorGramo = formatearMientrasSeEscribe(texto), tocadoValor = true)
     }
 
     /**
@@ -382,11 +383,11 @@ class IngredientesViewModel(
     }
 
     fun cambiarPrecio(texto: String) = enCalculadora {
-        it.copy(precio = texto, tocadoPrecio = true)
+        it.copy(precio = formatearMientrasSeEscribe(texto), tocadoPrecio = true)
     }
 
     fun cambiarCantidad(texto: String) = enCalculadora {
-        it.copy(cantidad = texto, tocadoCantidad = true)
+        it.copy(cantidad = formatearMientrasSeEscribe(texto), tocadoCantidad = true)
     }
 
     fun cambiarUnidad(unidad: UnidadDeCompra) = enCalculadora { it.copy(unidad = unidad) }
