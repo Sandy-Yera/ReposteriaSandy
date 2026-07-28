@@ -300,25 +300,56 @@ directorio inconsistente, pueden quedar las clases y faltar esos `*Kt.class` —
 falla exactamente la mitad de cada import. Peor: `:logica:compileKotlin` queda `UP-TO-DATE`,
 así que Gradle está convencido de que no hay nada que rehacer.
 
-Cómo confirmarlo y arreglarlo:
+El mismo problema aparece también al correr `./gradlew :logica:test`, y ahí se ve todavía
+más claro: el test no encuentra funciones que están **en su mismo paquete**, sin ningún
+import de por medio. Es la misma carpeta rota, mirada desde el otro lado.
+
+> **Ojo con esto:** `./gradlew :logica:test` **no sirve** para comprobar si el código está
+> bien mientras el problema esté presente. Los tests se compilan contra
+> `logica/build/classes/kotlin/main`, que es justamente lo que está mal. Hay que borrar
+> primero y correr los tests después.
+
+Para ver qué falta:
 
 ```bash
-# 1. ¿Está bien el código? Si los tests pasan, el problema no es lo escrito.
-./gradlew :logica:test
-
-# 2. ¿Qué falta? Tienen que estar todos los *Kt.class
 ls logica/build/classes/kotlin/main/com/sandyyera/reposteria/logica/*/
-
-# 3. El arreglo: borrar la compilación de :logica y rehacerla
-rm -rf logica/build
-./gradlew :app:installDebug
 ```
 
-Si aun así falla, `./gradlew clean` borra todo y se rehace de cero. Tarda más, pero no
-falla nunca.
+Tienen que estar todos los `*Kt.class`: `BusquedaKt`, `FormatoKt`, `ValidacionesKt`,
+`ValorPorGramoKt`, `MoldesKt`, `PreciosKt`, `RendimientoKt`, `SimulacionKt`, `SueldosKt`.
 
-> Vale la pena mirar el paso 1 antes que nada: separa "está mal lo que escribimos" de
-> "está mal la compilación", que son dos problemas muy distintos y se ven igual.
+### El arreglo
+
+El estado viejo puede estar guardado en **tres lugares distintos**, y hay que vaciar los
+tres. Borrar solo `logica/build` no basta: como este proyecto tiene
+`org.gradle.caching=true`, Gradle guarda el resultado de cada tarea en una caché aparte y
+lo restaura tal cual, roto incluido.
+
+```bash
+./gradlew --stop                        # 1. demonios: limpia el estado en memoria de Kotlin
+rm -rf logica/build app/build           # 2. las carpetas de compilación
+rm -rf ~/.gradle/caches/build-cache-1   # 3. la caché de Gradle entre compilaciones
+./gradlew --no-build-cache :logica:test # 4. compilar de cero, sin consultar ninguna caché
+```
+
+Si los 133 tests pasan, el código estaba bien y era esto. Después,
+`./gradlew :app:installDebug` normal.
+
+Borrar `build-cache-1` es seguro: es pura caché y se rehace sola. La compilación siguiente
+tarda más y luego vuelve a la normalidad.
+
+### Antes de todo eso, descartar lo simple
+
+Dos comandos de tres segundos que separan "está mal la compilación" de "está mal el
+archivo en el disco":
+
+```bash
+git status --short && git log --oneline -1   # ¿el árbol está limpio y en el commit que crees?
+grep -c "^fun " logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Validaciones.kt
+```
+
+Si el conteo de funciones no coincide con lo que el archivo debería tener, entonces sí es
+el código —o una copia incompleta— y limpiar cachés no va a arreglar nada.
 
 ---
 
