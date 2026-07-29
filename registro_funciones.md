@@ -643,10 +643,25 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Qué hacen: la sección de recetas — botón fijo arriba, buscador, y las recetas debajo con su costo.
 - Cómo funcionan: la misma división de siempre — `ListaRecetasScreen` conecta el ViewModel, `ListaRecetas` solo dibuja y se puede ver en la vista previa. `AccionesRecetas` agrupa las diez funciones. La tarjeta de receta usa `tertiaryContainer` (el rosa pastel) en vez del crema del resto: es el único lugar con color propio, para que la lista se reconozca de un vistazo.
 
+### CantidadesViewModel ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/recetas/CantidadesViewModel.kt
+- Qué hace: el cerebro del paso "Cantidades" de una receta (8.2) — secciones, ingredientes y costo.
+- Cómo funciona: las consultas de secciones e ingredientes **no son reactivas** (los DAO devuelven listas, no `Flow`), así que lleva un contador `recargar` que entra al `combine` y se incrementa al terminar cada operación, disparando una relectura. Es más simple que volver reactivas siete consultas y cuesta una lectura por acción, no por segundo. **El costo total se relee de la base** en vez de sumarse en memoria: sumarlo acá crearía una segunda verdad sobre el mismo número, y la que manda al calcular precios y sueldos es la de la base. Hay un test que comprueba que los dos caminos den lo mismo.
+
+### LineaDeIngrediente, SeccionConIngredientes, EstadoCantidades y DialogoCantidades ✅ IMPLEMENTADAS
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/recetas/CantidadesViewModel.kt
+- Qué hacen: los tipos del paso de cantidades.
+- Cómo funcionan: `LineaDeIngrediente` cruza la fila de la receta con la ficha del catálogo —el cruce se hace en memoria y no con un `JOIN` porque la pantalla ya tiene el catálogo cargado para el buscador—, y expone `subtotal`. `EstadoCantidades` consulta `debeMostrarNombreDeSeccion` para decidir si se ven los encabezados. `DialogoCantidades` es cerrado: `PonerIngrediente` (se llama así y no `Ingrediente` para no chocar con la entidad), `Seccion`, `RenombrarSeccion` y `ConfirmarBorrarSeccion`.
+
+### PasoCantidadesScreen, PasoCantidades y AccionesCantidades ✅ IMPLEMENTADAS
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/recetas/PasoCantidadesScreen.kt
+- Qué hacen: la pantalla del paso 1 de una receta.
+- Cómo funcionan: misma división de siempre — una parte conecta el ViewModel, la otra solo dibuja y tiene vistas previas. **El costo total va fijo arriba, fuera del desplazamiento**: es el número por el que existe la pantalla, y con una receta larga quedaría fuera de vista justo mientras se ajustan las cantidades. Cada línea muestra la cuenta completa (`500 g × $1,2 = $600`) y no solo el total, para que un valor por gramo mal puesto salte a la vista. En el cuadro de agregar, el campo de gramos aparece **después** de elegir el ingrediente: pedir los dos a la vez obliga a decidir cuánto antes de saber de qué.
+
 ### NavegacionPrincipal y Seccion ✅ IMPLEMENTADAS
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/NavegacionPrincipal.kt
 - Qué hacen: el menú de 3 líneas y la sección que se esté viendo (12.1).
-- Cómo funcionan: `ModalNavigationDrawer` con un `enum Seccion` que hoy tiene Ingredientes y Recetas. **Moldes y Empleados no están puestos en gris**: una opción que no lleva a ninguna parte se toca igual y parece que algo se rompió; se agregan al enum cuando exista su pantalla. Cada sección conserva su ViewModel al cambiar de una a otra, porque `viewModel()` los guarda en la Activity — ir a Recetas y volver no borra lo escrito en el buscador. La sección elegida va en `rememberSaveable` para sobrevivir al giro del teléfono.
+- Cómo funcionan: `ModalNavigationDrawer` con un `enum Seccion` que hoy tiene Ingredientes y Recetas. Abrir una receta la muestra **a pantalla completa, sin el menú**: es un paso dentro de la receta, no una sección de la app. Se expresa como dos ramas de un `if` (`MenuDeSecciones` aparte) y no con un `return` temprano dentro del Composable, para que quede claro que son dos árboles distintos. El ViewModel de cada receta lleva `key = "cantidades-<id>"`: sin esa clave, abrir una segunda receta reutilizaría el de la primera y mostraría los ingredientes equivocados. **Moldes y Empleados no están puestos en gris**: una opción que no lleva a ninguna parte se toca igual y parece que algo se rompió; se agregan al enum cuando exista su pantalla. Cada sección conserva su ViewModel al cambiar de una a otra, porque `viewModel()` los guarda en la Activity — ir a Recetas y volver no borra lo escrito en el buscador. La sección elegida va en `rememberSaveable` para sobrevivir al giro del teléfono.
 
 ### RecetaRepositorio.costosDe ✅ IMPLEMENTADA
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/RecetaRepositorio.kt

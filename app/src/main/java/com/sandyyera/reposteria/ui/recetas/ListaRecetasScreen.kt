@@ -1,5 +1,6 @@
 package com.sandyyera.reposteria.ui.recetas
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -62,7 +63,8 @@ data class AccionesRecetas(
     val confirmarBorrado: () -> Unit = {},
     val cerrarDialogo: () -> Unit = {},
     val mensajeMostrado: () -> Unit = {},
-    val abrirMenu: () -> Unit = {}
+    val abrirMenu: () -> Unit = {},
+    val abrir: (Receta) -> Unit = {}
 )
 
 /** La pantalla de recetas conectada a su ViewModel. */
@@ -70,11 +72,12 @@ data class AccionesRecetas(
 fun ListaRecetasScreen(
     modelo: RecetasViewModel,
     alAbrirMenu: () -> Unit,
+    alAbrirReceta: (Receta) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val estado by modelo.estado.collectAsStateWithLifecycle()
 
-    val acciones = remember(modelo, alAbrirMenu) {
+    val acciones = remember(modelo, alAbrirMenu, alAbrirReceta) {
         AccionesRecetas(
             buscar = modelo::buscar,
             pedirAlta = modelo::abrirAlta,
@@ -85,7 +88,8 @@ fun ListaRecetasScreen(
             confirmarBorrado = modelo::confirmarBorrado,
             cerrarDialogo = modelo::cerrarDialogo,
             mensajeMostrado = modelo::mensajeMostrado,
-            abrirMenu = alAbrirMenu
+            abrirMenu = alAbrirMenu,
+            abrir = alAbrirReceta
         )
     }
 
@@ -181,6 +185,7 @@ fun ListaRecetas(
                     items(estado.visibles, key = { it.receta.id }) { fila ->
                         TarjetaReceta(
                             fila = fila,
+                            alAbrir = { acciones.abrir(fila.receta) },
                             alEditar = { acciones.editar(fila.receta) },
                             alBorrar = { acciones.pedirBorrado(fila.receta) }
                         )
@@ -220,12 +225,18 @@ fun ListaRecetas(
 @Composable
 private fun TarjetaReceta(
     fila: RecetaConCosto,
+    alAbrir: () -> Unit,
     alEditar: () -> Unit,
     alBorrar: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Card(
-        modifier = modifier.fillMaxWidth(),
+        // Tocar la tarjeta abre la receta. Acá sí se usa un gesto sin botón propio, al
+        // revés que en ingredientes: abrir es LA acción de una receta, "tocar para abrir"
+        // se entiende sin explicación, y un cuarto botón dejaría la fila apretada.
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = alAbrir),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.tertiaryContainer,
             contentColor = MaterialTheme.colorScheme.onTertiaryContainer

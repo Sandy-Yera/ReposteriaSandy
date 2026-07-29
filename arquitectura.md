@@ -1308,6 +1308,21 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 - **Construyes:** wizard de nueva receta (primer paso), secciones múltiples, `costoTotalReceta`.
 - **Hecho cuando:** creas una receta de un conjunto y otra con 2+ secciones, el costo total de cada una coincide con tu cálculo a mano, y agregarle una segunda sección a una receta simple te pide el nombre de la primera sin mover ningún ingrediente de lugar (8.2).
 
+> **Pendientes anotados durante la Fase 3, para resolver antes de cerrarla:**
+>
+> 1. **Títulos de receta repetidos.** Hoy se pueden crear dos recetas con el mismo título,
+>    y también con el mismo nombre cambiando mayúsculas o tildes. En ingredientes eso no
+>    pasa porque la tabla tiene índice único con `NOCASE` y el repositorio compara además
+>    sin tildes con `sonElMismoTexto` (7). Recetas necesita lo mismo. **Ojo con la
+>    migración:** crear un índice único falla si la tabla ya trae repetidos, así que la
+>    migración tiene que renombrarlos antes de crear el índice, no después.
+> 2. **Conservar los datos de prueba entre instalaciones.** Room no borra nada por su
+>    cuenta —no se usa `fallbackToDestructiveMigration()`—, así que si los datos
+>    desaparecen es porque hubo una reinstalación de por medio. Falta (a) una prueba
+>    instrumentada de migración con `MigrationTestHelper`, para que una migración rota se
+>    detecte en el computador y no obligue a desinstalar del celular, y (b) un script en
+>    `herramientas/` que baje y suba el archivo de la base con `adb run-as`.
+
 ### Fase 4 — Módulo Moldes
 
 - **Construyes:** `DimensionesMolde`, entidad `Molde`, `ListaMoldesScreen`, formularios condicionales según `tipoForma`, cálculo de área/volumen.

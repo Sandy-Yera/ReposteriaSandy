@@ -25,7 +25,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.sandyyera.reposteria.AppContainer
 import com.sandyyera.reposteria.ui.ingredientes.IngredientesViewModel
 import com.sandyyera.reposteria.ui.ingredientes.ListaIngredientesScreen
+import com.sandyyera.reposteria.ui.recetas.CantidadesViewModel
 import com.sandyyera.reposteria.ui.recetas.ListaRecetasScreen
+import com.sandyyera.reposteria.ui.recetas.PasoCantidadesScreen
 import com.sandyyera.reposteria.ui.recetas.RecetasViewModel
 import com.sandyyera.reposteria.ui.theme.Medidas
 import kotlinx.coroutines.launch
@@ -57,9 +59,60 @@ fun NavegacionPrincipal(
     contenedor: AppContainer,
     modifier: Modifier = Modifier
 ) {
+    var seccionActual by rememberSaveable { mutableStateOf(Seccion.INGREDIENTES) }
+
+    // Qué receta está abierta, o null si se está viendo la lista. Va en rememberSaveable
+    // para que girar el teléfono no devuelva a la lista a mitad de carga.
+    var recetaAbierta by rememberSaveable { mutableStateOf<Long?>(null) }
+
+    // Una receta abierta se ve a pantalla completa, sin el menú de secciones: es un paso
+    // dentro de la receta, no una sección de la app. Se sale con la X o con el botón de
+    // atrás del teléfono.
+    val idAbierta = recetaAbierta
+    if (idAbierta != null) {
+        PasoCantidadesScreen(
+            modelo = viewModel(
+                // La clave hace que cada receta tenga su propio ViewModel: sin ella,
+                // abrir una segunda receta reutilizaría el de la primera y mostraría los
+                // ingredientes equivocados.
+                key = "cantidades-$idAbierta",
+                factory = CantidadesViewModel.fabrica(
+                    recetaId = idAbierta,
+                    recetas = contenedor.recetas,
+                    ingredientes = contenedor.ingredientes
+                )
+            ),
+            alVolver = { recetaAbierta = null },
+            modifier = modifier
+        )
+    } else {
+        MenuDeSecciones(
+            contenedor = contenedor,
+            seccionActual = seccionActual,
+            alElegirSeccion = { seccionActual = it },
+            alAbrirReceta = { recetaAbierta = it },
+            modifier = modifier
+        )
+    }
+}
+
+/**
+ * El menú de 3 líneas con las secciones, y la que esté elegida.
+ *
+ * Va aparte de [NavegacionPrincipal] para no depender de un `return` temprano dentro de un
+ * Composable: al abrir una receta cambia la estructura de lo que se dibuja, y expresarlo
+ * como dos ramas de un `if` deja claro que son dos árboles distintos y no un atajo.
+ */
+@Composable
+private fun MenuDeSecciones(
+    contenedor: AppContainer,
+    seccionActual: Seccion,
+    alElegirSeccion: (Seccion) -> Unit,
+    alAbrirReceta: (Long) -> Unit,
+    modifier: Modifier = Modifier
+) {
     val estadoDelMenu = rememberDrawerState(DrawerValue.Closed)
     val alcance = rememberCoroutineScope()
-    var seccionActual by rememberSaveable { mutableStateOf(Seccion.INGREDIENTES) }
 
     ModalNavigationDrawer(
         modifier = modifier,
@@ -80,7 +133,7 @@ fun NavegacionPrincipal(
                         icon = { Icon(seccion.icono, contentDescription = null) },
                         selected = seccion == seccionActual,
                         onClick = {
-                            seccionActual = seccion
+                            alElegirSeccion(seccion)
                             alcance.launch { estadoDelMenu.close() }
                         },
                         modifier = Modifier.padding(
@@ -104,7 +157,8 @@ fun NavegacionPrincipal(
 
             Seccion.RECETAS -> ListaRecetasScreen(
                 modelo = viewModel(factory = RecetasViewModel.fabrica(contenedor.recetas)),
-                alAbrirMenu = abrirMenu
+                alAbrirMenu = abrirMenu,
+                alAbrirReceta = { receta -> alAbrirReceta(receta.id) }
             )
         }
     }
