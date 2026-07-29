@@ -17,6 +17,7 @@ import com.sandyyera.reposteria.logica.validaciones.errorEnTituloReceta
 import com.sandyyera.reposteria.logica.validaciones.nombreSugeridoParaPrimeraSeccion
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 
 /**
  * Cómo terminó una operación que podía no poder hacerse.
@@ -167,6 +168,8 @@ class RecetaRepositorio(
         val existentes = dao.obtenerSecciones(recetaId)
         if (existentes.isEmpty()) return Resultado.NoSePudo("Esa receta ya no existe")
 
+        seccionRepetida(existentes, limpio)?.let { return it }
+
         // Si la única que había todavía tiene el nombre automático, hay que bautizarla
         // antes de que deje de ser invisible: si no, quedaría un encabezado que dice
         // "General" al lado de "Crema".
@@ -180,6 +183,13 @@ class RecetaRepositorio(
                     "Antes de agregar otra sección hay que ponerle nombre a la que ya existe"
                 )
             errorEnNombreSeccion(bautizo)?.let { return Resultado.NoSePudo(it) }
+            // El bautizo también puede chocar: la sugerencia es el título de la receta, y
+            // "Salsa de chocolate" como receta y como sección nueva es un caso corriente.
+            if (sonElMismoTexto(bautizo, limpio)) {
+                return Resultado.NoSePudo(
+                    "Las dos secciones quedarían con el mismo nombre. Cámbiale una."
+                )
+            }
             dao.actualizarSeccion(unica.copy(nombreSeccion = bautizo))
         }
 
@@ -196,8 +206,36 @@ class RecetaRepositorio(
     suspend fun renombrarSeccion(seccion: RecetaSeccion, nombre: String): Resultado {
         val limpio = nombre.trim()
         errorEnNombreSeccion(limpio)?.let { return Resultado.NoSePudo(it) }
+
+        // Se excluye a sí misma: corregirle una tilde a "Salsa de chocolate" no puede
+        // chocar consigo misma.
+        val otras = dao.obtenerSecciones(seccion.recetaId).filter { it.id != seccion.id }
+        seccionRepetida(otras, limpio)?.let { return it }
+
         dao.actualizarSeccion(seccion.copy(nombreSeccion = limpio))
         return Resultado.Listo
+    }
+
+    /**
+     * Si ya hay una sección que se llama así dentro de la misma receta.
+     *
+     * Compara con `sonElMismoTexto`, o sea ignorando mayúsculas, tildes y espacios
+     * sobrantes: dos "Salsa de chocolate" son la misma sección aunque una lleve el acento y
+     * la otra no, y tenerlas por separado no significa nada — al leer la receta no hay forma
+     * de saber qué va en cada una.
+     *
+     * **No hay índice único que lo respalde**, igual que con los títulos de receta y por la
+     * misma razón: puede haber secciones repetidas guardadas de antes, y un índice obligaría
+     * a renombrarlas durante la migración, cambiando datos reales sin que nadie lo pida. La
+     * regla vive acá y está cubierta por pruebas. A diferencia de las recetas repetidas, una
+     * sección repetida que ya exista **no bloquea nada**: se sigue pudiendo usar y
+     * renombrar, solo que renombrarla ya no puede chocar con otra.
+     */
+    private fun seccionRepetida(existentes: List<RecetaSeccion>, nombre: String): Resultado? {
+        val choque = existentes.firstOrNull { sonElMismoTexto(it.nombreSeccion, nombre) }
+        return choque?.let {
+            Resultado.NoSePudo("Esta receta ya tiene una sección '${it.nombreSeccion}'")
+        }
     }
 
     /**
@@ -261,6 +299,21 @@ class RecetaRepositorio(
         val encontrados = dao.costoDeVariasRecetas(recetaIds).associate { it.recetaId to it.costo }
         return recetaIds.associateWith { encontrados[it] ?: 0.0 }
     }
+
+    /**
+     * El costo de todas las recetas, avisando solo cuando cambia (lo que use la lista).
+     *
+     * Es la versión que hay que usar para **mostrar** costos. [costosDe] sigue existiendo
+     * para quien necesita una foto de un momento —`obtenerDatosCalculo`, la simulación—,
+     * pero una pantalla que use la foto se queda mostrándola cuando el mundo ya cambió: eso
+     * fue exactamente el bug de borrar ingredientes y ver los costos viejos.
+     *
+     * El mapa que devuelve **no tiene entrada para las recetas sin ingredientes**, porque el
+     * `GROUP BY` no les da fila. Acá no se puede rellenar como en [costosDe] —no se sabe qué
+     * recetas hay sin consultarlas—, así que quien lo lea toma lo que falte como 0.
+     */
+    fun observarCostos(): Flow<Map<Long, Double>> =
+        dao.observarCostos().map { filas -> filas.associate { it.recetaId to it.costo } }
 
     // --- Precios ---
 

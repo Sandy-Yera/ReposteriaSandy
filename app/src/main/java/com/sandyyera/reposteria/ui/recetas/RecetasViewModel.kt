@@ -16,7 +16,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -125,8 +124,23 @@ class RecetasViewModel(
      */
     val recienCreada: StateFlow<Long?> = _recienCreada
 
-    private val conCosto = repositorio.observarTodas().map { recetas ->
-        val costos = repositorio.costosDe(recetas.map { it.id })
+    /**
+     * Las recetas con su costo, atados a que **los dos** avisen cuando cambian.
+     *
+     * Antes esto era `observarTodas().map { costosDe(...) }`: el costo se pedía de una sola
+     * vez, colgado del aviso de la tabla `recetas`. Borrar un ingrediente no toca esa tabla,
+     * así que nada volvía a preguntar y la lista se quedaba mostrando costos que ya no
+     * existían. Se veía tal cual: borrar todos los ingredientes y volver a Recetas, y ahí
+     * seguían los mismos números.
+     *
+     * Con `combine` de dos `Flow`, cualquiera de los dos que cambie rearma la lista, y el de
+     * costos lo emite Room al tocarse los ingredientes, las secciones **o** el catálogo. Sin
+     * nadie que tenga que acordarse de refrescar.
+     */
+    private val conCosto = combine(
+        repositorio.observarTodas(),
+        repositorio.observarCostos()
+    ) { recetas, costos ->
         // Se marcan las repetidas sobre la lista ordenada por antigüedad, no por título:
         // así la que se conserva utilizable es la original y no una cualquiera.
         val porAntiguedad = recetas.sortedBy { it.id }

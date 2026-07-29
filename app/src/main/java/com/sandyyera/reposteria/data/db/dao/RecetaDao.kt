@@ -80,6 +80,37 @@ interface RecetaDao {
     )
     suspend fun costoDeVariasRecetas(recetaIds: List<Long>): List<CostoDeReceta>
 
+    /**
+     * El costo de **todas** las recetas, y que avise sola cuando cambie.
+     *
+     * Existe por un bug real: la lista de recetas se armaba pidiendo los costos con
+     * [costoDeVariasRecetas], una consulta de una sola vez, colgada del `Flow` de la tabla
+     * `recetas`. Borrar un ingrediente no toca esa tabla, así que nada volvía a preguntar y
+     * la lista seguía mostrando el costo que tenía antes — un número que ya no existía.
+     *
+     * Devolviendo un `Flow`, Room vigila las **tres** tablas que aparecen acá
+     * (`receta_ingredientes`, `receta_secciones` e `ingredientes`) y vuelve a emitir en
+     * cuanto cambia cualquiera. Cambiarle el precio a la harina reordena los costos de toda
+     * la lista sin que nadie tenga que acordarse de pedirlo.
+     *
+     * No recibe ids a propósito: con ids habría que volver a suscribirse cada vez que se
+     * crea o se borra una receta, que es justo el tipo de "acordarse" que causó el bug. Son
+     * decenas de filas, no miles.
+     *
+     * Sigue valiendo la trampa del `GROUP BY`: una receta sin ingredientes **no aparece**.
+     */
+    @Query(
+        """
+        SELECT rs.recetaId AS recetaId,
+               COALESCE(SUM(ri.cantidadG * i.valorPorGramo), 0) AS costo
+        FROM receta_ingredientes ri
+        JOIN receta_secciones rs ON rs.id = ri.seccionId
+        JOIN ingredientes i      ON i.id  = ri.ingredienteId
+        GROUP BY rs.recetaId
+        """
+    )
+    fun observarCostos(): Flow<List<CostoDeReceta>>
+
     // --- Consultas que cruzan tablas ---
 
     /** Qué recetas usan un ingrediente. Alimenta la advertencia antes de borrarlo. */

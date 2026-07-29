@@ -389,4 +389,144 @@ class CantidadesViewModelTest {
             modelo.estado.value.secciones.map { it.seccion.nombreSeccion }
         )
     }
+
+    // --- Costo por sección ---
+
+    /** Deja la receta con dos secciones y un ingrediente en cada una. */
+    private suspend fun TestScope.dosSeccionesConIngredientes(modelo: CantidadesViewModel) {
+        sembrar("Harina", 1.2)
+        sembrar("Chocolate", 8.0)
+        advanceUntilIdle()
+
+        modelo.abrirAgregarSeccion()
+        advanceUntilIdle()
+        modelo.cambiarNombreDeLaPrimera("Bizcocho")
+        modelo.cambiarNombreDeSeccion("Salsa")
+        modelo.guardarSeccion()
+        advanceUntilIdle()
+
+        val catalogoDeLaPantalla = modelo.estado.value.catalogo
+        val harina = catalogoDeLaPantalla.first { it.nombre == "Harina" }
+        val chocolate = catalogoDeLaPantalla.first { it.nombre == "Chocolate" }
+        val secciones = modelo.estado.value.secciones
+
+        modelo.abrirAgregarIngrediente(secciones[0].seccion.id)
+        modelo.elegirIngrediente(harina)
+        modelo.cambiarCantidadEscrita("500")
+        modelo.guardarIngrediente()
+        advanceUntilIdle()
+
+        modelo.abrirAgregarIngrediente(secciones[1].seccion.id)
+        modelo.elegirIngrediente(chocolate)
+        modelo.cambiarCantidadEscrita("200")
+        modelo.guardarIngrediente()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `cada seccion sabe lo que cuesta ella sola`() = probar { modelo ->
+        dosSeccionesConIngredientes(modelo)
+
+        val secciones = modelo.estado.value.secciones
+        assertEquals(600.0, secciones[0].costo, 0.001)    // 500 g × $1,2
+        assertEquals(1600.0, secciones[1].costo, 0.001)   // 200 g × $8
+    }
+
+    @Test
+    fun `la suma de las secciones da el total que trae la base`() = probar { modelo ->
+        // Esto es lo que hay que proteger: el costo por sección se suma en memoria y el
+        // total sale de una consulta. Son dos caminos, y si se separaran la pantalla
+        // mostraría partes que no dan el entero que tiene arriba.
+        dosSeccionesConIngredientes(modelo)
+
+        val estado = modelo.estado.value
+        assertEquals(estado.costoTotal, estado.secciones.sumOf { it.costo }, 0.001)
+    }
+
+    @Test
+    fun `una seccion vacia cuesta cero y no rompe la suma`() = probar { modelo ->
+        dosSeccionesConIngredientes(modelo)
+        modelo.abrirAgregarSeccion()
+        advanceUntilIdle()
+        modelo.cambiarNombreDeSeccion("Decoración")
+        modelo.guardarSeccion()
+        advanceUntilIdle()
+
+        val estado = modelo.estado.value
+        assertEquals(0.0, estado.secciones.last().costo, 0.001)
+        assertEquals(estado.costoTotal, estado.secciones.sumOf { it.costo }, 0.001)
+    }
+
+    @Test
+    fun `el costo por seccion aparece recien con dos secciones`() = probar { modelo ->
+        // Con una sola, su costo es el total que ya está arriba en grande: el mismo número
+        // dos veces en la misma pantalla hace dudar de si son dos cosas distintas.
+        assertFalse(modelo.estado.value.mostrarCostoPorSeccion)
+
+        dosSeccionesConIngredientes(modelo)
+
+        assertTrue(modelo.estado.value.mostrarCostoPorSeccion)
+    }
+
+    @Test
+    fun `una seccion sola con nombre propio muestra su nombre pero no su costo`() =
+        probar { modelo ->
+            // Las dos reglas se parecen pero no son la misma: el nombre se muestra porque lo
+            // escribió alguien, el costo no porque no agrega nada.
+            modelo.abrirRenombrarSeccion(modelo.estado.value.secciones.single().seccion)
+            modelo.cambiarNombreEnRenombrado("Salsa")
+            modelo.guardarRenombrado()
+            advanceUntilIdle()
+
+            val estado = modelo.estado.value
+            assertTrue(estado.mostrarNombresDeSeccion)
+            assertFalse(estado.mostrarCostoPorSeccion)
+        }
+
+    // --- Nombres de sección repetidos ---
+
+    @Test
+    fun `no deja crear dos secciones con el mismo nombre y lo dice`() = probar { modelo ->
+        modelo.abrirAgregarSeccion()
+        advanceUntilIdle()
+        modelo.cambiarNombreDeLaPrimera("Bizcocho")
+        modelo.cambiarNombreDeSeccion("Salsa de chocolate")
+        modelo.guardarSeccion()
+        advanceUntilIdle()
+
+        modelo.abrirAgregarSeccion()
+        advanceUntilIdle()
+        modelo.cambiarNombreDeSeccion("SALSA DE CHOCOLATÉ")
+        modelo.guardarSeccion()
+        advanceUntilIdle()
+
+        assertEquals(2, modelo.estado.value.secciones.size)
+        assertNotNull("Tiene que avisar por qué no se pudo", modelo.estado.value.mensaje)
+    }
+
+    @Test
+    fun `renombrar hacia un nombre ya usado avisa y deja el cuadro abierto`() = probar { modelo ->
+        modelo.abrirAgregarSeccion()
+        advanceUntilIdle()
+        modelo.cambiarNombreDeLaPrimera("Bizcocho")
+        modelo.cambiarNombreDeSeccion("Salsa")
+        modelo.guardarSeccion()
+        advanceUntilIdle()
+
+        val salsa = modelo.estado.value.secciones.first { it.seccion.nombreSeccion == "Salsa" }
+        modelo.abrirRenombrarSeccion(salsa.seccion)
+        modelo.cambiarNombreEnRenombrado("bizcocho")
+        modelo.guardarRenombrado()
+        advanceUntilIdle()
+
+        assertNotNull(modelo.estado.value.mensaje)
+        // El cuadro sigue abierto y con lo escrito: hay que corregirlo, no rehacerlo.
+        val dialogo = modelo.dialogo.value as DialogoCantidades.RenombrarSeccion
+        assertEquals("bizcocho", dialogo.nombre)
+        assertFalse(dialogo.guardando)
+        assertEquals(
+            listOf("Bizcocho", "Salsa"),
+            modelo.estado.value.secciones.map { it.seccion.nombreSeccion }
+        )
+    }
 }

@@ -47,7 +47,22 @@ data class LineaDeIngrediente(
 data class SeccionConIngredientes(
     val seccion: RecetaSeccion,
     val lineas: List<LineaDeIngrediente>
-)
+) {
+    /**
+     * Lo que cuesta esta sección sola.
+     *
+     * Se suma **en memoria** y no con una consulta aparte, al revés que el costo total de la
+     * receta. No es una inconsistencia: es la misma regla mirada de cerca. El total manda
+     * porque de él salen los precios y los sueldos, así que tiene que venir de la base. Este
+     * número no alimenta ninguna cuenta — solo sirve para leer la receta — y lo que sí tiene
+     * que hacer es **cuadrar con las líneas que se ven arriba de él**. Sumando esas mismas
+     * líneas, cuadra por construcción; pidiéndolo por separado, podría no cuadrar y no
+     * habría forma de explicar la diferencia mirando la pantalla.
+     *
+     * Que la suma de todas las secciones dé el total de la base está cubierto por una prueba.
+     */
+    val costo: Double get() = lineas.sumOf { it.subtotal }
+}
 
 /** Qué hay abierto encima del paso de cantidades. */
 sealed interface DialogoCantidades {
@@ -143,6 +158,17 @@ data class EstadoCantidades(
 
     /** Si la receta todavía no tiene ningún ingrediente en ninguna sección. */
     val sinIngredientes: Boolean get() = secciones.all { it.lineas.isEmpty() }
+
+    /**
+     * Si cada sección muestra al lado lo que cuesta.
+     *
+     * **Desde dos secciones**, y no desde una con nombre propio como pasa con los
+     * encabezados. Con una sola, su costo es el total que ya está arriba en grande: repetir
+     * el mismo número dos veces en la misma pantalla no informa, hace dudar de si son dos
+     * cosas distintas. El dato aparece justo cuando empieza a servir, que es cuando hay
+     * partes que comparar entre sí.
+     */
+    val mostrarCostoPorSeccion: Boolean get() = secciones.size > 1
 }
 
 /**
@@ -371,8 +397,24 @@ class CantidadesViewModel(
         if (!actual.puedeGuardar) return
 
         viewModelScope.launch {
-            recetas.renombrarSeccion(actual.seccion, actual.nombre)
-            _dialogo.value = DialogoCantidades.Ninguno
+            // El resultado se mira: desde que los nombres de sección no se pueden repetir,
+            // renombrar puede fallar. Descartándolo, el cuadro se cerraba como si hubiera
+            // funcionado y el nombre seguía siendo el de antes, sin ninguna explicación.
+            when (val resultado = recetas.renombrarSeccion(actual.seccion, actual.nombre)) {
+                is Resultado.Listo -> _dialogo.value = DialogoCantidades.Ninguno
+                is Resultado.NoSePudo -> {
+                    // El cuadro queda abierto y con lo escrito: hay que corregirlo, no
+                    // volver a escribirlo entero.
+                    _dialogo.update { actualDialogo ->
+                        if (actualDialogo is DialogoCantidades.RenombrarSeccion) {
+                            actualDialogo.copy(guardando = false)
+                        } else {
+                            actualDialogo
+                        }
+                    }
+                    mensaje.value = resultado.motivo
+                }
+            }
             volverALeer()
         }
     }

@@ -15,6 +15,7 @@ import com.sandyyera.reposteria.data.db.entidades.RecetaSeccion
 import com.sandyyera.reposteria.data.db.entidades.RecetaSimulacionVenta
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 
 /**
@@ -123,6 +124,10 @@ class HistorialDaoFalso : HistorialDao {
  * - **`costoDeVariasRecetas` omite las recetas sin ingredientes**, igual que el `GROUP BY`
  *   real. Quien la llame tiene que tomarlas como 0, y esa trampa solo se puede probar si
  *   el falso la reproduce.
+ * - **`observarCostos` vuelve a emitir cuando cambia cualquiera de las tablas que consulta**,
+ *   que es lo que hace el `InvalidationTracker` de Room. Sin esto no se podría probar el bug
+ *   que motivó esa consulta: un falso que devuelva un `Flow` de un solo valor pasa la prueba
+ *   aunque la app se quede mostrando costos viejos, que es justo lo que pasaba.
  *
  * Lo que sigue sin implementarse falla ruidosamente, con la misma regla de antes.
  */
@@ -139,6 +144,21 @@ class RecetaDaoFalso(
 
     private var siguienteId = 1L
     private fun nuevoId() = siguienteId++
+
+    /**
+     * El equivalente del `InvalidationTracker` de Room, a mano.
+     *
+     * `secciones` e `items` son listas normales y no avisan cuando cambian. Este contador se
+     * incrementa en cada escritura que toca alguna de las dos, y de él cuelga
+     * [observarCostos]. Si se agrega una escritura nueva y se olvida llamar a [cambio], el
+     * falso deja de reemitir y la prueba de regresión de los costos viejos se cae — que es
+     * exactamente lo que tiene que pasar.
+     */
+    private val cambios = MutableStateFlow(0)
+
+    private fun cambio() {
+        cambios.value++
+    }
 
     /**
      * Atajo para las pruebas: deja [receta] usando el ingrediente [ingredienteId].
@@ -161,6 +181,7 @@ class RecetaDaoFalso(
             ingredienteId = ingredienteId,
             cantidadG = cantidadG
         )
+        cambio()
     }
 
     /** Las filas de ingredientes de una receta, resolviendo el join con las secciones. */
@@ -196,6 +217,7 @@ class RecetaDaoFalso(
         precios.removeAll { it.recetaId == recetaId }
         simulaciones.removeAll { it.recetaId == recetaId }
         recetas.value = recetas.value.filterNot { it.id == recetaId }
+        cambio()
     }
 
     // --- Costo ---
@@ -213,6 +235,17 @@ class RecetaDaoFalso(
             .filter { itemsDe(it).isNotEmpty() }
             .map { CostoDeReceta(it, costoTotalReceta(it)) }
 
+    /**
+     * Las tres fuentes que vigila Room en esta consulta, imitadas a mano.
+     *
+     * `catalogo.observarTodos()` entra porque el costo lee el `valorPorGramo` del momento:
+     * borrar un ingrediente del catálogo tiene que cambiar el costo de las recetas que lo
+     * usaban, y ese es el caso que se rompió en la app de verdad.
+     */
+    override fun observarCostos(): Flow<List<CostoDeReceta>> =
+        combine(recetas, cambios, catalogo.observarTodos()) { lista, _, _ -> lista }
+            .map { lista -> costoDeVariasRecetas(lista.map { it.id }) }
+
     // --- Consultas que cruzan tablas ---
 
     override suspend fun obtenerRecetasQueUsan(ingredienteId: Long): List<Receta> {
@@ -224,6 +257,7 @@ class RecetaDaoFalso(
 
     override suspend fun quitarIngredienteDeTodasLasSecciones(ingredienteId: Long) {
         items.removeAll { it.ingredienteId == ingredienteId }
+        cambio()
     }
 
     // --- Secciones e ingredientes ---
@@ -237,17 +271,20 @@ class RecetaDaoFalso(
     override suspend fun insertarSeccion(seccion: RecetaSeccion): Long {
         val id = nuevoId()
         secciones += seccion.copy(id = id)
+        cambio()
         return id
     }
 
     override suspend fun actualizarSeccion(seccion: RecetaSeccion) {
         val posicion = secciones.indexOfFirst { it.id == seccion.id }
         if (posicion >= 0) secciones[posicion] = seccion
+        cambio()
     }
 
     override suspend fun eliminarSeccion(seccionId: Long) {
         items.removeAll { it.seccionId == seccionId }   // cascada
         secciones.removeAll { it.id == seccionId }
+        cambio()
     }
 
     override suspend fun obtenerTodosLosIngredientes(recetaId: Long): List<RecetaIngrediente> {
@@ -263,16 +300,19 @@ class RecetaDaoFalso(
     override suspend fun insertarIngrediente(item: RecetaIngrediente): Long {
         val id = nuevoId()
         items += item.copy(id = id)
+        cambio()
         return id
     }
 
     override suspend fun actualizarCantidad(itemId: Long, cantidad: Double) {
         val posicion = items.indexOfFirst { it.id == itemId }
         if (posicion >= 0) items[posicion] = items[posicion].copy(cantidadG = cantidad)
+        cambio()
     }
 
     override suspend fun eliminarIngrediente(itemId: Long) {
         items.removeAll { it.id == itemId }
+        cambio()
     }
 
     // --- Rendimiento ---

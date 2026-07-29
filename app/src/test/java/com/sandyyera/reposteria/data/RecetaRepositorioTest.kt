@@ -431,4 +431,149 @@ class RecetaRepositorioTest {
             repositorio.obtenerSecciones(id).map { it.nombreSeccion }
         )
     }
+
+    // --- Nombres de sección repetidos ---
+
+    @Test
+    fun `no se puede agregar una seccion con el nombre de otra que ya esta`() = runBlocking {
+        val id = crearReceta("Torta de manjar")
+        repositorio.agregarSeccion(id, "Salsa de chocolate", nombreDeLaPrimera = "Bizcocho")
+
+        val resultado = repositorio.agregarSeccion(id, "Salsa de chocolate")
+
+        assertTrue(resultado is Resultado.NoSePudo)
+        assertEquals(
+            listOf("Bizcocho", "Salsa de chocolate"),
+            repositorio.obtenerSecciones(id).map { it.nombreSeccion }
+        )
+    }
+
+    @Test
+    fun `las mayusculas, las tildes y los espacios no hacen distinta a una seccion`() =
+        runBlocking {
+            val id = crearReceta("Torta de manjar")
+            repositorio.agregarSeccion(id, "Salsa de chocolate", nombreDeLaPrimera = "Bizcocho")
+
+            assertTrue(repositorio.agregarSeccion(id, "SALSA DE CHOCOLATE") is Resultado.NoSePudo)
+            assertTrue(repositorio.agregarSeccion(id, "salsa de chocolaté") is Resultado.NoSePudo)
+            assertTrue(repositorio.agregarSeccion(id, "  Salsa De Chocolate  ") is Resultado.NoSePudo)
+            assertEquals(2, repositorio.obtenerSecciones(id).size)
+        }
+
+    @Test
+    fun `dos recetas distintas si pueden tener una seccion con el mismo nombre`() = runBlocking {
+        // La regla es por receta, no global: casi toda torta tiene su "Bizcocho".
+        val una = crearReceta("Torta de manjar")
+        val otra = crearReceta("Torta de lúcuma")
+        repositorio.agregarSeccion(una, "Crema", nombreDeLaPrimera = "Bizcocho")
+
+        val resultado = repositorio.agregarSeccion(otra, "Crema", nombreDeLaPrimera = "Bizcocho")
+
+        assertTrue(resultado is Resultado.Listo)
+    }
+
+    @Test
+    fun `renombrar una seccion hacia un nombre ya usado no cambia nada`() = runBlocking {
+        val id = crearReceta("Torta de manjar")
+        repositorio.agregarSeccion(id, "Crema", nombreDeLaPrimera = "Bizcocho")
+        val crema = repositorio.obtenerSecciones(id).first { it.nombreSeccion == "Crema" }
+
+        val resultado = repositorio.renombrarSeccion(crema, "bizcocho")
+
+        assertTrue(resultado is Resultado.NoSePudo)
+        assertEquals(
+            listOf("Bizcocho", "Crema"),
+            repositorio.obtenerSecciones(id).map { it.nombreSeccion }
+        )
+    }
+
+    @Test
+    fun `una seccion puede renombrarse a si misma sin chocar consigo`() = runBlocking {
+        // Corregirle una tilde o una mayúscula a su propio nombre tiene que poder hacerse.
+        val id = crearReceta("Torta de manjar")
+        repositorio.agregarSeccion(id, "Salsa de chocolate", nombreDeLaPrimera = "Bizcocho")
+        val salsa = repositorio.obtenerSecciones(id).first { it.nombreSeccion.startsWith("Salsa") }
+
+        val resultado = repositorio.renombrarSeccion(salsa, "Salsa De Chocolate")
+
+        assertTrue(resultado is Resultado.Listo)
+        assertTrue("Salsa De Chocolate" in repositorio.obtenerSecciones(id).map { it.nombreSeccion })
+    }
+
+    @Test
+    fun `el bautizo de la primera no puede chocar con la seccion que se esta creando`() =
+        runBlocking {
+            // La sugerencia para bautizar es el título de la receta, así que este choque no
+            // es rebuscado: "Salsa de chocolate" como receta y como sección nueva.
+            val id = crearReceta("Salsa de chocolate")
+
+            val resultado = repositorio.agregarSeccion(
+                recetaId = id,
+                nombre = "Salsa de chocolate",
+                nombreDeLaPrimera = "Salsa de chocolate"
+            )
+
+            assertTrue(resultado is Resultado.NoSePudo)
+            assertEquals(1, repositorio.obtenerSecciones(id).size)
+            // Y la primera quedó como estaba: se revisa antes de escribir nada.
+            assertEquals(
+                NOMBRE_SECCION_POR_DEFECTO,
+                repositorio.obtenerSecciones(id).single().nombreSeccion
+            )
+        }
+
+    // --- El costo que se muestra tiene que seguir vivo ---
+
+    @Test
+    fun `borrar un ingrediente del catalogo baja el costo de la receta sin pedirlo`() =
+        runBlocking {
+            // El bug: la lista de recetas mostraba el costo de antes de borrar. El costo se
+            // pedía de una sola vez, colgado del aviso de la tabla `recetas`, y borrar un
+            // ingrediente no toca esa tabla, así que nadie volvía a preguntar.
+            val harina = ingrediente("Harina", 1.5)
+            val id = crearReceta("Torta de manjar")
+            val seccion = repositorio.obtenerSecciones(id).single()
+            repositorio.agregarIngrediente(seccion.id, harina, 500.0)
+
+            assertEquals(750.0, repositorio.observarCostos().first()[id]!!, 0.001)
+
+            // Lo mismo que hace `IngredienteRepositorio.confirmarEliminacion`.
+            dao.quitarIngredienteDeTodasLasSecciones(harina)
+            catalogo.eliminarPorId(harina)
+
+            // Sin volver a suscribirse ni pedir nada: el mismo Flow ya emite el valor nuevo.
+            val despues = repositorio.observarCostos().first()
+            assertNull("Una receta sin ingredientes no trae fila; se toma como 0", despues[id])
+        }
+
+    @Test
+    fun `cambiarle el precio a un ingrediente cambia el costo que se muestra`() = runBlocking {
+        val harina = ingrediente("Harina", 1.0)
+        val id = crearReceta("Torta de manjar")
+        repositorio.agregarIngrediente(repositorio.obtenerSecciones(id).single().id, harina, 200.0)
+
+        assertEquals(200.0, repositorio.observarCostos().first()[id]!!, 0.001)
+
+        catalogo.actualizar(Ingrediente(id = harina, nombre = "Harina", valorPorGramo = 3.0))
+
+        assertEquals(600.0, repositorio.observarCostos().first()[id]!!, 0.001)
+    }
+
+    @Test
+    fun `observarCostos y costosDe dan el mismo numero`() = runBlocking {
+        // Son dos caminos al mismo dato -uno en vivo, otro de una sola vez- y si se
+        // separaran, la lista y las fórmulas mostrarían costos distintos de la misma receta.
+        val harina = ingrediente("Harina", 1.5)
+        val azucar = ingrediente("Azúcar", 2.0)
+        val id = crearReceta("Torta de manjar")
+        val seccion = repositorio.obtenerSecciones(id).single()
+        repositorio.agregarIngrediente(seccion.id, harina, 500.0)
+        repositorio.agregarIngrediente(seccion.id, azucar, 250.0)
+
+        assertEquals(
+            repositorio.costosDe(listOf(id)).getValue(id),
+            repositorio.observarCostos().first().getValue(id),
+            0.001
+        )
+    }
 }

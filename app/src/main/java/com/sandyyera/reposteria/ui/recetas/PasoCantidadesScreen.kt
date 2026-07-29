@@ -190,6 +190,7 @@ fun PasoCantidades(
                         item(key = "encabezado-${seccion.seccion.id}") {
                             EncabezadoDeSeccion(
                                 seccion = seccion,
+                                mostrarCosto = estado.mostrarCostoPorSeccion,
                                 sePuedeBorrar = estado.secciones.size > 1,
                                 alRenombrar = { acciones.renombrarSeccion(seccion.seccion) },
                                 alBorrar = { acciones.pedirBorrarSeccion(seccion) }
@@ -330,10 +331,22 @@ private fun CostoTotal(costo: Double, sinIngredientes: Boolean) {
     }
 }
 
-/** El encabezado de una sección, que solo existe desde la segunda en adelante. */
+/**
+ * El encabezado de una sección, que solo existe desde la segunda en adelante.
+ *
+ * El costo de la sección va **al lado del nombre** y no en una fila propia debajo de sus
+ * ingredientes. Dos razones: aprovecha espacio que ya estaba vacío en vez de agregar una
+ * línea por sección —con cuatro secciones eso empuja el botón de agregar fuera de la
+ * pantalla—, y lo deja donde se lee al comparar, que es recorriendo los encabezados de
+ * arriba abajo. Puesto debajo habría que ir a buscarlo al final de cada bloque.
+ *
+ * Va en `onSurfaceVariant` y en `bodyMedium`: es un dato de apoyo, no el número principal
+ * de la pantalla. Ese sigue siendo el total de arriba, que es el único que manda.
+ */
 @Composable
 private fun EncabezadoDeSeccion(
     seccion: SeccionConIngredientes,
+    mostrarCosto: Boolean,
     sePuedeBorrar: Boolean,
     alRenombrar: () -> Unit,
     alBorrar: () -> Unit
@@ -351,6 +364,14 @@ private fun EncabezadoDeSeccion(
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.weight(1f)
             )
+            if (mostrarCosto) {
+                Text(
+                    text = "$${formatearNumero(seccion.costo)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(end = Medidas.chico)
+                )
+            }
             IconButton(onClick = alRenombrar) {
                 Icon(
                     Icons.Default.Edit,
