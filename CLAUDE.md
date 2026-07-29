@@ -41,6 +41,25 @@ por accidente.
 inicio de la línea**. Escrito al final de un patrón queda como parte del patrón y la regla
 deja de funcionar en silencio.
 
+# Instrucción: recordar el respaldo de la base antes de instalar
+
+Cada vez que se le pida a Sandy compilar o instalar la app en el celular
+(`./gradlew :app:installDebug`, `connectedAndroidTest`, o cualquier cosa que reinstale),
+**sugerir primero hacer el respaldo**, sin que tenga que acordarse ella:
+
+```bash
+herramientas/respaldo_bd.sh bajar
+```
+
+Y al final del mensaje, una mención corta —no un párrafo— de que existe
+`herramientas/respaldo_bd.sh listar` para ver las copias guardadas, y que si algo salió
+mal y la base quedó borrada, se recupera con
+`herramientas/respaldo_bd.sh subir <carpeta>`.
+
+El orden importa: el `bajar` va **antes**, junto al comando de instalar, porque después
+de perder los datos ya no sirve. Lo de `listar` y `subir` va al final y breve, porque es
+para el día que haga falta y repetirlo largo cada vez es ruido.
+
 # Instrucción: registro y reutilización obligatoria de funciones y variables
 
 Aplica a todo el código de este proyecto, en cualquier archivo y lenguaje (Kotlin, Gradle scripts, etc.). Objetivo: nunca reinventar algo que ya existe por falta de contexto.

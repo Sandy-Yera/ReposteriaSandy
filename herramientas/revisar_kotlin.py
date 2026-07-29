@@ -3,7 +3,7 @@
 
 Existe porque el módulo `:app` solo se puede compilar en el equipo de Sandy, y hasta que
 eso pasa los errores viajan a ciegas. Esto no reemplaza al compilador —no verifica tipos
-de verdad— pero atrapa las tres cosas que sí se han colado:
+de verdad— pero atrapa las cosas que sí se han colado hasta ahora:
 
 1. Llaves o paréntesis sin cerrar.
 2. Un identificador usado sin importar.
@@ -12,14 +12,16 @@ de verdad— pero atrapa las tres cosas que sí se han colado:
 4. Lo mismo, pero cuando la acción se ata a un parámetro que la pantalla recibe de más
    arriba (`abrir = alAbrirReceta`), que es por donde pasó el `(Receta) -> Unit` que en
    realidad recibía un `Long`.
-5. Que esté versionado el esquema exportado de cada versión de la base de datos.
+5. Una constante en MAYÚSCULAS escrita a secas que en realidad vive dentro de un
+   `companion object`, y por eso solo falla en el archivo que la usa desde afuera.
+6. Que esté versionado el esquema exportado de cada versión de la base de datos.
 
 Se corre solo, sin instalar nada:
 
     python3 herramientas/revisar_kotlin.py
 
 Termina con código 1 si encuentra algo. **Que pase no significa que compile**: significa
-que no tiene ninguno de estos cinco problemas. Solo mira nombres y tipos escritos tal
+que no tiene ninguno de estos seis problemas. Solo mira nombres y tipos escritos tal
 cual; nada que dependa de inferencia (el tipo de un `val` local, por ejemplo) está a su
 alcance. La prueba real sigue siendo compilar.
 """
@@ -245,6 +247,47 @@ def revisar_esquemas(_rutas):
     return 0
 
 
+def revisar_constantes(rutas):
+    """6. Una constante en MAYÚSCULAS usada sin calificar, que en realidad vive dentro de un
+    `companion object`.
+
+    Esto pasó de verdad: `MIGRACION_1_2` está dentro del `companion object` de
+    `AppDatabase`, no suelta en el archivo. Escrita a secas resuelve dentro de la propia
+    clase y en ninguna otra parte, así que el error solo aparece en el archivo que la usa
+    desde afuera — en este caso la prueba de migración, que además solo se compila al
+    correrla con un celular conectado. Tres minutos de build para enterarse.
+
+    La revisión 2 no la ve porque solo mira nombres en CamelCase.
+    """
+    top, dentro_de_clase = {}, {}
+    for ruta in rutas:
+        texto = open(ruta, encoding="utf-8").read()
+        paquete = re.search(r"^package\s+([\w.]+)", texto, re.M).group(1)
+        # Sin sangría = suelta en el archivo; con sangría = dentro de algo.
+        for m in re.finditer(r"^(\s*)(?:const\s+)?val\s+([A-Z][A-Z0-9_]{2,})\b", texto, re.M):
+            destino = top if not m.group(1) else dentro_de_clase
+            destino.setdefault(paquete, {})[m.group(2)] = os.path.relpath(ruta, RAIZ)
+
+    problemas = 0
+    for ruta in rutas:
+        texto = open(ruta, encoding="utf-8").read()
+        paquete = re.search(r"^package\s+([\w.]+)", texto, re.M).group(1)
+        importados = {i.split(".")[-1] for i in re.findall(r"^import\s+([\w.]+)", texto, re.M)}
+        codigo = sin_comentarios_ni_textos(re.sub(r"^import .*$", "", texto, flags=re.M))
+        # Declaradas acá mismo (a cualquier nivel): siempre resuelven.
+        propias = set(re.findall(r"(?:const\s+)?val\s+([A-Z][A-Z0-9_]{2,})\b", codigo))
+
+        for uso in set(re.findall(r"(?<![\w.])([A-Z][A-Z0-9_]{2,})\b", codigo)):
+            if uso in propias or uso in importados or uso in top.get(paquete, {}):
+                continue
+            donde = dentro_de_clase.get(paquete, {}).get(uso)
+            if donde:
+                print(f"  {os.path.relpath(ruta, RAIZ)}: '{uso}' no está suelta en su "
+                      f"archivo sino dentro de una clase ({donde}); hay que calificarla")
+                problemas += 1
+    return problemas
+
+
 def main():
     rutas = archivos_kotlin()
     print(f"Revisando {len(rutas)} archivos Kotlin.\n")
@@ -255,6 +298,7 @@ def main():
         ("Importaciones", revisar_importaciones),
         ("Acciones contra ViewModel", revisar_acciones),
         ("Acciones contra la pantalla", revisar_enchufes),
+        ("Constantes calificadas", revisar_constantes),
         ("Esquemas de Room", revisar_esquemas),
     ]:
         encontrados = revision(rutas)

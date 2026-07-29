@@ -64,18 +64,23 @@ class MigracionTest {
                     "VALUES (1, 'Torta de manjar', 'No necesita', 1000, 1000)"
             )
             base.execSQL(
-                "INSERT INTO receta_precios (id, recetaId, modo, cantidad, precioTotal, etiqueta) " +
+                "INSERT INTO receta_precios " +
+                    "(id, recetaId, modo, cantidad, precioTotal, etiqueta) " +
                     "VALUES (1, 1, 'TROZO', 1, 2500.0, NULL)"
             )
             base.execSQL(
-                "INSERT INTO receta_precios (id, recetaId, modo, cantidad, precioTotal, etiqueta) " +
+                "INSERT INTO receta_precios " +
+                    "(id, recetaId, modo, cantidad, precioTotal, etiqueta) " +
                     "VALUES (2, 1, 'TROZO', 3, 6000.0, 'Promo 3 trozos')"
             )
         }
 
-        val migrada = ayudante.runMigrationsAndValidate(nombreDeLaBase, 2, true, MIGRACION_1_2)
+        val migrada = ayudante.runMigrationsAndValidate(
+            nombreDeLaBase, 2, true, AppDatabase.MIGRACION_1_2
+        )
 
-        migrada.query("SELECT id, precioTotal, etiqueta, esReferencia FROM receta_precios ORDER BY id")
+        migrada
+            .query("SELECT id, precioTotal, etiqueta, esReferencia FROM receta_precios ORDER BY id")
             .use { fila ->
                 assertTrue("La migración se llevó las filas que ya estaban", fila.moveToFirst())
                 assertEquals(2, fila.count)
@@ -109,11 +114,13 @@ class MigracionTest {
                     "VALUES (1, 'Torta de manjar', 'No necesita', 1000, 1000)"
             )
         }
-        ayudante.runMigrationsAndValidate(nombreDeLaBase, 2, true, MIGRACION_1_2).close()
+        ayudante
+            .runMigrationsAndValidate(nombreDeLaBase, 2, true, AppDatabase.MIGRACION_1_2)
+            .close()
 
         val contexto = InstrumentationRegistry.getInstrumentation().targetContext
         val base = Room.databaseBuilder(contexto, AppDatabase::class.java, nombreDeLaBase)
-            .addMigrations(MIGRACION_1_2)
+            .addMigrations(AppDatabase.MIGRACION_1_2)
             .build()
 
         try {

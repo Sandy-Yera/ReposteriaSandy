@@ -106,10 +106,20 @@ sealed interface DialogoCantidades {
         val nombre: String = "",
         val nombreDeLaPrimera: String? = null,
         val tocado: Boolean = false,
-        val guardando: Boolean = false
+        val guardando: Boolean = false,
+        val rechazo: String? = null
     ) : DialogoCantidades {
 
-        val error: String? get() = errorEnNombreSeccion(nombre).takeIf { tocado }
+        /**
+         * [rechazo] es lo que contestó el repositorio, y por eso va **primero**.
+         *
+         * Vive acá y no en el mensaje de abajo por algo que se vio en el celular: con el
+         * teclado abierto, el aviso de la parte inferior queda tapado y el cuadro parece no
+         * haber hecho nada. **Un error sobre lo que se acaba de escribir se muestra al lado
+         * del campo, nunca en la franja de abajo**, que es para lo que ya pasó y el teclado
+         * no está estorbando.
+         */
+        val error: String? get() = rechazo ?: errorEnNombreSeccion(nombre).takeIf { tocado }
 
         val errorDeLaPrimera: String?
             get() = nombreDeLaPrimera?.let { errorEnNombreSeccion(it) }.takeIf { tocado }
@@ -124,10 +134,13 @@ sealed interface DialogoCantidades {
     data class RenombrarSeccion(
         val seccion: RecetaSeccion,
         val nombre: String,
-        val guardando: Boolean = false
+        val guardando: Boolean = false,
+        val rechazo: String? = null
     ) : DialogoCantidades {
-        val error: String? get() = errorEnNombreSeccion(nombre)
-        val puedeGuardar: Boolean get() = error == null && !guardando
+        /** Mismo criterio que en [Seccion]: el aviso va junto al campo, no abajo. */
+        val error: String? get() = rechazo ?: errorEnNombreSeccion(nombre)
+
+        val puedeGuardar: Boolean get() = errorEnNombreSeccion(nombre) == null && !guardando
     }
 
     /** La advertencia antes de borrar una sección con todo lo que lleva. */
@@ -347,12 +360,13 @@ class CantidadesViewModel(
         }
     }
 
+    // Al escribir, el rechazo anterior deja de aplicar: era sobre lo que había antes.
     fun cambiarNombreDeSeccion(texto: String) = enDialogoSeccion {
-        it.copy(nombre = texto, tocado = true)
+        it.copy(nombre = texto, tocado = true, rechazo = null)
     }
 
     fun cambiarNombreDeLaPrimera(texto: String) = enDialogoSeccion {
-        it.copy(nombreDeLaPrimera = texto, tocado = true)
+        it.copy(nombreDeLaPrimera = texto, tocado = true, rechazo = null)
     }
 
     fun guardarSeccion() {
@@ -373,10 +387,9 @@ class CantidadesViewModel(
                     _dialogo.value = DialogoCantidades.Ninguno
                     volverALeer()
                 }
-                is Resultado.NoSePudo -> {
-                    enDialogoSeccion { it.copy(guardando = false) }
-                    mensaje.value = resultado.motivo
-                }
+                is Resultado.NoSePudo ->
+                    // Al campo y no al mensaje de abajo: el teclado está abierto y lo taparía.
+                    enDialogoSeccion { it.copy(guardando = false, rechazo = resultado.motivo) }
             }
         }
     }
@@ -387,8 +400,11 @@ class CantidadesViewModel(
 
     fun cambiarNombreEnRenombrado(texto: String) {
         _dialogo.update { actual ->
-            if (actual is DialogoCantidades.RenombrarSeccion) actual.copy(nombre = texto)
-            else actual
+            if (actual is DialogoCantidades.RenombrarSeccion) {
+                actual.copy(nombre = texto, rechazo = null)
+            } else {
+                actual
+            }
         }
     }
 
@@ -402,18 +418,17 @@ class CantidadesViewModel(
             // funcionado y el nombre seguía siendo el de antes, sin ninguna explicación.
             when (val resultado = recetas.renombrarSeccion(actual.seccion, actual.nombre)) {
                 is Resultado.Listo -> _dialogo.value = DialogoCantidades.Ninguno
-                is Resultado.NoSePudo -> {
-                    // El cuadro queda abierto y con lo escrito: hay que corregirlo, no
-                    // volver a escribirlo entero.
+                is Resultado.NoSePudo ->
+                    // El cuadro queda abierto, con lo escrito y con el motivo bajo el campo:
+                    // hay que corregirlo, no volver a escribirlo entero, y con el teclado
+                    // abierto un aviso en la franja de abajo no se ve.
                     _dialogo.update { actualDialogo ->
                         if (actualDialogo is DialogoCantidades.RenombrarSeccion) {
-                            actualDialogo.copy(guardando = false)
+                            actualDialogo.copy(guardando = false, rechazo = resultado.motivo)
                         } else {
                             actualDialogo
                         }
                     }
-                    mensaje.value = resultado.motivo
-                }
             }
             volverALeer()
         }

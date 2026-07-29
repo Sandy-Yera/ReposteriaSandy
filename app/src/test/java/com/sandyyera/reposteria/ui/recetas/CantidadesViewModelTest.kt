@@ -21,6 +21,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -501,7 +502,34 @@ class CantidadesViewModelTest {
         advanceUntilIdle()
 
         assertEquals(2, modelo.estado.value.secciones.size)
-        assertNotNull("Tiene que avisar por qué no se pudo", modelo.estado.value.mensaje)
+        // El aviso va **dentro del cuadro**, no en la franja de abajo: con el teclado
+        // abierto esa franja queda tapada y el cuadro parece no haber hecho nada.
+        val cuadro = modelo.dialogo.value as DialogoCantidades.Seccion
+        assertNotNull("Tiene que decir por qué no se pudo", cuadro.error)
+        assertNull("Y no por abajo, que no se ve", modelo.estado.value.mensaje)
+        assertEquals("SALSA DE CHOCOLATÉ", cuadro.nombre)
+    }
+
+    @Test
+    fun `al corregir el nombre el aviso de repetido desaparece`() = probar { modelo ->
+        modelo.abrirAgregarSeccion()
+        advanceUntilIdle()
+        modelo.cambiarNombreDeLaPrimera("Bizcocho")
+        modelo.cambiarNombreDeSeccion("Salsa")
+        modelo.guardarSeccion()
+        advanceUntilIdle()
+
+        modelo.abrirAgregarSeccion()
+        advanceUntilIdle()
+        modelo.cambiarNombreDeSeccion("Salsa")
+        modelo.guardarSeccion()
+        advanceUntilIdle()
+        assertNotNull((modelo.dialogo.value as DialogoCantidades.Seccion).error)
+
+        modelo.cambiarNombreDeSeccion("Crema")
+
+        // El rechazo era sobre lo anterior: al escribir otra cosa deja de aplicar.
+        assertNull((modelo.dialogo.value as DialogoCantidades.Seccion).error)
     }
 
     @Test
@@ -519,9 +547,10 @@ class CantidadesViewModelTest {
         modelo.guardarRenombrado()
         advanceUntilIdle()
 
-        assertNotNull(modelo.estado.value.mensaje)
-        // El cuadro sigue abierto y con lo escrito: hay que corregirlo, no rehacerlo.
+        // El cuadro sigue abierto, con lo escrito y con el motivo bajo el campo.
         val dialogo = modelo.dialogo.value as DialogoCantidades.RenombrarSeccion
+        assertNotNull(dialogo.error)
+        assertNull("El aviso no va abajo: el teclado lo taparía", modelo.estado.value.mensaje)
         assertEquals("bizcocho", dialogo.nombre)
         assertFalse(dialogo.guardando)
         assertEquals(
