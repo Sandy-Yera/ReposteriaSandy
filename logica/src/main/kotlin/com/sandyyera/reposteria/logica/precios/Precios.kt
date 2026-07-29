@@ -17,7 +17,16 @@ data class PrecioVigente(
     val modo: ModoPrecio,
     val cantidad: Int,
     val precioTotal: Double,
-    val etiqueta: String? = null
+    val etiqueta: String? = null,
+    /**
+     * Si es **este** el precio que alimenta las cifras automáticas: sueldos, simulaciones,
+     * ganancia final, trozo ganador.
+     *
+     * Solo uno por receta lo tiene en `true`. Antes no se elegía —siempre mandaba el de
+     * menor ganancia— y eso hacía imposible responder "¿cuánto ganaría con **esta** promo?",
+     * que es justamente para lo que sirve tener varias guardadas.
+     */
+    val esReferencia: Boolean = false
 )
 
 /**
@@ -46,6 +55,14 @@ data class DatosCalculoReceta(
      * debe mostrar un guion en vez de reventar.
      */
     val tienePrecio: Boolean get() = precios.isNotEmpty()
+
+    /**
+     * Si hay un precio elegido a mano como referencia.
+     *
+     * Cuando es `false` las cifras igual salen —se usa el de menor ganancia—, pero la
+     * pantalla puede decir que ese es un valor por defecto y no una decisión tomada.
+     */
+    val tieneReferenciaElegida: Boolean get() = precios.any { it.esReferencia }
 }
 
 /** El resultado de [trozoGanador]. */
@@ -78,8 +95,11 @@ fun gananciaPorTrozoDe(precio: PrecioVigente, d: DatosCalculoReceta): Double =
     precioPorTrozoDe(precio, d) - costoPorTrozo(d)
 
 /**
- * De todos los precios guardados, el que deja menos ganancia: el peor caso, que es con
- * el que se juega.
+ * De todos los precios guardados, el que deja menos ganancia: el peor caso.
+ *
+ * **Ya no es lo que alimenta las cifras automáticas** — eso ahora lo decide
+ * [precioDeReferencia]. Sigue existiendo porque es el valor por defecto más prudente
+ * mientras no se haya elegido ninguno a mano.
  *
  * Lanza excepción si la receta no tiene ningún precio. Quien la use en un total de varias
  * recetas debe filtrar antes con [DatosCalculoReceta.tienePrecio], para que una receta a
@@ -89,9 +109,44 @@ fun precioDeMenorGanancia(d: DatosCalculoReceta): PrecioVigente =
     d.precios.minByOrNull { gananciaPorTrozoDe(it, d) }
         ?: error("La receta '${d.titulo}' no tiene ningún precio guardado todavía")
 
+/**
+ * El precio con el que se calcula todo lo automático: sueldos, simulaciones, ganancia
+ * final, trozo ganador.
+ *
+ * Es el que esté marcado como referencia. Si ninguno lo está —recetas viejas, o una recién
+ * creada— se usa el de menor ganancia, que es el comportamiento anterior y el supuesto más
+ * prudente: nunca promete de más.
+ *
+ * Cambiar cuál es la referencia recalcula todo lo demás sin volver a consultar la base:
+ * las fórmulas trabajan sobre el snapshot que ya está en memoria (6.4).
+ */
+fun precioDeReferencia(d: DatosCalculoReceta): PrecioVigente =
+    d.precios.firstOrNull { it.esReferencia } ?: precioDeMenorGanancia(d)
+
 /** El precio por trozo que alimenta todas las cifras automáticas de la app. */
 fun precioEfectivoPorTrozo(d: DatosCalculoReceta): Double =
-    precioPorTrozoDe(precioDeMenorGanancia(d), d)
+    precioPorTrozoDe(precioDeReferencia(d), d)
+
+/** Lo que se muestra al intentar poner como referencia un precio que pierde plata. */
+const val MENSAJE_PROMOCION_CON_PERDIDAS = "Esta promoción genera pérdidas"
+
+/**
+ * Revisa si un precio puede ser la referencia de la receta.
+ *
+ * Devuelve el motivo por el que no, o `null` si sirve. Rechaza los que **pierden plata**:
+ * de la referencia salen el sueldo del empleado y las simulaciones, y con una base negativa
+ * esas cuentas no tienen sentido — `calcularSueldo` directamente no puede repartir una
+ * ganancia que no existe.
+ *
+ * **Cubrir el costo justo sí se acepta**: no deja ganancia, pero tampoco pérdida, y hay
+ * recetas que se venden así a propósito.
+ *
+ * Que un precio no pueda ser la referencia no impide guardarlo ni verlo. Una promo que
+ * pierde plata sigue apareciendo en la lista con su ganancia en rojo, que es justamente
+ * la información que hace falta para descartarla.
+ */
+fun errorAlElegirReferencia(precio: PrecioVigente, d: DatosCalculoReceta): String? =
+    if (gananciaPorTrozoDe(precio, d) < 0) MENSAJE_PROMOCION_CON_PERDIDAS else null
 
 /** Lo que entra al vender el producto completo, sin descontar nada. */
 fun ingresoBruto(d: DatosCalculoReceta): Double = precioEfectivoPorTrozo(d) * d.trozos

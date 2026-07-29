@@ -11,7 +11,7 @@ Cada entrada nueva va al final de su sección, con el mismo formato.
 >   vivir según la sección 4, pero ese archivo todavía no existe. Para el paso 2 de `CLAUDE.md`
 >   significa "ya está diseñado, reutiliza este diseño", no "ábrelo".
 >
-> **Sobre "compila":** lo de `logica/` está compilado y cubierto por 140 pruebas. Lo de `app/`
+> **Sobre "compila":** lo de `logica/` está compilado y cubierto por 149 pruebas. Lo de `app/`
 > se compila en el equipo de Sandy, porque el entorno donde se escribe no tiene el Android
 > SDK. Las entidades, los conversores y la base de datos ya pasaron esa compilación; lo que
 > se agregue después queda sin verificar hasta la siguiente.
@@ -195,13 +195,28 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 
 ### precioDeMenorGanancia ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/precios/Precios.kt
-- Qué hace: de todos los precios y promociones guardados de una receta, elige el que deja menos ganancia — el peor caso, que es con el que se juega (decisión #4).
-- Cómo funciona: recibe el snapshot y devuelve el `PrecioVigente` ganador. **Lanza excepción si la receta no tiene ningún precio guardado**; quien la llame en un contexto agregado (simulación múltiple) debe filtrar antes con `DatosCalculoReceta.tienePrecio`, porque si no una receta a medio configurar voltea el total completo.
+- Qué hace: de todos los precios y promociones guardados de una receta, elige el que deja menos ganancia — el peor caso.
+- Cómo funciona: recibe el snapshot y devuelve el `PrecioVigente` ganador. **Ya no es lo que alimenta las cifras automáticas**: eso lo decide `precioDeReferencia`. Sigue existiendo porque es el respaldo más prudente mientras no se haya elegido ninguno a mano. **Lanza excepción si la receta no tiene ningún precio guardado**; quien la llame en un contexto agregado (simulación múltiple) debe filtrar antes con `DatosCalculoReceta.tienePrecio`, porque si no una receta a medio configurar voltea el total completo.
+
+### precioDeReferencia ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/precios/Precios.kt
+- Qué hace: elige el precio con el que se calcula todo lo automático — sueldos, simulaciones, ganancia final, trozo ganador.
+- Cómo funciona: recibe el snapshot y devuelve el `PrecioVigente` que tenga `esReferencia = true`. Si ninguno lo tiene —receta recién creada, o filas anteriores a la versión 2 de la base— cae en `precioDeMenorGanancia`, que era el comportamiento anterior. **Es la única entrada a los cálculos automáticos**: nadie debería volver a llamar a `precioDeMenorGanancia` directamente para eso.
+
+### errorAlElegirReferencia ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/precios/Precios.kt
+- Qué hace: revisa si un precio puede ser la referencia de la receta.
+- Cómo funciona: recibe el `PrecioVigente` y el snapshot, devuelve el motivo o `null` (mismo formato que las validaciones de 6.2, porque describe algo corregible eligiendo otra promo). **Rechaza los que pierden plata**: de la referencia sale el sueldo, y `calcularSueldo` no puede repartir una ganancia que no existe. **Cubrir el costo justo sí se acepta.** Que un precio no pueda ser referencia no impide guardarlo ni verlo.
+
+### MENSAJE_PROMOCION_CON_PERDIDAS ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/precios/Precios.kt
+- Qué hace: el texto que se muestra al intentar poner como referencia un precio que pierde plata.
+- Cómo funciona: constante con el texto `"Esta promoción genera pérdidas"`. Es constante y no un texto suelto por lo mismo que `MENSAJE_ALTURA_RIESGOSA`: la pantalla muestra exactamente el mismo mensaje que produce la validación, sin copiarlo a mano.
 
 ### precioEfectivoPorTrozo ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/precios/Precios.kt
 - Qué hace: el precio por trozo que alimenta todos los campos automáticos de la app.
-- Cómo funciona: recibe el snapshot, devuelve `Double`. Es `precioPorTrozoDe` aplicado al resultado de `precioDeMenorGanancia`, así que hereda su excepción cuando no hay precios.
+- Cómo funciona: recibe el snapshot, devuelve `Double`. Es `precioPorTrozoDe` aplicado al resultado de `precioDeReferencia`, así que hereda su excepción cuando no hay precios.
 
 ### trozoGanador ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/precios/Precios.kt
@@ -257,6 +272,11 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Ubicación: data/repositorio/RecetaRepositorio.kt
 - Qué hace: dice qué recetas usan un ingrediente dado.
 - Cómo funciona: `suspend`, recibe `ingredienteId` y devuelve `List<Receta>`. Es la consulta que alimenta la advertencia antes de borrar un ingrediente (7.1). **No envolver en otra función con otro nombre** — ya existió un `recetasQueUsan` duplicado y se eliminó.
+
+### elegirPrecioDeReferencia
+- Ubicación: data/repositorio/RecetaRepositorio.kt
+- Qué hace: cambia cuál de los precios de una receta es el que alimenta las cifras automáticas.
+- Cómo funciona: `suspend`, recibe `recetaId` y `precioId`, devuelve el motivo del rechazo o `null` si se pudo. **Revisa antes de escribir** con `errorAlElegirReferencia`: si el precio pierde plata no toca nada, así que "cancelar y volver al valor que tenía" es simplemente no haber escrito. Si pasa, llama a `fijarPrecioDeReferencia` (una transacción) y registra un evento verde. Se implementa en la Fase 3, junto con la pantalla que la usa.
 
 ### obtenerRecetasConMoldeOrigen
 - Ubicación: data/repositorio/RecetaRepositorio.kt
@@ -371,7 +391,12 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 ### AppDatabase ✅ IMPLEMENTADA
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/data/db/AppDatabase.kt
 - Qué hace: la base de datos de la app; reúne las 15 tablas y da acceso a los DAO.
-- Cómo funciona: clase `@Database` en versión 1 con `exportSchema = true`, que deja el esquema en `app/schemas/` — esos archivos se versionan porque son el registro de las migraciones. `obtener(context)` devuelve una única instancia compartida (doble chequeo con `@Volatile`), ya que abrir varias sobre el mismo archivo puede corromper datos. Room activa por su cuenta las claves foráneas y el modo WAL.
+- Cómo funciona: clase `@Database` en **versión 2** con `exportSchema = true`, que deja el esquema en `app/schemas/` — esos archivos se versionan porque son el registro de las migraciones. Lleva `MIGRACION_1_2` declarada. `obtener(context)` devuelve una única instancia compartida (doble chequeo con `@Volatile`), ya que abrir varias sobre el mismo archivo puede corromper datos. Room activa por su cuenta las claves foráneas y el modo WAL.
+
+### MIGRACION_1_2 ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/db/AppDatabase.kt
+- Qué hace: agrega la columna `esReferencia` a `receta_precios` al pasar de la versión 1 a la 2.
+- Cómo funciona: `Migration(1, 2)` con un `ALTER TABLE ... ADD COLUMN esReferencia INTEGER NOT NULL DEFAULT 0`. El `DEFAULT 0` es obligatorio —SQLite no deja agregar una columna `NOT NULL` sin él— y **tiene que calzar con el `@ColumnInfo(defaultValue = "0")` de la entidad**: Room compara los dos esquemas al abrir y, si difieren, la app no arranca. Las filas que ya existían quedan sin referencia elegida, que es lo correcto: `precioDeReferencia` usa entonces el de menor ganancia y todo sigue dando lo mismo que antes.
 
 ### AppDatabase.obtener ✅ IMPLEMENTADA
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/data/db/AppDatabase.kt
@@ -396,7 +421,7 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 ### RecetaDao ✅ IMPLEMENTADA
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/data/db/dao/RecetaDao.kt
 - Qué hace: todas las consultas de recetas, sus secciones, ingredientes, rendimiento, precios y simulación.
-- Cómo funciona: incluye `costoTotalReceta` (suma en SQL con COALESCE, porque SUM sobre cero filas da NULL), su versión en lote `costoDeVariasRecetas` —**ojo: una receta sin ingredientes no aparece en el resultado y hay que tomarla como 0**—, `obtenerRecetasQueUsan` para la advertencia de borrado, `obtenerRecetasConMoldeOrigen` para propagar ediciones de molde, y `crearReceta`, que en una transacción siembra rendimiento (trozos = 1), simulación y primera sección.
+- Cómo funciona: incluye `costoTotalReceta` (suma en SQL con COALESCE, porque SUM sobre cero filas da NULL), su versión en lote `costoDeVariasRecetas` —**ojo: una receta sin ingredientes no aparece en el resultado y hay que tomarla como 0**—, `obtenerRecetasQueUsan` para la advertencia de borrado, `obtenerRecetasConMoldeOrigen` para propagar ediciones de molde, `crearReceta`, que en una transacción siembra rendimiento (trozos = 1), simulación y primera sección, y `fijarPrecioDeReferencia`, que también va en transacción porque apagar las demás referencias y encender la elegida en dos pasos sueltos deja una ventana con dos referencias o ninguna.
 
 ### MoldeDao ✅ IMPLEMENTADA
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/data/db/dao/MoldeDao.kt
@@ -576,7 +601,7 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 ### DatosCalculoReceta ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/precios/Precios.kt
 - Qué hace: la foto de una receta —id, título, costo total, trozos y precios— que se lee una vez y se le pasa a todas las fórmulas.
-- Cómo funciona: `data class` que **no es una tabla**, se arma en memoria con `obtenerDatosCalculo`. Valida en su constructor que `trozos >= 1`, así ninguna fórmula que divida por trozos puede reventar. Expone `tienePrecio`, que hay que consultar antes de pedir cualquier cifra automática. Es lo que permite que las funciones de `logica/` sean puras y probables sin base de datos, y que todas las cifras de una pantalla salgan de la misma lectura.
+- Cómo funciona: `data class` que **no es una tabla**, se arma en memoria con `obtenerDatosCalculo`. Valida en su constructor que `trozos >= 1`, así ninguna fórmula que divida por trozos puede reventar. Expone `tienePrecio`, que hay que consultar antes de pedir cualquier cifra automática, y `tieneReferenciaElegida`, que distingue "la referencia la elegiste tú" de "se está usando el respaldo". Es lo que permite que las funciones de `logica/` sean puras y probables sin base de datos, y que todas las cifras de una pantalla salgan de la misma lectura.
 
 ### DimensionesMolde ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/moldes/Moldes.kt
@@ -646,7 +671,7 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 ### PrecioVigente ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/precios/Precios.kt
 - Qué hace: un precio o promoción tal como lo ven las fórmulas: "vender N trozos (o N productos) por X en total".
-- Cómo funciona: `data class` con `modo`, `cantidad`, `precioTotal` y `etiqueta`. Es el equivalente puro de la tabla `receta_precios`: la entidad de Room vive en `:app` y se convierte a este tipo al armar el snapshot. Existe porque `:logica` no puede depender de Android, y es lo que permite probar las fórmulas de precios sin base de datos.
+- Cómo funciona: `data class` con `modo`, `cantidad`, `precioTotal`, `etiqueta` y `esReferencia`. Es el equivalente puro de la tabla `receta_precios`: la entidad de Room vive en `:app` y se convierte a este tipo al armar el snapshot. Existe porque `:logica` no puede depender de Android, y es lo que permite probar las fórmulas de precios sin base de datos. **No lleva el `id`** a propósito: las fórmulas no necesitan saber de identificadores, y el repositorio ya trabaja con la fila completa.
 
 ### ModoPrecio ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/precios/Precios.kt

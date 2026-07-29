@@ -212,6 +212,28 @@ interface RecetaDao {
     @Query("DELETE FROM receta_precios WHERE id = :precioId")
     suspend fun eliminarPrecio(precioId: Long)
 
+    @Query("UPDATE receta_precios SET esReferencia = 0 WHERE recetaId = :recetaId")
+    suspend fun quitarReferenciaATodos(recetaId: Long)
+
+    @Query("UPDATE receta_precios SET esReferencia = 1 WHERE id = :precioId")
+    suspend fun marcarComoReferencia(precioId: Long)
+
+    /**
+     * Deja [precioId] como **único** precio de referencia de la receta.
+     *
+     * Va en una transacción y apaga los demás antes de encender este. Hacerlo en dos pasos
+     * sueltos deja una ventana en la que hay dos referencias o ninguna, y ahí las cifras
+     * automáticas pasan a depender de qué fila devuelva primero la consulta.
+     *
+     * **No comprueba si ese precio pierde plata**: eso necesita el costo de la receta, que
+     * es otra consulta, y lo revisa el repositorio antes de llamar acá (8.6).
+     */
+    @Transaction
+    suspend fun fijarPrecioDeReferencia(recetaId: Long, precioId: Long) {
+        quitarReferenciaATodos(recetaId)
+        marcarComoReferencia(precioId)
+    }
+
     // --- Simulación de venta ---
 
     @Insert

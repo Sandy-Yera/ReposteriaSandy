@@ -30,9 +30,9 @@ Esta versión del documento es la vigente y reciente: por eso el alcance quedó 
 | 1 | **Stack** | Kotlin + Jetpack Compose + Room + WorkManager. Android Studio en Linux. |
 | 2 | **Autenticación Google Drive** | Google Sign-In nativo (`GoogleSignInClient`), scope `drive.file` (solo archivos creados por la app — evita el proceso de verificación de scopes sensibles de Google). |
 | 3 | **Precio de ingrediente en recetas antiguas** | Se recalcula siempre con el precio actual del ingrediente. |
-| 4 | **Selección de precio para cálculos automáticos** | Siempre se usa el precio/promo guardado que entregue la **menor ganancia por trozo** (el peor caso, "con lo que se juega"). Los demás precios guardados quedan visibles en la receta solo como referencia visual, no participan del cálculo automático. |
+| 4 | **Selección de precio para cálculos automáticos** | Se **elige a mano** cuál de los precios/promos guardados es el de **referencia**; de él salen todas las cifras automáticas. Los demás quedan visibles con su propia ganancia, para comparar. Mientras no se haya elegido ninguno se usa el de **menor ganancia por trozo**, que es el supuesto más prudente. **La referencia no puede perder plata**: elegir una que pierda se rechaza y se avisa (8.6). |
 | 5 | **Semanas por mes** | `SEMANAS_POR_MES = 4.33` (52 ÷ 12). |
-| 6 | **Sueldo de empleado: base de cálculo** | Ingreso bruto del producto completo, derivado del precio de menor ganancia de la receta. |
+| 6 | **Sueldo de empleado: base de cálculo** | Ingreso bruto del producto completo, derivado del **precio de referencia** de la receta (decisión #4). |
 | 7 | **Múltiples dispositivos** | Poco probable; advertencia best-effort si detecta apertura simultánea (sección 13.4). |
 | 8 | **Alcance de plataforma** | Solo Android (celular/tablet). No se busca paridad con PC en esta etapa. |
 | 9 | **Borrado de ingredientes** | Permitido solo tras advertencia si el ingrediente está en uso: se listan las recetas afectadas y se pide confirmación explícita. Al confirmar, se quita de esas recetas y el costo se reajusta solo (el costo total siempre se calcula en vivo). |
@@ -237,11 +237,15 @@ data class RecetaPrecio(
     val modo: ModoPrecio,      // enum y no String suelto, ver 5.5
     val cantidad: Int = 1,
     val precioTotal: Double,
-    val etiqueta: String? = null   // nombre de la promo, ej. "2x1.500"
+    val etiqueta: String? = null,  // nombre de la promo, ej. "2x1.500"
+
+    // Cuál de los precios alimenta las cifras automáticas. Solo uno por receta lo tiene
+    // en true, y eso lo garantiza fijarPrecioDeReferencia() en una transacción (8.6).
+    // El defaultValue tiene que calzar con el DEFAULT 0 de la migración 1->2.
+    @ColumnInfo(defaultValue = "0") val esReferencia: Boolean = false
 )
-// Ya no existe un campo "activo": el precio que alimenta los cálculos automáticos
-// se resuelve en vivo como el de menor ganancia (ver 8.6). Todos los guardados
-// quedan visibles en la UI para referencia.
+// Todos los precios guardados quedan visibles en la UI con su propia ganancia, para
+// poder compararlos; el marcado como referencia es el que manda en los cálculos.
 ```
 
 ### 5.2 Entidad Molde y su reutilización en Receta (nuevo)
@@ -807,7 +811,7 @@ Banner fijo: *"Las duraciones son estimaciones no precisas"*. Tres bloques (ambi
 
 ### 8.5 Paso 4 — Gastos y Ganancias
 
-El valor que ingresas aquí (modo "trozo" o "producto" + un número) crea la primera fila de `RecetaPrecio` (`cantidad = 1`) — tu precio base. Todo lo automático de este paso se recalcula según el **precio de menor ganancia** entre todos los guardados (base + promos, decisión #4):
+El valor que ingresas aquí (modo "trozo" o "producto" + un número) crea la primera fila de `RecetaPrecio` (`cantidad = 1`) — tu precio base. Todo lo automático de este paso se recalcula según el **precio de referencia** entre todos los guardados (base + promos, decisión #4). El primero que creas queda como referencia por ser el único; al agregar promos eliges cuál manda:
 
 Todas estas funciones son **puras**: reciben el snapshot `DatosCalculoReceta` (6.4) ya cargado, no consultan nada, no son `suspend`, y se prueban con JUnit construyendo el objeto a mano.
 
@@ -862,7 +866,50 @@ Con todas estas funciones recibiendo el mismo `d`, la pantalla de una receta arm
 
 ### 8.6 Precios y promociones
 
-Filas de `RecetaPrecio`. Cada una = "vender `cantidad` trozos (o `cantidad` productos completos, según `modo`) por `precioTotal`", con una `etiqueta` opcional (ej. "2x1.500"). No existe un toggle manual de "activo": **todas** las filas guardadas se ven en una lista dentro de la receta, cada una con su ganancia calculada, para que puedas comparar tus precios a gusto — pero los campos automáticos de 8.5 y 8.7 siempre se recalculan con la fila de menor ganancia, sin que tengas que elegir nada.
+Filas de `RecetaPrecio`. Cada una = "vender `cantidad` trozos (o `cantidad` productos completos, según `modo`) por `precioTotal`", con una `etiqueta` opcional (ej. "2x1.500"). **Todas** las filas guardadas se ven en una lista dentro de la receta, cada una con su propia ganancia calculada, para poder compararlas.
+
+**Una de ellas es la de referencia** (`esReferencia = true`), y de esa salen todos los campos automáticos de 8.5, 8.7 y del sueldo (10.1). Se elige tocándola en la lista.
+
+Antes no se elegía: mandaba siempre la de menor ganancia. Eso servía para no prometerse de más, pero dejaba sin responder las dos preguntas por las que uno guarda varias promos: *"¿cuánto ganaría con **esta** promoción especial?"* y *"¿cuánto me daría si vendo así?"*. Con el peor caso fijo, la respuesta era siempre la misma sin importar qué se preguntara.
+
+**Solo una fila por receta puede ser la referencia**, y lo garantiza `RecetaDao.fijarPrecioDeReferencia`: en una transacción apaga todas las de esa receta antes de encender la elegida. Escribir la columna a mano es la forma de terminar con dos referencias, y ahí las cifras pasan a depender de qué fila devuelva primero la consulta.
+
+**Si no hay ninguna elegida** —una receta recién creada, o filas anteriores a esta versión— se usa la de menor ganancia. Es el respaldo más prudente y es exactamente el comportamiento anterior, así que nada cambia hasta que se elija.
+
+#### La referencia no puede perder plata
+
+Elegir como referencia una promo que se vende bajo el costo **se rechaza**: la referencia queda como estaba y se muestra el aviso `MENSAJE_PROMOCION_CON_PERDIDAS` ("Esta promoción genera pérdidas").
+
+No es un capricho: de la referencia salen el sueldo del empleado y las simulaciones, y con una base negativa esas cuentas no significan nada — `calcularSueldo` (10.1) directamente no puede repartir una ganancia que no existe y lanza excepción.
+
+**Cubrir el costo justo sí se acepta.** No deja ganancia, pero tampoco pérdida, y hay recetas que se venden así a propósito.
+
+**Que no pueda ser la referencia no impide guardarla ni verla.** La promo que pierde plata sigue en la lista con su ganancia en negativo y en el color de eliminación (12.6) — que es justamente la información que hace falta para descartarla. Es también donde esa regla de color sigue viva: si la referencia nunca pierde, las cifras automáticas nunca son negativas, pero las de cada precio suelto sí.
+
+El flujo, que implementa el repositorio:
+
+```kotlin
+suspend fun elegirPrecioDeReferencia(recetaId: Long, precioId: Long): String? {
+    val datos = obtenerDatosCalculo(listOf(recetaId)).getValue(recetaId)  // el snapshot de 6.4
+    val elegido = recetaDao.obtenerPrecios(recetaId).first { it.id == precioId }
+
+    // 1. Se revisa ANTES de escribir: si pierde, no se toca nada y la referencia
+    //    anterior sigue siendo la que era. "Cancelar y volver al valor que tenía"
+    //    es simplemente no haber escrito.
+    errorAlElegirReferencia(elegido.aVigente(), datos)?.let { return it }
+
+    // 2. Recién acá se cambia, en una sola transacción.
+    recetaDao.fijarPrecioDeReferencia(recetaId, precioId)
+    historialRepo.registrar(TipoEvento.EDICION, EntidadEvento.RECETA, ...)
+    return null   // null = se pudo
+}
+```
+
+Devolver el motivo o `null` —y no lanzar excepción— es el mismo formato de las validaciones de 6.2: describe algo que la persona puede corregir eligiendo otra promo.
+
+#### Cambiar la referencia es instantáneo
+
+Todas las cifras se recalculan sobre el snapshot que ya está en memoria (6.4): son divisiones y restas sobre datos ya cargados, sin volver a consultar la base. Tocar otra promo y ver todo actualizado no tiene demora perceptible.
 
 ### 8.7 Paso 5 — Ganancias simuladas
 
@@ -887,7 +934,7 @@ fun simulacion(ingresoBase: Double, costoBase: Double, dias: Int, unidades: Int)
 }
 ```
 
-`simulacion()` ya era pura y se queda igual. Sus dos entradas salen del mismo snapshot que el resto de la pantalla: `ingresoBase = ingresoBruto(d)` y `costoBase = d.costoTotal`, ambos derivados del precio de menor ganancia (8.5). `diasPorSemana` / `unidadesPorDia` quedan visibles y editables al final; cualquier cambio recalcula todo en el momento — y como recalcular es aritmética sobre datos ya en memoria, es instantáneo y no vuelve a consultar la base.
+`simulacion()` ya era pura y se queda igual. Sus dos entradas salen del mismo snapshot que el resto de la pantalla: `ingresoBase = ingresoBruto(d)` y `costoBase = d.costoTotal`, ambos derivados del precio de referencia (8.5). `diasPorSemana` / `unidadesPorDia` quedan visibles y editables al final; cualquier cambio recalcula todo en el momento — y como recalcular es aritmética sobre datos ya en memoria, es instantáneo y no vuelve a consultar la base.
 
 ### 8.8 Paso 6 — Pasos
 
@@ -1271,7 +1318,7 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 ### Fase 7 — Receta: Gastos y Ganancias + Precios/Promociones
 
 - **Construyes:** precio base (primera fila de `RecetaPrecio`, sin campo `activo`), `precioDeMenorGanancia`, `precioEfectivoPorTrozo`, `trozoGanador`, lista visual de todos los precios guardados.
-- **Hecho cuando:** el ejemplo base (costo 1.400, precio 500 → trozo 3, ganancia 100) y el ejemplo con promo (2×1.500 → trozo 2, ganancia 100) dan esos resultados exactos; agregar una segunda promo con más ganancia no cambia los campos automáticos (siguen usando la de menor ganancia); una receta que se vende bajo su costo muestra la advertencia de "no alcanza a cubrir su costo" en vez de un trozo ganador imposible; y el tope del último trozo rechaza una promo de más trozos de los que rinde la receta.
+- **Hecho cuando:** el ejemplo base (costo 1.400, precio 500 → trozo 3, ganancia 100) y el ejemplo con promo (2×1.500 → trozo 2, ganancia 100) dan esos resultados exactos; agregar una segunda promo con más ganancia no cambia los campos automáticos mientras no la elijas como referencia, y elegirla los cambia en el momento; elegir como referencia una promo que se vende bajo el costo se rechaza con el aviso "Esta promoción genera pérdidas" y deja la anterior intacta; una receta que se vende bajo su costo muestra la advertencia de "no alcanza a cubrir su costo" en vez de un trozo ganador imposible; y el tope del último trozo rechaza una promo de más trozos de los que rinde la receta.
 
 ### Fase 8 — Receta: Ganancias simuladas
 
@@ -1330,9 +1377,11 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 
 ## 17. Glosario
 
-- **Precio de menor ganancia**: entre todos los precios/promos guardados de una receta, el que da la menor ganancia por trozo. Es el que alimenta todos los cálculos automáticos (decisión #4); los demás son solo referencia visual.
+- **Precio de referencia**: el precio/promo de una receta que alimenta todos los cálculos automáticos — sueldos, simulaciones, ganancia final, trozo ganador. Se elige a mano entre los guardados (decisión #4) y no puede ser uno que pierda plata. Los demás siguen visibles, cada uno con su propia ganancia.
+
+- **Precio de menor ganancia**: entre todos los precios/promos guardados, el que da la menor ganancia por trozo. Ya no manda por sí solo: es el respaldo que se usa mientras no se haya elegido una referencia.
 - **Snapshot de cálculo (`DatosCalculoReceta`)**: la foto de una receta —costo total, trozos y precios— leída de la base una sola vez y pasada a todas las fórmulas (6.4). Es lo que permite que las funciones de `logica/` sean puras y probables sin base de datos, y que los números mostrados juntos en pantalla vengan todos de la misma lectura.
-- **Trozo ganador**: primer trozo cuya venta acumulada, al precio de menor ganancia, supera el costo total de la receta.
+- **Trozo ganador**: primer trozo cuya venta acumulada, al precio de referencia, supera el costo total de la receta.
 - **Rendimiento**: sección que define molde/peso final y cantidad de trozos.
 - **Molde**: objeto reutilizable del catálogo (9) con forma, dimensiones, área y volumen calculados. Una receta puede usar uno guardado o dimensiones sueltas sin guardar ("modo prueba").
 - **Modo Altura (Modo Estructura)**: reescalado que conserva el grosor/proporción de capas, comparando áreas; exige que el molde nuevo no sea más bajo que el original.

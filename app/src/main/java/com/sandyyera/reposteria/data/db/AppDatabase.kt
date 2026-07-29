@@ -5,6 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.sandyyera.reposteria.data.db.dao.EmpleadoDao
 import com.sandyyera.reposteria.data.db.dao.HistorialDao
@@ -55,7 +56,7 @@ import com.sandyyera.reposteria.data.db.entidades.RecetaSimulacionVenta
         EmpleadoSimulacionMultipleDetalle::class,
         EventoCambio::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = true
 )
 @TypeConverters(Convertidores::class)
@@ -102,7 +103,32 @@ abstract class AppDatabase : RoomDatabase() {
                 NOMBRE_ARCHIVO
             )
                 .addCallback(SembrarDatosIniciales)
+                .addMigrations(MIGRACION_1_2)
                 .build()
+
+        /**
+         * 1 → 2: cada precio puede ser el de referencia de su receta.
+         *
+         * Antes las cifras automáticas usaban siempre el precio de menor ganancia, sin
+         * poder elegir. Ahora se elige uno, así que la tabla necesita saber cuál.
+         *
+         * Las filas que ya existían quedan en `0`, o sea sin referencia elegida, y eso es
+         * exactamente lo que corresponde: mientras nadie elija, `precioDeReferencia` usa
+         * el de menor ganancia y todo sigue dando lo mismo que antes de esta versión.
+         *
+         * El `DEFAULT 0` es obligatorio —SQLite no deja agregar una columna `NOT NULL`
+         * sin valor por defecto— y tiene que calzar con el `@ColumnInfo(defaultValue = "0")`
+         * de la entidad. Si no calzan, Room compara los dos esquemas al abrir y la app no
+         * arranca.
+         */
+        val MIGRACION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE receta_precios " +
+                        "ADD COLUMN esReferencia INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
 
         /**
          * Corre una sola vez, cuando la base se crea por primera vez.

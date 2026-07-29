@@ -192,6 +192,10 @@ class RecetaDaoFalso : RecetaDao {
     override suspend fun actualizarPrecio(precio: RecetaPrecio) =
         faltaImplementar("actualizarPrecio")
     override suspend fun eliminarPrecio(precioId: Long) = faltaImplementar("eliminarPrecio")
+    override suspend fun quitarReferenciaATodos(recetaId: Long) =
+        faltaImplementar("quitarReferenciaATodos")
+    override suspend fun marcarComoReferencia(precioId: Long) =
+        faltaImplementar("marcarComoReferencia")
     override suspend fun insertarSimulacionVenta(simulacion: RecetaSimulacionVenta) =
         faltaImplementar("insertarSimulacionVenta")
     override suspend fun obtenerSimulacionVenta(recetaId: Long): RecetaSimulacionVenta? =

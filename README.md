@@ -54,7 +54,7 @@ herramientas/   Scripts sueltos de apoyo, que no son parte de la app.
 
 | | |
 |---|---|
-| Lógica pura | implementada, 140 tests |
+| Lógica pura | implementada, 149 tests |
 | Base de datos (Room) | 15 tablas, DAOs y primeros repositorios; 43 tests sobre una base de mentira en memoria |
 | Pantallas | Ingredientes lista (alta, edición, búsqueda, borrado con advertencia y calculadora de valor por gramo); el resto pendiente |
 | Respaldo en Drive | pendiente |

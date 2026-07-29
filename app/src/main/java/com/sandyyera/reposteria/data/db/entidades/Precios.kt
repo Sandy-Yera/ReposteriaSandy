@@ -1,5 +1,6 @@
 package com.sandyyera.reposteria.data.db.entidades
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -10,8 +11,9 @@ import com.sandyyera.reposteria.logica.precios.PrecioVigente
 /**
  * Un precio o promoción de una receta: "vender N trozos (o N productos) por X en total".
  *
- * No hay un precio "activo" que se elija a mano. Todos los guardados se ven en la receta
- * para poder compararlos, pero las cifras automáticas siempre usan el de menor ganancia.
+ * Todos los guardados se ven en la receta para poder compararlos, y **uno de ellos** es el
+ * de referencia: el que alimenta las cifras automáticas (sueldos, simulaciones, ganancia
+ * final, trozo ganador). Cuál es se elige a mano.
  */
 @Entity(
     tableName = "receta_precios",
@@ -27,7 +29,21 @@ data class RecetaPrecio(
     val modo: ModoPrecio,
     val cantidad: Int = 1,
     val precioTotal: Double,
-    val etiqueta: String? = null
+    val etiqueta: String? = null,
+
+    /**
+     * Si es este el precio con el que se calcula todo lo automático.
+     *
+     * Solo una fila por receta debe tenerlo en `1`, y eso lo garantiza
+     * `RecetaDao.fijarPrecioDeReferencia`, que en una transacción apaga las demás antes de
+     * encender esta. **No se escribe directo**: hacerlo a mano es la forma de terminar con
+     * dos referencias y cifras que dependen de cuál fila salga primero.
+     *
+     * El `defaultValue` está declarado a propósito y tiene que calzar con el `DEFAULT 0`
+     * de la migración 1→2: si uno lo declara y el otro no, Room detecta la diferencia al
+     * abrir la base y la app no arranca.
+     */
+    @ColumnInfo(defaultValue = "0") val esReferencia: Boolean = false
 )
 
 /**
@@ -40,5 +56,6 @@ fun RecetaPrecio.aVigente(): PrecioVigente = PrecioVigente(
     modo = modo,
     cantidad = cantidad,
     precioTotal = precioTotal,
-    etiqueta = etiqueta
+    etiqueta = etiqueta,
+    esReferencia = esReferencia
 )

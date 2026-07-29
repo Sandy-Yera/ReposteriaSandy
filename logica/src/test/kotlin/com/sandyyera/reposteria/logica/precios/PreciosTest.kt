@@ -2,6 +2,7 @@ package com.sandyyera.reposteria.logica.precios
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -89,15 +90,126 @@ class PreciosTest {
     }
 
     @Test
-    fun `agregar una promocion mas generosa no cambia las cifras automaticas`() {
+    fun `sin referencia elegida manda el de menor ganancia, como antes`() {
         val soloBase = receta(costoTotal = 1400.0, trozos = 6, porTrozo(500.0))
         val conPromoCara = receta(
             costoTotal = 1400.0, trozos = 6,
             porTrozo(500.0),
-            porTrozo(900.0)   // deja más ganancia: no debe influir
+            porTrozo(900.0)   // deja más ganancia: no debe influir mientras nadie elija
         )
         assertEquals(precioEfectivoPorTrozo(soloBase), precioEfectivoPorTrozo(conPromoCara), 0.001)
         assertEquals(trozoGanador(soloBase).numero, trozoGanador(conPromoCara).numero)
+        assertFalse(conPromoCara.tieneReferenciaElegida)
+    }
+
+    // --- Precio de referencia elegido a mano ---
+
+    @Test
+    fun `el precio marcado manda sobre el de menor ganancia`() {
+        // Con la promo cara elegida, las cifras automáticas responden "cuánto ganaría con
+        // ESTA", que es justamente para lo que sirve tener varias guardadas.
+        val d = receta(
+            costoTotal = 1400.0, trozos = 6,
+            porTrozo(500.0),
+            porTrozo(900.0).copy(esReferencia = true)
+        )
+
+        assertTrue(d.tieneReferenciaElegida)
+        assertEquals(900.0, precioEfectivoPorTrozo(d), 0.001)
+        assertEquals(5400.0, ingresoBruto(d), 0.001)
+        assertEquals(4000.0, gananciaFinal(d), 0.001)
+    }
+
+    @Test
+    fun `elegir la mas barata da las mismas cifras que antes`() {
+        // Elegir a mano el peor caso tiene que dar exactamente lo de siempre: si no,
+        // el cambio habría movido algo que no debía.
+        val automatico = receta(costoTotal = 1400.0, trozos = 6, porTrozo(500.0), porTrozo(900.0))
+        val elegido = receta(
+            costoTotal = 1400.0, trozos = 6,
+            porTrozo(500.0).copy(esReferencia = true),
+            porTrozo(900.0)
+        )
+        assertEquals(precioEfectivoPorTrozo(automatico), precioEfectivoPorTrozo(elegido), 0.001)
+        assertEquals(trozoGanador(automatico).numero, trozoGanador(elegido).numero)
+    }
+
+    @Test
+    fun `la referencia tambien manda el trozo ganador y el sueldo`() {
+        val conBarata = receta(
+            costoTotal = 1400.0, trozos = 6,
+            porTrozo(500.0).copy(esReferencia = true), porTrozo(900.0)
+        )
+        val conCara = receta(
+            costoTotal = 1400.0, trozos = 6,
+            porTrozo(500.0), porTrozo(900.0).copy(esReferencia = true)
+        )
+
+        assertEquals(3, trozoGanador(conBarata).numero)
+        assertEquals(2, trozoGanador(conCara).numero)
+        // El ingreso bruto es la base del sueldo (10.1): cambiar la referencia lo cambia.
+        assertEquals(3000.0, ingresoBruto(conBarata), 0.001)
+        assertEquals(5400.0, ingresoBruto(conCara), 0.001)
+    }
+
+    @Test
+    fun `una promocion por producto tambien puede ser la referencia`() {
+        val d = receta(
+            costoTotal = 3000.0, trozos = 8,
+            porTrozo(1000.0),
+            porProducto(12000.0).copy(esReferencia = true)
+        )
+        assertEquals(1500.0, precioEfectivoPorTrozo(d), 0.001)
+    }
+
+    // --- La referencia no puede perder plata ---
+
+    @Test
+    fun `una promocion que pierde plata no se acepta como referencia`() {
+        // Costo 3.000 entre 6 trozos: cada trozo cuesta 500 producirlo.
+        val d = receta(costoTotal = 3000.0, trozos = 6, porTrozo(600.0))
+        val promoQuePierde = porTrozo(800.0, cantidad = 2)   // deja el trozo en 400: pierde 100
+
+        val motivo = errorAlElegirReferencia(promoQuePierde, d)
+
+        assertEquals(MENSAJE_PROMOCION_CON_PERDIDAS, motivo)
+    }
+
+    @Test
+    fun `una promocion que gana si se acepta`() {
+        val d = receta(costoTotal = 3000.0, trozos = 6, porTrozo(600.0))
+        assertNull(errorAlElegirReferencia(porTrozo(700.0), d))
+    }
+
+    @Test
+    fun `cubrir el costo justo se acepta como referencia`() {
+        // No deja ganancia, pero tampoco pérdida, y hay recetas que se venden así.
+        val d = receta(costoTotal = 3000.0, trozos = 6, porTrozo(500.0))
+        assertEquals(0.0, gananciaPorTrozoDe(porTrozo(500.0), d), 0.001)
+        assertNull(errorAlElegirReferencia(porTrozo(500.0), d))
+    }
+
+    @Test
+    fun `que no pueda ser referencia no impide guardarla ni verla`() {
+        // La promo que pierde plata sigue en la lista, con su ganancia en negativo: esa es
+        // justamente la información que hace falta para descartarla.
+        val promoQuePierde = porTrozo(800.0, cantidad = 2)
+        val d = receta(costoTotal = 3000.0, trozos = 6, porTrozo(600.0), promoQuePierde)
+
+        assertEquals(2, d.precios.size)
+        assertEquals(-100.0, gananciaPorTrozoDe(promoQuePierde, d), 0.001)
+        assertEquals(MENSAJE_PROMOCION_CON_PERDIDAS, errorAlElegirReferencia(promoQuePierde, d))
+    }
+
+    @Test
+    fun `si la unica promocion pierde plata las cifras salen en negativo`() {
+        // Sin referencia elegida y con un solo precio bajo el costo, el respaldo es el de
+        // menor ganancia -- que es ese mismo. Las cifras se muestran negativas, que es el
+        // aviso que corresponde, en vez de dejar la receta sin ninguna cifra.
+        val d = receta(costoTotal = 3000.0, trozos = 6, porTrozo(400.0))
+
+        assertTrue(gananciaFinal(d) < 0)
+        assertFalse(trozoGanador(d).alcanzable)
     }
 
     // --- Casos límite que podrían reventar ---
