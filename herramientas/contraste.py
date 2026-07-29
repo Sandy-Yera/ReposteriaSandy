@@ -49,6 +49,7 @@ CHOCOLATE = "#3E2A22"
 CHOCOLATE_TENUE = "#6E5E58"
 BORDE = "#8C7A6E"
 BLANCO = "#FFFFFF"
+ROSA_RECETA = "#F9DDE3"        # pastel: solo pinta fondos, nunca texto ni íconos
 
 # --- Modo oscuro ---
 CHOCO_FONDO = "#1C1512"
@@ -60,6 +61,7 @@ CARAMELO_CONT_OSCURO_TEXTO = "#F5DFC0"
 CREMA_TEXTO = "#F2E4D6"
 CREMA_TENUE = "#ACA095"
 BORDE_OSCURO = "#9A8A7E"
+ROSA_RECETA_OSCURO = "#4A3038"
 
 # --- Historial de cambios ---
 AZUL, AZUL_OSCURO = "#2E6FA8", "#7FB6E3"
@@ -90,6 +92,11 @@ PARES = [
     ("claro", "historial: edición", VERDE, CREMA_SUPERFICIE, TEXTO_NORMAL),
     ("claro", "historial: eliminación", FRAMBUESA, CREMA_SUPERFICIE, TEXTO_NORMAL),
     ("claro", "borde de los campos", BORDE, CREMA_SUPERFICIE, ELEMENTO_GRAFICO),
+    # El pastel de las recetas. El tercero es el que importa: el ícono de eliminar cae
+    # encima del rosa, y tiene que seguir leyéndose como aviso y no como adorno.
+    ("claro", "texto en tarjeta de receta", CHOCOLATE, ROSA_RECETA, TEXTO_NORMAL),
+    ("claro", "texto tenue en receta", CHOCOLATE_TENUE, ROSA_RECETA, TEXTO_NORMAL),
+    ("claro", "eliminar sobre el rosa", FRAMBUESA, ROSA_RECETA, TEXTO_NORMAL),
 
     ("oscuro", "texto en el fondo", CREMA_TEXTO, CHOCO_FONDO, TEXTO_NORMAL),
     ("oscuro", "texto en superficie", CREMA_TEXTO, CHOCO_SUPERFICIE, TEXTO_NORMAL),
@@ -108,6 +115,9 @@ PARES = [
     ("oscuro", "historial: edición", VERDE_OSCURO, CHOCO_SUPERFICIE, TEXTO_NORMAL),
     ("oscuro", "historial: eliminación", FRAMBUESA_OSCURO, CHOCO_SUPERFICIE, TEXTO_NORMAL),
     ("oscuro", "borde de los campos", BORDE_OSCURO, CHOCO_SUPERFICIE, ELEMENTO_GRAFICO),
+    ("oscuro", "texto en tarjeta de receta", CREMA_TEXTO, ROSA_RECETA_OSCURO, TEXTO_NORMAL),
+    ("oscuro", "texto tenue en receta", CREMA_TENUE, ROSA_RECETA_OSCURO, TEXTO_NORMAL),
+    ("oscuro", "eliminar sobre el rosa", FRAMBUESA_OSCURO, ROSA_RECETA_OSCURO, TEXTO_NORMAL),
 ]
 
 

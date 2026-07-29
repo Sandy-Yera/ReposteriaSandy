@@ -25,10 +25,14 @@ private val EsquemaClaro = lightColorScheme(
     secondaryContainer = CarameloContenedor,
     onSecondaryContainer = CarameloContenedorTexto,
 
+    // El rol "terciario" de Material es justo para un acento que acompaña sin competir:
+    // acá vive el rosa pastel de las recetas. `tertiary` a secas queda en caramelo a
+    // propósito — ese rol se usa para textos e íconos, y ahí un rosa sí competiría con el
+    // frambuesa de eliminar. El pastel solo pinta contenedores.
     tertiary = Caramelo,
     onTertiary = Color.White,
-    tertiaryContainer = CarameloContenedor,
-    onTertiaryContainer = CarameloContenedorTexto,
+    tertiaryContainer = RosaReceta,
+    onTertiaryContainer = Chocolate,
 
     background = CremaFondo,
     onBackground = Chocolate,
@@ -74,8 +78,8 @@ private val EsquemaOscuro = darkColorScheme(
 
     tertiary = CarameloClaro,
     onTertiary = ChocolateOscuroFondo,
-    tertiaryContainer = CarameloContenedorOscuro,
-    onTertiaryContainer = CarameloContenedorOscuroTexto,
+    tertiaryContainer = RosaRecetaOscuro,
+    onTertiaryContainer = CremaTexto,
 
     background = ChocolateOscuroFondo,
     onBackground = CremaTexto,

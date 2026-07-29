@@ -1141,7 +1141,11 @@ Las creaciones y eliminaciones siempre generan evento. Para ediciones, solo esto
 
 ### 12.1 Navegación
 
-`NavGraph.kt` con Navigation Compose y un `ModalNavigationDrawer` para el menú de 3 líneas, ahora con **4 secciones**: Ingredientes / Recetas / Moldes / Empleados. Se abre/cierra con el mismo botón, patrón estándar de Compose — no hay que construirlo a mano como en Tkinter.
+`ModalNavigationDrawer` para el menú de 3 líneas, con **4 secciones** al terminar: Ingredientes / Recetas / Moldes / Empleados. Se abre/cierra con el mismo botón, patrón estándar de Compose — no hay que construirlo a mano como en Tkinter.
+
+Las secciones viven en un `enum Seccion` y **solo se agregan cuando existe su pantalla**. Nada de dejarlas puestas en gris a la espera: una opción deshabilitada se toca igual y parece que la app se rompió.
+
+Cada sección conserva su ViewModel al cambiar de una a otra —`viewModel()` los guarda en la Activity, no en el Composable—, así que ir a Recetas y volver a Ingredientes no borra lo que había escrito en el buscador. La sección elegida va en `rememberSaveable` para que girar el teléfono no devuelva al principio.
 
 ### 12.2 Buscador
 
@@ -1205,6 +1209,10 @@ Todo vive en `res/` + `ui/theme/` (`Color.kt`, `Theme.kt`, `Type.kt`), nunca com
 | Eliminación (frambuesa) | `#B03A5B` | `#E8899F` |
 
 El frambuesa cumple **a la vez** de color de eliminación y de `error` de Material 3. Es deliberado: si fuera un acento decorativo aparte, un rojo de adorno se confundiría con un aviso de borrado.
+
+**Los pasteles son superficie, nunca señal.** La paleta suma un rosa pastel (`#F9DDE3` en claro, `#4A3038` en oscuro) que pinta las tarjetas de receta, expuesto por el rol `tertiaryContainer`. Convive con el frambuesa —que también es un rosa— porque juegan en planos distintos: el pastel es un fondo grande y lavado, el frambuesa es texto o ícono saturado **encima** de él. Está medido: el ícono de eliminar mantiene 4,57:1 sobre el rosa claro y 4,81:1 sobre el oscuro, así que sigue leyéndose como aviso.
+
+De ahí la regla para los pasteles que se agreguen: **pueden pintar un fondo; ninguno puede pintar un texto, un ícono ni un borde que signifique algo.** Un pastel en oscuro tampoco se aclara —brillaría—: se traduce al mismo tono hundido, con el texto claro de siempre encima.
 
 **Reglas que valen para todas las pantallas:**
 

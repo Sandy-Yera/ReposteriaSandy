@@ -64,6 +64,24 @@ val CremaTenue = Color(0xFFACA095)
 val BordeOscuro = Color(0xFF9A8A7E)
 val BordeSuaveOscuro = Color(0xFF4A3C34)
 
+// --- Pasteles ---
+// Rosa clásico de repostería, para las tarjetas de receta y los encabezados de sección.
+//
+// **Es superficie, nunca señal**, y esa distinción es la que evita el problema que
+// advierte 12.6: el frambuesa de eliminar también es un rosa, y un rosa decorativo podría
+// confundirse con un aviso de borrado. Acá no se confunden porque juegan en planos
+// distintos — el pastel es un fondo grande y lavado, el frambuesa es texto o ícono
+// saturado *encima* de él. Medido: el frambuesa mantiene 4,57:1 sobre este rosa, así que
+// sigue saltando a la vista como lo que es.
+//
+// Regla para lo que venga: un pastel nuevo puede pintar un fondo; ningún pastel puede
+// pintar un texto, un ícono ni un borde que signifique algo.
+val RosaReceta = Color(0xFFF9DDE3)
+
+// En oscuro un pastel no se puede aclarar -- brillaría. Se traduce al mismo tono, hundido:
+// un rosa profundo de fondo con el texto crema de siempre encima.
+val RosaRecetaOscuro = Color(0xFF4A3038)
+
 // --- Los tres colores del historial de cambios ---
 // La paleta de arriba es cálida a propósito: deja libres el azul, el verde y el rojo
 // para que estos tres se distingan sin competir con nada.

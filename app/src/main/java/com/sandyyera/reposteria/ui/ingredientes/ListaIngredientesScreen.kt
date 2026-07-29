@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -78,7 +79,8 @@ data class AccionesIngredientes(
     val terminarCalculadora: () -> Unit = {},
     val cerrarCalculadora: () -> Unit = {},
 
-    val mensajeMostrado: () -> Unit = {}
+    val mensajeMostrado: () -> Unit = {},
+    val abrirMenu: () -> Unit = {}
 )
 
 /**
@@ -92,11 +94,12 @@ data class AccionesIngredientes(
 @Composable
 fun ListaIngredientesScreen(
     modelo: IngredientesViewModel,
+    alAbrirMenu: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val estado by modelo.estado.collectAsStateWithLifecycle()
 
-    val acciones = remember(modelo) {
+    val acciones = remember(modelo, alAbrirMenu) {
         AccionesIngredientes(
             buscar = modelo::buscar,
             pedirAlta = modelo::abrirAlta,
@@ -116,7 +119,8 @@ fun ListaIngredientesScreen(
             elegirDestino = modelo::elegirDestino,
             terminarCalculadora = modelo::terminarCalculadora,
             cerrarCalculadora = modelo::cerrarCalculadora,
-            mensajeMostrado = modelo::mensajeMostrado
+            mensajeMostrado = modelo::mensajeMostrado,
+            abrirMenu = alAbrirMenu
         )
     }
 
@@ -218,12 +222,16 @@ private fun Catalogo(
         topBar = {
             TopAppBar(
                 title = { Text("Ingredientes") },
+                navigationIcon = {
+                    IconButton(onClick = acciones.abrirMenu) {
+                        Icon(Icons.Default.Menu, contentDescription = "Abrir el menú")
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary
+                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
                 )
-                // El botón del menú de 3 líneas se agrega junto con la navegación (12.1),
-                // cuando exista una segunda sección a la que ir.
             )
         },
         snackbarHost = { SnackbarHost(anfitrionDeMensajes) }

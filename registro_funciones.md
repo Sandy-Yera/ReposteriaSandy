@@ -628,6 +628,36 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Qué hacen: reemplazan a los DAO de Room con datos en memoria, para probar repositorios y ViewModel sin base de datos ni celular (`./gradlew :app:test`).
 - Cómo funcionan: los DAO de Room son interfaces, así que se sustituyen sin tocar el código de la app. **`IngredienteDaoFalso` imita el índice único de la tabla** y lanza excepción ante un nombre repetido, igual que la base de verdad: sin eso, la prueba de "no se puede crear un duplicado" pasaría aunque la comprobación no existiera. `HistorialDaoFalso` expone `eventos` y `limpiezasPedidas` para revisarlos. `RecetaDaoFalso` creció en la Fase 3 hasta ser una base de recetas en memoria de verdad: hace las **cascadas** (borrar una receta se lleva sus secciones; borrar una sección, sus ingredientes), resuelve el **JOIN del costo** contra el catálogo de ingredientes leyendo el `valorPorGramo` del momento (decisión #3) —por eso recibe el mismo `IngredienteDaoFalso` que use la prueba—, y **omite del resultado en lote las recetas sin ingredientes**, igual que el `GROUP BY` real. Esa última trampa solo se puede probar si el falso la reproduce. Lo que aún no hace falta falla ruidosamente: un `emptyList()` de relleno haría pasar pruebas que no probaron nada.
 
+### RecetasViewModel ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/recetas/RecetasViewModel.kt
+- Qué hace: guarda lo que se ve en la lista de recetas y ejecuta lo que se pide desde ella.
+- Cómo funciona: mismo patrón que `IngredientesViewModel` — `combine` de cuatro fuentes y `WhileSubscribed(5s)`. Lo propio de acá es que el costo de cada receta se pide **en lote** con `costosDe` y no una por una: con veinte recetas serían veinte consultas cada vez que cambia cualquier cosa. Sus acciones: `buscar`, `abrirAlta`, `abrirCambioDeTitulo`, `cambiarTitulo`, `guardar`, `pedirBorrado`, `confirmarBorrado`, `cerrarDialogo` y `mensajeMostrado`.
+
+### RecetaConCosto, EstadoRecetas y DialogoReceta ✅ IMPLEMENTADAS
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/recetas/RecetasViewModel.kt
+- Qué hacen: los tipos que la lista de recetas necesita para dibujarse.
+- Cómo funcionan: `RecetaConCosto` junta la receta con lo que cuesta hacerla ahora mismo. `EstadoRecetas` distingue `catalogoVacio` de `busquedaSinResultados`, igual que ingredientes. `DialogoReceta` es cerrado (`Ninguno` / `Formulario` / `ConfirmarBorrado`); su `ConfirmarBorrado` **no necesita consultar nada antes**, a diferencia del de ingredientes: lo que se pierde al borrar una receta está todo dentro de ella.
+
+### ListaRecetasScreen, ListaRecetas y AccionesRecetas ✅ IMPLEMENTADAS
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/recetas/ListaRecetasScreen.kt
+- Qué hacen: la sección de recetas — botón fijo arriba, buscador, y las recetas debajo con su costo.
+- Cómo funcionan: la misma división de siempre — `ListaRecetasScreen` conecta el ViewModel, `ListaRecetas` solo dibuja y se puede ver en la vista previa. `AccionesRecetas` agrupa las diez funciones. La tarjeta de receta usa `tertiaryContainer` (el rosa pastel) en vez del crema del resto: es el único lugar con color propio, para que la lista se reconozca de un vistazo.
+
+### NavegacionPrincipal y Seccion ✅ IMPLEMENTADAS
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/NavegacionPrincipal.kt
+- Qué hacen: el menú de 3 líneas y la sección que se esté viendo (12.1).
+- Cómo funcionan: `ModalNavigationDrawer` con un `enum Seccion` que hoy tiene Ingredientes y Recetas. **Moldes y Empleados no están puestos en gris**: una opción que no lleva a ninguna parte se toca igual y parece que algo se rompió; se agregan al enum cuando exista su pantalla. Cada sección conserva su ViewModel al cambiar de una a otra, porque `viewModel()` los guarda en la Activity — ir a Recetas y volver no borra lo escrito en el buscador. La sección elegida va en `rememberSaveable` para sobrevivir al giro del teléfono.
+
+### RecetaRepositorio.costosDe ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/RecetaRepositorio.kt
+- Qué hace: el costo de varias recetas de una sola consulta, para la lista.
+- Cómo funciona: `suspend`, recibe `List<Long>` y devuelve `Map<Long, Double>` **con una entrada por cada id pedido**, incluidos los que la consulta no trae. El `GROUP BY` no da fila para una receta sin ingredientes, y quien reciba un mapa incompleto tarde o temprano hace `getValue` y se cae; ese remiendo va acá una vez y no en cada llamador. La usan la lista y `obtenerDatosCalculo`.
+
+### RosaReceta y RosaRecetaOscuro ✅ IMPLEMENTADAS
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/theme/Color.kt
+- Qué hacen: el rosa pastel de las tarjetas de receta, en claro y en oscuro.
+- Cómo funcionan: se exponen por el rol `tertiaryContainer` del tema. **Son superficie, nunca señal**, y esa distinción es la que evita el problema que advierte 12.6: el frambuesa de eliminar también es un rosa. No se confunden porque juegan en planos distintos — el pastel es un fondo grande y lavado, el frambuesa es texto o ícono saturado encima. Medido: el frambuesa mantiene 4,57:1 sobre el rosa claro y 4,81:1 sobre el oscuro. **Regla para los pasteles que vengan: pueden pintar un fondo; ninguno puede pintar un texto, un ícono ni un borde que signifique algo.**
+
 ### luminancia y contraste ✅ IMPLEMENTADAS
 - Ubicación: herramientas/contraste.py
 - Qué hacen: miden si un color de texto se lee sobre su fondo, según la fórmula de la WCAG que sigue Android.

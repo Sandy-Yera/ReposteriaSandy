@@ -211,6 +211,23 @@ class RecetaRepositorio(
     /** Lo que cuesta hacer la receta, con el precio **actual** de cada ingrediente (#3). */
     suspend fun costoTotal(recetaId: Long): Double = dao.costoTotalReceta(recetaId)
 
+    /**
+     * El costo de varias recetas de una sola consulta, para la lista.
+     *
+     * Existe para que la pantalla no pregunte una vez por receta: con veinte recetas eso
+     * serían veinte consultas cada vez que cambia cualquier cosa.
+     *
+     * **Devuelve una entrada por cada id pedido**, incluidos los que la consulta no trae.
+     * El `GROUP BY` no da fila para una receta sin ingredientes, y quien reciba un mapa
+     * incompleto tarde o temprano hace `getValue` y se cae. Ese remiendo va acá una vez y
+     * no en cada llamador.
+     */
+    suspend fun costosDe(recetaIds: List<Long>): Map<Long, Double> {
+        if (recetaIds.isEmpty()) return emptyMap()
+        val encontrados = dao.costoDeVariasRecetas(recetaIds).associate { it.recetaId to it.costo }
+        return recetaIds.associateWith { encontrados[it] ?: 0.0 }
+    }
+
     // --- Precios ---
 
     /**
@@ -228,7 +245,7 @@ class RecetaRepositorio(
     suspend fun obtenerDatosCalculo(recetaIds: List<Long>): Map<Long, DatosCalculoReceta> {
         if (recetaIds.isEmpty()) return emptyMap()
 
-        val costos = dao.costoDeVariasRecetas(recetaIds).associate { it.recetaId to it.costo }
+        val costos = costosDe(recetaIds)
         val trozos = dao.trozosDeVariasRecetas(recetaIds).associate { it.recetaId to it.trozos }
         val precios = dao.preciosDeVariasRecetas(recetaIds).groupBy { it.recetaId }
 
