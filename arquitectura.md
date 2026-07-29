@@ -717,7 +717,7 @@ Detalles que importan:
 
 Una o más `RecetaSeccion` (recetas de un solo conjunto crean automáticamente una sección "General" invisible para el usuario).
 
-**Cuando una receta simple pasa a tener varias secciones.** Como todo es editable después (8.1), tarde o temprano una receta de un solo conjunto necesita una segunda sección — al bizcocho le agregas la crema. En ese momento la sección "General" invisible tiene que dejar de serlo, porque ya no se entiende sola. Al tocar "+ agregar sección" en una receta que solo tiene la sección automática, la app **pide primero un nombre para la que ya existía** (proponiendo el título de la receta como sugerencia, ej. "Bizcocho") y recién después crea la nueva. Los ingredientes ya cargados no se mueven de lugar: siguen en la misma sección, que ahora simplemente tiene nombre visible. El camino inverso —quedarse con una sola sección otra vez— vuelve a ocultar el encabezado.
+**Cuando una receta simple pasa a tener varias secciones.** Como todo es editable después (8.1), tarde o temprano una receta de un solo conjunto necesita una segunda sección — al bizcocho le agregas la crema. En ese momento la sección "General" invisible tiene que dejar de serlo, porque ya no se entiende sola. Al tocar "+ agregar sección" en una receta que solo tiene la sección automática, la app **pide primero un nombre para la que ya existía** (proponiendo el título de la receta como sugerencia, ej. "Bizcocho") y recién después crea la nueva. Los ingredientes ya cargados no se mueven de lugar: siguen en la misma sección, que ahora simplemente tiene nombre visible. El camino inverso —quedarse con una sola sección otra vez— **conserva su nombre a la vista**. La primera versión lo ocultaba, y al usarla apareció el problema: con "Bizcocho" y "Salsa", borrar el bizcocho dejaba la salsa sola y su encabezado desaparecía. El nombre seguía guardado, pero desde la pantalla parecía haberse perdido — y era un nombre escrito a propósito. **Lo que uno escribe no se esconde solo.** La única que se oculta es la sección automática, la que todavía se llama "General" porque nadie la tocó.
 
 ### 8.3 Paso 2 — Rendimiento (con moldes)
 
@@ -1162,6 +1162,25 @@ fun coincide(textoBusqueda: String, campo: String) =
 
 Vive en `logica/`, no en el Composable, para que las 4 pantallas busquen igual y se pueda probar con JUnit.
 
+### 12.2.1 El estado de un campo de texto no puede viajar lento
+
+Un `TextField` de Compose recibe su valor desde afuera y avisa hacia afuera lo que se
+escribe. Si ese viaje de ida y vuelta pasa por algo asíncrono —un `combine` que consulta la
+base, por ejemplo— **el campo se rompe**: alcanza a redibujarse con el valor viejo antes de
+que llegue el nuevo, y el cursor vuelve al principio. Escribiendo "Torta" queda "ortaT".
+
+Pasó de verdad en el paso de cantidades, cuyo `combine` hace cuatro consultas por emisión.
+
+La regla que queda: **lo que se escribe va por su propio canal, no dentro del estado que se
+arma con consultas.** En la práctica, los ViewModel exponen dos cosas —`estado` (los datos,
+que pueden tardar) y `dialogo` (lo que se está escribiendo, que cambia en el momento)— y la
+pantalla lee las dos por separado.
+
+`CampoNumerico` es inmune por otro motivo: guarda su propio `TextFieldValue` y solo avisa
+hacia afuera. Cualquier campo que no haga eso depende de esta regla.
+
+---
+
 ### 12.3 Responsividad
 
 Compose maneja la mayor parte de la adaptación de forma nativa (a diferencia de Tkinter, no hay que calcular factores de escala a mano):
@@ -1310,12 +1329,15 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 
 > **Pendientes anotados durante la Fase 3, para resolver antes de cerrarla:**
 >
-> 1. **Títulos de receta repetidos.** Hoy se pueden crear dos recetas con el mismo título,
->    y también con el mismo nombre cambiando mayúsculas o tildes. En ingredientes eso no
->    pasa porque la tabla tiene índice único con `NOCASE` y el repositorio compara además
->    sin tildes con `sonElMismoTexto` (7). Recetas necesita lo mismo. **Ojo con la
->    migración:** crear un índice único falla si la tabla ya trae repetidos, así que la
->    migración tiene que renombrarlos antes de crear el índice, no después.
+> 1. ~~**Títulos de receta repetidos.**~~ **Resuelto.** El repositorio compara con
+>    `sonElMismoTexto`, así que rechaza los que solo cambian mayúsculas o tildes.
+>    **No se agregó índice único**, a diferencia de ingredientes: al poner la regla ya
+>    había repetidos guardados, y el índice habría obligado a renombrarlos o borrarlos
+>    durante la migración — datos reales cambiando sin que nadie lo pida. En vez de eso los
+>    que ya estaban conviven, `marcarRepetidos` los señala, y la pantalla los deja **solo
+>    borrar**: abrirlos o renombrarlos muestra un aviso explicando por qué. La
+>    contrapartida aceptada es que la base ya no es la última barrera; la regla vive en el
+>    repositorio y está cubierta por pruebas.
 > 2. **Conservar los datos de prueba entre instalaciones.** Room no borra nada por su
 >    cuenta —no se usa `fallbackToDestructiveMigration()`—, así que si los datos
 >    desaparecen es porque hubo una reinstalación de por medio. Falta (a) una prueba

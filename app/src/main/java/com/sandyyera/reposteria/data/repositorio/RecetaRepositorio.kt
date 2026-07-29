@@ -8,12 +8,15 @@ import com.sandyyera.reposteria.data.db.entidades.RecetaSeccion
 import com.sandyyera.reposteria.data.db.entidades.TipoEvento
 import com.sandyyera.reposteria.data.db.entidades.aVigente
 import com.sandyyera.reposteria.logica.precios.DatosCalculoReceta
+import com.sandyyera.reposteria.logica.busqueda.sonElMismoTexto
 import com.sandyyera.reposteria.logica.precios.errorAlElegirReferencia
 import com.sandyyera.reposteria.logica.validaciones.NOMBRE_SECCION_POR_DEFECTO
 import com.sandyyera.reposteria.logica.validaciones.errorEnNombreSeccion
+import com.sandyyera.reposteria.logica.validaciones.esNombreAutomaticoDeSeccion
 import com.sandyyera.reposteria.logica.validaciones.errorEnTituloReceta
 import com.sandyyera.reposteria.logica.validaciones.nombreSugeridoParaPrimeraSeccion
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 
 /**
  * Cómo terminó una operación que podía no poder hacerse.
@@ -46,6 +49,25 @@ class RecetaRepositorio(
     suspend fun obtener(recetaId: Long): Receta? = dao.obtener(recetaId)
 
     /**
+     * Busca una receta que se llame igual que [titulo], ignorando tildes y mayúsculas.
+     *
+     * [exceptoId] sirve al renombrar, para que una receta no choque consigo misma.
+     *
+     * Se compara en memoria y no con una consulta porque SQLite no sabe ignorar tildes:
+     * para la base "limon" y "limón" son títulos distintos. Es el mismo motivo por el que
+     * `IngredienteRepositorio.buscarParecido` hace lo mismo.
+     *
+     * **A diferencia de ingredientes, la tabla no lleva índice único.** Es deliberado: al
+     * poner esta regla ya había recetas repetidas guardadas, y un índice único habría
+     * obligado a renombrarlas o borrarlas durante la migración — datos reales cambiando
+     * sin que nadie lo pida. En vez de eso conviven, y `marcarRepetidos` las señala para
+     * que la pantalla no deje seguir trabajando sobre ellas.
+     */
+    suspend fun buscarParecida(titulo: String, exceptoId: Long? = null): Receta? =
+        dao.observarTodas().first()
+            .firstOrNull { it.id != exceptoId && sonElMismoTexto(it.titulo, titulo) }
+
+    /**
      * Crea una receta con todo lo que necesita para existir sin huecos.
      *
      * La primera sección se llama [NOMBRE_SECCION_POR_DEFECTO] y **no se muestra** mientras
@@ -55,6 +77,7 @@ class RecetaRepositorio(
     suspend fun crear(titulo: String): ResultadoCrearReceta {
         val limpio = titulo.trim()
         errorEnTituloReceta(limpio)?.let { return ResultadoCrearReceta.NoValido(it) }
+        buscarParecida(limpio)?.let { return ResultadoCrearReceta.YaExiste(it) }
 
         val id = dao.crearReceta(limpio, NOMBRE_SECCION_POR_DEFECTO)
         historial.registrar(
@@ -69,6 +92,9 @@ class RecetaRepositorio(
         val limpio = titulo.trim()
         errorEnTituloReceta(limpio)?.let { return Resultado.NoSePudo(it) }
         val receta = dao.obtener(recetaId) ?: return Resultado.NoSePudo("Esa receta ya no existe")
+        buscarParecida(limpio, exceptoId = recetaId)?.let {
+            return Resultado.NoSePudo("Ya tienes una receta que se llama '${it.titulo}'")
+        }
 
         dao.actualizar(receta.copy(titulo = limpio, actualizadoEn = System.currentTimeMillis()))
         historial.registrar(
@@ -115,7 +141,10 @@ class RecetaRepositorio(
      * [agregarSeccion].
      */
     suspend fun nombreQueFaltaBautizar(recetaId: Long): String? {
-        if (dao.contarSecciones(recetaId) != 1) return null
+        val unica = dao.obtenerSecciones(recetaId).singleOrNull() ?: return null
+        // Si ya la bautizaron, no hay nada que preguntar: volver a proponer el título de
+        // la receta pisaría un nombre que la persona eligió.
+        if (!esNombreAutomaticoDeSeccion(unica.nombreSeccion)) return null
         val receta = dao.obtener(recetaId) ?: return null
         return nombreSugeridoParaPrimeraSeccion(receta.titulo)
     }
@@ -138,15 +167,20 @@ class RecetaRepositorio(
         val existentes = dao.obtenerSecciones(recetaId)
         if (existentes.isEmpty()) return Resultado.NoSePudo("Esa receta ya no existe")
 
-        // Si la que había era la única, hay que ponerle nombre antes de que deje de ser
-        // invisible. Sin esto quedaría un encabezado que dice "General" al lado de "Crema".
-        if (existentes.size == 1) {
+        // Si la única que había todavía tiene el nombre automático, hay que bautizarla
+        // antes de que deje de ser invisible: si no, quedaría un encabezado que dice
+        // "General" al lado de "Crema".
+        //
+        // Si ya tenía nombre propio no se pide nada y **no se toca**: ese nombre lo eligió
+        // alguien, y pisarlo con el título de la receta sería perder lo que escribió.
+        val unica = existentes.singleOrNull()
+        if (unica != null && esNombreAutomaticoDeSeccion(unica.nombreSeccion)) {
             val bautizo = nombreDeLaPrimera?.trim()
                 ?: return Resultado.NoSePudo(
                     "Antes de agregar otra sección hay que ponerle nombre a la que ya existe"
                 )
             errorEnNombreSeccion(bautizo)?.let { return Resultado.NoSePudo(it) }
-            dao.actualizarSeccion(existentes.single().copy(nombreSeccion = bautizo))
+            dao.actualizarSeccion(unica.copy(nombreSeccion = bautizo))
         }
 
         dao.insertarSeccion(
@@ -293,4 +327,7 @@ class RecetaRepositorio(
 sealed interface ResultadoCrearReceta {
     data class Creada(val recetaId: Long) : ResultadoCrearReceta
     data class NoValido(val motivo: String) : ResultadoCrearReceta
+
+    /** Ya hay una receta que se llama igual. Se devuelve para poder nombrarla en el aviso. */
+    data class YaExiste(val existente: Receta) : ResultadoCrearReceta
 }

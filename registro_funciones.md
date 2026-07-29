@@ -11,7 +11,7 @@ Cada entrada nueva va al final de su sección, con el mismo formato.
 >   vivir según la sección 4, pero ese archivo todavía no existe. Para el paso 2 de `CLAUDE.md`
 >   significa "ya está diseñado, reutiliza este diseño", no "ábrelo".
 >
-> **Sobre "compila":** lo de `logica/` está compilado y cubierto por 170 pruebas. Lo de `app/`
+> **Sobre "compila":** lo de `logica/` está compilado y cubierto por 178 pruebas. Lo de `app/`
 > se compila en el equipo de Sandy, porque el entorno donde se escribe no tiene el Android
 > SDK. Las entidades, los conversores y la base de datos ya pasaron esa compilación; lo que
 > se agregue después queda sin verificar hasta la siguiente.
@@ -153,10 +153,15 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Qué hacen: revisan el título de una receta, el nombre de una sección y los gramos de un ingrediente dentro de ella.
 - Cómo funcionan: reciben `String` y devuelven el motivo o `null`, igual que el resto del paquete. Las dos de nombre usan `LARGO_MAXIMO_NOMBRE`, que es el mismo tope para todo lo que se escribe a mano. **La de gramos rechaza el cero**, a diferencia de `errorEnValorPorGramo`: un ingrediente en cantidad cero simplemente no está en la receta, y dejarlo guardado es una fila que no suma y confunde al leer.
 
-### debeMostrarNombreDeSeccion ✅ IMPLEMENTADA
+### debenMostrarseLosNombresDeSeccion y esNombreAutomaticoDeSeccion ✅ IMPLEMENTADAS
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Recetas.kt
-- Qué hace: dice si hay que mostrar el encabezado con el nombre de cada sección.
-- Cómo funciona: recibe cuántas secciones tiene la receta y devuelve `Boolean` — `true` desde la segunda. Con una sola no se muestra, porque una receta de un solo conjunto no necesita que le pongan título a "todo lo que lleva" (8.2). El camino inverso también vale: borrar la segunda vuelve a ocultar los encabezados sin renombrar nada.
+- Qué hacen: deciden si se muestran los encabezados con el nombre de cada sección.
+- Cómo funcionan: la primera recibe **la lista de nombres** (no la cantidad) y devuelve `Boolean`. Se muestran con dos o más, y también con una sola **si tiene nombre puesto a mano**. Esa segunda parte salió de un caso real: con "Bizcocho" y "Salsa", borrar el bizcocho dejaba la salsa sola y su encabezado desaparecía — el nombre seguía guardado, pero parecía perdido, y lo había escrito alguien. **Lo que uno escribe no se esconde solo.** `esNombreAutomaticoDeSeccion` distingue la sección que todavía se llama `NOMBRE_SECCION_POR_DEFECTO`; se compara por texto y no por una columna aparte, con la contrapartida aceptada de que bautizar una sección exactamente "General" la hace comportarse como la automática.
+
+### marcarRepetidos ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/busqueda/Busqueda.kt
+- Qué hace: de una lista, marca cuáles repiten un nombre que ya apareció antes.
+- Cómo funciona: genérica; recibe la lista y de dónde sacar el texto, y devuelve `List<Boolean>` en el mismo orden. **El primero de cada nombre nunca se marca**, así que hay que pasarla ordenada por antigüedad para que el que se conserve sea el original. Compara con `sonElMismoTexto`, o sea ignora mayúsculas y tildes. Existe para los datos anteriores a prohibir los repetidos: no se pueden borrar solos —serían datos reales desapareciendo sin aviso— pero sí señalar para que la pantalla los trate distinto.
 
 ### nombreSugeridoParaPrimeraSeccion ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Recetas.kt

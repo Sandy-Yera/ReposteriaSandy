@@ -90,6 +90,9 @@ fun PasoCantidadesScreen(
     modifier: Modifier = Modifier
 ) {
     val estado by modelo.estado.collectAsStateWithLifecycle()
+    // El diálogo viene por su propio canal, sin pasar por las consultas del estado: un
+    // campo de texto que recibe su valor con retraso se rompe (ver CantidadesViewModel).
+    val dialogo by modelo.dialogo.collectAsStateWithLifecycle()
 
     val acciones = remember(modelo, alVolver) {
         AccionesCantidades(
@@ -116,7 +119,7 @@ fun PasoCantidadesScreen(
         )
     }
 
-    PasoCantidades(estado = estado, acciones = acciones, modifier = modifier)
+    PasoCantidades(estado = estado, dialogo = dialogo, acciones = acciones, modifier = modifier)
 }
 
 /**
@@ -134,6 +137,7 @@ fun PasoCantidadesScreen(
 @Composable
 fun PasoCantidades(
     estado: EstadoCantidades,
+    dialogo: DialogoCantidades,
     acciones: AccionesCantidades,
     modifier: Modifier = Modifier
 ) {
@@ -232,7 +236,7 @@ fun PasoCantidades(
             }
         }
 
-        when (val dialogo = estado.dialogo) {
+        when (dialogo) {
             is DialogoCantidades.Ninguno -> Unit
 
             is DialogoCantidades.PonerIngrediente -> DialogoPonerIngrediente(
@@ -577,20 +581,20 @@ private val recetaConDosSecciones = recetaSimple.copy(
 @Preview(showBackground = true, name = "Cantidades - receta simple")
 @Composable
 private fun CantidadesSimple() {
-    ReposteriaTheme { PasoCantidades(recetaSimple, AccionesCantidades()) }
+    ReposteriaTheme { PasoCantidades(recetaSimple, DialogoCantidades.Ninguno, AccionesCantidades()) }
 }
 
 @Preview(showBackground = true, name = "Cantidades - dos secciones")
 @Composable
 private fun CantidadesDosSecciones() {
-    ReposteriaTheme { PasoCantidades(recetaConDosSecciones, AccionesCantidades()) }
+    ReposteriaTheme { PasoCantidades(recetaConDosSecciones, DialogoCantidades.Ninguno, AccionesCantidades()) }
 }
 
 @Preview(showBackground = true, name = "Cantidades - oscuro")
 @Composable
 private fun CantidadesOscuro() {
     ReposteriaTheme(oscuro = true) {
-        PasoCantidades(recetaConDosSecciones, AccionesCantidades())
+        PasoCantidades(recetaConDosSecciones, DialogoCantidades.Ninguno, AccionesCantidades())
     }
 }
 
@@ -603,6 +607,7 @@ private fun CantidadesVacia() {
                 secciones = listOf(seccion(1, "General")),
                 costoTotal = 0.0
             ),
+            DialogoCantidades.Ninguno,
             AccionesCantidades()
         )
     }
@@ -613,12 +618,8 @@ private fun CantidadesVacia() {
 private fun CantidadesBautizando() {
     ReposteriaTheme {
         PasoCantidades(
-            recetaSimple.copy(
-                dialogo = DialogoCantidades.Seccion(
-                    nombre = "",
-                    nombreDeLaPrimera = "Torta de manjar"
-                )
-            ),
+            recetaSimple,
+            DialogoCantidades.Seccion(nombre = "", nombreDeLaPrimera = "Torta de manjar"),
             AccionesCantidades()
         )
     }

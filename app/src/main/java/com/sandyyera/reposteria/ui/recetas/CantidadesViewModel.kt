@@ -15,7 +15,7 @@ import com.sandyyera.reposteria.data.repositorio.Resultado
 import com.sandyyera.reposteria.data.repositorio.ResultadoGuardarIngrediente
 import com.sandyyera.reposteria.logica.formato.formatearMientrasSeEscribe
 import com.sandyyera.reposteria.logica.formato.formatearNumero
-import com.sandyyera.reposteria.logica.validaciones.debeMostrarNombreDeSeccion
+import com.sandyyera.reposteria.logica.validaciones.debenMostrarseLosNombresDeSeccion
 import com.sandyyera.reposteria.logica.validaciones.errorEnCantidadEnGramosTexto
 import com.sandyyera.reposteria.logica.validaciones.errorEnNombreSeccion
 import com.sandyyera.reposteria.logica.validaciones.textoANumero
@@ -128,18 +128,18 @@ data class EstadoCantidades(
     val secciones: List<SeccionConIngredientes> = emptyList(),
     val costoTotal: Double = 0.0,
     val catalogo: List<Ingrediente> = emptyList(),
-    val dialogo: DialogoCantidades = DialogoCantidades.Ninguno,
     val mensaje: String? = null,
     val cargando: Boolean = true
 ) {
     /**
      * Si se muestran los encabezados con el nombre de cada sección.
      *
-     * Con una sola no se muestran: una receta de un solo conjunto no necesita que le
-     * pongan título a "todo lo que lleva" (8.2). La regla vive en `logica/` y se prueba
-     * sola; acá solo se consulta.
+     * La regla vive en `logica/` y se prueba sola; acá solo se consulta. Depende de los
+     * nombres y no de cuántas hay: una sección sola pero bautizada a mano sí muestra el
+     * suyo, porque lo que uno escribe no se esconde solo (8.2).
      */
-    val mostrarNombresDeSeccion: Boolean get() = debeMostrarNombreDeSeccion(secciones.size)
+    val mostrarNombresDeSeccion: Boolean
+        get() = debenMostrarseLosNombresDeSeccion(secciones.map { it.seccion.nombreSeccion })
 
     /** Si la receta todavía no tiene ningún ingrediente en ninguna sección. */
     val sinIngredientes: Boolean get() = secciones.all { it.lineas.isEmpty() }
@@ -165,15 +165,27 @@ class CantidadesViewModel(
 ) : ViewModel() {
 
     private val recargar = MutableStateFlow(0)
-    private val dialogo = MutableStateFlow<DialogoCantidades>(DialogoCantidades.Ninguno)
+    private val _dialogo = MutableStateFlow<DialogoCantidades>(DialogoCantidades.Ninguno)
     private val mensaje = MutableStateFlow<String?>(null)
+
+    /**
+     * Lo que hay abierto encima, **por su propio canal y no dentro de [estado]**.
+     *
+     * Esto no es un detalle de organización: es lo que arregla un bug real. El `combine`
+     * de abajo hace cuatro consultas a la base en cada emisión, así que lo que sale de él
+     * llega con retraso. Un campo de texto que recibe su valor con retraso se rompe —
+     * escribías "Torta" y quedaba "ortaT", porque el campo alcanzaba a reponer su estado
+     * anterior antes de que llegara la letra nueva y el cursor volvía al principio.
+     *
+     * Acá el diálogo cambia en el momento, sin pasar por ninguna consulta.
+     */
+    val dialogo: StateFlow<DialogoCantidades> = _dialogo
 
     val estado: StateFlow<EstadoCantidades> = combine(
         recargar,
         ingredientes.observarTodos(),
-        dialogo,
         mensaje
-    ) { _, catalogo, dialogoActual, mensajeActual ->
+    ) { _, catalogo, mensajeActual ->
         val porId = catalogo.associateBy { it.id }
         val items = recetas.obtenerIngredientes(recetaId)
 
@@ -194,7 +206,6 @@ class CantidadesViewModel(
             },
             costoTotal = recetas.costoTotal(recetaId),
             catalogo = catalogo,
-            dialogo = dialogoActual,
             mensaje = mensajeActual,
             cargando = false
         )
@@ -211,11 +222,11 @@ class CantidadesViewModel(
     // --- Ingredientes de la receta ---
 
     fun abrirAgregarIngrediente(seccionId: Long) {
-        dialogo.value = DialogoCantidades.PonerIngrediente(seccionId = seccionId)
+        _dialogo.value = DialogoCantidades.PonerIngrediente(seccionId = seccionId)
     }
 
     fun abrirCambiarCantidad(linea: LineaDeIngrediente) {
-        dialogo.value = DialogoCantidades.PonerIngrediente(
+        _dialogo.value = DialogoCantidades.PonerIngrediente(
             seccionId = linea.item.seccionId,
             editando = linea.item,
             elegido = linea.ingrediente,
@@ -263,12 +274,12 @@ class CantidadesViewModel(
     }
 
     fun guardarIngrediente() {
-        val actual = dialogo.value as? DialogoCantidades.PonerIngrediente ?: return
+        val actual = _dialogo.value as? DialogoCantidades.PonerIngrediente ?: return
         if (!actual.puedeGuardar) return
         val elegido = actual.elegido ?: return
         val gramos = textoANumero(actual.cantidad) ?: return
 
-        dialogo.value = actual.copy(guardando = true)
+        _dialogo.value = actual.copy(guardando = true)
 
         viewModelScope.launch {
             val enEdicion = actual.editando
@@ -281,7 +292,7 @@ class CantidadesViewModel(
             } else {
                 recetas.cambiarCantidad(enEdicion.id, gramos)
             }
-            dialogo.value = DialogoCantidades.Ninguno
+            _dialogo.value = DialogoCantidades.Ninguno
             volverALeer()
         }
     }
@@ -304,7 +315,7 @@ class CantidadesViewModel(
      */
     fun abrirAgregarSeccion() {
         viewModelScope.launch {
-            dialogo.value = DialogoCantidades.Seccion(
+            _dialogo.value = DialogoCantidades.Seccion(
                 nombreDeLaPrimera = recetas.nombreQueFaltaBautizar(recetaId)
             )
         }
@@ -319,10 +330,10 @@ class CantidadesViewModel(
     }
 
     fun guardarSeccion() {
-        val actual = dialogo.value as? DialogoCantidades.Seccion ?: return
+        val actual = _dialogo.value as? DialogoCantidades.Seccion ?: return
         if (!actual.puedeGuardar) return
 
-        dialogo.value = actual.copy(guardando = true)
+        _dialogo.value = actual.copy(guardando = true)
 
         viewModelScope.launch {
             when (
@@ -333,7 +344,7 @@ class CantidadesViewModel(
                 )
             ) {
                 is Resultado.Listo -> {
-                    dialogo.value = DialogoCantidades.Ninguno
+                    _dialogo.value = DialogoCantidades.Ninguno
                     volverALeer()
                 }
                 is Resultado.NoSePudo -> {
@@ -345,36 +356,36 @@ class CantidadesViewModel(
     }
 
     fun abrirRenombrarSeccion(seccion: RecetaSeccion) {
-        dialogo.value = DialogoCantidades.RenombrarSeccion(seccion, seccion.nombreSeccion)
+        _dialogo.value = DialogoCantidades.RenombrarSeccion(seccion, seccion.nombreSeccion)
     }
 
     fun cambiarNombreEnRenombrado(texto: String) {
-        dialogo.update { actual ->
+        _dialogo.update { actual ->
             if (actual is DialogoCantidades.RenombrarSeccion) actual.copy(nombre = texto)
             else actual
         }
     }
 
     fun guardarRenombrado() {
-        val actual = dialogo.value as? DialogoCantidades.RenombrarSeccion ?: return
+        val actual = _dialogo.value as? DialogoCantidades.RenombrarSeccion ?: return
         if (!actual.puedeGuardar) return
 
         viewModelScope.launch {
             recetas.renombrarSeccion(actual.seccion, actual.nombre)
-            dialogo.value = DialogoCantidades.Ninguno
+            _dialogo.value = DialogoCantidades.Ninguno
             volverALeer()
         }
     }
 
     fun pedirBorrarSeccion(seccion: SeccionConIngredientes) {
-        dialogo.value = DialogoCantidades.ConfirmarBorrarSeccion(seccion)
+        _dialogo.value = DialogoCantidades.ConfirmarBorrarSeccion(seccion)
     }
 
     fun confirmarBorrarSeccion() {
-        val aviso = dialogo.value as? DialogoCantidades.ConfirmarBorrarSeccion ?: return
+        val aviso = _dialogo.value as? DialogoCantidades.ConfirmarBorrarSeccion ?: return
         if (aviso.borrando) return
 
-        dialogo.value = aviso.copy(borrando = true)
+        _dialogo.value = aviso.copy(borrando = true)
 
         viewModelScope.launch {
             when (val r = recetas.eliminarSeccion(recetaId, aviso.seccion.seccion.id)) {
@@ -382,13 +393,13 @@ class CantidadesViewModel(
                     mensaje.value = "Se quitó '${aviso.seccion.seccion.nombreSeccion}'"
                 is Resultado.NoSePudo -> mensaje.value = r.motivo
             }
-            dialogo.value = DialogoCantidades.Ninguno
+            _dialogo.value = DialogoCantidades.Ninguno
             volverALeer()
         }
     }
 
     fun cerrarDialogo() {
-        dialogo.value = DialogoCantidades.Ninguno
+        _dialogo.value = DialogoCantidades.Ninguno
     }
 
     fun mensajeMostrado() {
@@ -398,7 +409,7 @@ class CantidadesViewModel(
     private fun enDialogoIngrediente(
         cambio: (DialogoCantidades.PonerIngrediente) -> DialogoCantidades.PonerIngrediente
     ) {
-        dialogo.update { actual ->
+        _dialogo.update { actual ->
             if (actual is DialogoCantidades.PonerIngrediente) cambio(actual) else actual
         }
     }
@@ -406,7 +417,7 @@ class CantidadesViewModel(
     private fun enDialogoSeccion(
         cambio: (DialogoCantidades.Seccion) -> DialogoCantidades.Seccion
     ) {
-        dialogo.update { actual ->
+        _dialogo.update { actual ->
             if (actual is DialogoCantidades.Seccion) cambio(actual) else actual
         }
     }

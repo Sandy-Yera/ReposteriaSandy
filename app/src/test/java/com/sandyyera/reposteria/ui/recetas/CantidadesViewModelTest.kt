@@ -141,18 +141,18 @@ class CantidadesViewModelTest {
 
         modelo.abrirAgregarIngrediente(seccion)
         advanceUntilIdle()
-        val recienAbierto = modelo.estado.value.dialogo as DialogoCantidades.PonerIngrediente
+        val recienAbierto = modelo.dialogo.value as DialogoCantidades.PonerIngrediente
         assertFalse(recienAbierto.puedeGuardar)
 
         modelo.elegirIngrediente(modelo.estado.value.catalogo.single())
         advanceUntilIdle()
         // Con ingrediente pero sin gramos, sigue sin poder guardarse.
-        assertFalse((modelo.estado.value.dialogo as DialogoCantidades.PonerIngrediente).puedeGuardar)
+        assertFalse((modelo.dialogo.value as DialogoCantidades.PonerIngrediente).puedeGuardar)
 
         modelo.cambiarCantidadEscrita("0")
         advanceUntilIdle()
         // Cero gramos tampoco: eso no es estar en la receta.
-        val conCero = modelo.estado.value.dialogo as DialogoCantidades.PonerIngrediente
+        val conCero = modelo.dialogo.value as DialogoCantidades.PonerIngrediente
         assertFalse(conCero.puedeGuardar)
         assertNotNull(conCero.errorCantidad)
     }
@@ -202,7 +202,7 @@ class CantidadesViewModelTest {
         modelo.crearIngredienteRapido("Ralladura de naranja")
         advanceUntilIdle()
 
-        val dialogo = modelo.estado.value.dialogo as DialogoCantidades.PonerIngrediente
+        val dialogo = modelo.dialogo.value as DialogoCantidades.PonerIngrediente
         assertEquals("Ralladura de naranja", dialogo.elegido?.nombre)
         // Nace en 0 y se avisa, para que no pase inadvertido que falta ponerle precio.
         assertEquals(0.0, dialogo.elegido!!.valorPorGramo, 0.0)
@@ -216,7 +216,7 @@ class CantidadesViewModelTest {
         modelo.abrirAgregarSeccion()
         advanceUntilIdle()
 
-        val dialogo = modelo.estado.value.dialogo as DialogoCantidades.Seccion
+        val dialogo = modelo.dialogo.value as DialogoCantidades.Seccion
         // Propone el título de la receta, no "General", que no diría nada.
         assertEquals("Torta de manjar", dialogo.nombreDeLaPrimera)
     }
@@ -261,12 +261,12 @@ class CantidadesViewModelTest {
         modelo.abrirAgregarSeccion()
         advanceUntilIdle()
 
-        val dialogo = modelo.estado.value.dialogo as DialogoCantidades.Seccion
+        val dialogo = modelo.dialogo.value as DialogoCantidades.Seccion
         assertEquals(null, dialogo.nombreDeLaPrimera)
     }
 
     @Test
-    fun `volver a una sola seccion vuelve a ocultar los encabezados`() = probar { modelo ->
+    fun `volver a una sola seccion conserva su nombre a la vista`() = probar { modelo ->
         modelo.abrirAgregarSeccion()
         advanceUntilIdle()
         modelo.cambiarNombreDeLaPrimera("Bizcocho")
@@ -279,10 +279,10 @@ class CantidadesViewModelTest {
         modelo.confirmarBorrarSeccion()
         advanceUntilIdle()
 
-        // La que queda conserva el nombre "Bizcocho" en la base, pero deja de mostrarse:
-        // no hace falta renombrarla de vuelta a "General".
+        // La que queda conserva su nombre Y lo sigue mostrando: lo escribió alguien.
         assertEquals(1, modelo.estado.value.secciones.size)
-        assertFalse(modelo.estado.value.mostrarNombresDeSeccion)
+        assertEquals("Bizcocho", modelo.estado.value.secciones.single().seccion.nombreSeccion)
+        assertTrue(modelo.estado.value.mostrarNombresDeSeccion)
     }
 
     @Test
@@ -337,5 +337,56 @@ class CantidadesViewModelTest {
         advanceUntilIdle()
 
         assertEquals("Masa", modelo.estado.value.secciones.first().seccion.nombreSeccion)
+    }
+
+    // --- El nombre de una sección no se pierde al quedar sola ---
+
+    @Test
+    fun `la seccion que queda sola sigue mostrando el nombre que le pusieron`() = probar { modelo ->
+        modelo.abrirAgregarSeccion()
+        advanceUntilIdle()
+        modelo.cambiarNombreDeLaPrimera("Bizcocho")
+        modelo.cambiarNombreDeSeccion("Salsa")
+        modelo.guardarSeccion()
+        advanceUntilIdle()
+
+        // Se borra la PRIMERA, no la última: la que queda es "Salsa".
+        modelo.pedirBorrarSeccion(modelo.estado.value.secciones.first())
+        modelo.confirmarBorrarSeccion()
+        advanceUntilIdle()
+
+        val secciones = modelo.estado.value.secciones
+        assertEquals(1, secciones.size)
+        assertEquals("Salsa", secciones.single().seccion.nombreSeccion)
+        // Y su encabezado se sigue viendo, aunque esté sola.
+        assertTrue(modelo.estado.value.mostrarNombresDeSeccion)
+    }
+
+    @Test
+    fun `una seccion ya bautizada no vuelve a pedir bautizo`() = probar { modelo ->
+        modelo.abrirAgregarSeccion()
+        advanceUntilIdle()
+        modelo.cambiarNombreDeLaPrimera("Bizcocho")
+        modelo.cambiarNombreDeSeccion("Salsa")
+        modelo.guardarSeccion()
+        advanceUntilIdle()
+        modelo.pedirBorrarSeccion(modelo.estado.value.secciones.first())
+        modelo.confirmarBorrarSeccion()
+        advanceUntilIdle()
+
+        // Queda "Salsa" sola. Agregar otra no puede proponer renombrarla.
+        modelo.abrirAgregarSeccion()
+        advanceUntilIdle()
+
+        val dialogo = modelo.dialogo.value as DialogoCantidades.Seccion
+        assertEquals(null, dialogo.nombreDeLaPrimera)
+
+        modelo.cambiarNombreDeSeccion("Crema")
+        modelo.guardarSeccion()
+        advanceUntilIdle()
+        assertEquals(
+            listOf("Salsa", "Crema"),
+            modelo.estado.value.secciones.map { it.seccion.nombreSeccion }
+        )
     }
 }

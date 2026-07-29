@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -26,6 +27,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -64,7 +66,8 @@ data class AccionesRecetas(
     val cerrarDialogo: () -> Unit = {},
     val mensajeMostrado: () -> Unit = {},
     val abrirMenu: () -> Unit = {},
-    val abrir: (Receta) -> Unit = {}
+    val abrir: (Receta) -> Unit = {},
+    val avisarBloqueada: (Receta) -> Unit = {}
 )
 
 /** La pantalla de recetas conectada a su ViewModel. */
@@ -76,6 +79,16 @@ fun ListaRecetasScreen(
     modifier: Modifier = Modifier
 ) {
     val estado by modelo.estado.collectAsStateWithLifecycle()
+    // Por su propio canal, sin pasar por las consultas de costo (ver RecetasViewModel).
+    val dialogo by modelo.dialogo.collectAsStateWithLifecycle()
+    val recienCreada by modelo.recienCreada.collectAsStateWithLifecycle()
+
+    // Una receta recién creada se abre sola para empezar a llenarla de inmediato.
+    LaunchedEffect(recienCreada) {
+        val id = recienCreada ?: return@LaunchedEffect
+        modelo.recetaAbierta()
+        alAbrirReceta(id)
+    }
 
     val acciones = remember(modelo, alAbrirMenu, alAbrirReceta) {
         AccionesRecetas(
@@ -89,11 +102,12 @@ fun ListaRecetasScreen(
             cerrarDialogo = modelo::cerrarDialogo,
             mensajeMostrado = modelo::mensajeMostrado,
             abrirMenu = alAbrirMenu,
-            abrir = alAbrirReceta
+            abrir = alAbrirReceta,
+            avisarBloqueada = modelo::avisarBloqueada
         )
     }
 
-    ListaRecetas(estado = estado, acciones = acciones, modifier = modifier)
+    ListaRecetas(estado = estado, dialogo = dialogo, acciones = acciones, modifier = modifier)
 }
 
 /**
@@ -106,6 +120,7 @@ fun ListaRecetasScreen(
 @Composable
 fun ListaRecetas(
     estado: EstadoRecetas,
+    dialogo: DialogoReceta,
     acciones: AccionesRecetas,
     modifier: Modifier = Modifier
 ) {
@@ -185,8 +200,16 @@ fun ListaRecetas(
                     items(estado.visibles, key = { it.receta.id }) { fila ->
                         TarjetaReceta(
                             fila = fila,
-                            alAbrir = { acciones.abrir(fila.receta) },
-                            alEditar = { acciones.editar(fila.receta) },
+                            // Una receta repetida no se abre ni se renombra: los dos
+                            // caminos llevan al aviso, y solo queda borrarla.
+                            alAbrir = {
+                                if (fila.repetida) acciones.avisarBloqueada(fila.receta)
+                                else acciones.abrir(fila.receta)
+                            },
+                            alEditar = {
+                                if (fila.repetida) acciones.avisarBloqueada(fila.receta)
+                                else acciones.editar(fila.receta)
+                            },
                             alBorrar = { acciones.pedirBorrado(fila.receta) }
                         )
                     }
@@ -194,7 +217,7 @@ fun ListaRecetas(
             }
         }
 
-        when (val dialogo = estado.dialogo) {
+        when (dialogo) {
             is DialogoReceta.Ninguno -> Unit
 
             is DialogoReceta.Formulario -> FormularioReceta(
@@ -202,6 +225,22 @@ fun ListaRecetas(
                 alCambiar = acciones.cambiarTitulo,
                 alGuardar = acciones.guardar,
                 alCerrar = acciones.cerrarDialogo
+            )
+
+            is DialogoReceta.Bloqueada -> AlertDialog(
+                onDismissRequest = acciones.cerrarDialogo,
+                icon = {
+                    Icon(
+                        Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                },
+                title = { Text("'${dialogo.receta.titulo}' está repetida") },
+                text = { Text(AVISO_RECETA_REPETIDA) },
+                confirmButton = {
+                    TextButton(onClick = acciones.cerrarDialogo) { Text("Entendido") }
+                }
             )
 
             is DialogoReceta.ConfirmarBorrado -> ConfirmarBorradoReceta(
@@ -258,23 +297,40 @@ private fun TarjetaReceta(
                     text = fila.receta.titulo,
                     style = MaterialTheme.typography.titleMedium
                 )
-                Text(
-                    // El costo se lee de la base con el precio actual de cada ingrediente
-                    // (decisión #3), así que sube solo cuando sube un ingrediente.
-                    text = if (fila.costoTotal > 0) {
-                        "Cuesta $${formatearNumero(fila.costoTotal)} hacerla"
-                    } else {
-                        "Todavía sin ingredientes"
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                if (fila.repetida) {
+                    Text(
+                        text = "Título repetido: solo se puede eliminar",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                } else {
+                    Text(
+                        // El costo se lee de la base con el precio actual de cada
+                        // ingrediente (decisión #3), así que sube solo cuando sube uno.
+                        text = if (fila.costoTotal > 0) {
+                            "Cuesta $${formatearNumero(fila.costoTotal)} hacerla"
+                        } else {
+                            "Todavía sin ingredientes"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
             IconButton(onClick = alEditar) {
                 Icon(
-                    imageVector = Icons.Default.Edit,
-                    contentDescription = "Cambiar el título de ${fila.receta.titulo}"
+                    // Se deja tocable aunque esté repetida: un botón muerto no explica
+                    // nada, y así el toque lleva al aviso que sí explica por qué no se
+                    // puede. El color tenue avisa antes de tocarlo.
+                    imageVector = if (fila.repetida) Icons.Default.Warning else Icons.Default.Edit,
+                    contentDescription = if (fila.repetida) {
+                        "Por qué no se puede editar ${fila.receta.titulo}"
+                    } else {
+                        "Cambiar el título de ${fila.receta.titulo}"
+                    },
+                    tint = if (fila.repetida) MaterialTheme.colorScheme.error
+                    else LocalContentColor.current
                 )
             }
 
@@ -416,7 +472,7 @@ private fun estadoDeEjemplo(
 @Composable
 private fun RecetasClaro() {
     ReposteriaTheme(oscuro = false) {
-        ListaRecetas(estado = estadoDeEjemplo(), acciones = AccionesRecetas())
+        ListaRecetas(estadoDeEjemplo(), DialogoReceta.Ninguno, AccionesRecetas())
     }
 }
 
@@ -424,7 +480,7 @@ private fun RecetasClaro() {
 @Composable
 private fun RecetasOscuro() {
     ReposteriaTheme(oscuro = true) {
-        ListaRecetas(estado = estadoDeEjemplo(), acciones = AccionesRecetas())
+        ListaRecetas(estadoDeEjemplo(), DialogoReceta.Ninguno, AccionesRecetas())
     }
 }
 
@@ -433,8 +489,9 @@ private fun RecetasOscuro() {
 private fun RecetasVacio() {
     ReposteriaTheme {
         ListaRecetas(
-            estado = estadoDeEjemplo(visibles = emptyList(), hayRecetas = false),
-            acciones = AccionesRecetas()
+            estadoDeEjemplo(visibles = emptyList(), hayRecetas = false),
+            DialogoReceta.Ninguno,
+            AccionesRecetas()
         )
     }
 }
@@ -444,10 +501,27 @@ private fun RecetasVacio() {
 private fun RecetasBorrando() {
     ReposteriaTheme {
         ListaRecetas(
-            estado = estadoDeEjemplo().copy(
-                dialogo = DialogoReceta.ConfirmarBorrado(Receta(id = 1, titulo = "Torta de manjar"))
+            estadoDeEjemplo(),
+            DialogoReceta.ConfirmarBorrado(Receta(id = 1, titulo = "Torta de manjar")),
+            AccionesRecetas()
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "Recetas - una repetida bloqueada")
+@Composable
+private fun RecetasConRepetida() {
+    ReposteriaTheme {
+        ListaRecetas(
+            estadoDeEjemplo(
+                visibles = recetasDeEjemplo + RecetaConCosto(
+                    receta = Receta(id = 4, titulo = "torta de manjar"),
+                    costoTotal = 0.0,
+                    repetida = true
+                )
             ),
-            acciones = AccionesRecetas()
+            DialogoReceta.Ninguno,
+            AccionesRecetas()
         )
     }
 }

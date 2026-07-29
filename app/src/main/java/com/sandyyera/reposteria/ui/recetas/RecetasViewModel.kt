@@ -10,6 +10,7 @@ import com.sandyyera.reposteria.data.repositorio.RecetaRepositorio
 import com.sandyyera.reposteria.data.repositorio.Resultado
 import com.sandyyera.reposteria.data.repositorio.ResultadoCrearReceta
 import com.sandyyera.reposteria.logica.busqueda.filtrarPor
+import com.sandyyera.reposteria.logica.busqueda.marcarRepetidos
 import com.sandyyera.reposteria.logica.validaciones.errorEnTituloReceta
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -20,13 +21,31 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-/** Una receta de la lista junto con lo que cuesta hacerla ahora mismo. */
-data class RecetaConCosto(val receta: Receta, val costoTotal: Double)
+/**
+ * Una receta de la lista junto con lo que cuesta hacerla ahora mismo.
+ *
+ * [repetida] marca las que quedaron con un título que ya usaba otra receta anterior. Se
+ * pueden ver y borrar, pero no abrir ni renombrar: son datos de antes de que se prohibieran
+ * los títulos repetidos, y borrarlas solas sería hacer desaparecer trabajo sin preguntar.
+ */
+data class RecetaConCosto(
+    val receta: Receta,
+    val costoTotal: Double,
+    val repetida: Boolean = false
+)
+
+/** Lo que se muestra al tocar una receta que quedó repetida. */
+const val AVISO_RECETA_REPETIDA =
+    "Esta receta quedó con un título repetido, que ya no se permite. Solo se puede " +
+        "eliminar. Si la necesitas, borra la otra y créala de nuevo."
 
 /** Qué hay abierto encima de la lista de recetas. */
 sealed interface DialogoReceta {
 
     data object Ninguno : DialogoReceta
+
+    /** El aviso al intentar hacer algo con una receta repetida que no sea borrarla. */
+    data class Bloqueada(val receta: Receta) : DialogoReceta
 
     /**
      * El formulario de alta o de cambio de título.
@@ -38,10 +57,13 @@ sealed interface DialogoReceta {
         val editando: Receta? = null,
         val titulo: String = "",
         val tocado: Boolean = false,
+        val tituloRepetido: String? = null,
         val guardando: Boolean = false
     ) : DialogoReceta {
 
-        val error: String? get() = errorEnTituloReceta(titulo).takeIf { tocado }
+        val error: String?
+            get() = tituloRepetido ?: errorEnTituloReceta(titulo).takeIf { tocado }
+
         val puedeGuardar: Boolean get() = errorEnTituloReceta(titulo) == null && !guardando
     }
 
@@ -62,7 +84,6 @@ data class EstadoRecetas(
     val visibles: List<RecetaConCosto> = emptyList(),
     val hayRecetas: Boolean = false,
     val busqueda: String = "",
-    val dialogo: DialogoReceta = DialogoReceta.Ninguno,
     val mensaje: String? = null,
     val cargando: Boolean = true
 ) {
@@ -82,25 +103,50 @@ class RecetasViewModel(
 ) : ViewModel() {
 
     private val busqueda = MutableStateFlow("")
-    private val dialogo = MutableStateFlow<DialogoReceta>(DialogoReceta.Ninguno)
+    private val _dialogo = MutableStateFlow<DialogoReceta>(DialogoReceta.Ninguno)
     private val mensaje = MutableStateFlow<String?>(null)
+    private val _recienCreada = MutableStateFlow<Long?>(null)
+
+    /**
+     * Lo que hay abierto encima, por su propio canal.
+     *
+     * Va aparte de [estado] por la misma razón que en el paso de cantidades: el `combine`
+     * de abajo consulta el costo de todas las recetas, así que emite con retraso, y un
+     * campo de texto que recibe su valor tarde termina con el cursor donde no va.
+     */
+    val dialogo: StateFlow<DialogoReceta> = _dialogo
+
+    /**
+     * La receta que se acaba de crear, para abrirla de inmediato.
+     *
+     * Crear una y después tener que buscarla en la lista para empezar a llenarla es un
+     * paso de más justo cuando uno ya sabe lo que quiere hacer. La pantalla la abre y
+     * llama a [recetaAbierta] para limpiar el aviso.
+     */
+    val recienCreada: StateFlow<Long?> = _recienCreada
 
     private val conCosto = repositorio.observarTodas().map { recetas ->
         val costos = repositorio.costosDe(recetas.map { it.id })
-        recetas.map { RecetaConCosto(it, costos[it.id] ?: 0.0) }
+        // Se marcan las repetidas sobre la lista ordenada por antigüedad, no por título:
+        // así la que se conserva utilizable es la original y no una cualquiera.
+        val porAntiguedad = recetas.sortedBy { it.id }
+        val repetidas = marcarRepetidos(porAntiguedad) { it.titulo }
+            .withIndex()
+            .filter { it.value }
+            .map { porAntiguedad[it.index].id }
+            .toSet()
+        recetas.map { RecetaConCosto(it, costos[it.id] ?: 0.0, it.id in repetidas) }
     }
 
     val estado: StateFlow<EstadoRecetas> = combine(
         conCosto,
         busqueda,
-        dialogo,
         mensaje
-    ) { todas, textoBuscado, dialogoActual, mensajeActual ->
+    ) { todas, textoBuscado, mensajeActual ->
         EstadoRecetas(
             visibles = filtrarPor(todas, textoBuscado) { it.receta.titulo },
             hayRecetas = todas.isNotEmpty(),
             busqueda = textoBuscado,
-            dialogo = dialogoActual,
             mensaje = mensajeActual,
             cargando = false
         )
@@ -115,33 +161,46 @@ class RecetasViewModel(
     }
 
     fun abrirAlta() {
-        dialogo.value = DialogoReceta.Formulario()
+        _dialogo.value = DialogoReceta.Formulario()
     }
 
     fun abrirCambioDeTitulo(receta: Receta) {
-        dialogo.value = DialogoReceta.Formulario(
+        _dialogo.value = DialogoReceta.Formulario(
             editando = receta,
             titulo = receta.titulo,
             tocado = true
         )
     }
 
-    fun cambiarTitulo(texto: String) = enFormulario { it.copy(titulo = texto, tocado = true) }
+    fun cambiarTitulo(texto: String) = enFormulario {
+        // Al cambiar el título el aviso de repetido deja de aplicar: era sobre el anterior.
+        it.copy(titulo = texto, tocado = true, tituloRepetido = null)
+    }
 
     fun guardar() {
-        val formulario = dialogo.value as? DialogoReceta.Formulario ?: return
+        val formulario = _dialogo.value as? DialogoReceta.Formulario ?: return
         if (!formulario.puedeGuardar) return
 
         val titulo = formulario.titulo.trim()
-        dialogo.value = formulario.copy(guardando = true)
+        _dialogo.value = formulario.copy(guardando = true)
 
         viewModelScope.launch {
             val original = formulario.editando
             if (original == null) {
                 when (val resultado = repositorio.crear(titulo)) {
                     is ResultadoCrearReceta.Creada -> {
-                        dialogo.value = DialogoReceta.Ninguno
-                        mensaje.value = "Se creó '$titulo'"
+                        _dialogo.value = DialogoReceta.Ninguno
+                        // Se abre sola: crear una receta y después tener que buscarla en
+                        // la lista para empezar a llenarla es un paso de más justo cuando
+                        // uno ya sabe lo que quiere hacer.
+                        _recienCreada.value = resultado.recetaId
+                    }
+                    is ResultadoCrearReceta.YaExiste -> enFormulario {
+                        it.copy(
+                            guardando = false,
+                            tituloRepetido = "Ya tienes una receta que se llama " +
+                                "'${resultado.existente.titulo}'"
+                        )
                     }
                     is ResultadoCrearReceta.NoValido -> {
                         enFormulario { it.copy(guardando = false) }
@@ -151,12 +210,11 @@ class RecetasViewModel(
             } else {
                 when (val resultado = repositorio.renombrar(original.id, titulo)) {
                     is Resultado.Listo -> {
-                        dialogo.value = DialogoReceta.Ninguno
+                        _dialogo.value = DialogoReceta.Ninguno
                         mensaje.value = "Se guardó '$titulo'"
                     }
-                    is Resultado.NoSePudo -> {
-                        enFormulario { it.copy(guardando = false) }
-                        mensaje.value = resultado.motivo
+                    is Resultado.NoSePudo -> enFormulario {
+                        it.copy(guardando = false, tituloRepetido = resultado.motivo)
                     }
                 }
             }
@@ -164,24 +222,34 @@ class RecetasViewModel(
     }
 
     fun pedirBorrado(receta: Receta) {
-        dialogo.value = DialogoReceta.ConfirmarBorrado(receta)
+        _dialogo.value = DialogoReceta.ConfirmarBorrado(receta)
     }
 
     fun confirmarBorrado() {
-        val aviso = dialogo.value as? DialogoReceta.ConfirmarBorrado ?: return
+        val aviso = _dialogo.value as? DialogoReceta.ConfirmarBorrado ?: return
         if (aviso.borrando) return
 
-        dialogo.value = aviso.copy(borrando = true)
+        _dialogo.value = aviso.copy(borrando = true)
 
         viewModelScope.launch {
             repositorio.confirmarEliminacion(aviso.receta.id)
-            dialogo.value = DialogoReceta.Ninguno
+            _dialogo.value = DialogoReceta.Ninguno
             mensaje.value = "Se eliminó '${aviso.receta.titulo}'"
         }
     }
 
+    /** Se llama al intentar abrir o renombrar una receta que quedó repetida. */
+    fun avisarBloqueada(receta: Receta) {
+        _dialogo.value = DialogoReceta.Bloqueada(receta)
+    }
+
+    /** La pantalla avisa que ya abrió la receta recién creada. */
+    fun recetaAbierta() {
+        _recienCreada.value = null
+    }
+
     fun cerrarDialogo() {
-        dialogo.value = DialogoReceta.Ninguno
+        _dialogo.value = DialogoReceta.Ninguno
     }
 
     fun mensajeMostrado() {
@@ -189,7 +257,7 @@ class RecetasViewModel(
     }
 
     private fun enFormulario(cambio: (DialogoReceta.Formulario) -> DialogoReceta.Formulario) {
-        dialogo.update { actual ->
+        _dialogo.update { actual ->
             if (actual is DialogoReceta.Formulario) cambio(actual) else actual
         }
     }

@@ -58,3 +58,27 @@ fun <T> filtrarPor(items: List<T>, busqueda: String, texto: (T) -> String): List
     if (busqueda.isBlank()) return items
     return items.filter { coincide(busqueda, texto(it)) }
 }
+
+/**
+ * De una lista, marca cuáles repiten un nombre que ya apareció antes.
+ *
+ * Devuelve una lista de `Boolean` en el mismo orden: `true` en los que están de más.
+ * **El primero de cada nombre nunca se marca** — se da por bueno el que llegó primero, y
+ * los siguientes son los que sobran. Por eso el orden de entrada importa: hay que pasarla
+ * ordenada por antigüedad para que el que se conserve sea el original y no uno cualquiera.
+ *
+ * Compara con [sonElMismoTexto], así que "Torta", "torta" y "TORTA" cuentan como el mismo.
+ *
+ * Existe para los datos que ya estaban antes de prohibir los repetidos: no se pueden
+ * borrar solos —serían datos reales desapareciendo sin aviso— pero sí se pueden señalar
+ * para que la pantalla los trate distinto.
+ */
+fun <T> marcarRepetidos(items: List<T>, texto: (T) -> String): List<Boolean> {
+    val yaVistos = mutableListOf<String>()
+    return items.map { item ->
+        val nombre = texto(item)
+        val repetido = yaVistos.any { sonElMismoTexto(it, nombre) }
+        if (!repetido) yaVistos += nombre
+        repetido
+    }
+}

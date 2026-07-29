@@ -128,4 +128,52 @@ class BusquedaTest {
         assertTrue(coincide("AZUCAR", "azúcar rubia"))
         assertTrue(coincide("crema", "Crema de leche"))
     }
+
+    // --- marcarRepetidos: los datos que ya estaban antes de prohibir los repetidos ---
+
+    @Test
+    fun `sin repetidos no marca nada`() {
+        assertEquals(
+            listOf(false, false, false),
+            marcarRepetidos(listOf("Torta", "Bizcocho", "Kuchen")) { it }
+        )
+    }
+
+    @Test
+    fun `el primero se conserva y los siguientes se marcan`() {
+        // Se da por bueno el que llegó primero; los que sobran son los de después.
+        assertEquals(
+            listOf(false, true, true),
+            marcarRepetidos(listOf("Torta", "Torta", "Torta")) { it }
+        )
+    }
+
+    @Test
+    fun `marca los que cambian mayusculas o tildes`() {
+        assertEquals(
+            listOf(false, true, true, true),
+            marcarRepetidos(listOf("Limón", "limon", "LIMÓN", "  limón ")) { it }
+        )
+    }
+
+    @Test
+    fun `respeta el orden y solo mira hacia atras`() {
+        val nombres = listOf("Torta", "Bizcocho", "torta", "Kuchen", "BIZCOCHO")
+        assertEquals(
+            listOf(false, false, true, false, true),
+            marcarRepetidos(nombres) { it }
+        )
+    }
+
+    @Test
+    fun `marcar repetidos funciona sobre cualquier tipo de dato`() {
+        data class Receta(val id: Long, val titulo: String)
+        val recetas = listOf(Receta(1, "Torta"), Receta(2, "torta"))
+        assertEquals(listOf(false, true), marcarRepetidos(recetas) { it.titulo })
+    }
+
+    @Test
+    fun `una lista vacia no marca nada`() {
+        assertEquals(emptyList<Boolean>(), marcarRepetidos(emptyList<String>()) { it })
+    }
 }

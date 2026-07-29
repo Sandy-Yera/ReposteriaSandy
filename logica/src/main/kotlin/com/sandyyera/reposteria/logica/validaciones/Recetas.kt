@@ -53,13 +53,36 @@ fun errorEnCantidadEnGramosTexto(texto: String): String? {
 }
 
 /**
- * Si hay que mostrar el encabezado con el nombre de cada sección.
+ * Si hay que mostrar los encabezados con el nombre de cada sección.
  *
- * Con una sola sección no se muestra: una receta de un solo conjunto no necesita que le
- * pongan un título a "todo lo que lleva". Al aparecer la segunda, los encabezados hacen
- * falta para saber qué va en cada parte, y el camino inverso los vuelve a ocultar (8.2).
+ * Se muestran cuando hay dos o más — ahí hacen falta para saber qué va en cada parte — y
+ * también cuando queda una sola **pero con un nombre puesto a mano**.
+ *
+ * Esa segunda parte se agregó al descubrir el caso al revés: con "Bizcocho" y "Salsa", al
+ * borrar el bizcocho la salsa quedaba sola y su encabezado desaparecía. El nombre seguía
+ * guardado, pero desde la pantalla parecía haberse perdido — y era un nombre que la
+ * persona había escrito a propósito. **Lo que uno escribe no se esconde solo.**
+ *
+ * La única sección que se oculta es la automática, la que todavía se llama
+ * [NOMBRE_SECCION_POR_DEFECTO] porque nadie la tocó: esa no la puso nadie y no dice nada.
  */
-fun debeMostrarNombreDeSeccion(cantidadDeSecciones: Int): Boolean = cantidadDeSecciones > 1
+fun debenMostrarseLosNombresDeSeccion(nombres: List<String>): Boolean = when {
+    nombres.size > 1 -> true
+    nombres.size == 1 -> !esNombreAutomaticoDeSeccion(nombres.single())
+    else -> false
+}
+
+/**
+ * Si una sección todavía tiene el nombre que le puso la app y no uno elegido.
+ *
+ * Se compara ignorando mayúsculas y espacios, no por un campo aparte en la base. La
+ * contrapartida está aceptada: alguien que bautice una sección exactamente "General" verá
+ * que se comporta como la automática. Es un caso raro y sin consecuencias —el nombre queda
+ * guardado igual— y evita arrastrar una columna más por una distinción que casi nunca
+ * importa.
+ */
+fun esNombreAutomaticoDeSeccion(nombre: String): Boolean =
+    nombre.trim().equals(NOMBRE_SECCION_POR_DEFECTO, ignoreCase = true)
 
 /**
  * Qué nombre proponer para la sección que hasta ahora era invisible.

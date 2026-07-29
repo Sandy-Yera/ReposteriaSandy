@@ -359,4 +359,76 @@ class RecetaRepositorioTest {
         val (id, _, _) = recetaConDosPrecios()
         assertNotNull(repositorio.elegirPrecioDeReferencia(id, 9999))
     }
+
+    // --- Títulos repetidos ---
+
+    @Test
+    fun `no se puede crear una receta con un titulo que ya existe`() = runBlocking {
+        crearReceta("Torta de manjar")
+
+        val resultado = repositorio.crear("Torta de manjar")
+
+        assertTrue(resultado is ResultadoCrearReceta.YaExiste)
+        assertEquals(1, repositorio.observarTodas().first().size)
+    }
+
+    @Test
+    fun `los repetidos se detectan cambiando mayusculas y tildes`() = runBlocking {
+        crearReceta("Torta de limón")
+
+        assertTrue(repositorio.crear("torta de limon") is ResultadoCrearReceta.YaExiste)
+        assertTrue(repositorio.crear("TORTA DE LIMÓN") is ResultadoCrearReceta.YaExiste)
+        assertTrue(repositorio.crear("  Torta de Limon  ") is ResultadoCrearReceta.YaExiste)
+        assertEquals(1, repositorio.observarTodas().first().size)
+    }
+
+    @Test
+    fun `un titulo parecido pero distinto si se puede crear`() = runBlocking {
+        crearReceta("Torta de limón")
+        assertTrue(repositorio.crear("Torta de limón grande") is ResultadoCrearReceta.Creada)
+    }
+
+    @Test
+    fun `renombrar hacia un titulo ya usado se rechaza y no guarda`() = runBlocking {
+        crearReceta("Torta de manjar")
+        val id = crearReceta("Bizcocho")
+
+        val resultado = repositorio.renombrar(id, "torta de manjar")
+
+        assertTrue(resultado is Resultado.NoSePudo)
+        assertEquals("Bizcocho", repositorio.obtener(id)?.titulo)
+    }
+
+    @Test
+    fun `renombrar una receta con su propio titulo no choca consigo misma`() = runBlocking {
+        val id = crearReceta("Torta de manjar")
+        assertTrue(repositorio.renombrar(id, "Torta de Manjar") is Resultado.Listo)
+        assertEquals("Torta de Manjar", repositorio.obtener(id)?.titulo)
+    }
+
+    // --- La sección bautizada no vuelve a preguntar ---
+
+    @Test
+    fun `una seccion unica ya bautizada no tiene nada que bautizar`() = runBlocking {
+        val id = crearReceta("Torta de manjar")
+        val unica = repositorio.obtenerSecciones(id).single()
+        repositorio.renombrarSeccion(unica, "Salsa")
+
+        assertNull(repositorio.nombreQueFaltaBautizar(id))
+    }
+
+    @Test
+    fun `agregar otra seccion no pisa el nombre que ya tenia la unica`() = runBlocking {
+        val id = crearReceta("Torta de manjar")
+        repositorio.renombrarSeccion(repositorio.obtenerSecciones(id).single(), "Salsa")
+
+        // Sin pasar nombreDeLaPrimera: no hace falta, porque ya tiene uno propio.
+        val resultado = repositorio.agregarSeccion(id, "Crema")
+
+        assertTrue(resultado is Resultado.Listo)
+        assertEquals(
+            listOf("Salsa", "Crema"),
+            repositorio.obtenerSecciones(id).map { it.nombreSeccion }
+        )
+    }
 }

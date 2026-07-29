@@ -80,30 +80,45 @@ class RecetasTest {
     // --- Secciones visibles o no (8.2) ---
 
     @Test
-    fun `con una sola seccion no se muestra el encabezado`() {
+    fun `la seccion automatica sola no muestra encabezado`() {
         // Una receta de un solo conjunto no necesita que le pongan título a "todo lo que
-        // lleva": la sección automática existe en la base pero no se ve.
-        assertFalse(debeMostrarNombreDeSeccion(1))
+        // lleva": la sección existe en la base pero no se ve.
+        assertFalse(debenMostrarseLosNombresDeSeccion(listOf(NOMBRE_SECCION_POR_DEFECTO)))
     }
 
     @Test
-    fun `desde la segunda seccion si se muestra`() {
-        assertTrue(debeMostrarNombreDeSeccion(2))
-        assertTrue(debeMostrarNombreDeSeccion(5))
+    fun `desde la segunda seccion siempre se muestran`() {
+        assertTrue(debenMostrarseLosNombresDeSeccion(listOf("Bizcocho", "Salsa")))
+        assertTrue(debenMostrarseLosNombresDeSeccion(listOf("a", "b", "c")))
     }
 
     @Test
-    fun `volver a una sola seccion vuelve a ocultar el encabezado`() {
-        // El camino inverso también vale: borrar la crema deja otra vez una receta simple.
-        assertTrue(debeMostrarNombreDeSeccion(2))
-        assertFalse(debeMostrarNombreDeSeccion(1))
+    fun `una seccion sola pero bautizada a mano si muestra su nombre`() {
+        // Este es el caso que apareció al usarlo: con "Bizcocho" y "Salsa", al borrar el
+        // bizcocho la salsa quedaba sola y su encabezado desaparecía. El nombre seguía
+        // guardado, pero desde la pantalla parecía perdido -- y lo había escrito alguien.
+        assertTrue(debenMostrarseLosNombresDeSeccion(listOf("Salsa")))
     }
 
     @Test
-    fun `una receta sin secciones tampoco muestra encabezados`() {
-        // No debería pasar (crearReceta siembra una), pero no puede reventar ni mostrar
-        // un encabezado vacío.
-        assertFalse(debeMostrarNombreDeSeccion(0))
+    fun `borrar una de dos deja visible el nombre de la que queda`() {
+        assertTrue(debenMostrarseLosNombresDeSeccion(listOf("Bizcocho", "Salsa")))
+        assertTrue(debenMostrarseLosNombresDeSeccion(listOf("Salsa")))
+    }
+
+    @Test
+    fun `una receta sin secciones no muestra encabezados`() {
+        // No debería pasar (crearReceta siembra una), pero no puede reventar.
+        assertFalse(debenMostrarseLosNombresDeSeccion(emptyList()))
+    }
+
+    @Test
+    fun `el nombre automatico se reconoce sin importar mayusculas ni espacios`() {
+        assertTrue(esNombreAutomaticoDeSeccion("General"))
+        assertTrue(esNombreAutomaticoDeSeccion("  general  "))
+        assertTrue(esNombreAutomaticoDeSeccion("GENERAL"))
+        assertFalse(esNombreAutomaticoDeSeccion("Salsa"))
+        assertFalse(esNombreAutomaticoDeSeccion("General de brigada"))
     }
 
     // --- Nombre sugerido al bautizar la primera sección ---
