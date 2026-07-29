@@ -558,4 +558,24 @@ class CantidadesViewModelTest {
             modelo.estado.value.secciones.map { it.seccion.nombreSeccion }
         )
     }
+
+    @Test
+    fun `un ingrediente que vale cero igual cuenta como ingrediente`() = probar { modelo ->
+        // Un ingrediente puede valer 0 a propósito: es cómo se dice "esto no suma al costo"
+        // (6.2). La receta cuesta 0 pero no está vacía, y la pantalla no puede confundirlas.
+        sembrar("Agua", 0.0)
+        advanceUntilIdle()
+        val seccion = modelo.estado.value.secciones.single().seccion.id
+
+        modelo.abrirAgregarIngrediente(seccion)
+        modelo.elegirIngrediente(modelo.estado.value.catalogo.single())
+        modelo.cambiarCantidadEscrita("500")
+        modelo.guardarIngrediente()
+        advanceUntilIdle()
+
+        val estado = modelo.estado.value
+        assertEquals(0.0, estado.costoTotal, 0.001)
+        assertFalse("Tiene una línea cargada, aunque no sume", estado.sinIngredientes)
+        assertEquals(1, estado.secciones.single().lineas.size)
+    }
 }

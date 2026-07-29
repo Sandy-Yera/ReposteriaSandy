@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -87,6 +88,7 @@ data class AccionesCantidades(
 fun PasoCantidadesScreen(
     modelo: CantidadesViewModel,
     alVolver: () -> Unit,
+    alPasarARendimiento: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val estado by modelo.estado.collectAsStateWithLifecycle()
@@ -119,7 +121,13 @@ fun PasoCantidadesScreen(
         )
     }
 
-    PasoCantidades(estado = estado, dialogo = dialogo, acciones = acciones, modifier = modifier)
+    PasoCantidades(
+        estado = estado,
+        dialogo = dialogo,
+        acciones = acciones,
+        alPasarARendimiento = alPasarARendimiento,
+        modifier = modifier
+    )
 }
 
 /**
@@ -139,6 +147,7 @@ fun PasoCantidades(
     estado: EstadoCantidades,
     dialogo: DialogoCantidades,
     acciones: AccionesCantidades,
+    alPasarARendimiento: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val anfitrionDeMensajes = remember { SnackbarHostState() }
@@ -233,6 +242,20 @@ fun PasoCantidades(
                         Icon(Icons.Default.Add, contentDescription = null)
                         Text("  Agregar sección")
                     }
+                }
+
+                item(key = "siguiente-paso") {
+                    // Al final y no fijo arriba: pasar al rendimiento es lo que se hace
+                    // **después** de terminar de cargar, así que llegar al botón bajando
+                    // acompaña ese orden. El de agregar ingrediente es el que va siempre a
+                    // mano, y ese sí está fijo.
+                    Button(
+                        onClick = alPasarARendimiento,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = Medidas.objetivoTactil)
+                            .padding(top = Medidas.medio)
+                    ) { Text("Siguiente: rendimiento y molde") }
                 }
             }
         }
@@ -602,13 +625,17 @@ private val recetaConDosSecciones = recetaSimple.copy(
 @Preview(showBackground = true, name = "Cantidades - receta simple")
 @Composable
 private fun CantidadesSimple() {
-    ReposteriaTheme { PasoCantidades(recetaSimple, DialogoCantidades.Ninguno, AccionesCantidades()) }
+    ReposteriaTheme {
+        PasoCantidades(recetaSimple, DialogoCantidades.Ninguno, AccionesCantidades())
+    }
 }
 
 @Preview(showBackground = true, name = "Cantidades - dos secciones")
 @Composable
 private fun CantidadesDosSecciones() {
-    ReposteriaTheme { PasoCantidades(recetaConDosSecciones, DialogoCantidades.Ninguno, AccionesCantidades()) }
+    ReposteriaTheme {
+        PasoCantidades(recetaConDosSecciones, DialogoCantidades.Ninguno, AccionesCantidades())
+    }
 }
 
 @Preview(showBackground = true, name = "Cantidades - oscuro")

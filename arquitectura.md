@@ -730,6 +730,8 @@ Una o más `RecetaSeccion` (recetas de un solo conjunto crean automáticamente u
 
 Ese número **se suma en memoria**, al revés que el costo total, y no es una inconsistencia sino la misma regla mirada de cerca: el total manda porque de él salen los precios y los sueldos, así que tiene que venir de la base; el de la sección no alimenta ninguna cuenta y lo que sí tiene que hacer es cuadrar con las líneas que se ven justo encima. Sumando esas mismas líneas cuadra por construcción; pedido por separado podría no cuadrar, y no habría forma de explicar la diferencia mirando la pantalla. Que la suma de las secciones dé el total de la base está cubierto por una prueba.
 
+**Costar cero y no tener ingredientes son cosas distintas.** La lista de recetas decía "todavía sin ingredientes" cuando el costo daba 0, y eso está mal: un ingrediente puede valer 0 a propósito —es cómo se dice "esto no suma al costo" (6.2)— y una receta hecha solo de esos aparecía como vacía, mandando a buscar un problema que no existe. La distinción sale gratis de la consulta que ya existía: el `GROUP BY` **no le da fila a una receta sin ingredientes**, mientras que a una con ingredientes que valen 0 sí se la da, con costo 0. Estar en el mapa de `observarCostos` es exactamente "tiene ingredientes". Como es un `INNER JOIN`, una fila que apunte a un ingrediente ya borrado tampoco cuenta, que es lo mismo que hace la pantalla de cantidades al no dibujar esa línea.
+
 **Con una sola sección no se muestra su costo**, aunque sí su nombre si lo tiene. Las dos reglas se parecen pero no son la misma: el nombre se muestra porque lo escribió alguien; el costo no, porque sería el total que ya está arriba en grande, y el mismo número dos veces en la misma pantalla hace dudar de si son dos cosas distintas.
 
 **El costo que se muestra tiene que seguir vivo.** La lista de recetas pide los costos con un `Flow` (`observarCostos`) y no con una consulta de una sola vez. La primera versión colgaba la consulta del aviso de la tabla `recetas`, y eso dejó pasar un bug que se vio en el celular: borrar ingredientes del catálogo y volver a Recetas mostraba los costos de antes, porque borrar un ingrediente no toca la tabla `recetas` y nada volvía a preguntar. Con un `Flow`, Room vigila las tres tablas que aparecen en la consulta —`receta_ingredientes`, `receta_secciones` e `ingredientes`— y reemite en cuanto cambia cualquiera. **Regla general: lo que se muestra se observa; la foto de un momento (`costosDe`) es para calcular, no para mostrar.**
@@ -1393,6 +1395,18 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 >   con reglas distintas.
 
 ### Fase 5 — Receta: Rendimiento y reescalado
+
+> **En curso.** Ya están la parte pura (`validaciones/Rendimiento.kt`, 15 pruebas), el
+> repositorio (`definirMolde`, `reescalarPorMolde`, `reescalarPorPeso`, `guardarRendimiento`,
+> `quitarMolde`, 20 pruebas) y la pantalla con su ViewModel (16 pruebas). Falta el
+> `InfoTooltip` de 12.5, que se comparte con las fases siguientes.
+>
+> **La decisión que ordena toda la fase:** definir el molde por primera vez y reescalar son
+> **dos operaciones distintas**, con funciones distintas del repositorio. Podría ser una sola
+> que "haga lo que corresponda", pero entonces un error en la condición reescalaría una
+> receta que solo quería estrenar molde — y eso no se ve hasta que las cantidades ya están
+> mal. El cuadro además lo dice en una línea antes de que se toque nada: "solo se guardan las
+> medidas" o "las cantidades se van a recalcular".
 
 - **Construyes:** paso "Rendimiento" (con/sin molde), `reescalarRecetaPorPeso` (sin molde) y `reescalarRecetaPorMolde` + Modo Altura/Capacidad (con molde), selector de molde guardado o "modo prueba", `InfoTooltip`, y la sincronización `actualizarMolde` (5.2) que propaga ediciones del catálogo a las recetas vinculadas sin reescalar ingredientes.
 - **Hecho cuando:** las reglas de obligatoriedad funcionan, Modo Altura rechaza un molde nuevo más bajo, Modo Capacidad no tiene esa restricción, reescalar con cada modo produce el factor esperado sobre un caso de prueba a mano, y editar un molde vinculado actualiza el `dimensiones` de la receta sin tocar sus ingredientes (mientras que borrarlo la deja congelada en el último valor).

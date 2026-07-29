@@ -7,12 +7,22 @@ import com.sandyyera.reposteria.data.db.entidades.RecetaIngrediente
 import com.sandyyera.reposteria.data.db.entidades.RecetaSeccion
 import com.sandyyera.reposteria.data.db.entidades.TipoEvento
 import com.sandyyera.reposteria.data.db.entidades.aVigente
+import com.sandyyera.reposteria.data.db.entidades.RecetaRendimiento
+import com.sandyyera.reposteria.logica.formato.formatearNumero
+import com.sandyyera.reposteria.logica.formato.redondearADosDecimales
 import com.sandyyera.reposteria.logica.moldes.DimensionesMolde
+import com.sandyyera.reposteria.logica.moldes.ModoReescalado
+import com.sandyyera.reposteria.logica.moldes.factorEscala
 import com.sandyyera.reposteria.logica.precios.DatosCalculoReceta
 import com.sandyyera.reposteria.logica.busqueda.sonElMismoTexto
 import com.sandyyera.reposteria.logica.precios.errorAlElegirReferencia
 import com.sandyyera.reposteria.logica.validaciones.NOMBRE_SECCION_POR_DEFECTO
+import com.sandyyera.reposteria.logica.validaciones.descripcionDePromocion
 import com.sandyyera.reposteria.logica.validaciones.errorEnNombreSeccion
+import com.sandyyera.reposteria.logica.validaciones.errorEnNumeroPositivoTexto
+import com.sandyyera.reposteria.logica.validaciones.promocionesQueNoCabenEn
+import com.sandyyera.reposteria.logica.validaciones.revisarRendimiento
+import com.sandyyera.reposteria.logica.validaciones.textoANumero
 import com.sandyyera.reposteria.logica.validaciones.esNombreAutomaticoDeSeccion
 import com.sandyyera.reposteria.logica.validaciones.errorEnTituloReceta
 import com.sandyyera.reposteria.logica.validaciones.nombreSugeridoParaPrimeraSeccion
@@ -130,7 +140,8 @@ class RecetaRepositorio(
 
     // --- Secciones ---
 
-    suspend fun obtenerSecciones(recetaId: Long): List<RecetaSeccion> = dao.obtenerSecciones(recetaId)
+    suspend fun obtenerSecciones(recetaId: Long): List<RecetaSeccion> =
+        dao.obtenerSecciones(recetaId)
 
     /**
      * Qué nombre proponer para la sección que hasta ahora era invisible.
@@ -317,6 +328,194 @@ class RecetaRepositorio(
         dao.observarCostos().map { filas -> filas.associate { it.recetaId to it.costo } }
 
     // --- Molde de la receta ---
+
+    /** El rendimiento de una receta: molde, peso final y trozos. */
+    suspend fun obtenerRendimiento(recetaId: Long): RecetaRendimiento? =
+        dao.obtenerRendimiento(recetaId)
+
+    /**
+     * Guarda los trozos y el peso final, sin tocar el molde.
+     *
+     * Valida con `revisarRendimiento`, que es la misma comprobación que hace la pantalla en
+     * cada tecla; acá se repite porque es la que decide de verdad.
+     *
+     * **Avisa antes de romper una promoción**: bajar los trozos puede dejar imposible una
+     * promo por trozo que pedía más de los que van a quedar (6.2, el tope del último trozo).
+     * Si eso pasa **no escribe nada** y devuelve el motivo nombrando cuáles — decir "hay
+     * promociones que no caben" obligaría a revisarlas todas a mano.
+     */
+    suspend fun guardarRendimiento(
+        recetaId: Long,
+        trozosTexto: String,
+        pesoFinalTexto: String
+    ): Resultado {
+        val actual = dao.obtenerRendimiento(recetaId)
+            ?: return Resultado.NoSePudo("Esa receta ya no existe")
+
+        val errores = revisarRendimiento(trozosTexto, pesoFinalTexto, actual.usaMolde)
+        if (!errores.sirve) {
+            return Resultado.NoSePudo(errores.trozos ?: errores.pesoFinal ?: "Revisa los datos")
+        }
+
+        val trozos = textoANumero(trozosTexto)!!.toInt()
+        val peso = pesoFinalTexto.takeIf { it.isNotBlank() }?.let { textoANumero(it) }
+
+        val vigentes = dao.obtenerPrecios(recetaId).map { it.aVigente() }
+        val apretadas = promocionesQueNoCabenEn(trozos, vigentes)
+        if (apretadas.isNotEmpty()) {
+            val cuales = apretadas.joinToString(", ") { descripcionDePromocion(it) }
+            return Resultado.NoSePudo(
+                "Con $trozos trozos no caben estas promociones: $cuales. " +
+                    "Ajústalas o elimínalas primero."
+            )
+        }
+
+        dao.actualizarRendimiento(actual.copy(trozos = trozos, pesoFinalG = peso))
+        return Resultado.Listo
+    }
+
+    /**
+     * Define el molde de una receta **por primera vez**, sin reescalar nada.
+     *
+     * Es la distinción de 9.3 que se paga cara si se confunde: la primera vez no hay molde
+     * original contra el cual comparar, así que no hay factor, no se elige modo y **las
+     * cantidades quedan tal como se escribieron**. Reescalar es del segundo molde en
+     * adelante, y para eso está [reescalarPorMolde], que corta con error si no hay original.
+     *
+     * [moldeOrigenId] enlaza la receta al molde del catálogo, para que reciba sus
+     * correcciones (5.2). En "modo prueba" viene `null` y la receta queda con las medidas
+     * pero sin vínculo.
+     */
+    suspend fun definirMolde(
+        recetaId: Long,
+        dimensiones: DimensionesMolde,
+        moldeOrigenId: Long?
+    ): Resultado {
+        val actual = dao.obtenerRendimiento(recetaId)
+            ?: return Resultado.NoSePudo("Esa receta ya no existe")
+        if (actual.usaMolde && actual.dimensiones != null) {
+            return Resultado.NoSePudo("Esta receta ya tiene molde: usa el reescalado")
+        }
+
+        dao.actualizarRendimiento(
+            actual.copy(usaMolde = true, moldeOrigenId = moldeOrigenId, dimensiones = dimensiones)
+        )
+        historial.registrar(
+            tipo = TipoEvento.EDICION,
+            entidad = EntidadEvento.RECETA,
+            descripcion = "Se le definió el molde a '${tituloDe(recetaId)}'"
+        )
+        return Resultado.Listo
+    }
+
+    /**
+     * Saca el molde de una receta: pasa a ser una de las que se miden por peso.
+     *
+     * **No borra las medidas que tenía**, solo deja de usarlas: si fue un error y se vuelve
+     * atrás, están donde estaban. Sí corta el vínculo, porque una receta sin molde no tiene
+     * por qué recibir correcciones de uno.
+     */
+    suspend fun quitarMolde(recetaId: Long): Resultado {
+        val actual = dao.obtenerRendimiento(recetaId)
+            ?: return Resultado.NoSePudo("Esa receta ya no existe")
+        if (actual.pesoFinalG == null) {
+            return Resultado.NoSePudo(
+                "Sin molde el peso final es obligatorio: anótalo antes de quitarlo"
+            )
+        }
+        dao.actualizarRendimiento(actual.copy(usaMolde = false, moldeOrigenId = null))
+        return Resultado.Listo
+    }
+
+    /**
+     * Reescala una receta **con molde** al pasarla a otro molde (8.3.1).
+     *
+     * Devuelve `NoSePudo` en vez de lanzar excepción cuando `factorEscala` rechaza el
+     * cambio: la pantalla tiene que poder mostrar el motivo —"Demasiado riesgo. Mejor
+     * escale con el otro método"— y una excepción cerraría la app en vez de explicar.
+     *
+     * Al terminar guarda las medidas nuevas **y el vínculo**: enlazada si se eligió un molde
+     * del catálogo, suelta si fue modo prueba, aunque antes estuviera enlazada a otro.
+     */
+    suspend fun reescalarPorMolde(
+        recetaId: Long,
+        nuevo: DimensionesMolde,
+        modo: ModoReescalado,
+        moldeOrigenId: Long?
+    ): Resultado {
+        val actual = dao.obtenerRendimiento(recetaId)
+            ?: return Resultado.NoSePudo("Esa receta ya no existe")
+        val original = actual.dimensiones?.takeIf { actual.usaMolde }
+            ?: return Resultado.NoSePudo(
+                "Esta receta todavía no tiene molde: defínelo primero, sin reescalar"
+            )
+
+        val factor = runCatching { factorEscala(original, nuevo, modo) }
+            .getOrElse { return Resultado.NoSePudo(it.message ?: "No se pudo reescalar") }
+
+        multiplicarIngredientes(recetaId, factor)
+        dao.actualizarRendimiento(
+            actual.copy(dimensiones = nuevo, moldeOrigenId = moldeOrigenId)
+        )
+        historial.registrar(
+            tipo = TipoEvento.EDICION,
+            entidad = EntidadEvento.RECETA,
+            descripcion = "Se reescaló '${tituloDe(recetaId)}' a otro molde",
+            detalleAdicional = "Factor ${formatearNumero(factor)}"
+        )
+        return Resultado.Listo
+    }
+
+    /**
+     * Reescala una receta **sin molde** (una salsa) para que rinda otro peso.
+     *
+     * Rechaza las recetas con molde en vez de intentarlo igual: ahí el peso final es
+     * opcional, así que el cálculo caería sobre un dato que puede no existir y daría un
+     * factor que no significa nada.
+     */
+    suspend fun reescalarPorPeso(recetaId: Long, nuevoPesoTexto: String): Resultado {
+        val actual = dao.obtenerRendimiento(recetaId)
+            ?: return Resultado.NoSePudo("Esa receta ya no existe")
+        if (actual.usaMolde) {
+            return Resultado.NoSePudo("Esta receta usa molde: reescálala eligiendo otro molde")
+        }
+
+        errorEnNumeroPositivoTexto(nuevoPesoTexto, "Escribe el peso nuevo")
+            ?.let { return Resultado.NoSePudo(it) }
+        val nuevoPeso = textoANumero(nuevoPesoTexto)!!
+
+        // El peso final es obligatorio sin molde (6.2); el respaldo a la suma de gramos solo
+        // actúa sobre recetas anteriores a esa validación.
+        val pesoActual = actual.pesoFinalG ?: dao.sumaGramosIngredientes(recetaId)
+        if (pesoActual <= 0) {
+            return Resultado.NoSePudo("La receta no tiene peso ni ingredientes: nada que reescalar")
+        }
+
+        multiplicarIngredientes(recetaId, nuevoPeso / pesoActual)
+        dao.actualizarRendimiento(actual.copy(pesoFinalG = nuevoPeso))
+        historial.registrar(
+            tipo = TipoEvento.EDICION,
+            entidad = EntidadEvento.RECETA,
+            descripcion = "Se reescaló '${tituloDe(recetaId)}' a ${formatearNumero(nuevoPeso)} g"
+        )
+        return Resultado.Listo
+    }
+
+    /**
+     * Multiplica todas las cantidades por [factor], redondeando a 2 decimales.
+     *
+     * El redondeo es el mismo que usa el resto de la app (`redondearADosDecimales`): si se
+     * guardara la cantidad sin redondear, el subtotal que muestra la pantalla no coincidiría
+     * con el que suma la base.
+     */
+    private suspend fun multiplicarIngredientes(recetaId: Long, factor: Double) {
+        dao.obtenerTodosLosIngredientes(recetaId).forEach { item ->
+            dao.actualizarCantidad(item.id, redondearADosDecimales(item.cantidadG * factor))
+        }
+    }
+
+    private suspend fun tituloDe(recetaId: Long): String =
+        dao.obtener(recetaId)?.titulo ?: "una receta"
 
     /**
      * Cambia las medidas del molde guardadas en una receta, sin tocar nada más (5.2).

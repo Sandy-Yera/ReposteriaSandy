@@ -31,6 +31,8 @@ import com.sandyyera.reposteria.ui.moldes.MoldesViewModel
 import com.sandyyera.reposteria.ui.recetas.CantidadesViewModel
 import com.sandyyera.reposteria.ui.recetas.ListaRecetasScreen
 import com.sandyyera.reposteria.ui.recetas.PasoCantidadesScreen
+import com.sandyyera.reposteria.ui.recetas.PasoRendimientoScreen
+import com.sandyyera.reposteria.ui.recetas.RendimientoViewModel
 import com.sandyyera.reposteria.ui.recetas.RecetasViewModel
 import com.sandyyera.reposteria.ui.theme.Medidas
 import kotlinx.coroutines.launch
@@ -42,6 +44,15 @@ import kotlinx.coroutines.launch
  * y no puestas en gris: una opción que no lleva a ninguna parte se toca igual, y da la
  * impresión de que algo se rompió.
  */
+/**
+ * Los pasos de una receta abierta (8.1).
+ *
+ * Van en un `enum` y no en un booleano porque de acá salen los seis pasos del asistente:
+ * cantidades, rendimiento, duración, gastos, simulación y pasos. Con un booleano el tercero
+ * ya obligaría a rehacerlo.
+ */
+enum class PasoDeReceta { CANTIDADES, RENDIMIENTO }
+
 enum class Seccion(val titulo: String, val icono: ImageVector) {
     INGREDIENTES("Ingredientes", Icons.Default.ShoppingCart),
     RECETAS("Recetas", Icons.Default.Favorite),
@@ -69,32 +80,59 @@ fun NavegacionPrincipal(
     // para que girar el teléfono no devuelva a la lista a mitad de carga.
     var recetaAbierta by rememberSaveable { mutableStateOf<Long?>(null) }
 
+    // En qué paso de la receta se está. También en rememberSaveable, por lo mismo: girar
+    // el teléfono en Rendimiento no puede devolver a Cantidades.
+    var pasoActual by rememberSaveable { mutableStateOf(PasoDeReceta.CANTIDADES) }
+
     // Una receta abierta se ve a pantalla completa, sin el menú de secciones: es un paso
     // dentro de la receta, no una sección de la app. Se sale con la X o con el botón de
     // atrás del teléfono.
     val idAbierta = recetaAbierta
     if (idAbierta != null) {
-        PasoCantidadesScreen(
-            modelo = viewModel(
-                // La clave hace que cada receta tenga su propio ViewModel: sin ella,
-                // abrir una segunda receta reutilizaría el de la primera y mostraría los
-                // ingredientes equivocados.
-                key = "cantidades-$idAbierta",
-                factory = CantidadesViewModel.fabrica(
-                    recetaId = idAbierta,
-                    recetas = contenedor.recetas,
-                    ingredientes = contenedor.ingredientes
-                )
-            ),
-            alVolver = { recetaAbierta = null },
-            modifier = modifier
-        )
+        when (pasoActual) {
+            PasoDeReceta.CANTIDADES -> PasoCantidadesScreen(
+                modelo = viewModel(
+                    // La clave hace que cada receta tenga su propio ViewModel: sin ella,
+                    // abrir una segunda receta reutilizaría el de la primera y mostraría los
+                    // ingredientes equivocados.
+                    key = "cantidades-$idAbierta",
+                    factory = CantidadesViewModel.fabrica(
+                        recetaId = idAbierta,
+                        recetas = contenedor.recetas,
+                        ingredientes = contenedor.ingredientes
+                    )
+                ),
+                alVolver = { recetaAbierta = null },
+                alPasarARendimiento = { pasoActual = PasoDeReceta.RENDIMIENTO },
+                modifier = modifier
+            )
+
+            PasoDeReceta.RENDIMIENTO -> PasoRendimientoScreen(
+                modelo = viewModel(
+                    key = "rendimiento-$idAbierta",
+                    factory = RendimientoViewModel.fabrica(
+                        recetaId = idAbierta,
+                        recetas = contenedor.recetas,
+                        moldes = contenedor.moldes
+                    )
+                ),
+                // Volver es al paso anterior, no a la lista: los pasos de una receta se
+                // recorren en orden y salir del todo es la X del primero.
+                alVolver = { pasoActual = PasoDeReceta.CANTIDADES },
+                modifier = modifier
+            )
+        }
     } else {
         MenuDeSecciones(
             contenedor = contenedor,
             seccionActual = seccionActual,
             alElegirSeccion = { seccionActual = it },
-            alAbrirReceta = { recetaAbierta = it },
+            alAbrirReceta = {
+                recetaAbierta = it
+                // Cada receta que se abre empieza por el primer paso: quedarse en el paso
+                // donde se dejó la anterior confundiría más de lo que ahorra.
+                pasoActual = PasoDeReceta.CANTIDADES
+            },
             modifier = modifier
         )
     }

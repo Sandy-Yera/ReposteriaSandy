@@ -298,8 +298,14 @@ class RecetaDaoFalso(
 
     override suspend fun costoDeVariasRecetas(recetaIds: List<Long>): List<CostoDeReceta> =
         recetaIds
-            // El GROUP BY real no devuelve fila para una receta sin ingredientes.
-            .filter { itemsDe(it).isNotEmpty() }
+            // El GROUP BY real no devuelve fila para una receta sin ingredientes **que
+            // sumen**. Se mira contra el catálogo y no solo si hay filas, porque el JOIN es
+            // INNER: una fila que apunta a un ingrediente ya borrado no agrupa nada. Quien
+            // lea el resultado usa justamente eso para distinguir "no tiene ingredientes"
+            // de "los tiene y valen 0", así que el falso tiene que dar la misma respuesta.
+            .filter { receta ->
+                itemsDe(receta).any { catalogo.obtener(it.ingredienteId) != null }
+            }
             .map { CostoDeReceta(it, costoTotalReceta(it)) }
 
     /**

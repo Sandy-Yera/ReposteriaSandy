@@ -198,6 +198,21 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Qué hace: arma las `DimensionesMolde` a partir de lo escrito, o devuelve `null` si todavía no se puede.
 - Cómo funciona: recibe la forma y el mapa de medidas escritas, devuelve `DimensionesMolde?`. Es el equivalente de `calcularValorPorGramo` para este formulario: se llama en cada tecla para mostrar el área y el volumen en vivo y **no lanza excepción**. **No mira el nombre** a propósito: un molde sin bautizar igual tiene medidas, y esconder el volumen hasta que lo bauticen sería tapar justo el número que dice si se midió bien. Los campos que esa forma no usa quedan en `null` aunque haya algo escrito —quien probó "círculo" y cambió a "cuadrado" no debe guardar un cuadrado con diámetro—. Hay un test que comprueba que **todo lo que `revisarMolde` aprueba se puede convertir**: si discreparan, la pantalla habilitaría guardar sobre un molde que no se puede armar.
 
+### errorEnTrozosTexto, errorEnPesoFinalTexto y revisarRendimiento ✅ IMPLEMENTADAS
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Rendimiento.kt
+- Qué hacen: revisan los dos campos del paso "Rendimiento" (8.3).
+- Cómo funcionan: reciben el texto escrito y devuelven el motivo o `null`. **Los trozos son enteros y mínimo 1**: de ahí salen todas las divisiones de la app (`costoPorTrozo`, `precioPorTrozoDe`, `pesoPorTrozo`), así que un 0 no es un dato raro sino una división por cero esperando en otra pantalla; hay además un tope de `MAXIMO_TROZOS` que no es regla del negocio sino la red contra escribir 8.000 en vez de 8. **El peso final es obligatorio solo sin molde**: ahí es lo único contra lo que se puede reescalar; con molde es opcional y se lee como "No especificado". Vacío y cero no son lo mismo: vacío con molde está bien, cero nunca.
+
+### promocionesQueNoCabenEn y descripcionDePromocion ✅ IMPLEMENTADAS
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Rendimiento.kt
+- Qué hacen: dicen qué promociones quedarían imposibles al bajar los trozos de la receta.
+- Cómo funcionan: `promocionesQueNoCabenEn(trozos, precios)` devuelve **la lista** y no un `Boolean`, porque el aviso tiene que nombrar cuáles: decir "hay promociones que no caben" obliga a revisarlas todas a mano. Es el tope del último trozo de 6.2 y **solo aplica al modo trozo** — vender 3 productos completos es posible por más que cada uno rinda 2. `descripcionDePromocion` da el texto para el aviso: la etiqueta si tiene, y si no su forma ("3 trozos").
+
+### MAXIMO_TROZOS ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Rendimiento.kt
+- Qué hace: cuántos trozos como máximo se aceptan en el campo.
+- Cómo funciona: constante `200`. No es una regla del negocio: es que escribir 8.000 en vez de 8 deja el costo por trozo casi en cero y todo lo que sale de ahí sin sentido, sin ningún aviso.
+
 ### pesoPorTrozo ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/rendimiento/Rendimiento.kt
 - Qué hace: calcula cuánto pesa cada trozo dividiendo el peso final del producto entre la cantidad de trozos.
@@ -733,6 +748,26 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Qué hacen: la pantalla del paso 1 de una receta.
 - Cómo funcionan: misma división de siempre — una parte conecta el ViewModel, la otra solo dibuja y tiene vistas previas. **El costo total va fijo arriba, fuera del desplazamiento**: es el número por el que existe la pantalla, y con una receta larga quedaría fuera de vista justo mientras se ajustan las cantidades. Cada línea muestra la cuenta completa (`500 g × $1,2 = $600`) y no solo el total, para que un valor por gramo mal puesto salte a la vista. En el cuadro de agregar, el campo de gramos aparece **después** de elegir el ingrediente: pedir los dos a la vez obliga a decidir cuánto antes de saber de qué.
 
+### RendimientoViewModel ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/recetas/RendimientoViewModel.kt
+- Qué hace: el cerebro del paso "Rendimiento" (8.3): trozos, peso final, molde y reescalado.
+- Cómo funciona: mismo patrón de siempre, con el diálogo fuera del `combine` (12.2.1). Lo propio es que **`abrirElegirMolde` decide solo si es la primera vez o un reescalado**, leyendo si la receta ya tiene molde: esa distinción no la puede tomar la pantalla. `confirmarMolde` llama a `definirMolde` o a `reescalarPorMolde` según eso, y son dos funciones distintas a propósito — una sola que "haga lo que corresponda" reescalaría una receta que solo quería estrenar molde ante un error en la condición, y eso no se ve hasta que las cantidades ya están mal. Un rechazo queda **dentro del cuadro** y no en la franja de abajo, porque ahí mismo está el selector de modo que lo resuelve.
+
+### DialogoRendimiento, EstadoRendimiento y OrigenDelMolde ✅ IMPLEMENTADAS
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/recetas/RendimientoViewModel.kt
+- Qué hacen: los tipos del paso de rendimiento.
+- Cómo funcionan: `OrigenDelMolde` distingue `GUARDADO` (queda enlazada al catálogo y recibe correcciones) de `PRUEBA` (medidas propias, sin vínculo) — **no da lo mismo cuál**, y la pantalla lo dice con todas las letras porque es la única diferencia invisible entre dos recetas con las mismas medidas. `DialogoRendimiento.ElegirMolde` calcula sus `dimensiones` y su `moldeOrigenId` según el origen, y solo muestra el selector de modo cuando `esReescalado`. `EstadoRendimiento` expone `pesoDeCadaTrozo` en vivo —usando `pesoPorTrozo` y `textoANumero`, sin reglas propias sobre cómo se escribe un número— y `medidasDelMolde` envuelto en `runCatching`, para que un molde a medio guardar no cierre la pantalla.
+
+### PasoRendimientoScreen, PasoRendimiento y AccionesRendimiento ✅ IMPLEMENTADAS
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/recetas/PasoRendimientoScreen.kt
+- Qué hacen: la pantalla del paso 2 de una receta.
+- Cómo funcionan: la división de siempre. **El molde va arriba de todo**, porque decide lo demás: con molde el peso final es opcional y sin molde es obligatorio, así que preguntar el peso antes obligaría a cambiar la respuesta después. El cuadro de molde dice en una línea qué va a pasar —"solo se guardan las medidas" o "las cantidades se van a recalcular"—, que es la confusión de 9.3 puesta a la vista. El selector de modo usa las palabras del resultado y no las de la fórmula: "Que rinda más" y "El mismo grosor", con la explicación debajo.
+
+### PasoDeReceta ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/NavegacionPrincipal.kt
+- Qué hace: en qué paso de una receta abierta se está.
+- Cómo funciona: `enum` con `CANTIDADES` y `RENDIMIENTO`, en `rememberSaveable` para que girar el teléfono no devuelva al primero. Es enum y no un booleano porque de acá salen los seis pasos del asistente (8.1): con un booleano el tercero ya obligaría a rehacerlo. Abrir una receta siempre empieza por el primer paso — quedarse donde se dejó la anterior confundiría más de lo que ahorra.
+
 ### NavegacionPrincipal y Seccion ✅ IMPLEMENTADAS
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/NavegacionPrincipal.kt
 - Qué hacen: el menú de 3 líneas y la sección que se esté viendo (12.1).
@@ -747,6 +782,21 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/data/db/dao/MoldeDao.kt
 - Qué hace: el catálogo de moldes completo, una sola vez.
 - Cómo funciona: `suspend`, devuelve `List<Molde>` ordenada por nombre. Existe por lo mismo que su gemela en `IngredienteDao`: comparar nombres ignorando tildes no lo puede hacer SQLite, así que `buscarParecido` trae la lista y compara en memoria.
+
+### RecetaRepositorio.definirMolde ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/RecetaRepositorio.kt
+- Qué hace: le pone molde a una receta **por primera vez**, sin reescalar nada.
+- Cómo funciona: `suspend`, recibe `recetaId`, las `DimensionesMolde` y un `moldeOrigenId` (`null` en modo prueba). Es la distinción de 9.3 que se paga cara si se confunde: la primera vez **no hay original contra el cual comparar**, así que no hay factor, no se elige modo y las cantidades quedan tal como se escribieron. Rechaza la receta que ya tiene molde y la manda al reescalado. Reescalar es del segundo molde en adelante.
+
+### RecetaRepositorio.reescalarPorMolde y reescalarPorPeso ✅ IMPLEMENTADAS
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/RecetaRepositorio.kt
+- Qué hacen: ajustan las cantidades de una receta al cambiarla de molde, o para que rinda otro peso (8.3.1).
+- Cómo funcionan: `suspend`, devuelven `Resultado`. **`reescalarPorMolde` no deja escapar la excepción de `factorEscala`**: la convierte en `NoSePudo(motivo)` porque la pantalla tiene que poder mostrar el texto —"Demasiado riesgo. Mejor escale con el otro método"— y una excepción cerraría la app en vez de explicar. Al terminar guarda medidas **y vínculo**: enlazada si se eligió un molde del catálogo, suelta si fue modo prueba. `reescalarPorPeso` es para las recetas sin molde y **rechaza las que sí lo tienen**, porque ahí el peso final es opcional y el cálculo caería sobre un dato que puede no existir. Las dos redondean a 2 decimales, que es lo que hace que el subtotal de la pantalla coincida con lo que suma la base.
+
+### RecetaRepositorio.guardarRendimiento y quitarMolde ✅ IMPLEMENTADAS
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/RecetaRepositorio.kt
+- Qué hacen: guardar trozos y peso final, y dejar de usar molde.
+- Cómo funcionan: `suspend`, devuelven `Resultado`. `guardarRendimiento` **avisa antes de romper una promoción**: si bajar los trozos deja imposible alguna promo por trozo, no escribe nada y devuelve el motivo nombrándolas. `quitarMolde` exige tener peso final anotado —sin molde pasa a ser obligatorio— y **conserva las medidas** por si fue un error, cortando solo el vínculo.
 
 ### RecetaRepositorio.observarCostos ✅ IMPLEMENTADA
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/RecetaRepositorio.kt

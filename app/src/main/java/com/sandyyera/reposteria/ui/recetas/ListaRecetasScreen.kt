@@ -309,7 +309,11 @@ private fun TarjetaReceta(
                     Text(
                         // El costo se lee de la base con el precio actual de cada
                         // ingrediente (decisión #3), así que sube solo cuando sube uno.
-                        text = if (fila.costoTotal > 0) {
+                        // Se mira `tieneIngredientes` y no el costo: un ingrediente puede
+                        // valer 0 a propósito, y una receta hecha solo de esos costaba 0
+                        // pero no estaba vacía. Decirle "todavía sin ingredientes" a algo
+                        // que sí los tiene manda a buscar un problema que no existe.
+                        text = if (fila.tieneIngredientes) {
                             "Cuesta $${formatearNumero(fila.costoTotal)} hacerla"
                         } else {
                             "Todavía sin ingredientes"

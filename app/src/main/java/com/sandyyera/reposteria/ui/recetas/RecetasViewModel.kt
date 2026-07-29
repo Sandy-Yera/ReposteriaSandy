@@ -30,6 +30,16 @@ import kotlinx.coroutines.launch
 data class RecetaConCosto(
     val receta: Receta,
     val costoTotal: Double,
+    /**
+     * Si la receta tiene al menos un ingrediente cargado.
+     *
+     * **Es un dato aparte del costo, y tiene que serlo.** Antes la pantalla deducía "todavía
+     * sin ingredientes" de que el costo fuera 0, y eso está mal: un ingrediente puede valer
+     * 0 a propósito —así se dice "esto no suma al costo" (6.2)— y una receta llena de ellos
+     * aparecía como vacía. Costar cero y no tener nada cargado son dos cosas distintas y la
+     * pantalla necesita distinguirlas.
+     */
+    val tieneIngredientes: Boolean = false,
     val repetida: Boolean = false
 )
 
@@ -149,7 +159,17 @@ class RecetasViewModel(
             .filter { it.value }
             .map { porAntiguedad[it.index].id }
             .toSet()
-        recetas.map { RecetaConCosto(it, costos[it.id] ?: 0.0, it.id in repetidas) }
+        recetas.map { receta ->
+            RecetaConCosto(
+                receta = receta,
+                costoTotal = costos[receta.id] ?: 0.0,
+                // La consulta agrupa por receta, así que **solo trae fila para las que
+                // tienen algo cargado**: estar en el mapa es exactamente "tiene
+                // ingredientes", y un 0 ahí adentro es "los tiene, y no suman nada".
+                tieneIngredientes = receta.id in costos,
+                repetida = receta.id in repetidas
+            )
+        }
     }
 
     val estado: StateFlow<EstadoRecetas> = combine(
