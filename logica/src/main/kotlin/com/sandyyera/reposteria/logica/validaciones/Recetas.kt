@@ -42,15 +42,8 @@ fun errorEnNombreSeccion(nombre: String): String? {
  * ingrediente que va en cantidad cero simplemente no está en la receta, y dejarlo
  * guardado con 0 es una fila que no suma nada y confunde al leer la lista.
  */
-fun errorEnCantidadEnGramosTexto(texto: String): String? {
-    if (texto.isBlank()) return "Escribe cuántos gramos lleva"
-    val numero = textoANumero(texto) ?: return "Escribe un número válido"
-    return when {
-        numero.isNaN() || numero.isInfinite() -> "Escribe un número válido"
-        numero <= 0 -> "La cantidad tiene que ser mayor que cero"
-        else -> null
-    }
-}
+fun errorEnCantidadEnGramosTexto(texto: String): String? =
+    errorEnNumeroPositivoTexto(texto, "Escribe cuántos gramos lleva")
 
 /**
  * Si hay que mostrar los encabezados con el nombre de cada sección.

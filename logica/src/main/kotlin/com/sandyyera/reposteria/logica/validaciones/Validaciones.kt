@@ -28,17 +28,46 @@ package com.sandyyera.reposteria.logica.validaciones
 const val LARGO_MAXIMO_NOMBRE = 60
 
 /**
- * Revisa el nombre de un ingrediente.
+ * Revisa cualquier nombre escrito a mano: un ingrediente, un molde, un empleado.
+ *
+ * Se llamaba `errorEnNombreIngrediente`, pero su cuerpo nunca tuvo nada de ingredientes y
+ * el nombre hacía que cada sección nueva escribiera su propia copia idéntica. Los mensajes
+ * ya hablan del "nombre" y no de qué cosa se está nombrando, así que sirven igual en las
+ * cuatro secciones. Las excepciones son las que **sí** dicen otra palabra: el título de una
+ * receta y el nombre de una sección viven en `Recetas.kt` con su propio texto.
  *
  * No comprueba si ya existe otro igual: eso necesita mirar la base de datos y lo resuelve
  * el repositorio, que compara ignorando tildes.
  */
-fun errorEnNombreIngrediente(nombre: String): String? {
+fun errorEnNombreEscrito(nombre: String): String? {
     val limpio = nombre.trim()
     return when {
         limpio.isEmpty() -> "El nombre no puede quedar vacío"
         limpio.length > LARGO_MAXIMO_NOMBRE ->
             "El nombre no puede pasar de $LARGO_MAXIMO_NOMBRE caracteres"
+        else -> null
+    }
+}
+
+/**
+ * Revisa un número que tiene que ser mayor que cero, tal como está escrito en el campo.
+ *
+ * Es la misma comprobación que ya estaba escrita tres veces —la cantidad del paquete en la
+ * calculadora, los gramos de un ingrediente en una receta y ahora las medidas de un
+ * molde—, palabra por palabra salvo el aviso de campo vacío, que es el único que sí cambia
+ * según lo que se esté pidiendo. Por eso ese texto entra por parámetro y el resto vive acá
+ * una sola vez: si mañana hay que aceptar otro separador, se arregla en un lugar.
+ *
+ * El cero se rechaza siempre. Donde el cero es un dato válido —el valor por gramo de un
+ * ingrediente regalado, las unidades por día de una receta que no se vende— no se usa esta
+ * función, y esa diferencia es deliberada, no un descuido.
+ */
+fun errorEnNumeroPositivoTexto(texto: String, siEstaVacio: String): String? {
+    if (texto.isBlank()) return siEstaVacio
+    val numero = textoANumero(texto) ?: return "Escribe un número válido"
+    return when {
+        numero.isNaN() || numero.isInfinite() -> "Escribe un número válido"
+        numero <= 0 -> "La cantidad tiene que ser mayor que cero"
         else -> null
     }
 }
@@ -110,6 +139,6 @@ data class ErroresIngrediente(
  */
 fun revisarIngrediente(nombre: String, valorPorGramoTexto: String): ErroresIngrediente =
     ErroresIngrediente(
-        nombre = errorEnNombreIngrediente(nombre),
+        nombre = errorEnNombreEscrito(nombre),
         valorPorGramo = errorEnValorPorGramoTexto(valorPorGramoTexto)
     )

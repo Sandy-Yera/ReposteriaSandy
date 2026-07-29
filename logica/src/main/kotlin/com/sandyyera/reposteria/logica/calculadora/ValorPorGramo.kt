@@ -1,6 +1,7 @@
 package com.sandyyera.reposteria.logica.calculadora
 
 import com.sandyyera.reposteria.logica.formato.redondearADosDecimales
+import com.sandyyera.reposteria.logica.validaciones.errorEnNumeroPositivoTexto
 import com.sandyyera.reposteria.logica.validaciones.textoANumero
 
 /**
@@ -71,15 +72,8 @@ fun errorEnPrecioTexto(texto: String): String? {
  * A diferencia del precio, acá el **cero no se acepta**: no es un dato raro pero válido,
  * es una división por cero. Un paquete que no trae nada no tiene valor por gramo.
  */
-fun errorEnCantidadTexto(texto: String): String? {
-    if (texto.isBlank()) return "Escribe cuánto trae el paquete"
-    val numero = textoANumero(texto) ?: return "Escribe un número válido"
-    return when {
-        numero.isNaN() || numero.isInfinite() -> "Escribe un número válido"
-        numero <= 0 -> "La cantidad tiene que ser mayor que cero"
-        else -> null
-    }
-}
+fun errorEnCantidadTexto(texto: String): String? =
+    errorEnNumeroPositivoTexto(texto, "Escribe cuánto trae el paquete")
 
 /**
  * Los problemas de la calculadora, uno por campo.

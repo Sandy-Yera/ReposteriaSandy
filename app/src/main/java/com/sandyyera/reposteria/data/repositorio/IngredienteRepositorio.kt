@@ -7,7 +7,7 @@ import com.sandyyera.reposteria.data.db.entidades.Ingrediente
 import com.sandyyera.reposteria.data.db.entidades.Receta
 import com.sandyyera.reposteria.data.db.entidades.TipoEvento
 import com.sandyyera.reposteria.logica.busqueda.sonElMismoTexto
-import com.sandyyera.reposteria.logica.validaciones.errorEnNombreIngrediente
+import com.sandyyera.reposteria.logica.validaciones.errorEnNombreEscrito
 import com.sandyyera.reposteria.logica.validaciones.errorEnValorPorGramo
 import kotlinx.coroutines.flow.Flow
 
@@ -64,7 +64,7 @@ class IngredienteRepositorio(
     suspend fun crear(nombre: String, valorPorGramo: Double): ResultadoGuardarIngrediente {
         val limpio = nombre.trim()
 
-        errorEnNombreIngrediente(limpio)?.let { return ResultadoGuardarIngrediente.NoValido(it) }
+        errorEnNombreEscrito(limpio)?.let { return ResultadoGuardarIngrediente.NoValido(it) }
         errorEnValorPorGramo(valorPorGramo)?.let { return ResultadoGuardarIngrediente.NoValido(it) }
         buscarParecido(limpio)?.let { return ResultadoGuardarIngrediente.YaExiste(it) }
 
@@ -86,7 +86,7 @@ class IngredienteRepositorio(
     suspend fun actualizar(ingrediente: Ingrediente): ResultadoGuardarIngrediente {
         val limpio = ingrediente.nombre.trim()
 
-        errorEnNombreIngrediente(limpio)?.let { return ResultadoGuardarIngrediente.NoValido(it) }
+        errorEnNombreEscrito(limpio)?.let { return ResultadoGuardarIngrediente.NoValido(it) }
         errorEnValorPorGramo(ingrediente.valorPorGramo)
             ?.let { return ResultadoGuardarIngrediente.NoValido(it) }
         buscarParecido(limpio, exceptoId = ingrediente.id)

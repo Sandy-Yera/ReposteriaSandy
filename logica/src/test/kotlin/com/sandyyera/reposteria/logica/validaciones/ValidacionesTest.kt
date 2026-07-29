@@ -14,25 +14,25 @@ class ValidacionesTest {
 
     @Test
     fun `un nombre normal pasa`() {
-        assertNull(errorEnNombreIngrediente("Harina"))
-        assertNull(errorEnNombreIngrediente("Azúcar flor"))
+        assertNull(errorEnNombreEscrito("Harina"))
+        assertNull(errorEnNombreEscrito("Azúcar flor"))
     }
 
     @Test
     fun `un nombre vacio o de puros espacios no pasa`() {
-        assertNotNull(errorEnNombreIngrediente(""))
-        assertNotNull(errorEnNombreIngrediente("   "))
+        assertNotNull(errorEnNombreEscrito(""))
+        assertNotNull(errorEnNombreEscrito("   "))
     }
 
     @Test
     fun `los espacios de los bordes no cuentan`() {
-        assertNull(errorEnNombreIngrediente("  Harina  "))
+        assertNull(errorEnNombreEscrito("  Harina  "))
     }
 
     @Test
     fun `un nombre demasiado largo no pasa`() {
-        assertNull(errorEnNombreIngrediente("a".repeat(LARGO_MAXIMO_NOMBRE)))
-        assertNotNull(errorEnNombreIngrediente("a".repeat(LARGO_MAXIMO_NOMBRE + 1)))
+        assertNull(errorEnNombreEscrito("a".repeat(LARGO_MAXIMO_NOMBRE)))
+        assertNotNull(errorEnNombreEscrito("a".repeat(LARGO_MAXIMO_NOMBRE + 1)))
     }
 
     // --- Valor por gramo ---

@@ -1359,6 +1359,13 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 - **Construyes:** `DimensionesMolde`, entidad `Molde`, `ListaMoldesScreen`, formularios condicionales según `tipoForma`, cálculo de área/volumen.
 - **Hecho cuando:** creas un molde de cada una de las 5 formas y el área/volumen/altura mostrados coinciden con tu cálculo a mano (incluido el caso exótico, con volumen medido con agua).
 
+> **Ya está hecha la parte pura** (`logica/validaciones/Moldes.kt`, 18 pruebas): `CampoDeMolde`
+> y `camposDe` dicen qué medidas pide cada forma, `revisarMolde` las valida y
+> `dimensionesDesde` las convierte en `DimensionesMolde`. Que el formulario condicional
+> pregunte a `camposDe` en vez de decidir por su cuenta es lo que evita el fallo silencioso
+> de agregar una forma y tocar solo uno de los dos lados. Falta lo que necesita Android:
+> `MoldeRepositorio`, `MoldesViewModel` y las pantallas.
+
 ### Fase 5 — Receta: Rendimiento y reescalado
 
 - **Construyes:** paso "Rendimiento" (con/sin molde), `reescalarRecetaPorPeso` (sin molde) y `reescalarRecetaPorMolde` + Modo Altura/Capacidad (con molde), selector de molde guardado o "modo prueba", `InfoTooltip`, y la sincronización `actualizarMolde` (5.2) que propaga ediciones del catálogo a las recetas vinculadas sin reescalar ingredientes.

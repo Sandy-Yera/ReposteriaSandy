@@ -83,10 +83,15 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Qué hace: deja de una lista solo los elementos que coinciden con lo escrito en el buscador.
 - Cómo funciona: genérica — recibe `List<T>`, el texto buscado y una función que dice de dónde sacar el texto de cada elemento (`{ it.nombre }`, `{ it.titulo }`…); devuelve `List<T>` conservando el orden original. Con el buscador en blanco devuelve la lista completa, porque no haber escrito nada no es lo mismo que no encontrar nada. Es genérica a propósito: las 4 secciones filtran tipos distintos pero la regla de coincidencia (`coincide`) tiene que ser una sola.
 
-### errorEnNombreIngrediente ✅ IMPLEMENTADA
+### errorEnNombreEscrito ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Validaciones.kt
-- Qué hace: revisa si el nombre escrito para un ingrediente sirve.
-- Cómo funciona: recibe `String` y devuelve el motivo del problema, o `null` si está bien — ese formato encaja directo con los campos de Compose, que muestran el mensaje bajo el campo. Rechaza vacíos, solo espacios, y más de `LARGO_MAXIMO_NOMBRE` caracteres. **No comprueba repetidos**: eso necesita la base de datos y lo hace el repositorio.
+- Qué hace: revisa cualquier nombre escrito a mano — un ingrediente, un molde, un empleado.
+- Cómo funciona: recibe `String` y devuelve el motivo del problema, o `null` si está bien — ese formato encaja directo con los campos de Compose, que muestran el mensaje bajo el campo. Rechaza vacíos, solo espacios, y más de `LARGO_MAXIMO_NOMBRE` caracteres. **No comprueba repetidos**: eso necesita la base de datos y lo hace el repositorio. **Antes se llamaba `errorEnNombreIngrediente`**, y se renombró al llegar los moldes: su cuerpo nunca tuvo nada de ingredientes, pero el nombre invitaba a que cada sección escribiera su propia copia idéntica. Las excepciones son las que sí usan otra palabra en el mensaje —el título de una receta y el nombre de una sección—, que viven en `Recetas.kt`.
+
+### errorEnNumeroPositivoTexto ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Validaciones.kt
+- Qué hace: revisa un número que tiene que ser mayor que cero, tal como está escrito en el campo.
+- Cómo funciona: recibe el texto y el aviso que corresponde si el campo está vacío; devuelve el motivo o `null`. **Es el cuerpo que ya estaba escrito tres veces** —la cantidad del paquete en la calculadora, los gramos de un ingrediente en una receta, y las medidas de un molde—, palabra por palabra salvo ese aviso, que es lo único que cambia según lo que se pida; por eso entra por parámetro. `errorEnCantidadTexto` y `errorEnCantidadEnGramosTexto` ahora delegan acá sin cambiar ni un mensaje. **Donde el cero es un dato válido no se usa esta función** (el valor por gramo de un ingrediente regalado, las unidades por día de una receta que no se vende): esa diferencia es deliberada.
 
 ### errorEnValorPorGramo ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Validaciones.kt
@@ -110,8 +115,8 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 
 ### LARGO_MAXIMO_NOMBRE ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Validaciones.kt
-- Qué hace: cuántos caracteres puede tener el nombre de un ingrediente.
-- Cómo funciona: constante `60`. Lo usa `errorEnNombreIngrediente` y también sirve para poner el tope en el campo de texto de la pantalla.
+- Qué hace: cuántos caracteres puede tener cualquier nombre escrito a mano.
+- Cómo funciona: constante `60`. La usan `errorEnNombreEscrito`, `errorEnTituloReceta` y `errorEnNombreSeccion`, y también sirve para poner el tope en el campo de texto de la pantalla.
 
 ### redondearADosDecimales ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/formato/Formato.kt
@@ -136,7 +141,7 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 ### errorEnCantidadTexto ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/calculadora/ValorPorGramo.kt
 - Qué hace: revisa la cantidad que trae el paquete.
-- Cómo funciona: recibe `String` y devuelve el motivo o `null`. A diferencia de `errorEnPrecioTexto`, **el cero no se acepta**: no es un dato raro pero válido, es una división por cero.
+- Cómo funciona: recibe `String` y devuelve el motivo o `null`; el cuerpo está en `errorEnNumeroPositivoTexto` y acá solo se le pasa el aviso propio del campo. A diferencia de `errorEnPrecioTexto`, **el cero no se acepta**: no es un dato raro pero válido, es una división por cero.
 
 ### revisarCalculadora ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/calculadora/ValorPorGramo.kt
@@ -151,7 +156,7 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 ### errorEnTituloReceta, errorEnNombreSeccion y errorEnCantidadEnGramosTexto ✅ IMPLEMENTADAS
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Recetas.kt
 - Qué hacen: revisan el título de una receta, el nombre de una sección y los gramos de un ingrediente dentro de ella.
-- Cómo funcionan: reciben `String` y devuelven el motivo o `null`, igual que el resto del paquete. Las dos de nombre usan `LARGO_MAXIMO_NOMBRE`, que es el mismo tope para todo lo que se escribe a mano. **La de gramos rechaza el cero**, a diferencia de `errorEnValorPorGramo`: un ingrediente en cantidad cero simplemente no está en la receta, y dejarlo guardado es una fila que no suma y confunde al leer.
+- Cómo funcionan: reciben `String` y devuelven el motivo o `null`, igual que el resto del paquete. Las dos de nombre usan `LARGO_MAXIMO_NOMBRE`, que es el mismo tope para todo lo que se escribe a mano. **La de gramos rechaza el cero** —delegando en `errorEnNumeroPositivoTexto`—, a diferencia de `errorEnValorPorGramo`: un ingrediente en cantidad cero simplemente no está en la receta, y dejarlo guardado es una fila que no suma y confunde al leer.
 
 ### debenMostrarseLosNombresDeSeccion y esNombreAutomaticoDeSeccion ✅ IMPLEMENTADAS
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Recetas.kt
@@ -172,6 +177,26 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Recetas.kt
 - Qué hace: el nombre que se le pone sola a la primera sección mientras la receta tenga una sola.
 - Cómo funciona: constante `"General"`. La usa `RecetaRepositorio.crear` al sembrar la sección automática. Ese nombre **no se muestra** mientras sea la única sección.
+
+### CampoDeMolde y camposDe ✅ IMPLEMENTADAS
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Moldes.kt
+- Qué hacen: enumeran las medidas que puede pedir el formulario de un molde, y dicen cuáles pide cada forma.
+- Cómo funcionan: `CampoDeMolde` es un `enum` con las 8 medidas posibles y su etiqueta; `camposDe(forma)` devuelve la lista que corresponde a esa forma, en el orden en que conviene preguntarlas. Existen para que **la pantalla y la validación no puedan discrepar**: si el formulario decidiera por su cuenta qué dibujar y la validación por la suya qué exigir, agregar una forma y tocar solo uno de los dos dejaría un campo obligatorio que nadie puede llenar. `ALTURA_MOLDE` aparece en las cinco formas, **incluida la exótica** (6.2): ahí el volumen ya viene medido con agua, pero sin la altura no se despeja el área y el Modo Altura del reescalado se queda sin qué comparar. La etiqueta va en el enum y no en la pantalla porque "Altura" a secas es justo el texto que confunde las dos alturas del triángulo.
+
+### errorEnMedidaDeMoldeTexto ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Moldes.kt
+- Qué hace: revisa una medida de molde tal como está escrita en el campo.
+- Cómo funciona: delega en `errorEnNumeroPositivoTexto` con el aviso "Escribe la medida". **Rechaza el cero igual que un campo vacío**, y no por prolijidad: una medida en 0 deja el área o el volumen en 0, y ahí `factorEscala` divide por cero al reescalar — un error que aparecería mucho después, en otra pantalla, sin ninguna pista de dónde venía.
+
+### revisarMolde y ErroresMolde ✅ IMPLEMENTADAS
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Moldes.kt
+- Qué hacen: revisan de una vez el formulario completo de un molde, mientras se escribe.
+- Cómo funcionan: `revisarMolde(nombre, forma, medidas)` devuelve `ErroresMolde`, que lleva `nombre`, `forma` y un **mapa** `medidas: Map<CampoDeMolde, String>` con solo las que fallaron, más `sirve`. Es un mapa y no un campo por medida porque cuáles existen depende de la forma: un `data class` con las ocho tendría siempre seis en `null` sin que eso signifique "está bien", sino "acá no se pregunta". Solo mira lo que `camposDe` pide para esa forma, así lo que quedó escrito de una forma elegida antes no se arrastra como error. Sin forma elegida el único aviso es el de la forma: no se puede exigir una medida sin saber cuál.
+
+### dimensionesDesde ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Moldes.kt
+- Qué hace: arma las `DimensionesMolde` a partir de lo escrito, o devuelve `null` si todavía no se puede.
+- Cómo funciona: recibe la forma y el mapa de medidas escritas, devuelve `DimensionesMolde?`. Es el equivalente de `calcularValorPorGramo` para este formulario: se llama en cada tecla para mostrar el área y el volumen en vivo y **no lanza excepción**. **No mira el nombre** a propósito: un molde sin bautizar igual tiene medidas, y esconder el volumen hasta que lo bauticen sería tapar justo el número que dice si se midió bien. Los campos que esa forma no usa quedan en `null` aunque haya algo escrito —quien probó "círculo" y cambió a "cuadrado" no debe guardar un cuadrado con diámetro—. Hay un test que comprueba que **todo lo que `revisarMolde` aprueba se puede convertir**: si discreparan, la pantalla habilitaría guardar sobre un molde que no se puede armar.
 
 ### pesoPorTrozo ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/rendimiento/Rendimiento.kt
