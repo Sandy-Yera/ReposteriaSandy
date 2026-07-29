@@ -1338,12 +1338,21 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 >    borrar**: abrirlos o renombrarlos muestra un aviso explicando por qué. La
 >    contrapartida aceptada es que la base ya no es la última barrera; la regla vive en el
 >    repositorio y está cubierta por pruebas.
-> 2. **Conservar los datos de prueba entre instalaciones.** Room no borra nada por su
->    cuenta —no se usa `fallbackToDestructiveMigration()`—, así que si los datos
->    desaparecen es porque hubo una reinstalación de por medio. Falta (a) una prueba
->    instrumentada de migración con `MigrationTestHelper`, para que una migración rota se
->    detecte en el computador y no obligue a desinstalar del celular, y (b) un script en
->    `herramientas/` que baje y suba el archivo de la base con `adb run-as`.
+> 2. ~~**Conservar los datos de prueba entre instalaciones.**~~ **Resuelto.** Room no borra
+>    nada por su cuenta —no se usa `fallbackToDestructiveMigration()`—, así que si los datos
+>    desaparecen es porque hubo una reinstalación de por medio. Se agregó (a) la prueba
+>    instrumentada `MigracionTest`, que corre la migración 1→2 sobre SQLite de verdad y
+>    comprueba **las dos mitades**: que el esquema resultante calce con `2.json` y que las
+>    filas que ya estaban sigan ahí — validar solo el esquema dejaría pasar un `DROP TABLE`
+>    seguido de un `CREATE TABLE`; y (b) `herramientas/respaldo_bd.sh`, que baja y sube el
+>    archivo de la base con `adb run-as`, **incluidos el `-wal` y el `-shm`**: con el modo
+>    WAL activado, copiar solo el `.db` deja afuera lo último escrito y la copia queda vieja
+>    sin que nada lo avise.
+>
+>    **Lo que esto destapó:** `app/schemas/` solo tenía `1.json`. El de la versión 2 lo
+>    genera KSP al compilar y nunca se versionó, así que `MigrationTestHelper` no tenía
+>    contra qué validar y la migración 2→3 habría quedado sin red. `revisar_kotlin.py` ahora
+>    compara la versión declarada en `AppDatabase` contra los esquemas presentes y avisa.
 
 ### Fase 4 — Módulo Moldes
 

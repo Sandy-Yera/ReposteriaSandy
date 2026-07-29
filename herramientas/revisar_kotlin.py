@@ -12,13 +12,14 @@ de verdad— pero atrapa las tres cosas que sí se han colado:
 4. Lo mismo, pero cuando la acción se ata a un parámetro que la pantalla recibe de más
    arriba (`abrir = alAbrirReceta`), que es por donde pasó el `(Receta) -> Unit` que en
    realidad recibía un `Long`.
+5. Que esté versionado el esquema exportado de cada versión de la base de datos.
 
 Se corre solo, sin instalar nada:
 
     python3 herramientas/revisar_kotlin.py
 
 Termina con código 1 si encuentra algo. **Que pase no significa que compile**: significa
-que no tiene ninguno de estos cuatro problemas. Solo mira nombres y tipos escritos tal
+que no tiene ninguno de estos cinco problemas. Solo mira nombres y tipos escritos tal
 cual; nada que dependa de inferencia (el tipo de un `val` local, por ejemplo) está a su
 alcance. La prueba real sigue siendo compilar.
 """
@@ -213,6 +214,37 @@ def revisar_enchufes(rutas):
     return problemas
 
 
+def revisar_esquemas(_rutas):
+    """5. Que exista el esquema exportado de cada versión de la base.
+
+    No es Kotlin balanceado ni tipos, pero es lo mismo: algo que se detecta leyendo y que
+    en el celular se paga caro. `app/schemas/N.json` es lo que le permite a Room y a la
+    prueba de migración saber cómo era la base antes. Si falta el de la versión actual, la
+    migración siguiente no se puede escribir ni probar, y eso solo se descubre el día que
+    hay datos reales adentro.
+
+    Room lo genera al compilar; lo que se olvida es versionarlo.
+    """
+    fuente = os.path.join(RAIZ, "app/src/main/java/com/sandyyera/reposteria/data/db/AppDatabase.kt")
+    if not os.path.exists(fuente):
+        return 0
+    version = re.search(r"version\s*=\s*(\d+)", open(fuente, encoding="utf-8").read())
+    if not version:
+        print("  no encuentro la versión declarada en AppDatabase.kt")
+        return 1
+
+    version = int(version.group(1))
+    carpeta = os.path.join(RAIZ, "app/schemas/com.sandyyera.reposteria.data.db.AppDatabase")
+    faltan = [n for n in range(1, version + 1)
+              if not os.path.exists(os.path.join(carpeta, f"{n}.json"))]
+    if faltan:
+        print(f"  la base está en la versión {version} y falta el esquema de: "
+              f"{', '.join(f'{n}.json' for n in faltan)}")
+        print("  se genera al compilar (./gradlew :app:assembleDebug) y hay que versionarlo")
+        return 1
+    return 0
+
+
 def main():
     rutas = archivos_kotlin()
     print(f"Revisando {len(rutas)} archivos Kotlin.\n")
@@ -223,6 +255,7 @@ def main():
         ("Importaciones", revisar_importaciones),
         ("Acciones contra ViewModel", revisar_acciones),
         ("Acciones contra la pantalla", revisar_enchufes),
+        ("Esquemas de Room", revisar_esquemas),
     ]:
         encontrados = revision(rutas)
         estado = "ok" if encontrados == 0 else f"{encontrados} problema(s)"

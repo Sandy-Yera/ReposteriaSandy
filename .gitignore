@@ -54,6 +54,10 @@ secrets.properties
 *.db-wal
 *.sqlite
 *.sqlite3
+# herramientas/respaldo_bd.sh guarda las copias en $HOME por defecto, o donde diga
+# REPOSTERIA_RESPALDOS. Si alguien apunta esa variable dentro del repo, las tres líneas de
+# arriba ya tapan los archivos; esta tapa además la carpeta entera.
+respaldos-reposteria/
 
 # ---- Python (los scripts de herramientas/) ----
 # Se corren con python3 directamente, pero basta con que alguien importe uno para que

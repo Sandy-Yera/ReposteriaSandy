@@ -46,6 +46,25 @@ sin importar, y acciones de pantalla atadas a algo que recibe otro tipo. Sirve m
 python3 herramientas/revisar_kotlin.py
 ```
 
+La prueba de migración es la única que necesita un celular o emulador conectado. Corre la
+migración de la base sobre SQLite de verdad, que es la única forma de saber que actualizar
+la app no borra lo guardado:
+
+```bash
+./gradlew :app:connectedAndroidTest
+```
+
+## No perder los datos de prueba
+
+Reinstalar la app borra su base. Para guardarla antes y devolverla después (necesita `adb`
+y la app instalada en debug):
+
+```bash
+herramientas/respaldo_bd.sh bajar          # guarda una copia fechada
+herramientas/respaldo_bd.sh listar         # muestra las copias
+herramientas/respaldo_bd.sh subir <copia>  # la devuelve al celular
+```
+
 ## Estructura
 
 ```

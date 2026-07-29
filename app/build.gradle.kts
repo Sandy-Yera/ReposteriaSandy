@@ -15,6 +15,8 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1"
+        // Necesario para `./gradlew :app:connectedAndroidTest` (la prueba de migración).
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     // Room guarda acá el esquema de cada versión. Estos archivos SÍ se versionan:
@@ -41,6 +43,15 @@ android {
 
     buildFeatures {
         compose = true
+    }
+
+    // `MigrationTestHelper` lee los esquemas exportados **en el celular**, así que tienen
+    // que viajar dentro del APK de pruebas. Sin esta línea la prueba de migración falla
+    // con "Cannot find the schema file in the assets folder", que no dice que falte esto.
+    sourceSets {
+        getByName("androidTest") {
+            assets.srcDirs(files("$projectDir/schemas"))
+        }
     }
 }
 
@@ -74,6 +85,10 @@ dependencies {
     // para probar un ViewModel: `viewModelScope` usa el hilo principal de Android, que en
     // una prueba de escritorio no existe y hay que reemplazar por uno de mentira.
     testImplementation(libs.kotlinx.coroutines.test)
-    // room-testing y el runner de pruebas instrumentadas se suman al escribir los tests
-    // de migración, para no arrastrar dependencias que todavía no se usan.
+
+    // Solo para `connectedAndroidTest`: la prueba de migración (5.5), que es la única que
+    // necesita SQLite de verdad. No entra al APK de la app.
+    androidTestImplementation(libs.androidx.room.testing)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
 }
