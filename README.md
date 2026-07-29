@@ -38,6 +38,14 @@ nada instalado más que Python):
 python3 herramientas/contraste.py
 ```
 
+Y las revisiones del Kotlin que no necesitan compilador: símbolos sin cerrar, tipos usados
+sin importar, y acciones de pantalla atadas a algo que recibe otro tipo. Sirve mientras el
+`:app` no se pueda compilar; **pasar limpio no significa que compile**.
+
+```bash
+python3 herramientas/revisar_kotlin.py
+```
+
 ## Estructura
 
 ```

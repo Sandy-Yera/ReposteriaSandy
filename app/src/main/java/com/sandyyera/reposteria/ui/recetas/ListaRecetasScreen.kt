@@ -66,7 +66,9 @@ data class AccionesRecetas(
     val cerrarDialogo: () -> Unit = {},
     val mensajeMostrado: () -> Unit = {},
     val abrirMenu: () -> Unit = {},
-    val abrir: (Receta) -> Unit = {},
+    // Solo el id: abrir una receta no necesita el resto de sus datos, y así la puede
+    // abrir tanto un toque en la tarjeta como el aviso de "recién creada".
+    val abrir: (Long) -> Unit = {},
     val avisarBloqueada: (Receta) -> Unit = {}
 )
 
@@ -75,7 +77,7 @@ data class AccionesRecetas(
 fun ListaRecetasScreen(
     modelo: RecetasViewModel,
     alAbrirMenu: () -> Unit,
-    alAbrirReceta: (Receta) -> Unit,
+    alAbrirReceta: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val estado by modelo.estado.collectAsStateWithLifecycle()
@@ -204,7 +206,7 @@ fun ListaRecetas(
                             // caminos llevan al aviso, y solo queda borrarla.
                             alAbrir = {
                                 if (fila.repetida) acciones.avisarBloqueada(fila.receta)
-                                else acciones.abrir(fila.receta)
+                                else acciones.abrir(fila.receta.id)
                             },
                             alEditar = {
                                 if (fila.repetida) acciones.avisarBloqueada(fila.receta)

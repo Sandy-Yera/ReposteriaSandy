@@ -683,6 +683,16 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Qué hacen: miden si un color de texto se lee sobre su fondo, según la fórmula de la WCAG que sigue Android.
 - Cómo funcionan: `luminancia(hexadecimal)` devuelve la luminancia relativa de un color; `contraste(frente, fondo)` devuelve la razón entre los dos (4,5:1 es el mínimo para texto normal, 3:1 para bordes). La lista `PARES` enumera cada combinación real de la paleta y el script termina con código 1 si alguna queda por debajo. **Al agregar un color a `Color.kt` hay que agregar su par acá**: a ojo esto no se puede evaluar — el caramelo original parecía perfectamente legible con texto blanco y daba 3,83:1.
 
+### revisar_simbolos, revisar_importaciones, revisar_acciones y revisar_enchufes ✅ IMPLEMENTADAS
+- Ubicación: herramientas/revisar_kotlin.py
+- Qué hacen: las cuatro revisiones del código Kotlin que se pueden hacer sin compilador ni Android SDK, que es la situación de siempre acá — `:app` solo compila en el equipo de Sandy.
+- Cómo funcionan: `revisar_simbolos` cuenta llaves, paréntesis y corchetes; `revisar_importaciones` marca un tipo en CamelCase usado sin `import` ni definición en su paquete; `revisar_acciones` compara cada campo de un `Acciones*` con la firma del `modelo::metodo` al que se ata, y solo avisa si **ninguna** firma con ese nombre calza (`pedirBorrado` existe en dos ViewModel); `revisar_enchufes` hace lo mismo contra el parámetro de la pantalla (`abrir = alAbrirReceta`), que es por donde se coló el `(Receta) -> Unit` que recibía un `Long`. Todas devuelven cuántos problemas encontraron y `main` termina con código 1 si hay alguno. **Solo mira nombres y tipos escritos tal cual**: nada que dependa de inferencia —el tipo de un `val` local, por ejemplo— está a su alcance, así que pasar limpio no significa que compile.
+
+### sin_comentarios_ni_textos y tipos_de_parametros ✅ IMPLEMENTADAS
+- Ubicación: herramientas/revisar_kotlin.py
+- Qué hacen: las dos ayudas que usan las revisiones de arriba para leer Kotlin con expresiones regulares sin equivocarse.
+- Cómo funcionan: `sin_comentarios_ni_textos(codigo)` borra comentarios, literales de texto y **nombres entre acentos graves** — adentro de un `fun \`sin peso muestra No especificado\`()` va prosa en español, y sus palabras con mayúscula se leían como tipos sin importar. `tipos_de_parametros("a: Long, b: Receta")` devuelve `["Long", "Receta"]` cortando solo por las comas de nivel cero, para no partir un `Map<String, Int>` por la mitad.
+
 ---
 
 <a name="tipos-de-datos"></a>

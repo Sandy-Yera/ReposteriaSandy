@@ -158,7 +158,7 @@ private fun MenuDeSecciones(
             Seccion.RECETAS -> ListaRecetasScreen(
                 modelo = viewModel(factory = RecetasViewModel.fabrica(contenedor.recetas)),
                 alAbrirMenu = abrirMenu,
-                alAbrirReceta = { receta -> alAbrirReceta(receta.id) }
+                alAbrirReceta = alAbrirReceta
             )
         }
     }
