@@ -82,6 +82,6 @@ herramientas/   Scripts sueltos de apoyo, que no son parte de la app.
 | | |
 |---|---|
 | Lógica pura | implementada, 196 tests |
-| Base de datos (Room) | 15 tablas, versión 2 con su migración probada sobre SQLite de verdad, DAOs y repositorios de ingredientes y recetas; 90 tests sobre una base de mentira en memoria |
-| Pantallas | Menú de secciones, Ingredientes completo, Recetas con su paso de cantidades y costo en vivo; faltan precios, moldes y empleados |
+| Base de datos (Room) | 15 tablas, versión 2 con su migración probada sobre SQLite de verdad, DAOs y repositorios de ingredientes, recetas y moldes; 135 tests sobre una base de mentira en memoria |
+| Pantallas | Menú de secciones, Ingredientes completo, Recetas con su paso de cantidades y costo en vivo, y el catálogo de Moldes; faltan precios, rendimiento y empleados |
 | Respaldo en Drive | pendiente |

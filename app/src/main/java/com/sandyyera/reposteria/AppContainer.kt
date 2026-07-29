@@ -4,6 +4,7 @@ import android.content.Context
 import com.sandyyera.reposteria.data.db.AppDatabase
 import com.sandyyera.reposteria.data.repositorio.HistorialRepositorio
 import com.sandyyera.reposteria.data.repositorio.IngredienteRepositorio
+import com.sandyyera.reposteria.data.repositorio.MoldeRepositorio
 import com.sandyyera.reposteria.data.repositorio.RecetaRepositorio
 
 /**
@@ -37,5 +38,14 @@ class AppContainer(context: Context) {
         RecetaRepositorio(dao = base.recetaDao(), historial = historial)
     }
 
-    // Los repositorios de moldes y empleados se agregan al llegar sus fases.
+    /**
+     * Depende de [recetas] y no del DAO de recetas: corregir un molde escribe en las recetas
+     * enlazadas, y quién puede escribir en el rendimiento de una receta es cosa de ese
+     * repositorio. Acá se ve de un vistazo que moldes viene después de recetas.
+     */
+    val moldes: MoldeRepositorio by lazy {
+        MoldeRepositorio(dao = base.moldeDao(), recetas = recetas, historial = historial)
+    }
+
+    // El repositorio de empleados se agrega al llegar su fase.
 }

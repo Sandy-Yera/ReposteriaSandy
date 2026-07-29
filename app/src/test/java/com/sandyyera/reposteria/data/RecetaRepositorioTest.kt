@@ -456,7 +456,9 @@ class RecetaRepositorioTest {
 
             assertTrue(repositorio.agregarSeccion(id, "SALSA DE CHOCOLATE") is Resultado.NoSePudo)
             assertTrue(repositorio.agregarSeccion(id, "salsa de chocolaté") is Resultado.NoSePudo)
-            assertTrue(repositorio.agregarSeccion(id, "  Salsa De Chocolate  ") is Resultado.NoSePudo)
+            assertTrue(
+                repositorio.agregarSeccion(id, "  Salsa De Chocolate  ") is Resultado.NoSePudo
+            )
             assertEquals(2, repositorio.obtenerSecciones(id).size)
         }
 
@@ -497,7 +499,8 @@ class RecetaRepositorioTest {
         val resultado = repositorio.renombrarSeccion(salsa, "Salsa De Chocolate")
 
         assertTrue(resultado is Resultado.Listo)
-        assertTrue("Salsa De Chocolate" in repositorio.obtenerSecciones(id).map { it.nombreSeccion })
+        val nombres = repositorio.obtenerSecciones(id).map { it.nombreSeccion }
+        assertTrue("Salsa De Chocolate" in nombres)
     }
 
     @Test

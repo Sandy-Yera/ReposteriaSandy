@@ -13,6 +13,16 @@ interface MoldeDao {
     @Query("SELECT * FROM moldes ORDER BY nombre COLLATE NOCASE")
     fun observarTodos(): Flow<List<Molde>>
 
+    /**
+     * El catálogo completo, una sola vez.
+     *
+     * Existe por lo mismo que su gemela en `IngredienteDao`: buscar un nombre repetido
+     * ignorando tildes no lo puede hacer SQLite, así que hay que traer la lista y comparar
+     * en memoria con `sonElMismoTexto`.
+     */
+    @Query("SELECT * FROM moldes ORDER BY nombre COLLATE NOCASE")
+    suspend fun obtenerTodosUnaVez(): List<Molde>
+
     @Query("SELECT * FROM moldes WHERE id = :moldeId")
     suspend fun obtener(moldeId: Long): Molde?
 

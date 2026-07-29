@@ -1371,12 +1371,23 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 - **Construyes:** `DimensionesMolde`, entidad `Molde`, `ListaMoldesScreen`, formularios condicionales según `tipoForma`, cálculo de área/volumen.
 - **Hecho cuando:** creas un molde de cada una de las 5 formas y el área/volumen/altura mostrados coinciden con tu cálculo a mano (incluido el caso exótico, con volumen medido con agua).
 
-> **Ya está hecha la parte pura** (`logica/validaciones/Moldes.kt`, 18 pruebas): `CampoDeMolde`
-> y `camposDe` dicen qué medidas pide cada forma, `revisarMolde` las valida y
-> `dimensionesDesde` las convierte en `DimensionesMolde`. Que el formulario condicional
-> pregunte a `camposDe` en vez de decidir por su cuenta es lo que evita el fallo silencioso
-> de agregar una forma y tocar solo uno de los dos lados. Falta lo que necesita Android:
-> `MoldeRepositorio`, `MoldesViewModel` y las pantallas.
+> **Completa.** La parte pura vive en `logica/validaciones/Moldes.kt` (18 pruebas):
+> `CampoDeMolde` y `camposDe` dicen qué medidas pide cada forma, `revisarMolde` las valida y
+> `dimensionesDesde` las convierte en `DimensionesMolde`. Que el formulario pregunte a
+> `camposDe` en vez de decidir por su cuenta es lo que evita el fallo silencioso de agregar
+> una forma y tocar solo uno de los dos lados. Encima van `MoldeRepositorio`,
+> `MoldesViewModel` y `ListaMoldesScreen`, con 28 pruebas más sobre la base de mentira.
+>
+> **Dos decisiones que quedaron tomadas acá:**
+>
+> - El nombre de un molde **no se puede repetir**, ignorando mayúsculas y tildes, igual que
+>   en ingredientes, recetas y secciones. Sin índice único en la tabla, por lo mismo que en
+>   las otras dos: la regla vive en el repositorio y está cubierta por pruebas.
+> - `MoldeRepositorio` depende de `RecetaRepositorio` y no del DAO de recetas. Acá hay que
+>   **escribir** en las recetas —propagarles una corrección de medidas—, y quién puede
+>   escribir en el rendimiento de una receta es cosa de ese repositorio. Leer prestado un DAO
+>   ajeno para escribir es cómo terminan existiendo dos lugares que modifican la misma tabla
+>   con reglas distintas.
 
 ### Fase 5 — Receta: Rendimiento y reescalado
 

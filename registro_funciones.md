@@ -358,15 +358,20 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Qué hace: borra la fila de un ingrediente.
 - Cómo funciona: `suspend`, recibe `ingredienteId`. Es el borrado crudo: **no** avisa, no revisa si está en uso ni registra en el historial. Todo eso lo hace `confirmarEliminacionIngrediente`, que es la que debe llamarse desde la UI.
 
-### obtener (MoldeRepositorio)
-- Ubicación: data/repositorio/MoldeRepositorio.kt
+### MoldeRepositorio.obtener ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/MoldeRepositorio.kt
 - Qué hace: trae un molde del catálogo por su id.
-- Cómo funciona: `suspend`, recibe `moldeId` y devuelve `Molde`. La usa `actualizarMolde` para leer el nombre antes de modificarlo, por el historial.
+- Cómo funciona: `suspend`, recibe `moldeId` y devuelve `Molde?`. La usan `actualizar` (necesita la fila completa para conservar `creadoEn`) y `confirmarEliminacion`, que lee el nombre **antes** de borrar porque después el historial no tendría cómo nombrarlo.
 
-### actualizarDimensiones (MoldeRepositorio)
-- Ubicación: data/repositorio/MoldeRepositorio.kt
-- Qué hace: guarda las medidas nuevas de un molde del catálogo.
-- Cómo funciona: `suspend`, recibe `moldeId` y las nuevas `DimensionesMolde`. Solo toca la fila del molde: la propagación a las recetas enlazadas la hace `actualizarMolde`, que es quien debe llamarse.
+### MoldeRepositorio.crear ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/MoldeRepositorio.kt
+- Qué hace: crea un molde, revisando antes que sirva y que no esté repetido.
+- Cómo funciona: `suspend`, recibe el nombre, la forma y el mapa de medidas **escritas**, y devuelve `ResultadoGuardarMolde`. Valida con `revisarMolde` y convierte con `dimensionesDesde`, las dos de `logica/`. Las comprobaciones van acá y no en la pantalla porque en la Fase 5 habrá una segunda forma de definir un molde —el "modo prueba" del reescalado (9.3)— y las dos tienen que comportarse igual.
+
+### MoldeRepositorio.buscarParecido ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/MoldeRepositorio.kt
+- Qué hace: busca un molde que se llame igual, para no crear repetidos.
+- Cómo funciona: `suspend`, recibe el nombre y opcionalmente un `exceptoId` (al editar, para que un molde no choque consigo mismo). Compara en memoria con `sonElMismoTexto`, porque SQLite no sabe ignorar tildes. **La tabla no tiene índice único**, a diferencia de ingredientes: la regla vive acá por coherencia con recetas y secciones, y para no tener que migrar el día que aparezca un repetido de otro origen.
 
 ### obtenerDimensionesMolde
 - Ubicación: data/repositorio/RecetaRepositorio.kt
@@ -518,10 +523,20 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Qué hacen: dicen cómo terminó una operación que podía no poder hacerse.
 - Cómo funcionan: `Resultado` es `Listo` / `NoSePudo(motivo)`; `ResultadoCrearReceta` es `Creada(recetaId)` / `NoValido(motivo)`. Son tipos cerrados y no `Boolean` para que el motivo viaje junto con el fracaso: la pantalla tiene que poder decir *por qué* no se pudo, y un `false` no lo dice. Misma idea que `ResultadoGuardarIngrediente`.
 
-### actualizarMolde
-- Ubicación: data/repositorio/MoldeRepositorio.kt
-- Qué hace: corrige las medidas de un molde del catálogo y propaga esa corrección a todas las recetas enlazadas a él.
-- Cómo funciona: `suspend`, recibe `moldeId` y las nuevas `DimensionesMolde`. Lee el nombre antes de actualizar (para el historial), guarda el molde, y llama a `actualizarDimensionesMolde` en cada receta vinculada. **No reescala ingredientes**: es una corrección del dato de referencia, no un cambio de molde. Registra un evento verde listando las recetas actualizadas.
+### MoldeRepositorio.actualizar ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/MoldeRepositorio.kt
+- Qué hace: corrige un molde del catálogo **y propaga la corrección a las recetas enlazadas**.
+- Cómo funciona: `suspend`, recibe `moldeId`, nombre, forma y medidas escritas; devuelve `ResultadoGuardarMolde`. Guarda el molde y después llama a `RecetaRepositorio.actualizarDimensionesMolde` en cada receta que siga apuntando a él. **No reescala ingredientes**: corregir una medida mal tomada no es cambiar de molde, y reescalar vive en la Fase 5. Las recetas ya desvinculadas no reciben nada y conservan sus medidas (5.2). Registra un evento verde listando a quién afectó. *Se llamaba `actualizarMolde` en el diseño y la parte "cruda" iba aparte (`actualizarDimensiones`); quedó una sola función porque nadie llamaría a la cruda: propagar no es opcional, y dejar la puerta abierta a guardar sin propagar es exactamente cómo se desincronizan las recetas.*
+
+### MoldeRepositorio.recetasAfectadasPorBorrar y confirmarEliminacion ✅ IMPLEMENTADAS
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/MoldeRepositorio.kt
+- Qué hacen: la consulta previa a la advertencia de borrado y el borrado en sí (6.3).
+- Cómo funcionan: `suspend`. La primera devuelve `List<Receta>` para que la pantalla pueda enumerarlas. La segunda lee nombre y recetas **antes** de borrar —después la clave foránea ya puso sus `moldeOrigenId` en `null` y no habría cómo nombrarlas— y no vuelve a preguntar: la confirmación es de la pantalla. **A diferencia de un ingrediente, borrar un molde no rompe esas recetas**: conservan sus medidas y solo pierden el vínculo, así que dejan de recibir correcciones. Se avisa igual, porque descubrirlo meses después no tendría explicación.
+
+### ResultadoGuardarMolde ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/MoldeRepositorio.kt
+- Qué hace: dice cómo terminó un intento de guardar un molde.
+- Cómo funciona: tipo cerrado con `Guardado(id)`, `YaExiste(existente)` y `NoValido(errores)`. Misma idea que `ResultadoGuardarIngrediente`, con una diferencia: `NoValido` lleva un `ErroresMolde` **por campo** y no un texto suelto, porque un molde tiene hasta cuatro campos que pueden fallar a la vez y cada aviso va bajo el suyo.
 
 ### reescalarRecetaPorPeso
 - Ubicación: data/repositorio/RecetaRepositorio.kt
@@ -653,15 +668,35 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Qué hace: dice cómo construir el `IngredientesViewModel`, que necesita un repositorio y no tiene constructor vacío.
 - Cómo funciona: función del `companion object` que recibe el `IngredienteRepositorio` y devuelve un `ViewModelProvider.Factory` armado con `viewModelFactory { initializer { … } }`. Existe porque el proyecto no usa una librería de inyección de dependencias (ver `AppContainer`). **Cada ViewModel nuevo necesita la suya**, con este mismo patrón.
 
-### IngredienteDaoFalso, HistorialDaoFalso y RecetaDaoFalso ✅ IMPLEMENTADAS
+### IngredienteDaoFalso, HistorialDaoFalso, RecetaDaoFalso y MoldeDaoFalso ✅ IMPLEMENTADAS
 - Ubicación: app/src/test/java/com/sandyyera/reposteria/data/DaosFalsos.kt
 - Qué hacen: reemplazan a los DAO de Room con datos en memoria, para probar repositorios y ViewModel sin base de datos ni celular (`./gradlew :app:test`).
-- Cómo funcionan: los DAO de Room son interfaces, así que se sustituyen sin tocar el código de la app. **`IngredienteDaoFalso` imita el índice único de la tabla** y lanza excepción ante un nombre repetido, igual que la base de verdad: sin eso, la prueba de "no se puede crear un duplicado" pasaría aunque la comprobación no existiera. `HistorialDaoFalso` expone `eventos` y `limpiezasPedidas` para revisarlos. `RecetaDaoFalso` creció en la Fase 3 hasta ser una base de recetas en memoria de verdad: hace las **cascadas** (borrar una receta se lleva sus secciones; borrar una sección, sus ingredientes), resuelve el **JOIN del costo** contra el catálogo de ingredientes leyendo el `valorPorGramo` del momento (decisión #3) —por eso recibe el mismo `IngredienteDaoFalso` que use la prueba—, y **omite del resultado en lote las recetas sin ingredientes**, igual que el `GROUP BY` real. Esa última trampa solo se puede probar si el falso la reproduce. Lo que aún no hace falta falla ruidosamente: un `emptyList()` de relleno haría pasar pruebas que no probaron nada.
+- Cómo funcionan: los DAO de Room son interfaces, así que se sustituyen sin tocar el código de la app. **`IngredienteDaoFalso` imita el índice único de la tabla** y lanza excepción ante un nombre repetido, igual que la base de verdad: sin eso, la prueba de "no se puede crear un duplicado" pasaría aunque la comprobación no existiera. `HistorialDaoFalso` expone `eventos` y `limpiezasPedidas` para revisarlos. `RecetaDaoFalso` creció en la Fase 3 hasta ser una base de recetas en memoria de verdad: hace las **cascadas** (borrar una receta se lleva sus secciones; borrar una sección, sus ingredientes), resuelve el **JOIN del costo** contra el catálogo de ingredientes leyendo el `valorPorGramo` del momento (decisión #3) —por eso recibe el mismo `IngredienteDaoFalso` que use la prueba—, y **omite del resultado en lote las recetas sin ingredientes**, igual que el `GROUP BY` real. Esa última trampa solo se puede probar si el falso la reproduce. Lo que aún no hace falta falla ruidosamente: un `emptyList()` de relleno haría pasar pruebas que no probaron nada. **`MoldeDaoFalso` imita la regla `SET_NULL`** de la clave foránea: al borrar un molde llama a `RecetaDaoFalso.desvincularMolde`, que deja los `moldeOrigenId` en `null` **sin tocar las medidas**. Sin eso, una prueba podría afirmar que las recetas quedan desvinculadas sin que nada lo hiciera.
 
 ### MigracionTest ✅ IMPLEMENTADA
 - Ubicación: app/src/androidTest/java/com/sandyyera/reposteria/data/db/MigracionTest.kt
 - Qué hace: comprueba que actualizar la app no se lleve por delante lo que ya estaba guardado.
 - Cómo funciona: **la única prueba que necesita celular o emulador** (`./gradlew :app:connectedAndroidTest`), y no hay forma honesta de evitarlo: lo que se verifica es SQLite de verdad corriendo el `ALTER TABLE` de verdad, y la base de mentira en memoria de las otras 90 pruebas no tiene esquemas ni migraciones, así que aprobaría cualquier cosa. Escribe filas con el esquema de la versión 1, corre `runMigrationsAndValidate` y revisa **las dos mitades**: que el esquema resultante calce con `2.json` —si el `DEFAULT 0` de la migración no calzara con el `@ColumnInfo(defaultValue = "0")` de la entidad, la app no arrancaría en el celular— y que las filas sigan ahí, porque validar el esquema por sí solo dejaría pasar un `DROP TABLE` seguido de un `CREATE TABLE`. La segunda prueba abre la base ya migrada con Room entero, que es lo único que ejercita el `identityHash`. `MigrationTestHelper` lee `app/schemas/` como assets, declarados en `build.gradle.kts`: **cada versión nueva necesita su JSON versionado y su prueba acá.**
+
+### MoldesViewModel ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/moldes/MoldesViewModel.kt
+- Qué hace: guarda lo que se ve en el catálogo de moldes y ejecuta lo que se pide desde él.
+- Cómo funciona: mismo patrón que ingredientes y recetas — `combine` de tres fuentes, `WhileSubscribed(5s)`, y el diálogo por su propio canal (12.2.1), que acá pesa más porque el formulario tiene hasta cinco campos de texto. Sus acciones: `buscar`, `abrirAlta`, `abrirEdicion`, `cambiarNombre`, `elegirForma`, `cambiarMedida`, `guardar`, `pedirBorrado`, `confirmarBorrado`, `cerrarDialogo` y `mensajeMostrado`. **`elegirForma` no borra lo escrito para las otras formas**: quien probó "círculo", anotó el diámetro y pasa a "cuadrado" para comparar, al volver lo encuentra donde lo dejó — y lo que no se pide para la forma actual no se valida ni se guarda, así que conservarlo no cuesta nada. `abrirEdicion` devuelve las medidas a texto con `formatearNumero`, el mismo formato que `textoANumero` lee de vuelta, para que abrir y guardar sin cambiar nada no altere ningún número.
+
+### DialogoMolde, EstadoMoldes y AccionesMoldes ✅ IMPLEMENTADAS
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/moldes/ (ViewModel y pantalla)
+- Qué hacen: los tipos del catálogo de moldes.
+- Cómo funcionan: `DialogoMolde` es cerrado (`Ninguno` / `Formulario` / `ConfirmarBorrado`). `Formulario` calcula sus errores llamando a `revisarMolde` en cada tecla, expone `campos` (lo que hay que dibujar, de `camposDe`), `errorDe(campo)` para pintar cada aviso bajo el suyo, y `vistaPrevia` con el área y el volumen en vivo — que **no dependen del nombre**, porque esconder el volumen hasta que bauticen el molde sería tapar justo el número que dice si se midió bien. Lleva `rechazo` por lo mismo que los cuadros de sección: un nombre repetido se avisa junto al campo y no en la franja de abajo, que el teclado tapa. `ConfirmarBorrado` distingue `null` ("consultando") de lista vacía ("no lo usa ninguna receta"), igual que en ingredientes. `EstadoMoldes` distingue `catalogoVacio` de `busquedaSinResultados`.
+
+### ListaMoldesScreen y ListaMoldes ✅ IMPLEMENTADAS
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/moldes/ListaMoldesScreen.kt
+- Qué hacen: el catálogo de moldes — botón fijo arriba, buscador, y los moldes debajo (9.2).
+- Cómo funcionan: la división de siempre, una parte conecta el ViewModel y la otra solo dibuja. El formulario pide **solo los campos de la forma elegida**, y cuáles son sale de `estado.campos` (o sea de `camposDe`, en `logica/`) y no de un `when` escrito acá: es la misma lista que usa la validación, así que la pantalla no puede pedir una medida que nadie exige ni exigir una que nadie pidió. La forma se elige con chips y no con un desplegable — son cinco opciones cortas, caben a la vista, y un menú flotante en un celular tapa justo el formulario que se está llenando. Cada tarjeta muestra área y volumen **calculados**, nunca guardados (5.2), envueltos en `runCatching` para que un molde a medio guardar no cierre la app.
+
+### nombreDeLaForma y ayudaDeLaForma ✅ IMPLEMENTADAS
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/moldes/MoldesViewModel.kt
+- Qué hacen: cómo se lee cada forma de molde en la pantalla, y su texto de ayuda.
+- Cómo funcionan: reciben un `TipoFormaMolde`. La primera devuelve el nombre visible (`EXOTICO` se muestra como "Otra forma", que es lo que significa sin sonar técnico). La segunda devuelve `null` salvo para la exótica: es la única donde lo que se pide no se mide con una regla, y sin explicación nadie adivina que el volumen sale llenando el molde con agua.
 
 ### RecetasViewModel ✅ IMPLEMENTADA
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/recetas/RecetasViewModel.kt
@@ -697,6 +732,16 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/NavegacionPrincipal.kt
 - Qué hacen: el menú de 3 líneas y la sección que se esté viendo (12.1).
 - Cómo funcionan: `ModalNavigationDrawer` con un `enum Seccion` que hoy tiene Ingredientes y Recetas. Abrir una receta la muestra **a pantalla completa, sin el menú**: es un paso dentro de la receta, no una sección de la app. Se expresa como dos ramas de un `if` (`MenuDeSecciones` aparte) y no con un `return` temprano dentro del Composable, para que quede claro que son dos árboles distintos. El ViewModel de cada receta lleva `key = "cantidades-<id>"`: sin esa clave, abrir una segunda receta reutilizaría el de la primera y mostraría los ingredientes equivocados. **Moldes y Empleados no están puestos en gris**: una opción que no lleva a ninguna parte se toca igual y parece que algo se rompió; se agregan al enum cuando exista su pantalla. Cada sección conserva su ViewModel al cambiar de una a otra, porque `viewModel()` los guarda en la Activity — ir a Recetas y volver no borra lo escrito en el buscador. La sección elegida va en `rememberSaveable` para sobrevivir al giro del teléfono.
+
+### RecetaRepositorio.actualizarDimensionesMolde y obtenerRecetasConMoldeOrigen ✅ IMPLEMENTADAS
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/RecetaRepositorio.kt
+- Qué hacen: cambiar las medidas del molde guardadas en una receta, y saber qué recetas siguen enlazadas a un molde del catálogo.
+- Cómo funcionan: las dos `suspend`. `actualizarDimensionesMolde` **no toca `moldeOrigenId` ni las cantidades de ingredientes** (5.2): es la que usa `MoldeRepositorio.actualizar` al corregir una medida, y corregir no es reescalar. Si la receta no tiene fila de rendimiento no hace nada, en vez de crear una a medias. Viven acá y no en `MoldeRepositorio` a propósito: quién puede escribir en el rendimiento de una receta es cosa de este repositorio, y prestarle el DAO a otro es cómo terminan existiendo dos lugares que modifican la misma tabla con reglas distintas.
+
+### MoldeDao.obtenerTodosUnaVez ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/db/dao/MoldeDao.kt
+- Qué hace: el catálogo de moldes completo, una sola vez.
+- Cómo funciona: `suspend`, devuelve `List<Molde>` ordenada por nombre. Existe por lo mismo que su gemela en `IngredienteDao`: comparar nombres ignorando tildes no lo puede hacer SQLite, así que `buscarParecido` trae la lista y compara en memoria.
 
 ### RecetaRepositorio.observarCostos ✅ IMPLEMENTADA
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/RecetaRepositorio.kt

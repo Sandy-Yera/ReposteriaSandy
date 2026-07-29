@@ -3,10 +3,12 @@ package com.sandyyera.reposteria.data
 import com.sandyyera.reposteria.data.db.dao.CostoDeReceta
 import com.sandyyera.reposteria.data.db.dao.HistorialDao
 import com.sandyyera.reposteria.data.db.dao.IngredienteDao
+import com.sandyyera.reposteria.data.db.dao.MoldeDao
 import com.sandyyera.reposteria.data.db.dao.RecetaDao
 import com.sandyyera.reposteria.data.db.dao.TrozosDeReceta
 import com.sandyyera.reposteria.data.db.entidades.EventoCambio
 import com.sandyyera.reposteria.data.db.entidades.Ingrediente
+import com.sandyyera.reposteria.data.db.entidades.Molde
 import com.sandyyera.reposteria.data.db.entidades.Receta
 import com.sandyyera.reposteria.data.db.entidades.RecetaIngrediente
 import com.sandyyera.reposteria.data.db.entidades.RecetaPrecio
@@ -109,6 +111,57 @@ class HistorialDaoFalso : HistorialDao {
 }
 
 /**
+ * El falso de `MoldeDao`: el catálogo de moldes en memoria.
+ *
+ * Es más simple que el de recetas porque la tabla no tiene nada colgando: lo que sí hay que
+ * imitar es que **borrar un molde no borra las recetas**, solo deja sus `moldeOrigenId`
+ * apuntando a nada. Eso lo hace [RecetaDaoFalso.desvincularMolde], que se llama desde acá
+ * igual que lo haría la clave foránea `SET_NULL` de la base real: si el falso no lo hiciera,
+ * una prueba podría afirmar que las recetas quedan desvinculadas sin que nada lo haga.
+ */
+class MoldeDaoFalso(
+    private val recetas: RecetaDaoFalso? = null
+) : MoldeDao {
+
+    private val filas = MutableStateFlow<List<Molde>>(emptyList())
+    private var siguienteId = 1L
+
+    private fun ordenados(lista: List<Molde>) = lista.sortedBy { it.nombre.lowercase() }
+
+    /** Atajo para las pruebas: deja moldes puestos sin pasar por el repositorio. */
+    fun sembrar(vararg moldes: Molde) {
+        moldes.forEach { molde ->
+            val id = if (molde.id == 0L) siguienteId++ else molde.id
+            siguienteId = maxOf(siguienteId, id + 1)
+            filas.value = filas.value + molde.copy(id = id)
+        }
+    }
+
+    override fun observarTodos(): Flow<List<Molde>> = filas.map(::ordenados)
+
+    override suspend fun obtenerTodosUnaVez(): List<Molde> = ordenados(filas.value)
+
+    override suspend fun obtener(moldeId: Long): Molde? =
+        filas.value.firstOrNull { it.id == moldeId }
+
+    override suspend fun insertar(molde: Molde): Long {
+        val id = siguienteId++
+        filas.value = filas.value + molde.copy(id = id)
+        return id
+    }
+
+    override suspend fun actualizar(molde: Molde) {
+        filas.value = filas.value.map { if (it.id == molde.id) molde else it }
+    }
+
+    override suspend fun eliminarPorId(moldeId: Long) {
+        filas.value = filas.value.filterNot { it.id == moldeId }
+        // La regla SET_NULL de la clave foránea, a mano.
+        recetas?.desvincularMolde(moldeId)
+    }
+}
+
+/**
  * El falso de `RecetaDao`: una base de recetas en memoria.
  *
  * Creció al llegar la Fase 3, que es cuando apareció el consumidor real. Ahora imita de
@@ -182,6 +235,20 @@ class RecetaDaoFalso(
             cantidadG = cantidadG
         )
         cambio()
+    }
+
+    /**
+     * Lo que hace la clave foránea `SET_NULL` al borrarse un molde del catálogo (5.2).
+     *
+     * Las recetas **conservan sus medidas** y solo pierden el vínculo. Lo llama
+     * [MoldeDaoFalso.eliminarPorId], porque en la base real esto lo hace SQLite sola.
+     */
+    fun desvincularMolde(moldeId: Long) {
+        rendimientos.indices.forEach { i ->
+            if (rendimientos[i].moldeOrigenId == moldeId) {
+                rendimientos[i] = rendimientos[i].copy(moldeOrigenId = null)
+            }
+        }
     }
 
     /** Las filas de ingredientes de una receta, resolviendo el join con las secciones. */
@@ -397,6 +464,8 @@ class RecetaDaoFalso(
             "algo vacío para salir del paso, porque entonces la prueba no probaría nada."
     )
 
-    override suspend fun obtenerRecetasConMoldeOrigen(moldeId: Long): List<Receta> =
-        faltaImplementar("obtenerRecetasConMoldeOrigen")
+    override suspend fun obtenerRecetasConMoldeOrigen(moldeId: Long): List<Receta> {
+        val ids = rendimientos.filter { it.moldeOrigenId == moldeId }.map { it.recetaId }.toSet()
+        return recetas.value.filter { it.id in ids }.sortedBy { it.titulo.lowercase() }
+    }
 }

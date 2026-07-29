@@ -7,6 +7,7 @@ import com.sandyyera.reposteria.data.db.entidades.RecetaIngrediente
 import com.sandyyera.reposteria.data.db.entidades.RecetaSeccion
 import com.sandyyera.reposteria.data.db.entidades.TipoEvento
 import com.sandyyera.reposteria.data.db.entidades.aVigente
+import com.sandyyera.reposteria.logica.moldes.DimensionesMolde
 import com.sandyyera.reposteria.logica.precios.DatosCalculoReceta
 import com.sandyyera.reposteria.logica.busqueda.sonElMismoTexto
 import com.sandyyera.reposteria.logica.precios.errorAlElegirReferencia
@@ -314,6 +315,27 @@ class RecetaRepositorio(
      */
     fun observarCostos(): Flow<Map<Long, Double>> =
         dao.observarCostos().map { filas -> filas.associate { it.recetaId to it.costo } }
+
+    // --- Molde de la receta ---
+
+    /**
+     * Cambia las medidas del molde guardadas en una receta, sin tocar nada más (5.2).
+     *
+     * **No toca `moldeOrigenId` ni las cantidades de ingredientes.** Es la que usa
+     * `MoldeRepositorio.actualizar` cuando se corrige una medida en el catálogo: corregir
+     * un dato mal medido no es cambiar de molde, así que la receta no se reescala. Para lo
+     * otro existirá `actualizarDimensionesYVinculoMolde` en la Fase 5.
+     *
+     * Si la receta no tiene fila de rendimiento no hace nada, en vez de crear una a medias.
+     */
+    suspend fun actualizarDimensionesMolde(recetaId: Long, dimensiones: DimensionesMolde) {
+        val rendimiento = dao.obtenerRendimiento(recetaId) ?: return
+        dao.actualizarRendimiento(rendimiento.copy(dimensiones = dimensiones))
+    }
+
+    /** Qué recetas siguen enlazadas a un molde del catálogo. */
+    suspend fun obtenerRecetasConMoldeOrigen(moldeId: Long): List<Receta> =
+        dao.obtenerRecetasConMoldeOrigen(moldeId)
 
     // --- Precios ---
 

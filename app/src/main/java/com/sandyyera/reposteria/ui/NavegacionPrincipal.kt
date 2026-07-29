@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -25,6 +26,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.sandyyera.reposteria.AppContainer
 import com.sandyyera.reposteria.ui.ingredientes.IngredientesViewModel
 import com.sandyyera.reposteria.ui.ingredientes.ListaIngredientesScreen
+import com.sandyyera.reposteria.ui.moldes.ListaMoldesScreen
+import com.sandyyera.reposteria.ui.moldes.MoldesViewModel
 import com.sandyyera.reposteria.ui.recetas.CantidadesViewModel
 import com.sandyyera.reposteria.ui.recetas.ListaRecetasScreen
 import com.sandyyera.reposteria.ui.recetas.PasoCantidadesScreen
@@ -41,7 +44,8 @@ import kotlinx.coroutines.launch
  */
 enum class Seccion(val titulo: String, val icono: ImageVector) {
     INGREDIENTES("Ingredientes", Icons.Default.ShoppingCart),
-    RECETAS("Recetas", Icons.Default.Favorite)
+    RECETAS("Recetas", Icons.Default.Favorite),
+    MOLDES("Moldes", Icons.Default.Star)
 }
 
 /**
@@ -159,6 +163,11 @@ private fun MenuDeSecciones(
                 modelo = viewModel(factory = RecetasViewModel.fabrica(contenedor.recetas)),
                 alAbrirMenu = abrirMenu,
                 alAbrirReceta = alAbrirReceta
+            )
+
+            Seccion.MOLDES -> ListaMoldesScreen(
+                modelo = viewModel(factory = MoldesViewModel.fabrica(contenedor.moldes)),
+                alAbrirMenu = abrirMenu
             )
         }
     }
