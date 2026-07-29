@@ -607,13 +607,16 @@ La regla práctica: **si una función tiene `suspend` en la firma, no va en `log
 
 ### 6.6 Cómo se prueba cada cosa
 
-Hay tres niveles, y cada uno cubre lo que el anterior no puede. Los dos primeros corren en el computador, sin celular:
+Hay cuatro niveles, y cada uno cubre lo que el anterior no puede. Los tres primeros corren en el computador, sin celular, y `herramientas/probar_todo.sh` los corre en orden deteniéndose en el primer fallo:
 
 | Nivel | Comando | Qué cubre | Qué **no** puede cubrir |
 |---|---|---|---|
 | **Lógica pura** | `./gradlew :logica:test` | Las fórmulas, el formato, las validaciones, la búsqueda | Nada que necesite mirar datos guardados |
 | **App con base falsa** | `./gradlew :app:test` | Repositorios y ViewModel sobre DAO en memoria: nombres repetidos, orden de las operaciones al borrar, el estado de la pantalla | Que el SQL sea correcto; que Room mapee bien las tablas |
-| **En el celular** | `./gradlew :app:installDebug` | Que las consultas de verdad devuelvan lo que se espera, y que la pantalla se vea y se toque bien | — |
+| **Recorrido completo** | `./gradlew :app:test` (`FlujoCompletoTest`) | Que los tres repositorios **sigan estando de acuerdo entre sí** después de cada cambio | Lo mismo que el nivel anterior: sigue siendo una base falsa |
+| **En el celular** | `./gradlew :app:connectedAndroidTest` e `installDebug` | Las migraciones sobre SQLite de verdad, que las consultas devuelvan lo que se espera, y que la pantalla se vea y se toque bien | — |
+
+**Por qué el nivel del recorrido completo existe aparte.** Los errores que llegaron al celular no fueron de una pieza sola: fueron de dos que dejaron de estar de acuerdo. La lista de recetas mostrando el costo de antes de borrar un ingrediente es exactamente eso, y ninguna prueba de `RecetaRepositorio` sola podía verlo, porque el ingrediente lo borra **otro** repositorio. `FlujoCompletoTest` recorre una tarde entera de uso —cargar ingredientes, armar una receta con secciones, medir un molde, ponerle precio, corregir cosas, borrar otras— y después de cada paso comprueba que **todos los caminos hacia el mismo número sigan dando lo mismo**: `costoTotal`, `observarCostos`, `costosDe` y el `DatosCalculoReceta`. Cada uno lo usa una parte distinta de la app; si se separan, la misma receta muestra cifras distintas según desde dónde se la mire.
 
 **El nivel 2 usa el repositorio de verdad sobre DAO falsos**, no un repositorio falso. Probar contra una imitación del repositorio dejaría sin probar justamente la parte que se escribió.
 

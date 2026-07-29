@@ -16,7 +16,15 @@ Con respaldo en Google Drive.
 
 ## Correr los tests
 
-Solo necesitas Java 17 o superior. No hace falta Android Studio.
+Todo lo que se puede comprobar sin celular, de una vez y en orden (se detiene en el
+primer fallo):
+
+```bash
+herramientas/probar_todo.sh
+```
+
+Lo de abajo es lo mismo, por separado. Para las fórmulas solo necesitas Java 17 o
+superior; no hace falta Android Studio.
 
 Las fórmulas y validaciones, sin nada de Android:
 
@@ -82,6 +90,6 @@ herramientas/   Scripts sueltos de apoyo, que no son parte de la app.
 | | |
 |---|---|
 | Lógica pura | implementada, 196 tests |
-| Base de datos (Room) | 15 tablas, versión 2 con su migración probada sobre SQLite de verdad, DAOs y repositorios de ingredientes, recetas y moldes; 135 tests sobre una base de mentira en memoria |
+| Base de datos (Room) | 15 tablas, versión 2 con su migración probada sobre SQLite de verdad, DAOs y repositorios de ingredientes, recetas y moldes; 137 tests sobre una base de mentira en memoria |
 | Pantallas | Menú de secciones, Ingredientes completo, Recetas con su paso de cantidades y costo en vivo, y el catálogo de Moldes; faltan precios, rendimiento y empleados |
 | Respaldo en Drive | pendiente |

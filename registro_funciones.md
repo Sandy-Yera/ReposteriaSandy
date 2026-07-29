@@ -668,6 +668,11 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Qué hace: dice cómo construir el `IngredientesViewModel`, que necesita un repositorio y no tiene constructor vacío.
 - Cómo funciona: función del `companion object` que recibe el `IngredienteRepositorio` y devuelve un `ViewModelProvider.Factory` armado con `viewModelFactory { initializer { … } }`. Existe porque el proyecto no usa una librería de inyección de dependencias (ver `AppContainer`). **Cada ViewModel nuevo necesita la suya**, con este mismo patrón.
 
+### FlujoCompletoTest ✅ IMPLEMENTADA
+- Ubicación: app/src/test/java/com/sandyyera/reposteria/data/FlujoCompletoTest.kt
+- Qué hace: recorre la app de punta a punta cruzando los tres repositorios, en vez de probar una función.
+- Cómo funciona: arma los repositorios **igual que `AppContainer`** y recorre una tarde de uso —ingredientes, receta con secciones, molde, precios y referencia, correcciones, borrados—, comprobando después de cada paso que `costoTotal`, `observarCostos`, `costosDe` y el `DatosCalculoReceta` sigan dando el mismo número. Existe porque los errores que llegaron al celular no fueron de una pieza sola sino de dos que dejaron de estar de acuerdo: el costo viejo de la lista lo causaba borrar un ingrediente, cosa que hace **otro** repositorio, así que ninguna prueba de `RecetaRepositorio` podía verlo. **No cuenta eventos del historial**, solo comprueba que cada cosa borrada quedó nombrada: contarlos se rompería al agregar cualquier anotación nueva sin que nada esté mal.
+
 ### IngredienteDaoFalso, HistorialDaoFalso, RecetaDaoFalso y MoldeDaoFalso ✅ IMPLEMENTADAS
 - Ubicación: app/src/test/java/com/sandyyera/reposteria/data/DaosFalsos.kt
 - Qué hacen: reemplazan a los DAO de Room con datos en memoria, para probar repositorios y ViewModel sin base de datos ni celular (`./gradlew :app:test`).
@@ -772,6 +777,11 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Ubicación: herramientas/revisar_kotlin.py
 - Qué hacen: las seis revisiones del código Kotlin que se pueden hacer sin compilador ni Android SDK, que es la situación de siempre acá — `:app` solo compila en el equipo de Sandy.
 - Cómo funcionan: `revisar_simbolos` cuenta llaves, paréntesis y corchetes; `revisar_importaciones` marca un tipo en CamelCase usado sin `import` ni definición en su paquete; `revisar_acciones` compara cada campo de un `Acciones*` con la firma del `modelo::metodo` al que se ata, y solo avisa si **ninguna** firma con ese nombre calza (`pedirBorrado` existe en dos ViewModel); `revisar_enchufes` hace lo mismo contra el parámetro de la pantalla (`abrir = alAbrirReceta`), que es por donde se coló el `(Receta) -> Unit` que recibía un `Long`; `revisar_constantes` marca una constante en MAYÚSCULAS escrita a secas que en realidad vive dentro de un `companion object` —pasó con `MIGRACION_1_2`, que resuelve dentro de su propia clase y falla solo en el archivo de afuera que la usa, y ese archivo era la prueba instrumentada, que tarda casi cuatro minutos en compilar—; `revisar_esquemas` compara la versión declarada en `AppDatabase` con los `app/schemas/N.json` versionados, y así descubrió que faltaba el de la versión 2. Todas devuelven cuántos problemas encontraron y `main` termina con código 1 si hay alguno. **Solo mira nombres y tipos escritos tal cual**: nada que dependa de inferencia —el tipo de un `val` local, por ejemplo— está a su alcance, así que pasar limpio no significa que compile.
+
+### probar_todo.sh ✅ IMPLEMENTADO
+- Ubicación: herramientas/probar_todo.sh
+- Qué hace: corre de una vez todo lo que se puede comprobar sin celular.
+- Cómo funciona: cuatro pasos en orden de rapidez —`revisar_kotlin.py`, `contraste.py`, `:logica:test`, `:app:test`— y **se detiene en el primero que falle**: seguir veinte minutos de pruebas cuando ya hay un archivo con una llave sin cerrar no aporta nada. Al terminar recuerda lo que sí necesita el celular (`connectedAndroidTest` e `installDebug`) y que el respaldo va antes. No reemplaza a ninguno: es el orden, para no tener que acordarse de los cuatro.
 
 ### respaldo_bd.sh (bajar, subir, listar) ✅ IMPLEMENTADO
 - Ubicación: herramientas/respaldo_bd.sh
