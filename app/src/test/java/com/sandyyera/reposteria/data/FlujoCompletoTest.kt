@@ -92,7 +92,7 @@ class FlujoCompletoTest {
     }
 
     @Test
-    fun `una tarde completa: ingredientes, receta, molde, precio, correcciones y borrados`() =
+    fun `una tarde completa, de los ingredientes a borrar la receta`() =
         runBlocking {
             // ---------- 1. El catálogo de ingredientes ----------
             val harina = crearIngrediente("Harina", 1.2)

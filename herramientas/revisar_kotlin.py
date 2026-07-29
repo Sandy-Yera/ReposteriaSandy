@@ -14,14 +14,16 @@ de verdad— pero atrapa las cosas que sí se han colado hasta ahora:
    realidad recibía un `Long`.
 5. Una constante en MAYÚSCULAS escrita a secas que en realidad vive dentro de un
    `companion object`, y por eso solo falla en el archivo que la usa desde afuera.
-6. Que esté versionado el esquema exportado de cada versión de la base de datos.
+6. Un nombre entre acentos graves (los de las pruebas) con un carácter que la JVM no
+   admite — dos puntos, punto, barra…
+7. Que esté versionado el esquema exportado de cada versión de la base de datos.
 
 Se corre solo, sin instalar nada:
 
     python3 herramientas/revisar_kotlin.py
 
 Termina con código 1 si encuentra algo. **Que pase no significa que compile**: significa
-que no tiene ninguno de estos seis problemas. Solo mira nombres y tipos escritos tal
+que no tiene ninguno de estos siete problemas. Solo mira nombres y tipos escritos tal
 cual; nada que dependa de inferencia (el tipo de un `val` local, por ejemplo) está a su
 alcance. La prueba real sigue siendo compilar.
 """
@@ -216,6 +218,39 @@ def revisar_enchufes(rutas):
     return problemas
 
 
+# Caracteres que la JVM no admite dentro del nombre de un método, ni siquiera entre
+# acentos graves. Kotlin deja escribirlos y falla recién al compilar.
+PROHIBIDOS_EN_NOMBRES = set(".;[]/<>:\\")
+
+
+def revisar_nombres_con_acentos(rutas):
+    """7. Nombres entre acentos graves con caracteres que la JVM no admite.
+
+    Los nombres de las pruebas se escriben como frases (`fun \\`quitar un ingrediente baja el
+    costo\\`()`), y ahí es natural poner dos puntos para separar. La JVM no los acepta —ni
+    tampoco `.`, `;`, `[`, `]`, `/`, `<`, `>`, `\\`— y Kotlin no lo dice hasta compilar, con
+    un mensaje que nombra el carácter pero no explica por qué molesta.
+
+    Pasó con `fun \\`una tarde completa: ingredientes, receta...\\``, y costó una compilación
+    entera de `:app` para enterarse.
+    """
+    problemas = 0
+    for ruta in rutas:
+        texto = open(ruta, encoding="utf-8").read()
+        # Solo declaraciones. Los acentos graves de la documentación —`logica/`,
+        # `Map<String, Int>`— son texto para leer, no nombres, y mirarlos daba cuarenta
+        # avisos falsos por cada uno de verdad.
+        for m in re.finditer(r"\b(fun|class|object|val|var)\s+`([^`\n]*)`", texto):
+            malos = sorted(set(m.group(2)) & PROHIBIDOS_EN_NOMBRES)
+            if not malos:
+                continue
+            linea = texto[: m.start()].count("\n") + 1
+            print(f"  {os.path.relpath(ruta, RAIZ)}:{linea} el nombre de {m.group(1)} lleva "
+                  f"{' '.join(repr(c) for c in malos)}, que la JVM no admite")
+            problemas += 1
+    return problemas
+
+
 def revisar_esquemas(_rutas):
     """5. Que exista el esquema exportado de cada versión de la base.
 
@@ -299,6 +334,7 @@ def main():
         ("Acciones contra ViewModel", revisar_acciones),
         ("Acciones contra la pantalla", revisar_enchufes),
         ("Constantes calificadas", revisar_constantes),
+        ("Nombres entre acentos graves", revisar_nombres_con_acentos),
         ("Esquemas de Room", revisar_esquemas),
     ]:
         encontrados = revision(rutas)
