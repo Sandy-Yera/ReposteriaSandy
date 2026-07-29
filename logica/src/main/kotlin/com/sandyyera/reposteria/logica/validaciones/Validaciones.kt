@@ -17,7 +17,14 @@ package com.sandyyera.reposteria.logica.validaciones
  * describen un dato que la persona todavía está escribiendo y puede corregir.
  */
 
-/** Cuántos caracteres puede tener el nombre de un ingrediente. */
+/**
+ * Cuántos caracteres puede tener cualquier nombre escrito a mano: ingredientes, títulos
+ * de receta, nombres de sección, moldes, empleados.
+ *
+ * Es uno solo para todos a propósito. Un tope distinto por cada cosa no aporta nada —
+ * ninguno de esos nombres tiene una razón para ser más largo que otro— y sí obliga a
+ * recordar cuál era cuál.
+ */
 const val LARGO_MAXIMO_NOMBRE = 60
 
 /**

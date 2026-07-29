@@ -11,7 +11,7 @@ Cada entrada nueva va al final de su sección, con el mismo formato.
 >   vivir según la sección 4, pero ese archivo todavía no existe. Para el paso 2 de `CLAUDE.md`
 >   significa "ya está diseñado, reutiliza este diseño", no "ábrelo".
 >
-> **Sobre "compila":** lo de `logica/` está compilado y cubierto por 149 pruebas. Lo de `app/`
+> **Sobre "compila":** lo de `logica/` está compilado y cubierto por 170 pruebas. Lo de `app/`
 > se compila en el equipo de Sandy, porque el entorno donde se escribe no tiene el Android
 > SDK. Las entidades, los conversores y la base de datos ya pasaron esa compilación; lo que
 > se agregue después queda sin verificar hasta la siguiente.
@@ -147,6 +147,26 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/calculadora/ValorPorGramo.kt
 - Qué hace: cuántos gramos tiene un kilo.
 - Cómo funciona: constante `1000.0`. La usa `UnidadDeCompra.aGramos`. Es constante y no un `1000` suelto porque es justo el número que se equivoca uno al convertir de cabeza, y así hay un solo lugar donde puede estar mal.
+
+### errorEnTituloReceta, errorEnNombreSeccion y errorEnCantidadEnGramosTexto ✅ IMPLEMENTADAS
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Recetas.kt
+- Qué hacen: revisan el título de una receta, el nombre de una sección y los gramos de un ingrediente dentro de ella.
+- Cómo funcionan: reciben `String` y devuelven el motivo o `null`, igual que el resto del paquete. Las dos de nombre usan `LARGO_MAXIMO_NOMBRE`, que es el mismo tope para todo lo que se escribe a mano. **La de gramos rechaza el cero**, a diferencia de `errorEnValorPorGramo`: un ingrediente en cantidad cero simplemente no está en la receta, y dejarlo guardado es una fila que no suma y confunde al leer.
+
+### debeMostrarNombreDeSeccion ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Recetas.kt
+- Qué hace: dice si hay que mostrar el encabezado con el nombre de cada sección.
+- Cómo funciona: recibe cuántas secciones tiene la receta y devuelve `Boolean` — `true` desde la segunda. Con una sola no se muestra, porque una receta de un solo conjunto no necesita que le pongan título a "todo lo que lleva" (8.2). El camino inverso también vale: borrar la segunda vuelve a ocultar los encabezados sin renombrar nada.
+
+### nombreSugeridoParaPrimeraSeccion ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Recetas.kt
+- Qué hace: propone un nombre para la sección que hasta ahora era invisible, al agregar la segunda.
+- Cómo funciona: recibe el título de la receta y devuelve ese mismo texto, recortado al tope y sin espacios sobrantes; si viniera vacío cae en `NOMBRE_SECCION_POR_DEFECTO`. Propone el título y no "General" porque en "Torta de manjar" la primera sección suele ser el bizcocho de esa torta. Hay un test que comprueba que lo propuesto **nunca sale ya inválido**: sería pedir que corrijan algo que la persona no escribió.
+
+### NOMBRE_SECCION_POR_DEFECTO ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Recetas.kt
+- Qué hace: el nombre que se le pone sola a la primera sección mientras la receta tenga una sola.
+- Cómo funciona: constante `"General"`. La usa `RecetaRepositorio.crear` al sembrar la sección automática. Ese nombre **no se muestra** mientras sea la única sección.
 
 ### pesoPorTrozo ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/rendimiento/Rendimiento.kt
@@ -448,6 +468,26 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Qué hace: borra un ingrediente de verdad, después de que el usuario ya confirmó la advertencia.
 - Cómo funciona: `suspend`, recibe `ingredienteId`. Lee el nombre **antes** de borrar (lo necesita el historial), quita las filas `RecetaIngrediente` que lo referencian, borra el ingrediente y registra un evento rojo indicando qué recetas se vieron afectadas. No vuelve a preguntar: la confirmación es responsabilidad de la UI (6.3). El costo de las recetas afectadas se reajusta solo, porque se calcula en vivo.
 
+### RecetaRepositorio ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/RecetaRepositorio.kt
+- Qué hace: todo lo que se hace con una receta y sus partes — crearla, renombrarla, borrarla, sus secciones, sus ingredientes, su costo, su snapshot y su precio de referencia.
+- Cómo funciona: **cada función que puede fallar revisa antes de escribir**, así "cancelar y dejar todo como estaba" no necesita deshacer nada. Devuelve `Resultado` (`Listo` / `NoSePudo(motivo)`) en vez de `Boolean`, para que el motivo viaje junto al fracaso. Destacan: `nombreQueFaltaBautizar` (devuelve la sugerencia solo cuando hay exactamente una sección, o `null` si no hay nada que bautizar), `agregarSeccion` (renombra la primera **sin mover sus ingredientes de lugar**, 8.2), `eliminarSeccion` (nunca deja la receta sin ninguna) y `elegirPrecioDeReferencia`.
+
+### RecetaRepositorio.elegirPrecioDeReferencia ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/RecetaRepositorio.kt
+- Qué hace: cambia cuál de los precios de una receta alimenta las cifras automáticas (8.6).
+- Cómo funciona: `suspend`, recibe `recetaId` y `precioId`, devuelve el motivo del rechazo o `null` si se pudo. Arma el snapshot, pregunta a `errorAlElegirReferencia` y **solo entonces** escribe con `fijarPrecioDeReferencia`. Si el precio pierde plata no toca nada: la referencia anterior sigue siendo la que era. Un rechazo tampoco deja evento en el historial, porque no pasó nada.
+
+### RecetaRepositorio.obtenerDatosCalculo ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/RecetaRepositorio.kt
+- Qué hace: arma de una sola vez la foto de una o varias recetas (costo, trozos y precios) que después usan todas las fórmulas.
+- Cómo funciona: `suspend`, recibe una `List<Long>` y devuelve `Map<Long, DatosCalculoReceta>`. Recibe lista y no un id suelto a propósito: la simulación múltiple pide todas sus recetas juntas y resuelve con tres consultas en lote en vez de tres por receta. **Ojo con lo que no viene**: una receta sin ingredientes no aparece en el resultado de la consulta de costos (el `GROUP BY` no le da fila) y hay que tomarla como 0; los trozos que falten caen a 1, el valor con que se siembra la receta.
+
+### Resultado y ResultadoCrearReceta ✅ IMPLEMENTADAS
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/RecetaRepositorio.kt
+- Qué hacen: dicen cómo terminó una operación que podía no poder hacerse.
+- Cómo funcionan: `Resultado` es `Listo` / `NoSePudo(motivo)`; `ResultadoCrearReceta` es `Creada(recetaId)` / `NoValido(motivo)`. Son tipos cerrados y no `Boolean` para que el motivo viaje junto con el fracaso: la pantalla tiene que poder decir *por qué* no se pudo, y un `false` no lo dice. Misma idea que `ResultadoGuardarIngrediente`.
+
 ### actualizarMolde
 - Ubicación: data/repositorio/MoldeRepositorio.kt
 - Qué hace: corrige las medidas de un molde del catálogo y propaga esa corrección a todas las recetas enlazadas a él.
@@ -586,7 +626,7 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 ### IngredienteDaoFalso, HistorialDaoFalso y RecetaDaoFalso ✅ IMPLEMENTADAS
 - Ubicación: app/src/test/java/com/sandyyera/reposteria/data/DaosFalsos.kt
 - Qué hacen: reemplazan a los DAO de Room con datos en memoria, para probar repositorios y ViewModel sin base de datos ni celular (`./gradlew :app:test`).
-- Cómo funcionan: los DAO de Room son interfaces, así que se sustituyen sin tocar el código de la app. **`IngredienteDaoFalso` imita el índice único de la tabla** y lanza excepción ante un nombre repetido, igual que la base de verdad: sin eso, la prueba de "no se puede crear un duplicado" pasaría aunque la comprobación no existiera. `HistorialDaoFalso` expone `eventos` y `limpiezasPedidas` para revisarlos. `RecetaDaoFalso` solo implementa lo que hoy se usa (`obtenerRecetasQueUsan`, `quitarIngredienteDeTodasLasSecciones`, más `declararUso` para preparar el escenario) y **el resto falla ruidosamente**: un `emptyList()` de relleno haría pasar pruebas que no probaron nada. **Al necesitar una consulta nueva se implementa acá, con datos reales en memoria.**
+- Cómo funcionan: los DAO de Room son interfaces, así que se sustituyen sin tocar el código de la app. **`IngredienteDaoFalso` imita el índice único de la tabla** y lanza excepción ante un nombre repetido, igual que la base de verdad: sin eso, la prueba de "no se puede crear un duplicado" pasaría aunque la comprobación no existiera. `HistorialDaoFalso` expone `eventos` y `limpiezasPedidas` para revisarlos. `RecetaDaoFalso` creció en la Fase 3 hasta ser una base de recetas en memoria de verdad: hace las **cascadas** (borrar una receta se lleva sus secciones; borrar una sección, sus ingredientes), resuelve el **JOIN del costo** contra el catálogo de ingredientes leyendo el `valorPorGramo` del momento (decisión #3) —por eso recibe el mismo `IngredienteDaoFalso` que use la prueba—, y **omite del resultado en lote las recetas sin ingredientes**, igual que el `GROUP BY` real. Esa última trampa solo se puede probar si el falso la reproduce. Lo que aún no hace falta falla ruidosamente: un `emptyList()` de relleno haría pasar pruebas que no probaron nada.
 
 ### luminancia y contraste ✅ IMPLEMENTADAS
 - Ubicación: herramientas/contraste.py

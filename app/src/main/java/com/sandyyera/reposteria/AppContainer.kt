@@ -4,6 +4,7 @@ import android.content.Context
 import com.sandyyera.reposteria.data.db.AppDatabase
 import com.sandyyera.reposteria.data.repositorio.HistorialRepositorio
 import com.sandyyera.reposteria.data.repositorio.IngredienteRepositorio
+import com.sandyyera.reposteria.data.repositorio.RecetaRepositorio
 
 /**
  * Arma y guarda las piezas compartidas de la app: la base de datos y los repositorios.
@@ -32,5 +33,9 @@ class AppContainer(context: Context) {
         )
     }
 
-    // Los repositorios de recetas, moldes y empleados se agregan al llegar sus fases.
+    val recetas: RecetaRepositorio by lazy {
+        RecetaRepositorio(dao = base.recetaDao(), historial = historial)
+    }
+
+    // Los repositorios de moldes y empleados se agregan al llegar sus fases.
 }

@@ -212,6 +212,35 @@ class PreciosTest {
         assertFalse(trozoGanador(d).alcanzable)
     }
 
+    @Test
+    fun `si la referencia desaparece se vuelve al respaldo, sin quedar sin cifras`() {
+        // Borrar el precio que era la referencia deja a la receta sin ninguno marcado.
+        // Las cifras no pueden quedar en blanco: pasan al de menor ganancia, y
+        // `tieneReferenciaElegida` avisa que ese valor no lo eligió nadie.
+        val conReferencia = receta(
+            costoTotal = 1400.0, trozos = 6,
+            porTrozo(500.0), porTrozo(900.0).copy(esReferencia = true)
+        )
+        val despuesDeBorrarla = receta(costoTotal = 1400.0, trozos = 6, porTrozo(500.0))
+
+        assertEquals(900.0, precioEfectivoPorTrozo(conReferencia), 0.001)
+        assertEquals(500.0, precioEfectivoPorTrozo(despuesDeBorrarla), 0.001)
+        assertFalse(despuesDeBorrarla.tieneReferenciaElegida)
+    }
+
+    @Test
+    fun `si por algun error quedaran dos marcadas, se usa la primera y no revienta`() {
+        // No debería pasar: `fijarPrecioDeReferencia` apaga las demás en la misma
+        // transacción. Pero si pasara, la cuenta tiene que dar algo definido en vez de
+        // depender de cuál fila devuelva primero la base.
+        val d = receta(
+            costoTotal = 1400.0, trozos = 6,
+            porTrozo(500.0).copy(esReferencia = true),
+            porTrozo(900.0).copy(esReferencia = true)
+        )
+        assertEquals(500.0, precioEfectivoPorTrozo(d), 0.001)
+    }
+
     // --- Casos límite que podrían reventar ---
 
     @Test

@@ -84,4 +84,45 @@ class SueldosTest {
             "el mensaje debe explicar el problema real, llegó: ${error.message}"
         }
     }
+
+    // --- El sueldo sigue al precio de referencia (decisión #4) ---
+
+    @Test
+    fun `elegir otra promocion como referencia cambia el sueldo`() {
+        // Es el motivo del cambio: poder responder "¿cuánto le tocaría con ESTA promo?".
+        val conBase = DatosCalculoReceta(
+            recetaId = 1L, titulo = "Torta de manjar", costoTotal = 3000.0, trozos = 8,
+            precios = listOf(
+                PrecioVigente(ModoPrecio.TROZO, 1, 1250.0, esReferencia = true),
+                PrecioVigente(ModoPrecio.TROZO, 2, 3000.0)      // promo: 1.500 por trozo
+            )
+        )
+        val conPromo = conBase.copy(
+            precios = listOf(
+                PrecioVigente(ModoPrecio.TROZO, 1, 1250.0),
+                PrecioVigente(ModoPrecio.TROZO, 2, 3000.0, esReferencia = true)
+            )
+        )
+
+        assertEquals(10000.0, calcularSueldo(conBase, 3000.0).ingresoBruto, 0.001)
+        assertEquals(12000.0, calcularSueldo(conPromo, 3000.0).ingresoBruto, 0.001)
+        // Lo que se lleva el dueño sube con el ingreso; lo acordado con el empleado no.
+        assertEquals(9000.0, calcularSueldo(conPromo, 3000.0).yoMeLlevo, 0.001)
+    }
+
+    @Test
+    fun `una referencia que empata el costo solo permite un sueldo de cero`() {
+        // Empatar sí se acepta como referencia (8.6), pero no hay ganancia que repartir.
+        val empatada = DatosCalculoReceta(
+            recetaId = 3L, titulo = "Receta al costo", costoTotal = 4000.0, trozos = 8,
+            precios = listOf(PrecioVigente(ModoPrecio.TROZO, 1, 500.0, esReferencia = true))
+        )
+
+        assertEquals(0.0, calcularSueldo(empatada, gananciaEmpleado = 0.0).gananciaEmpleado, 0.001)
+        assertEquals(
+            IllegalArgumentException::class.java,
+            runCatching { calcularSueldo(empatada, gananciaEmpleado = 1.0) }
+                .exceptionOrNull()!!::class.java
+        )
+    }
 }

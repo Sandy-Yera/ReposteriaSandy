@@ -5,7 +5,7 @@ no necesitas todo desde el día uno, y cada nivel sirve para algo concreto.
 
 | Nivel | Qué instalas | Qué te permite | ¿Ya lo necesitas? |
 |---|---|---|---|
-| **1** | Java (JDK) | Correr los 149 tests de la lógica | **Sí, ahora** |
+| **1** | Java (JDK) | Correr los 170 tests de la lógica | **Sí, ahora** |
 | **2** | Android SDK | Compilar la app de verdad | Cuando lleguemos a Room |
 | **3** | Celular por USB, o emulador | Ver la app funcionando | Al tener las primeras pantallas |
 
@@ -332,7 +332,7 @@ rm -rf ~/.gradle/caches/build-cache-1   # 3. la caché de Gradle entre compilaci
 ./gradlew --no-build-cache :logica:test # 4. compilar de cero, sin consultar ninguna caché
 ```
 
-Si los 149 tests pasan, el código estaba bien y era esto. Después,
+Si los 170 tests pasan, el código estaba bien y era esto. Después,
 `./gradlew :app:installDebug` normal.
 
 Borrar `build-cache-1` es seguro: es pura caché y se rehace sola. La compilación siguiente
