@@ -436,12 +436,13 @@ una vez, en vez de a pedazos.
 | Columna | Para qué |
 |---|---|
 | `recetaOrigenId: Long?` | De qué receta se copió esta sección. `null` en las secciones propias. Clave foránea a `recetas` con `SET_NULL`: si la original se borra, el vínculo se corta pero la sección **conserva sus ingredientes** — la decisión de qué hacer es de quien la lea (8.11.4). |
-| `firmaDelOrigen: String?` | Los contadores de la original al momento de copiar (8.11.5). Es de donde sale "¿Qué cambió?". |
+| `firmaDelOrigen: String?` | La foto de la original al momento de copiar: sus contadores **y la cantidad de cada ingrediente** (8.11.5). Es de donde sale "¿Qué cambió?" y el factor con que se adapta cada cantidad. |
 
-`firmaDelOrigen` se guarda como **texto** y no como columnas sueltas por una razón: los
-contadores van a cambiar cuando cambie lo que se cuenta, y una columna por contador
-obligaría a una migración cada vez. Lo que se compara es un puñado de números contra otro,
-no se consulta por ellos, así que no hace falta que la base los entienda.
+`firmaDelOrigen` se guarda como **texto** y no como columnas sueltas por una razón que ya se
+vio: la lista de lo que se guarda cambió apenas se decidió adaptar las cantidades en
+proporción, y con una columna por dato eso habría sido una migración. Lo que se compara es
+un puñado de números contra otro y nunca se consulta por ellos, así que no hace falta que la
+base los entienda.
 
 **`RecetaPaso` gana el título:**
 
@@ -582,9 +583,11 @@ Estas validaciones viven en `logica/`, no solo en la UI, para que sean consisten
 
 - **Un solo nivel de anidamiento:** una receta con alguna sección que tenga `recetaOrigenId`
   no puede ofrecerse para copiar dentro de otra (8.11.6).
-- **Nombres de sección al copiar:** siguen sin poder repetirse dentro de una receta (8.2). Si
-  la sección que llega choca con una que ya está, hay que resolverlo **antes** de copiar, no
-  después: copiar y dejar dos "Crema" rompería la regla que ya está probada.
+- **Nombres de sección al copiar:** siguen sin poder repetirse dentro de una receta (8.2). La
+  que llega se renombra ("Crema" → "Crema 2") **antes** de copiar: dejar dos "Crema" rompería
+  una regla que ya está probada, y rechazar la copia entera por un nombre sería peor.
+- **Ajuste proporcional (8.2):** los atajos ×1,5 / ×1,1 / ×0,5 solo se ofrecen si el campo ya
+  tiene una cantidad. Sin valor de partida no hay nada que multiplicar.
 - **Títulos en los pasos:** "General" se repite; el que nombra una sección, no (8.8).
 - **Borrar una receta** enumera antes las recetas que la copiaron, igual que borrar un
   ingrediente enumera las que lo usan (7.1).
@@ -766,6 +769,13 @@ Una o más `RecetaSeccion` (recetas de un solo conjunto crean automáticamente u
 **Cuando una receta simple pasa a tener varias secciones.** Como todo es editable después (8.1), tarde o temprano una receta de un solo conjunto necesita una segunda sección — al bizcocho le agregas la crema. En ese momento la sección "General" invisible tiene que dejar de serlo, porque ya no se entiende sola. Al tocar "+ agregar sección" en una receta que solo tiene la sección automática, la app **pide primero un nombre para la que ya existía** (proponiendo el título de la receta como sugerencia, ej. "Bizcocho") y recién después crea la nueva. Los ingredientes ya cargados no se mueven de lugar: siguen en la misma sección, que ahora simplemente tiene nombre visible. El camino inverso —quedarse con una sola sección otra vez— **conserva su nombre a la vista**. La primera versión lo ocultaba, y al usarla apareció el problema: con "Bizcocho" y "Salsa", borrar el bizcocho dejaba la salsa sola y su encabezado desaparecía. El nombre seguía guardado, pero desde la pantalla parecía haberse perdido — y era un nombre escrito a propósito. **Lo que uno escribe no se esconde solo.** La única que se oculta es la sección automática, la que todavía se llama "General" porque nadie la tocó.
 
 **Los nombres de sección no se repiten dentro de una misma receta.** Dos "Salsa de chocolate" en la misma receta no significan nada: al leerla no hay forma de saber qué va en cada una. La comparación ignora mayúsculas, tildes y espacios sobrantes (`sonElMismoTexto`), igual que en ingredientes y en los títulos de receta. **La regla es por receta y no global**: casi toda torta tiene su "Bizcocho", y prohibir eso entre recetas distintas no tendría sentido. Como con los títulos de receta, **no hay índice único**: puede haber repetidos guardados de antes y un índice obligaría a renombrarlos durante la migración, cambiando datos reales sin que nadie lo pida. A diferencia de una receta repetida, una sección repetida que ya exista **no bloquea nada** — se sigue usando y renombrando con normalidad; lo único que no se puede es crear una nueva que choque.
+
+**Ajustar un gramaje en proporción.** Al cambiar la cantidad de un ingrediente que **ya
+tiene una**, junto al campo aparecen atajos —×1,5, ×1,1, ×0,5— que multiplican lo que hay.
+Es la cuenta que uno hace en la calculadora del celular para "un poco más" o "la mitad", y
+hacerla ahí evita el paso donde se equivoca uno. **Solo aparecen si ya hay un valor**: sin
+una cantidad de la que partir no hay nada que multiplicar, y un ×1,5 sobre un campo vacío
+solo confundiría.
 
 **Dónde va un aviso de error.** Un mensaje sobre lo que la persona *acaba de escribir* va **junto al campo**, dentro del cuadro, y nunca en la franja de abajo (`Snackbar`). Con el teclado abierto esa franja queda tapada: el aviso de "esta receta ya tiene una sección con ese nombre" se mostraba ahí y no se veía, así que el cuadro parecía no haber hecho nada al tocar Guardar. La franja de abajo es para lo que **ya pasó** y no tiene un campo al que apuntar — "Se eliminó 'Harina'", "Se guardó 'Torta de manjar'" —, momentos en que el teclado no está estorbando.
 
@@ -1143,9 +1153,19 @@ la mitad que la crema que se vende sola, y una sincronización automática las p
 
 | Se copia | No se copia |
 |---|---|
-| Las secciones de la receta original, con sus ingredientes y cantidades | El rendimiento (molde, trozos, peso final) |
+| **Todas** las secciones de la receta original, cada una con sus ingredientes y cantidades | El rendimiento (molde, trozos, peso final) |
 | Los pasos, bajo su título (8.8) | Los precios y promociones |
 | | Las duraciones |
+
+**Llegan todas las secciones, no una sola.** Si Bizcocho tiene tres partes, la Torta recibe
+tres secciones, no una llamada "Bizcocho" con todo adentro. Aplastarlas perdería la división
+que la receta original tenía por algo. Lo que las mantiene juntas es que **todas quedan
+marcadas "vienen de Bizcocho"**, se muestran seguidas y en el mismo orden que allá, bajo un
+encabezado que las agrupa.
+
+**Si un nombre choca**, la que llega se renombra: "Crema" → **"Crema 2"**. Los nombres de
+sección no se pueden repetir dentro de una receta (8.2) y esa regla no se toca; renombrar es
+mejor que rechazar la copia entera por una coincidencia de nombre.
 
 El rendimiento, los precios y las duraciones son de la receta terminada, no de la parte: la
 torta tiene su molde y su precio, y el hecho de que su bizcocho también se venda solo no le
@@ -1162,9 +1182,23 @@ aporta nada de eso.
 Al tocar el símbolo se ofrece: *"¿Desea mantenerla igual? De lo contrario, se copiarán los
 datos nuevos, sin afectar las cantidades"*.
 
-**Actualizar nunca pisa las cantidades.** Trae los ingredientes nuevos, saca los que la
-original eliminó, y **deja como están las cantidades de los que siguen**. Es la contrapartida
-de que la copia sea independiente: lo que se sincroniza es *qué lleva*, no *cuánto*.
+**Actualizar no pisa las cantidades: las adapta en proporción.** Es la diferencia entre las
+dos razones por las que una cantidad puede cambiar:
+
+- **Acá cambió porque usas menos.** La salsa original rinde para un frasco; en el pastel usas
+  la mitad. Eso es tuyo y no se toca nunca.
+- **En la original cambió porque cambió la receta.** Bajaste la harina de 550 a 500 g por
+  calidad o por ahorro: la proporción del bizcocho es otra ahora, y tu copia debería seguirla.
+
+Las dos cosas conviven aplicando **el factor de ese ingrediente**, no una cantidad fija: si
+la original pasó de 550 a 500 y vos usabas 275, quedás en **250** — la mitad de la nueva,
+igual que antes eras la mitad de la vieja. Tu decisión de usar la mitad se conserva; el
+cambio de la receta llega igual.
+
+Es por ingrediente y no global, porque en la original puede haber cambiado solo uno.
+
+Los ingredientes **nuevos** llegan con la cantidad de la original: no hay una "tuya" que
+conservar. Los que la original eliminó se van.
 
 Debajo del aviso va **"¿Qué cambió?"**, que al tocarlo despliega un resumen (8.11.5).
 
@@ -1188,19 +1222,25 @@ vez de eso se guardan **contadores** de la receta original al momento de copiarl
 comparan con los de ahora:
 
 - cuántos ingredientes tiene cada sección,
+- **la cantidad de cada ingrediente**,
 - cuántas secciones hay,
 - cuántos títulos hay en los pasos,
 - cuántos pasos hay bajo cada título,
 - cuántos pasos generales hay.
 
+La cantidad de cada ingrediente entró en la lista por lo de arriba: si un cambio de gramaje
+tiene que adaptar la copia en proporción, entonces **hay que detectarlo**, y contar
+ingredientes no alcanza. Es lo que convierte a la firma en algo más que contadores.
+
 De la diferencia salen frases directas: *"Se eliminó un ingrediente"*, *"Se agregó un paso en
 la sección Crema"*, *"Se agregó un paso general"*, *"Se eliminó una sección de ingredientes"*.
 
-**Lo que esto no detecta, y está aceptado:** cambiar la *cantidad* de un ingrediente sin
-agregar ni quitar ninguno, o reescribir el texto de un paso sin cambiar cuántos hay. Lo
-primero es deliberado —las cantidades son justamente lo que puede diferir— y lo segundo es
-el precio de no hacer un diff. El aviso dice qué se movió de estructura, no qué se corrigió
-de redacción.
+De la diferencia de cantidades salen frases del mismo tipo: *"La harina pasó de 550 a 500 g"*.
+
+**Lo que esto no detecta, y está aceptado:** reescribir el texto de un paso sin cambiar
+cuántos hay, y renombrar una sección. Es el precio de no hacer un diff de verdad — caro de
+calcular y más caro de leer. El aviso dice qué se movió de estructura y de cantidades, no qué
+se corrigió de redacción.
 
 #### 8.11.6 Un solo nivel de anidamiento
 
