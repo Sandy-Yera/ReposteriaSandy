@@ -1687,11 +1687,6 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 - **Necesita migración de base** (5.5.1): dos columnas en `receta_secciones` y dos en
   `receta_pasos`.
 
-### Fase 9 (antigua) — Receta: Pasos + autocompletado
-
-- **Construyes:** paso previo, pasos numerados, detector de `ingredientes:`.
-- **Hecho cuando:** el popup aparece/desaparece según tus reglas (selección, borrado de la palabra clave, continuar escribiendo).
-
 ### Fase 10 — Vista final de receta + lista
 
 - **Construyes:** `DetalleRecetaScreen` (acordeón editable) + `ListaRecetasScreen` (botón fijo, buscador, listado), borrado de receta con confirmación (6.3) y cascada a empleados.
