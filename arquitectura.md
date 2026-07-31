@@ -426,6 +426,38 @@ Se guardan como texto (`.name`) y no como número ordinal a propósito: si algú
 
 La salida más simple, sin duplicar el `data class`: declarar **todos** los campos de `DimensionesMolde` como nulables (incluidos `tipoForma` y `alturaMoldeCm`), y que la obligatoriedad la garantice la validación de 6.2 en `logica/` — que es donde ya vive el resto de las reglas. Los `getter` de `areaCm2`/`volumenCm3` ya usan `!!`, así que fallarían ruidosamente si alguien construye un molde inválido saltándose la validación, que es el comportamiento correcto.
 
+### 5.5.1 Lo que agrega "recetas que usan recetas" (8.11)
+
+Todavía **sin implementar**. Queda escrito acá para que la migración se piense entera y de
+una vez, en vez de a pedazos.
+
+**`RecetaSeccion` gana dos columnas:**
+
+| Columna | Para qué |
+|---|---|
+| `recetaOrigenId: Long?` | De qué receta se copió esta sección. `null` en las secciones propias. Clave foránea a `recetas` con `SET_NULL`: si la original se borra, el vínculo se corta pero la sección **conserva sus ingredientes** — la decisión de qué hacer es de quien la lea (8.11.4). |
+| `firmaDelOrigen: String?` | Los contadores de la original al momento de copiar (8.11.5). Es de donde sale "¿Qué cambió?". |
+
+`firmaDelOrigen` se guarda como **texto** y no como columnas sueltas por una razón: los
+contadores van a cambiar cuando cambie lo que se cuenta, y una columna por contador
+obligaría a una migración cada vez. Lo que se compara es un puñado de números contra otro,
+no se consulta por ellos, así que no hace falta que la base los entienda.
+
+**`RecetaPaso` gana el título:**
+
+| Columna | Para qué |
+|---|---|
+| `tituloSeccionId: Long?` | Bajo qué título va el paso (8.8). `null` = un paso "General" de esta receta. Apunta a `receta_secciones`. |
+| `esGeneralAnidado: Boolean` | Si es un "General" **traído de la receta original**, que se muestra con sangría y distinto del General propio. |
+
+**Lo que NO cambia, a propósito:** `RecetaIngrediente` sigue igual. Un ingrediente copiado no
+necesita saber de dónde vino — lo sabe su sección, y ahí está el vínculo. Ponerlo también en
+cada ingrediente sería el mismo dato en dos lugares, listo para desincronizarse.
+
+**El tope de un nivel (8.11.6) no necesita columna.** Una receta "usa otra receta" si alguna
+de sus secciones tiene `recetaOrigenId`; eso ya se puede consultar, y agregar un booleano
+sería una tercera copia del mismo hecho.
+
 ### 5.6 Índices
 
 Un índice es una lista ordenada que SQLite mantiene aparte para no tener que recorrer la tabla entera cuando buscas por una columna. Acá no son opcionales por dos razones que van más allá de la velocidad:
@@ -545,6 +577,17 @@ Se transforma el texto en `onValueChange` y no con un `VisualTransformation`. Es
 - `diasPorSemana` en `RecetaSimulacionVenta`, `EmpleadoRecetaSueldo` y `EmpleadoSimulacionMultiple`: entre `1` y `7` siempre — una semana no tiene más de 7 días.
 
 Estas validaciones viven en `logica/`, no solo en la UI, para que sean consistentes sin importar desde qué pantalla se invoquen.
+
+### 6.2.1 Reglas nuevas de 8.11 y 8.8
+
+- **Un solo nivel de anidamiento:** una receta con alguna sección que tenga `recetaOrigenId`
+  no puede ofrecerse para copiar dentro de otra (8.11.6).
+- **Nombres de sección al copiar:** siguen sin poder repetirse dentro de una receta (8.2). Si
+  la sección que llega choca con una que ya está, hay que resolverlo **antes** de copiar, no
+  después: copiar y dejar dos "Crema" rompería la regla que ya está probada.
+- **Títulos en los pasos:** "General" se repite; el que nombra una sección, no (8.8).
+- **Borrar una receta** enumera antes las recetas que la copiaron, igual que borrar un
+  ingrediente enumera las que lo usan (7.1).
 
 ### 6.3 Nada se borra de golpe
 
@@ -826,54 +869,44 @@ suspend fun reescalarRecetaPorMolde(
 
 Banner fijo: *"Las duraciones son estimaciones no precisas"*. Tres bloques (ambiente / refrigerada / congelada) con `cantidad + unidad`, o el switch "No apto" que anula los otros dos campos de ese bloque.
 
-### 8.4.1 Ideas pendientes para el asistente de recetas
+### 8.4.1 Decisiones confirmadas sobre el asistente de recetas
 
-Anotadas para resolver antes de seguir con las fases nuevas. Van acá y no en una lista
-suelta porque cambian el diseño de 8.1, no solo su implementación.
+Cinco cambios acordados sobre 8.1, en el orden en que se harán. Van acá porque cambian el
+diseño del asistente, no solo su implementación.
 
-**1. Navegar entre pasos, en vez de un botón "Siguiente".** Hoy cada paso termina con un
-botón que lleva al siguiente, al final de la pantalla. Eso obliga a recorrer todo para
-cambiar de paso y solo deja avanzar en un sentido. En su lugar va **una fila de pasos que
-se desplaza horizontalmente**, debajo del título, con el paso actual marcado y los demás a
-un toque. Ganan dos cosas: se ve cuántos pasos hay —hoy no se sabe hasta llegar— y se
-puede saltar al que interesa.
+**1. Navegar entre pasos, no un botón "Siguiente".** Una fila de pasos que se desplaza
+horizontalmente, debajo del título, con el actual marcado y los demás a un toque. Gana dos
+cosas: se ve cuántos pasos hay —hoy no se sabe hasta llegar— y se salta al que interesa.
 
-Resuelve además un problema que se ve hoy: en Rendimiento, la X cierra el paso y devuelve
-a Cantidades en vez de salir de la receta. Con la fila de pasos, **la X siempre sale de la
-receta** y moverse entre pasos es la fila; los dos gestos dejan de competir.
+Resuelve además un choque que ya se nota: hoy la X de Rendimiento cierra el paso y devuelve
+a Cantidades en vez de salir de la receta. Con la fila, **la X siempre sale de la receta** y
+moverse entre pasos es la fila; los dos gestos dejan de competir.
 
-**2. El molde como paso propio.** Hoy Rendimiento mezcla dos cosas que se responden en
-momentos distintos: qué molde se usa (y el reescalado, que es la operación más delicada de
-la app) con cuántos trozos rinde y cuánto pesa. Separarlos deja cada paso con una sola
-pregunta.
+**2. El molde como paso propio.** Rendimiento hoy mezcla dos preguntas que se responden en
+momentos distintos: qué molde se usa (y el reescalado, la operación más delicada de la app)
+con cuántos trozos rinde y cuánto pesa. Separados, cada paso tiene una sola pregunta.
 
-**3. Menos botones de editar.** La regla pasa a ser: **tocar la cosa la edita; el único
-botón que queda es el de borrar.** Vale para el ingrediente del catálogo, la receta de la
-lista (el título se cambia desde adentro), el nombre de la sección y el ingrediente dentro
-de la receta. Hoy cada fila tiene dos íconos y el de editar duplica lo que el toque ya
-podría hacer — en recetas ya funciona así y no hizo falta explicarlo.
+**3. Tocar la cosa la edita; el único botón que queda es el de borrar.** Vale para el
+ingrediente del catálogo, la receta de la lista (el título se cambia desde adentro), el
+nombre de la sección y el ingrediente dentro de la receta. Hoy cada fila tiene dos íconos y
+el de editar duplica lo que el toque ya podría hacer — en recetas ya funciona así y no hizo
+falta explicarlo.
 
-**4. Reescalar también el peso final.** Al reescalar por molde, las cantidades se
-multiplican por el factor pero `pesoFinalG` queda con el valor viejo, que ya no
-corresponde. Se multiplica por el mismo factor y se muestra el aviso *"El peso de este
-producto ha sido reescalado automáticamente. Por favor, compruebe el peso"*, que
-desaparece en cuanto se toca el campo —**haya cambiado o no**, porque lo que confirma el
-dato es haberlo mirado—. La proporción es una estimación razonable, no una medición: el
-peso real depende de cuánta masa quede pegada al molde y de cuánta agua se evapore, y por
-eso el aviso pide comprobarlo en vez de darlo por bueno.
+**4. Al reescalar por molde, el peso final se reescala también.** Se multiplica por el mismo
+factor y aparece el aviso *"El peso de este producto ha sido reescalado automáticamente. Por
+favor, compruebe el peso"*, que desaparece al tocar el campo — **haya cambiado o no**,
+porque lo que confirma el dato es haberlo mirado. La proporción es una estimación, no una
+medición: el peso real depende de cuánta masa quede pegada al molde y de cuánta agua se
+evapore, y por eso el aviso pide comprobar en vez de dar por bueno.
 
-**5. Recetas que usan otras recetas.** Al crear una receta, poder partir de una que ya
-existe —el bizcocho que también se vende solo, la salsa que va en tres postres— trayendo
-sus ingredientes. **La copia es independiente**: cambiar las cantidades acá no toca la
-receta original. Es la idea más grande de las cinco y la que más decisiones abre (¿se
-copian las secciones?, ¿se ve de dónde vino?, ¿qué pasa si la original cambia después?),
-así que va después de las otras cuatro.
+**5. Recetas que usan otras recetas.** Ver 8.11, que es donde vive el diseño completo.
 
-**Un problema aparte, que no es de diseño:** el botón "Guardar rendimiento" parece
-innecesario porque al volver al paso los datos siguen ahí — pero **no están guardados**.
-Lo que sobrevive es el ViewModel, que Android conserva mientras la app viva; cerrándola se
-pierden. Sacar el botón sin más perdería datos. Lo que corresponde es **guardar solo**, en
-cuanto lo escrito sea válido, y ahí el botón sí sobra.
+**Nada de guardar con botón.** Los pasos guardan **en cuanto lo escrito es válido**. Hoy
+Rendimiento tiene un botón que parece innecesario porque al volver los datos siguen ahí,
+pero **no están guardados**: lo que sobrevive es el ViewModel, que Android conserva mientras
+la app viva. Guardando solo, el botón sobra de verdad y se va. Duración hace lo mismo, con
+una salvedad: ahí un bloque a medio escribir se ve igual que uno vaciado a propósito, así
+que lo que dispara el guardado es **salir del campo**, no cada tecla.
 
 ### 8.5 Paso 4 — Gastos y Ganancias
 
@@ -1004,8 +1037,42 @@ fun simulacion(ingresoBase: Double, costoBase: Double, dias: Int, unidades: Int)
 
 ### 8.8 Paso 6 — Pasos
 
-- "Paso previo" (opcional, default "No necesita") + pasos numerados en un `TextField` multilínea.
-- Autocompletado de ingredientes: se observa el texto con `onValueChange`, se detecta cuando el usuario termina de escribir `ingredientes:`, y se muestra un `Popup`/`DropdownMenu` acotado (no pantalla completa) junto al cursor, listando solo los ingredientes usados en esa receta con su gramaje. Se cierra si seleccionas uno, si borras la palabra clave, o si sigues escribiendo sin elegir.
+Los pasos no son una lista plana: van **agrupados bajo títulos**, y los títulos son las
+secciones de la receta más "General".
+
+```
+Bizcocho          ← título (una sección de la receta)
+  1. …            ← pasos copiados de la receta Bizcocho
+  2. …
+General           ← título repetible
+  3. …            ← algo que no pertenece a ninguna parte
+Crema
+  4. …
+Decoración
+  5. …
+```
+
+**Cómo se pone un título.** Escribiendo `:titulo:` aparece la lista para elegir cuál, igual
+que `:ingredientes:` muestra los ingredientes de la receta. Los dos van con **dos puntos
+adelante y atrás**: equivocarse escribiendo eso es raro, y así el atajo no se dispara solo
+al escribir la palabra en medio de una frase. El título elegido se resalta como encabezado,
+no como un paso más.
+
+**Qué títulos se pueden repetir.** Solo "General". Los que nombran una sección de la receta
+—propia o traída de otra— **se usan una sola vez**: dos bloques "Crema" en el mismo listado
+no dicen en cuál va cada cosa.
+
+**El "General" de una receta traída.** Si el bizcocho tenía sus propios pasos generales, al
+copiarlo esos pasos quedan como un **general anidado**: con sangría y en un tamaño distinto,
+para distinguirlo del General de la receta actual. Son cosas diferentes — uno habla del
+bizcocho, el otro de la torta entera— y aplanarlos los volvería indistinguibles.
+
+**Cuando la receta original cambia sus pasos**, entra por el mismo camino de 8.11.3: aviso,
+y actualizar reemplaza los pasos de ese título. Si la original se borró y se elige "Borrar",
+se van la sección **y sus pasos**.
+
+**"Paso previo"** (opcional, `"No necesita"` por defecto) sigue igual, arriba de todo: es lo
+que hay que tener hecho *antes* de empezar, no un paso de la preparación.
 
 ### 8.9 Vista final y lista de recetas
 
@@ -1052,6 +1119,98 @@ Quien muestre campos automáticos **debe** consultarlo primero. Si es `false`, l
 En la lista de recetas (8.9), las que no tienen precio se marcan con la misma etiqueta, para que se note que están a medias sin tener que abrirlas.
 
 ---
+
+### 8.11 Recetas que usan otras recetas
+
+Una torta se compone de bizcocho, crema y decoración; el bizcocho y la crema también se
+venden solos y ya existen como recetas. Poder traerlas ahorra volver a cargar ingredientes y
+volver a escribir pasos.
+
+#### 8.11.1 La regla que ordena todo: copia con referencia, sin unión
+
+Al traer una receta **se copian sus datos** a la receta nueva. La copia es **independiente**:
+cambiar una cantidad acá no toca la original, y cambiar la original no cambia esto. Lo único
+que queda es un **vínculo de referencia**, que sirve para dos cosas y nada más:
+
+1. mostrar de dónde vino ("esta sección viene de la receta *Bizcocho*");
+2. **avisar** cuando la original cambió.
+
+No es una unión viva. La alternativa —que los cambios bajen solos— se descartó porque
+**las cantidades acá pueden ser distintas a propósito**: la crema de la torta puede llevar
+la mitad que la crema que se vende sola, y una sincronización automática las pisaría.
+
+#### 8.11.2 Qué se copia, y qué no
+
+| Se copia | No se copia |
+|---|---|
+| Las secciones de la receta original, con sus ingredientes y cantidades | El rendimiento (molde, trozos, peso final) |
+| Los pasos, bajo su título (8.8) | Los precios y promociones |
+| | Las duraciones |
+
+El rendimiento, los precios y las duraciones son de la receta terminada, no de la parte: la
+torta tiene su molde y su precio, y el hecho de que su bizcocho también se venda solo no le
+aporta nada de eso.
+
+#### 8.11.3 Cuando la original cambia
+
+**No pasa nada solo.** Aparece un aviso, en dos lugares:
+
+- **Afuera**, en la lista de recetas: *"La receta X cambió. Entre para interactuar con el
+  elemento: ya sea para cambiarlo o mantenerlo"*.
+- **Adentro**, un símbolo de advertencia sobre la sección afectada.
+
+Al tocar el símbolo se ofrece: *"¿Desea mantenerla igual? De lo contrario, se copiarán los
+datos nuevos, sin afectar las cantidades"*.
+
+**Actualizar nunca pisa las cantidades.** Trae los ingredientes nuevos, saca los que la
+original eliminó, y **deja como están las cantidades de los que siguen**. Es la contrapartida
+de que la copia sea independiente: lo que se sincroniza es *qué lleva*, no *cuánto*.
+
+Debajo del aviso va **"¿Qué cambió?"**, que al tocarlo despliega un resumen (8.11.5).
+
+#### 8.11.4 Si la original fue borrada
+
+Sale el mismo aviso. Al tocarlo se explica que la receta fue eliminada, y quedan dos salidas:
+
+- **Mantener** — la sección se queda tal cual, y el vínculo se corta. Deja de avisar.
+- **Borrar** — se elimina la sección **y también sus pasos**.
+
+Borrar una receta, entonces, tiene que decir **a qué otras recetas afecta** antes de
+confirmar, igual que borrar un ingrediente (7.1). La diferencia es el tono: borrar un
+ingrediente saca filas de recetas que quedan más baratas sin avisar; borrar una receta usada
+por otras no rompe nada de inmediato —las copias siguen ahí— pero deja avisos pendientes en
+cada una.
+
+#### 8.11.5 "¿Qué cambió?", con contadores
+
+Un diff de verdad —qué línea cambió, qué palabra— es caro de calcular y más caro de leer. En
+vez de eso se guardan **contadores** de la receta original al momento de copiarla, y se
+comparan con los de ahora:
+
+- cuántos ingredientes tiene cada sección,
+- cuántas secciones hay,
+- cuántos títulos hay en los pasos,
+- cuántos pasos hay bajo cada título,
+- cuántos pasos generales hay.
+
+De la diferencia salen frases directas: *"Se eliminó un ingrediente"*, *"Se agregó un paso en
+la sección Crema"*, *"Se agregó un paso general"*, *"Se eliminó una sección de ingredientes"*.
+
+**Lo que esto no detecta, y está aceptado:** cambiar la *cantidad* de un ingrediente sin
+agregar ni quitar ninguno, o reescribir el texto de un paso sin cambiar cuántos hay. Lo
+primero es deliberado —las cantidades son justamente lo que puede diferir— y lo segundo es
+el precio de no hacer un diff. El aviso dice qué se movió de estructura, no qué se corrigió
+de redacción.
+
+#### 8.11.6 Un solo nivel de anidamiento
+
+**Una receta que ya usa otra receta no se puede usar dentro de una tercera.** Si Torta usa
+Bizcocho, entonces Torta no aparece en la lista al crear una receta nueva.
+
+Es una limitación puesta a propósito, no una que falte resolver. Sin ella, actualizar el
+bizcocho tendría que propagarse en cadena por todo lo que lo usa indirectamente, los avisos
+se multiplicarían y la copia dejaría de ser algo que uno pueda seguir con la cabeza. Un
+nivel cubre el caso real —una receta hecha de partes— sin abrir el problema del árbol.
 
 ## 9. Módulo Moldes (nuevo)
 
@@ -1490,6 +1649,19 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 - **Construyes:** los 3 bloques, el switch "no apto", el banner de advertencia.
 - **Hecho cuando:** el paso completo puede quedar vacío, o con solo 1–2 bloques rellenos, respetando "no apto".
 
+### Fase 6.5 — Pulido del asistente (8.4.1)
+
+- **Construyes:** la fila de pasos que se desplaza (y con ella la X que sí sale de la
+  receta), el molde como paso propio, "tocar edita / solo queda borrar" en las cuatro
+  pantallas, el peso final reescalado con su aviso, y el guardado automático que se lleva
+  puesto el botón de "Guardar".
+- **Hecho cuando:** se puede saltar de Cantidades a Duración sin pasar por el medio; ninguna
+  fila de ninguna lista tiene ícono de editar; reescalar por molde deja el peso multiplicado
+  y avisando hasta que se toque el campo; y salir de la app en cualquier paso no pierde nada.
+- **Por qué antes de la 7:** son cambios sobre pantallas que ya existen, y cada fase nueva
+  que se agregue encima los hace más caros. La 7 además estrena la fila de pasos con un paso
+  más, así que conviene que la fila ya esté.
+
 ### Fase 7 — Receta: Gastos y Ganancias + Precios/Promociones
 
 - **Construyes:** precio base (primera fila de `RecetaPrecio`, sin campo `activo`), `precioDeMenorGanancia`, `precioEfectivoPorTrozo`, `trozoGanador`, lista visual de todos los precios guardados.
@@ -1500,7 +1672,22 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 - **Construyes:** `diasPorSemana`/`unidadesPorDia`, cálculo semanal/mensual con `SEMANAS_POR_MES = 4.33`.
 - **Hecho cuando:** el ejemplo (5.000 × 4 × 2 = 40.000 semanal) funciona, y editar los valores después de guardado recalcula todo.
 
-### Fase 9 — Receta: Pasos + autocompletado
+### Fase 9 — Receta: Pasos con títulos + recetas que usan recetas (8.8 y 8.11)
+
+- **Construyes:** los pasos agrupados bajo títulos, el atajo `:titulo:` y `:ingredientes:`,
+  el general anidado; y encima de eso, copiar una receta dentro de otra con su vínculo de
+  referencia, los avisos de "la original cambió", el "¿Qué cambió?" por contadores, el tope
+  de un nivel, y el aviso de a qué recetas afecta borrar una.
+- **Hecho cuando:** creas Torta trayendo Bizcocho y Crema, cambias una cantidad en la Torta
+  sin que se mueva el Bizcocho, agregas un ingrediente al Bizcocho y la Torta avisa diciendo
+  qué cambió, aceptas la actualización y la cantidad que habías ajustado **sigue como la
+  dejaste**; borras el Bizcocho y la Torta te deja elegir entre mantener y borrar.
+- **Va junto y no en dos fases** porque los pasos con título son la mitad de lo que se copia:
+  hacer primero las recetas anidadas obligaría a copiar pasos que todavía no tienen dónde ir.
+- **Necesita migración de base** (5.5.1): dos columnas en `receta_secciones` y dos en
+  `receta_pasos`.
+
+### Fase 9 (antigua) — Receta: Pasos + autocompletado
 
 - **Construyes:** paso previo, pasos numerados, detector de `ingredientes:`.
 - **Hecho cuando:** el popup aparece/desaparece según tus reglas (selección, borrado de la palabra clave, continuar escribiendo).
