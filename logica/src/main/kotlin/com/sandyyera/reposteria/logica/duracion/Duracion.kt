@@ -43,6 +43,14 @@ fun nombreDeLaUnidad(unidad: UnidadDuracion, cantidad: Int): String {
     }
 }
 
+/**
+ * El aviso fijo del paso, que va siempre a la vista (8.4).
+ *
+ * Vive acá junto al resto del texto que se muestra, y no entre las validaciones: no valida
+ * nada, es lo que hay que tener en la cabeza mientras se escriben los números.
+ */
+const val AVISO_DURACIONES_ESTIMADAS = "Las duraciones son estimaciones no precisas"
+
 /** Lo que se muestra cuando un bloque quedó sin llenar. */
 const val DURACION_SIN_DATO = "Sin anotar"
 

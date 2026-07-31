@@ -294,7 +294,7 @@ def revisar_constantes(rutas):
 
     La revisión 2 no la ve porque solo mira nombres en CamelCase.
     """
-    top, dentro_de_clase = {}, {}
+    top, dentro_de_clase, paquetes_de = {}, {}, {}
     for ruta in rutas:
         texto = open(ruta, encoding="utf-8").read()
         paquete = re.search(r"^package\s+([\w.]+)", texto, re.M).group(1)
@@ -302,6 +302,8 @@ def revisar_constantes(rutas):
         for m in re.finditer(r"^(\s*)(?:const\s+)?val\s+([A-Z][A-Z0-9_]{2,})\b", texto, re.M):
             destino = top if not m.group(1) else dentro_de_clase
             destino.setdefault(paquete, {})[m.group(2)] = os.path.relpath(ruta, RAIZ)
+            if not m.group(1):
+                paquetes_de.setdefault(m.group(2), set()).add(paquete)
 
     problemas = 0
     for ruta in rutas:
@@ -311,6 +313,18 @@ def revisar_constantes(rutas):
         codigo = sin_comentarios_ni_textos(re.sub(r"^import .*$", "", texto, flags=re.M))
         # Declaradas acá mismo (a cualquier nivel): siempre resuelven.
         propias = set(re.findall(r"(?:const\s+)?val\s+([A-Z][A-Z0-9_]{2,})\b", codigo))
+
+        # Un import que apunta al paquete equivocado. El compilador lo llama "unresolved
+        # reference" y señala el uso, no el import, así que cuesta ver que el nombre sí
+        # existe y lo que está mal es de dónde se lo pidió. Pasó con
+        # AVISO_DURACIONES_ESTIMADAS, declarada en `validaciones` e importada de `duracion`.
+        for camino in re.findall(r"^import\s+([\w.]+)", texto, re.M):
+            paquete_pedido, _, nombre = camino.rpartition(".")
+            donde = paquetes_de.get(nombre)
+            if donde and paquete_pedido not in donde:
+                print(f"  {os.path.relpath(ruta, RAIZ)}: importa '{nombre}' de "
+                      f"'{paquete_pedido}', pero está en {' o '.join(sorted(donde))}")
+                problemas += 1
 
         for uso in set(re.findall(r"(?<![\w.])([A-Z][A-Z0-9_]{2,})\b", codigo)):
             if uso in propias or uso in importados or uso in top.get(paquete, {}):

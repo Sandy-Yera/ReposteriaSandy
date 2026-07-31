@@ -208,7 +208,9 @@ fun PasoRendimiento(
                 Column(modifier = Modifier.padding(Medidas.medio)) {
                     Text("Cada trozo pesa", style = MaterialTheme.typography.bodySmall)
                     Text(
-                        text = estado.pesoDeCadaTrozo,
+                        // La unidad va acá y no dentro de `pesoPorTrozo`, porque esa función
+                        // también devuelve "No especificado", y "No especificado g" no se lee.
+                        text = estado.pesoDeCadaTrozo + estado.unidadDelPeso,
                         style = MaterialTheme.typography.headlineMedium
                     )
                 }

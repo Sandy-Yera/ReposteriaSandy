@@ -16,9 +16,6 @@ import com.sandyyera.reposteria.logica.duracion.TipoDuracion
  * Ver la sección 8.4 de arquitectura.md.
  */
 
-/** El aviso fijo del paso, que va siempre a la vista. */
-const val AVISO_DURACIONES_ESTIMADAS = "Las duraciones son estimaciones no precisas"
-
 /**
  * Cuánto es lo máximo que se puede anotar en un bloque.
  *

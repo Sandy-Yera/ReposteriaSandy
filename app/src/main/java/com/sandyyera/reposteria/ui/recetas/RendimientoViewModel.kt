@@ -16,6 +16,7 @@ import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.logica.moldes.DimensionesMolde
 import com.sandyyera.reposteria.logica.moldes.ModoReescalado
 import com.sandyyera.reposteria.logica.moldes.TipoFormaMolde
+import com.sandyyera.reposteria.logica.rendimiento.PESO_NO_ESPECIFICADO
 import com.sandyyera.reposteria.logica.rendimiento.pesoPorTrozo
 import com.sandyyera.reposteria.logica.validaciones.CampoDeMolde
 import com.sandyyera.reposteria.logica.validaciones.camposDe
@@ -131,6 +132,14 @@ data class EstadoRendimiento(
             val cuantos = trozos.toIntOrNull()?.takeIf { it >= 1 } ?: 1
             return pesoPorTrozo(peso, cuantos)
         }
+
+    /**
+     * El " g" que acompaña al peso por trozo, o vacío si no hay peso.
+     *
+     * Va aparte y no dentro de `pesoPorTrozo` porque esa función también devuelve
+     * "No especificado", y "No especificado g" no se lee.
+     */
+    val unidadDelPeso: String get() = if (pesoDeCadaTrozo == PESO_NO_ESPECIFICADO) "" else " g"
 
     /** El área y el volumen del molde actual, ya formateados, o `null` si no usa molde. */
     val medidasDelMolde: String?

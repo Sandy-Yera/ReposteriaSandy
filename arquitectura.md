@@ -826,6 +826,55 @@ suspend fun reescalarRecetaPorMolde(
 
 Banner fijo: *"Las duraciones son estimaciones no precisas"*. Tres bloques (ambiente / refrigerada / congelada) con `cantidad + unidad`, o el switch "No apto" que anula los otros dos campos de ese bloque.
 
+### 8.4.1 Ideas pendientes para el asistente de recetas
+
+Anotadas para resolver antes de seguir con las fases nuevas. Van acá y no en una lista
+suelta porque cambian el diseño de 8.1, no solo su implementación.
+
+**1. Navegar entre pasos, en vez de un botón "Siguiente".** Hoy cada paso termina con un
+botón que lleva al siguiente, al final de la pantalla. Eso obliga a recorrer todo para
+cambiar de paso y solo deja avanzar en un sentido. En su lugar va **una fila de pasos que
+se desplaza horizontalmente**, debajo del título, con el paso actual marcado y los demás a
+un toque. Ganan dos cosas: se ve cuántos pasos hay —hoy no se sabe hasta llegar— y se
+puede saltar al que interesa.
+
+Resuelve además un problema que se ve hoy: en Rendimiento, la X cierra el paso y devuelve
+a Cantidades en vez de salir de la receta. Con la fila de pasos, **la X siempre sale de la
+receta** y moverse entre pasos es la fila; los dos gestos dejan de competir.
+
+**2. El molde como paso propio.** Hoy Rendimiento mezcla dos cosas que se responden en
+momentos distintos: qué molde se usa (y el reescalado, que es la operación más delicada de
+la app) con cuántos trozos rinde y cuánto pesa. Separarlos deja cada paso con una sola
+pregunta.
+
+**3. Menos botones de editar.** La regla pasa a ser: **tocar la cosa la edita; el único
+botón que queda es el de borrar.** Vale para el ingrediente del catálogo, la receta de la
+lista (el título se cambia desde adentro), el nombre de la sección y el ingrediente dentro
+de la receta. Hoy cada fila tiene dos íconos y el de editar duplica lo que el toque ya
+podría hacer — en recetas ya funciona así y no hizo falta explicarlo.
+
+**4. Reescalar también el peso final.** Al reescalar por molde, las cantidades se
+multiplican por el factor pero `pesoFinalG` queda con el valor viejo, que ya no
+corresponde. Se multiplica por el mismo factor y se muestra el aviso *"El peso de este
+producto ha sido reescalado automáticamente. Por favor, compruebe el peso"*, que
+desaparece en cuanto se toca el campo —**haya cambiado o no**, porque lo que confirma el
+dato es haberlo mirado—. La proporción es una estimación razonable, no una medición: el
+peso real depende de cuánta masa quede pegada al molde y de cuánta agua se evapore, y por
+eso el aviso pide comprobarlo en vez de darlo por bueno.
+
+**5. Recetas que usan otras recetas.** Al crear una receta, poder partir de una que ya
+existe —el bizcocho que también se vende solo, la salsa que va en tres postres— trayendo
+sus ingredientes. **La copia es independiente**: cambiar las cantidades acá no toca la
+receta original. Es la idea más grande de las cinco y la que más decisiones abre (¿se
+copian las secciones?, ¿se ve de dónde vino?, ¿qué pasa si la original cambia después?),
+así que va después de las otras cuatro.
+
+**Un problema aparte, que no es de diseño:** el botón "Guardar rendimiento" parece
+innecesario porque al volver al paso los datos siguen ahí — pero **no están guardados**.
+Lo que sobrevive es el ViewModel, que Android conserva mientras la app viva; cerrándola se
+pierden. Sacar el botón sin más perdería datos. Lo que corresponde es **guardar solo**, en
+cuanto lo escrito sea válido, y ahí el botón sí sobra.
+
 ### 8.5 Paso 4 — Gastos y Ganancias
 
 El valor que ingresas aquí (modo "trozo" o "producto" + un número) crea la primera fila de `RecetaPrecio` (`cantidad = 1`) — tu precio base. Todo lo automático de este paso se recalcula según el **precio de referencia** entre todos los guardados (base + promos, decisión #4). El primero que creas queda como referencia por ser el único; al agregar promos eliges cuál manda:
