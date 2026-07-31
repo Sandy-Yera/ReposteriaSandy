@@ -30,7 +30,9 @@ import com.sandyyera.reposteria.ui.moldes.ListaMoldesScreen
 import com.sandyyera.reposteria.ui.moldes.MoldesViewModel
 import com.sandyyera.reposteria.ui.recetas.CantidadesViewModel
 import com.sandyyera.reposteria.ui.recetas.ListaRecetasScreen
+import com.sandyyera.reposteria.ui.recetas.DuracionViewModel
 import com.sandyyera.reposteria.ui.recetas.PasoCantidadesScreen
+import com.sandyyera.reposteria.ui.recetas.PasoDuracionScreen
 import com.sandyyera.reposteria.ui.recetas.PasoRendimientoScreen
 import com.sandyyera.reposteria.ui.recetas.RendimientoViewModel
 import com.sandyyera.reposteria.ui.recetas.RecetasViewModel
@@ -51,7 +53,7 @@ import kotlinx.coroutines.launch
  * cantidades, rendimiento, duración, gastos, simulación y pasos. Con un booleano el tercero
  * ya obligaría a rehacerlo.
  */
-enum class PasoDeReceta { CANTIDADES, RENDIMIENTO }
+enum class PasoDeReceta { CANTIDADES, RENDIMIENTO, DURACION }
 
 enum class Seccion(val titulo: String, val icono: ImageVector) {
     INGREDIENTES("Ingredientes", Icons.Default.ShoppingCart),
@@ -119,6 +121,16 @@ fun NavegacionPrincipal(
                 // Volver es al paso anterior, no a la lista: los pasos de una receta se
                 // recorren en orden y salir del todo es la X del primero.
                 alVolver = { pasoActual = PasoDeReceta.CANTIDADES },
+                alPasarADuracion = { pasoActual = PasoDeReceta.DURACION },
+                modifier = modifier
+            )
+
+            PasoDeReceta.DURACION -> PasoDuracionScreen(
+                modelo = viewModel(
+                    key = "duracion-$idAbierta",
+                    factory = DuracionViewModel.fabrica(idAbierta, contenedor.recetas)
+                ),
+                alVolver = { pasoActual = PasoDeReceta.RENDIMIENTO },
                 modifier = modifier
             )
         }

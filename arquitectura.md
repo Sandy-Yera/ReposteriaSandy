@@ -1413,6 +1413,31 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 
 ### Fase 6 — Receta: Duración
 
+> **En curso.** Están la parte pura (`logica/duracion/` y `validaciones/Duracion.kt`, 17
+> pruebas), el repositorio (11 pruebas) y la pantalla con su ViewModel (14 pruebas).
+>
+> **Es el único paso que puede quedar completamente vacío**, y eso ordena sus reglas: acá no
+> se valida que esté completo sino que lo escrito **signifique algo**. Un bloque en blanco es
+> "no lo sé", que es una respuesta legítima y la más común; un 0 no lo es, porque para eso
+> está el switch de "no apto".
+>
+> **Un bloque marcado "no apto" sí tiene algo que guardar**, aunque no tenga números: que
+> algo no se pueda congelar es justamente el dato que uno busca meses después. Ese es el caso
+> que se pierde si la condición se escribe como "tiene cantidad". Al revés, un bloque apto y
+> vacío **se borra** en vez de guardarse: una fila con `cantidad = null` es indistinguible de
+> "todavía no lo sé" y solo lograría que el paso pareciera llenado.
+>
+> **Los `enum` se movieron a `:logica`.** `TipoDuracion` y `UnidadDuracion` estaban junto a
+> la tabla, pero las validaciones y el texto que se muestra son lógica pura; ahora viven
+> donde ya estaban `ModoPrecio` y `TipoFormaMolde`, y la entidad de Room los importa.
+>
+> **Conexión con el resto: ninguna, y está probado.** La duración no entra en el costo, ni en
+> los precios, ni en los sueldos, ni en las simulaciones — es el único paso puramente
+> descriptivo. Lo único que comparte con las otras fases es la cascada al borrar la receta.
+> `FlujoCompletoTest` lo comprueba en las dos direcciones: anotar duraciones no mueve ninguna
+> cifra, y reescalar la receta no toca lo anotado. Esa independencia es fácil de romper sin
+> darse cuenta el día que alguien la meta en el snapshot "por si acaso".
+
 - **Construyes:** los 3 bloques, el switch "no apto", el banner de advertencia.
 - **Hecho cuando:** el paso completo puede quedar vacío, o con solo 1–2 bloques rellenos, respetando "no apto".
 

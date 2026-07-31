@@ -3,6 +3,7 @@ package com.sandyyera.reposteria.data.repositorio
 import com.sandyyera.reposteria.data.db.dao.RecetaDao
 import com.sandyyera.reposteria.data.db.entidades.EntidadEvento
 import com.sandyyera.reposteria.data.db.entidades.Receta
+import com.sandyyera.reposteria.data.db.entidades.RecetaDuracion
 import com.sandyyera.reposteria.data.db.entidades.RecetaIngrediente
 import com.sandyyera.reposteria.data.db.entidades.RecetaSeccion
 import com.sandyyera.reposteria.data.db.entidades.TipoEvento
@@ -10,6 +11,8 @@ import com.sandyyera.reposteria.data.db.entidades.aVigente
 import com.sandyyera.reposteria.data.db.entidades.RecetaRendimiento
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.logica.formato.redondearADosDecimales
+import com.sandyyera.reposteria.logica.duracion.TipoDuracion
+import com.sandyyera.reposteria.logica.duracion.UnidadDuracion
 import com.sandyyera.reposteria.logica.moldes.DimensionesMolde
 import com.sandyyera.reposteria.logica.moldes.ModoReescalado
 import com.sandyyera.reposteria.logica.moldes.factorEscala
@@ -18,6 +21,8 @@ import com.sandyyera.reposteria.logica.busqueda.sonElMismoTexto
 import com.sandyyera.reposteria.logica.precios.errorAlElegirReferencia
 import com.sandyyera.reposteria.logica.validaciones.NOMBRE_SECCION_POR_DEFECTO
 import com.sandyyera.reposteria.logica.validaciones.descripcionDePromocion
+import com.sandyyera.reposteria.logica.validaciones.elBloqueDiceAlgo
+import com.sandyyera.reposteria.logica.validaciones.errorEnCantidadDeDuracion
 import com.sandyyera.reposteria.logica.validaciones.errorEnNombreSeccion
 import com.sandyyera.reposteria.logica.validaciones.errorEnNumeroPositivoTexto
 import com.sandyyera.reposteria.logica.validaciones.promocionesQueNoCabenEn
@@ -535,6 +540,59 @@ class RecetaRepositorio(
     /** Qué recetas siguen enlazadas a un molde del catálogo. */
     suspend fun obtenerRecetasConMoldeOrigen(moldeId: Long): List<Receta> =
         dao.obtenerRecetasConMoldeOrigen(moldeId)
+
+    // --- Duración (8.4) ---
+
+    /**
+     * Las duraciones anotadas de una receta, indexadas por tipo.
+     *
+     * Devuelve un mapa y **no una lista completa con huecos**: los tipos que no están son
+     * exactamente los que nadie llenó, y ese es un estado normal —el paso es opcional—. Quien
+     * lo lea pone el bloque en blanco.
+     */
+    suspend fun obtenerDuraciones(recetaId: Long): Map<TipoDuracion, RecetaDuracion> =
+        dao.obtenerDuraciones(recetaId).associateBy { it.tipo }
+
+    /**
+     * Guarda un bloque de duración, o lo borra si quedó sin decir nada.
+     *
+     * "Sin decir nada" es un bloque apto y sin cantidad. **Un bloque marcado "no apto" sí
+     * dice algo** y se guarda, aunque no tenga números: que algo no se pueda congelar es
+     * justamente el dato que uno quiere encontrar después.
+     *
+     * Borrar en vez de guardar una fila vacía no es un detalle: una fila con `apto = true` y
+     * `cantidad = null` es indistinguible de "todavía no lo sé", así que dejarla no aporta y
+     * hace que la receta parezca tener el paso llenado.
+     */
+    suspend fun guardarDuracion(
+        recetaId: Long,
+        tipo: TipoDuracion,
+        apto: Boolean,
+        cantidadTexto: String,
+        unidad: UnidadDuracion?
+    ): Resultado {
+        if (obtener(recetaId) == null) return Resultado.NoSePudo("Esa receta ya no existe")
+
+        errorEnCantidadDeDuracion(cantidadTexto, apto)?.let { return Resultado.NoSePudo(it) }
+
+        if (!elBloqueDiceAlgo(apto, cantidadTexto)) {
+            dao.eliminarDuracion(recetaId, tipo)
+            return Resultado.Listo
+        }
+
+        dao.guardarDuracion(
+            RecetaDuracion(
+                recetaId = recetaId,
+                tipo = tipo,
+                apto = apto,
+                // Con "no apto" se guardan en null a propósito: dejar el número de antes
+                // haría que volver a marcarlo apto reviviera un dato que ya nadie confirmó.
+                cantidad = if (apto) textoANumero(cantidadTexto)?.toInt() else null,
+                unidad = if (apto) unidad else null
+            )
+        )
+        return Resultado.Listo
+    }
 
     // --- Precios ---
 

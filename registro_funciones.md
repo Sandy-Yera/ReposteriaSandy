@@ -213,6 +213,16 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Qué hace: cuántos trozos como máximo se aceptan en el campo.
 - Cómo funciona: constante `200`. No es una regla del negocio: es que escribir 8.000 en vez de 8 deja el costo por trozo casi en cero y todo lo que sale de ahí sin sentido, sin ningún aviso.
 
+### TipoDuracion, UnidadDuracion, describirDuracion y nombreDeLaUnidad ✅ IMPLEMENTADAS
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/duracion/Duracion.kt
+- Qué hacen: los tipos del paso "Duración" (8.4) y cómo se leen en la pantalla.
+- Cómo funcionan: los dos `enum` **se movieron desde `data/db/entidades/` a `:logica`**, por lo mismo que `ModoPrecio` y `TipoFormaMolde` ya vivían allá: las validaciones y el texto que se muestra son lógica pura y se prueban sin base de datos. La entidad de Room los importa. `describirDuracion(apto, cantidad, unidad)` devuelve **texto y no un número**, porque los tres estados posibles son distintos y ninguno es una cifra: no apto, sin anotar, o una cantidad con su unidad; devolver `Int?` obligaría a cada pantalla a decidir cómo se lee cada caso, y ahí aparecen los "0 días". `nombreDeLaUnidad` resuelve el singular: "1 día" y no "1 días".
+
+### errorEnCantidadDeDuracion, elBloqueDiceAlgo y ORDEN_DE_LOS_BLOQUES ✅ IMPLEMENTADAS
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Duracion.kt
+- Qué hacen: las reglas del paso de duración, que son más blandas que las del resto a propósito.
+- Cómo funcionan: `errorEnCantidadDeDuracion(texto, apto)` acepta el **vacío** —"no lo sé" es una respuesta legítima y la más común— pero rechaza el 0 (para eso está el switch de "no apto") y los decimales (las unidades ya bajan de escala: medio día son 12 horas). Con `apto = false` no revisa nada: ahí la cantidad se ignora por completo. `elBloqueDiceAlgo` es la que decide si hay algo que guardar, y **un bloque "no apto" sí lo tiene** aunque no tenga números — ese es el caso que se olvida al escribirlo como "tiene cantidad". `ORDEN_DE_LOS_BLOQUES` los pone de la forma más común a la menos.
+
 ### pesoPorTrozo ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/rendimiento/Rendimiento.kt
 - Qué hace: calcula cuánto pesa cada trozo dividiendo el peso final del producto entre la cantidad de trozos.
@@ -747,6 +757,21 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/recetas/PasoCantidadesScreen.kt
 - Qué hacen: la pantalla del paso 1 de una receta.
 - Cómo funcionan: misma división de siempre — una parte conecta el ViewModel, la otra solo dibuja y tiene vistas previas. **El costo total va fijo arriba, fuera del desplazamiento**: es el número por el que existe la pantalla, y con una receta larga quedaría fuera de vista justo mientras se ajustan las cantidades. Cada línea muestra la cuenta completa (`500 g × $1,2 = $600`) y no solo el total, para que un valor por gramo mal puesto salte a la vista. En el cuadro de agregar, el campo de gramos aparece **después** de elegir el ingrediente: pedir los dos a la vez obliga a decidir cuánto antes de saber de qué.
+
+### DuracionViewModel, BloqueDeDuracion y EstadoDuracion ✅ IMPLEMENTADAS
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/recetas/DuracionViewModel.kt
+- Qué hacen: el cerebro del paso "Duración" (8.4).
+- Cómo funcionan: **los tres bloques se editan en memoria y se guardan de una vez**, a diferencia del paso de cantidades que escribe en cada acción. La razón es que un bloque a medio escribir se ve igual que uno vaciado a propósito, así que guardar en cada tecla escribiría y borraría filas mientras la persona todavía decide. `BloqueDeDuracion` expone `comoSeLee` —el texto en vivo, con el singular ya resuelto— y `diceAlgo`. `EstadoDuracion.puedeGuardar` es `true` **con todo vacío**: es el único paso de la receta que puede quedar en blanco. Marcar "no apto" **no borra lo escrito** en la pantalla, por si fue un toque por error; lo que no se guarda lo decide el repositorio.
+
+### PasoDuracionScreen, PasoDuracion y AccionesDuracion ✅ IMPLEMENTADAS
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/recetas/PasoDuracionScreen.kt
+- Qué hacen: la pantalla del paso 3 de una receta.
+- Cómo funcionan: el aviso de que las duraciones son estimaciones va **fijo arriba y no como texto de ayuda al pie**: es lo que hay que tener en la cabeza mientras se escriben los números, no algo que se lee después. Con "no apto" los campos **se ocultan en vez de deshabilitarse** — un campo gris invita a tocarlo y a preguntarse por qué no responde, y si no corresponde guardarlo así no hay ninguna duración que anotar. La pantalla dice que el paso es opcional cuando está vacío, para que no parezca que falta llenarlo.
+
+### RecetaRepositorio.guardarDuracion y obtenerDuraciones ✅ IMPLEMENTADAS
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/RecetaRepositorio.kt
+- Qué hacen: guardar y leer los bloques de duración de una receta.
+- Cómo funcionan: `obtenerDuraciones` devuelve un `Map<TipoDuracion, RecetaDuracion>`; los tipos que faltan son exactamente los que nadie llenó, que es un estado normal. `guardarDuracion` **borra el bloque si quedó sin decir nada** en vez de guardar una fila vacía: una fila con `apto = true` y `cantidad = null` es indistinguible de "todavía no lo sé", así que dejarla haría parecer que el paso está llenado. Con "no apto" guarda `cantidad` y `unidad` en `null`, para que volver a marcarlo apto no reviva un dato que ya nadie confirmó.
 
 ### RendimientoViewModel ✅ IMPLEMENTADA
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/recetas/RendimientoViewModel.kt

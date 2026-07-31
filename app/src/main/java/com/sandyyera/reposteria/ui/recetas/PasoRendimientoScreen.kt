@@ -19,6 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -82,6 +83,7 @@ data class AccionesRendimiento(
 fun PasoRendimientoScreen(
     modelo: RendimientoViewModel,
     alVolver: () -> Unit,
+    alPasarADuracion: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val estado by modelo.estado.collectAsStateWithLifecycle()
@@ -110,7 +112,7 @@ fun PasoRendimientoScreen(
         )
     }
 
-    PasoRendimiento(estado, dialogo, acciones, alVolver, modifier)
+    PasoRendimiento(estado, dialogo, acciones, alVolver, alPasarADuracion, modifier)
 }
 
 /**
@@ -127,6 +129,7 @@ fun PasoRendimiento(
     dialogo: DialogoRendimiento,
     acciones: AccionesRendimiento,
     alVolver: () -> Unit,
+    alPasarADuracion: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val anfitrionDeMensajes = remember { SnackbarHostState() }
@@ -227,6 +230,13 @@ fun PasoRendimiento(
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("Reescalar la receta a otro peso") }
             }
+
+            Button(
+                onClick = alPasarADuracion,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = Medidas.objetivoTactil)
+            ) { Text("Siguiente: cuánto dura") }
         }
     }
 

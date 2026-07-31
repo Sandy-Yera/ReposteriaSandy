@@ -2,15 +2,18 @@ package com.sandyyera.reposteria.data.db.dao
 
 import androidx.room.Dao
 import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
 import com.sandyyera.reposteria.data.db.entidades.Receta
 import com.sandyyera.reposteria.data.db.entidades.RecetaIngrediente
+import com.sandyyera.reposteria.data.db.entidades.RecetaDuracion
 import com.sandyyera.reposteria.data.db.entidades.RecetaPrecio
 import com.sandyyera.reposteria.data.db.entidades.RecetaRendimiento
 import com.sandyyera.reposteria.data.db.entidades.RecetaSeccion
 import com.sandyyera.reposteria.data.db.entidades.RecetaSimulacionVenta
+import com.sandyyera.reposteria.logica.duracion.TipoDuracion
 import kotlinx.coroutines.flow.Flow
 
 /** El costo de una receta, para poder pedir varios de una vez. */
@@ -225,6 +228,33 @@ interface RecetaDao {
 
     @Update
     suspend fun actualizarRendimiento(rendimiento: RecetaRendimiento)
+
+    // --- Duración ---
+
+    /**
+     * Las duraciones anotadas de una receta.
+     *
+     * **Puede venir vacía, y eso es normal**: el paso es opcional y la mayoría de las recetas
+     * no lo llena. No hay que sembrar filas al crear la receta —a diferencia del rendimiento,
+     * que sí se siembra porque de él sale la división por trozos— porque una fila de duración
+     * en blanco no se distingue de una que dice "no lo sé".
+     */
+    @Query("SELECT * FROM receta_duracion WHERE recetaId = :recetaId")
+    suspend fun obtenerDuraciones(recetaId: Long): List<RecetaDuracion>
+
+    /**
+     * Guarda o reemplaza una duración.
+     *
+     * `REPLACE` se apoya en la clave primaria compuesta `(recetaId, tipo)`: cada receta tiene
+     * como máximo una fila por tipo de guardado, así que volver a guardar el mismo bloque lo
+     * pisa en vez de acumular.
+     */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun guardarDuracion(duracion: RecetaDuracion)
+
+    /** Borra un bloque de duración, para cuando se vacía lo que estaba anotado. */
+    @Query("DELETE FROM receta_duracion WHERE recetaId = :recetaId AND tipo = :tipo")
+    suspend fun eliminarDuracion(recetaId: Long, tipo: TipoDuracion)
 
     // --- Precios ---
 

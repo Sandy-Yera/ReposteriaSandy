@@ -10,6 +10,10 @@ import com.sandyyera.reposteria.data.repositorio.Resultado
 import com.sandyyera.reposteria.data.repositorio.ResultadoCrearReceta
 import com.sandyyera.reposteria.data.repositorio.ResultadoGuardarIngrediente
 import com.sandyyera.reposteria.data.repositorio.ResultadoGuardarMolde
+import com.sandyyera.reposteria.logica.duracion.TipoDuracion
+import com.sandyyera.reposteria.logica.duracion.UnidadDuracion
+import com.sandyyera.reposteria.logica.moldes.DimensionesMolde
+import com.sandyyera.reposteria.logica.moldes.ModoReescalado
 import com.sandyyera.reposteria.logica.moldes.TipoFormaMolde
 import com.sandyyera.reposteria.logica.precios.ModoPrecio
 import com.sandyyera.reposteria.logica.precios.gananciaFinal
@@ -317,5 +321,62 @@ class FlujoCompletoTest {
         val enLote = recetas.costosDe(listOf(queque, vacia))
         assertEquals(2, enLote.size)
         assertEquals(0.0, enLote.getValue(vacia), 0.001)
+    }
+
+    /**
+     * Que el paso de duración **no toque nada** del resto.
+     *
+     * Es la comprobación al revés de las otras: acá lo que se verifica es que un paso nuevo
+     * no se haya enredado con los que ya estaban. La duración es el único paso puramente
+     * descriptivo —no entra en el costo, ni en los precios, ni en los sueldos, ni en las
+     * simulaciones—, y esa independencia es fácil de romper sin darse cuenta el día que
+     * alguien la meta en el snapshot "por si acaso".
+     */
+    @Test
+    fun `anotar duraciones no mueve ninguna de las cifras de la receta`() = runBlocking {
+        val harina = crearIngrediente("Harina", 2.0)
+        val receta = (recetas.crear("Torta") as ResultadoCrearReceta.Creada).recetaId
+        recetas.agregarIngrediente(recetas.obtenerSecciones(receta).single().id, harina, 500.0)
+        recetaDao.actualizarRendimiento(recetaDao.obtenerRendimiento(receta)!!.copy(trozos = 4))
+        recetaDao.insertarPrecio(
+            RecetaPrecio(recetaId = receta, modo = ModoPrecio.TROZO, precioTotal = 800.0)
+        )
+
+        val antesDelCosto = costoCoherente(receta)
+        val antes = recetas.obtenerDatosCalculo(listOf(receta)).getValue(receta)
+        val antesDelIngreso = ingresoBruto(antes)
+        val antesDeLaGanancia = gananciaFinal(antes)
+
+        recetas.guardarDuracion(receta, TipoDuracion.AMBIENTE, true, "3", UnidadDuracion.DIAS)
+        recetas.guardarDuracion(receta, TipoDuracion.CONGELADA, apto = false, "", null)
+
+        assertEquals(antesDelCosto, costoCoherente(receta), 0.001)
+        val despues = recetas.obtenerDatosCalculo(listOf(receta)).getValue(receta)
+        assertEquals(antesDelIngreso, ingresoBruto(despues), 0.001)
+        assertEquals(antesDeLaGanancia, gananciaFinal(despues), 0.001)
+        assertEquals("Ni los trozos", antes.trozos, despues.trozos)
+        assertEquals("Ni los precios", antes.precios.size, despues.precios.size)
+
+        // Y al revés: reescalar la receta no borra ni cambia lo anotado de duración.
+        recetas.definirMolde(
+            receta,
+            DimensionesMolde(
+                tipoForma = TipoFormaMolde.CUADRADO, ladoCm = 10.0, alturaMoldeCm = 5.0
+            ),
+            moldeOrigenId = null
+        )
+        recetas.reescalarPorMolde(
+            receta,
+            DimensionesMolde(
+                tipoForma = TipoFormaMolde.CUADRADO, ladoCm = 10.0, alturaMoldeCm = 10.0
+            ),
+            ModoReescalado.CAPACIDAD,
+            moldeOrigenId = null
+        )
+
+        val duraciones = recetas.obtenerDuraciones(receta)
+        assertEquals(2, duraciones.size)
+        assertEquals(3, duraciones.getValue(TipoDuracion.AMBIENTE).cantidad)
+        assertEquals(1000.0, recetas.obtenerIngredientes(receta).single().cantidadG, 0.001)
     }
 }

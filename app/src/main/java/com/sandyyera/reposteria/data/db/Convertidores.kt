@@ -2,9 +2,9 @@ package com.sandyyera.reposteria.data.db
 
 import androidx.room.TypeConverter
 import com.sandyyera.reposteria.data.db.entidades.EntidadEvento
-import com.sandyyera.reposteria.data.db.entidades.TipoDuracion
+import com.sandyyera.reposteria.logica.duracion.TipoDuracion
 import com.sandyyera.reposteria.data.db.entidades.TipoEvento
-import com.sandyyera.reposteria.data.db.entidades.UnidadDuracion
+import com.sandyyera.reposteria.logica.duracion.UnidadDuracion
 import com.sandyyera.reposteria.logica.moldes.TipoFormaMolde
 import com.sandyyera.reposteria.logica.precios.ModoPrecio
 

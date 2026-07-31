@@ -2,12 +2,8 @@ package com.sandyyera.reposteria.data.db.entidades
 
 import androidx.room.Entity
 import androidx.room.ForeignKey
-
-/** Dónde se guarda el producto. Cada receta tiene una fila por cada uno. */
-enum class TipoDuracion { AMBIENTE, REFRIGERADA, CONGELADA }
-
-/** En qué unidad se mide cuánto dura. */
-enum class UnidadDuracion { HORAS, DIAS, SEMANAS, MESES }
+import com.sandyyera.reposteria.logica.duracion.TipoDuracion
+import com.sandyyera.reposteria.logica.duracion.UnidadDuracion
 
 /**
  * Cuánto dura el producto guardado de cierta forma.

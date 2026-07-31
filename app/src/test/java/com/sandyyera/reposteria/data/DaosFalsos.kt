@@ -10,11 +10,13 @@ import com.sandyyera.reposteria.data.db.entidades.EventoCambio
 import com.sandyyera.reposteria.data.db.entidades.Ingrediente
 import com.sandyyera.reposteria.data.db.entidades.Molde
 import com.sandyyera.reposteria.data.db.entidades.Receta
+import com.sandyyera.reposteria.data.db.entidades.RecetaDuracion
 import com.sandyyera.reposteria.data.db.entidades.RecetaIngrediente
 import com.sandyyera.reposteria.data.db.entidades.RecetaPrecio
 import com.sandyyera.reposteria.data.db.entidades.RecetaRendimiento
 import com.sandyyera.reposteria.data.db.entidades.RecetaSeccion
 import com.sandyyera.reposteria.data.db.entidades.RecetaSimulacionVenta
+import com.sandyyera.reposteria.logica.duracion.TipoDuracion
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
@@ -177,6 +179,9 @@ class MoldeDaoFalso(
  * - **`costoDeVariasRecetas` omite las recetas sin ingredientes**, igual que el `GROUP BY`
  *   real. Quien la llame tiene que tomarlas como 0, y esa trampa solo se puede probar si
  *   el falso la reproduce.
+ * - **La cascada llega también a las duraciones.** Borrar una receta se lleva sus filas de
+ *   `receta_duracion`, igual que la clave foránea real: si el falso las dejara, una prueba
+ *   podría afirmar que la cascada funciona sobre una tabla que en realidad quedó con basura.
  * - **`observarCostos` vuelve a emitir cuando cambia cualquiera de las tablas que consulta**,
  *   que es lo que hace el `InvalidationTracker` de Room. Sin esto no se podría probar el bug
  *   que motivó esa consulta: un falso que devuelva un `Flow` de un solo valor pasa la prueba
@@ -194,6 +199,7 @@ class RecetaDaoFalso(
     private val rendimientos = mutableListOf<RecetaRendimiento>()
     private val precios = mutableListOf<RecetaPrecio>()
     private val simulaciones = mutableListOf<RecetaSimulacionVenta>()
+    private val duraciones = mutableListOf<RecetaDuracion>()
 
     private var siguienteId = 1L
     private fun nuevoId() = siguienteId++
@@ -283,6 +289,7 @@ class RecetaDaoFalso(
         rendimientos.removeAll { it.recetaId == recetaId }
         precios.removeAll { it.recetaId == recetaId }
         simulaciones.removeAll { it.recetaId == recetaId }
+        duraciones.removeAll { it.recetaId == recetaId }
         recetas.value = recetas.value.filterNot { it.id == recetaId }
         cambio()
     }
@@ -412,6 +419,23 @@ class RecetaDaoFalso(
     override suspend fun actualizarRendimiento(rendimiento: RecetaRendimiento) {
         val posicion = rendimientos.indexOfFirst { it.recetaId == rendimiento.recetaId }
         if (posicion >= 0) rendimientos[posicion] = rendimiento
+    }
+
+    // --- Duración ---
+
+    override suspend fun obtenerDuraciones(recetaId: Long): List<RecetaDuracion> =
+        duraciones.filter { it.recetaId == recetaId }
+
+    override suspend fun guardarDuracion(duracion: RecetaDuracion) {
+        // El REPLACE real se apoya en la clave primaria (recetaId, tipo): volver a guardar
+        // el mismo bloque lo pisa. Sin esto el falso acumularía filas y una prueba de
+        // "cambiar la duración" pasaría con dos valores distintos guardados a la vez.
+        duraciones.removeAll { it.recetaId == duracion.recetaId && it.tipo == duracion.tipo }
+        duraciones += duracion
+    }
+
+    override suspend fun eliminarDuracion(recetaId: Long, tipo: TipoDuracion) {
+        duraciones.removeAll { it.recetaId == recetaId && it.tipo == tipo }
     }
 
     // --- Precios ---
