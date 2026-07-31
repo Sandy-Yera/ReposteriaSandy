@@ -1,5 +1,6 @@
 package com.sandyyera.reposteria.ui.ingredientes
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -15,7 +16,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -312,9 +312,12 @@ private fun Catalogo(
 /**
  * Un ingrediente de la lista: su nombre, lo que vale el gramo, y qué se puede hacer con él.
  *
- * Los dos botones son explícitos en vez de esconder el editar detrás de "tocar la tarjeta".
- * Esta app se usa apurada y a veces con las manos sucias: un gesto que no se ve es un gesto
- * que no se encuentra, y cada botón ocupa sus 48dp completos.
+ * **Tocar la tarjeta lo edita; el único botón que queda es el de borrar.** Antes había dos
+ * íconos explícitos, con el argumento de que un gesto que no se ve no se encuentra. Con la
+ * app ya en uso se vio lo contrario: los dos íconos son casi iguales de tamaño y quedan
+ * pegados, y el que hay que tocar con cuidado —el rojo— estaba a un dedo de distancia del
+ * inofensivo. Con uno solo no hay a qué apuntarle mal, y editar es lo que uno espera que
+ * pase al tocar algo de una lista.
  */
 @Composable
 private fun TarjetaIngrediente(
@@ -323,7 +326,11 @@ private fun TarjetaIngrediente(
     alBorrar: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Card(modifier = modifier.fillMaxWidth()) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = alEditar)
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -349,18 +356,11 @@ private fun TarjetaIngrediente(
                 )
             }
 
-            IconButton(onClick = alEditar) {
-                Icon(
-                    imageVector = Icons.Default.Edit,
-                    // Nombra el ingrediente para que el lector de pantalla no diga
-                    // "editar, editar, editar" en toda la lista.
-                    contentDescription = "Editar ${ingrediente.nombre}"
-                )
-            }
-
             IconButton(onClick = alBorrar) {
                 Icon(
                     imageVector = Icons.Default.Delete,
+                    // Nombra el ingrediente para que el lector de pantalla no diga
+                    // "eliminar, eliminar, eliminar" en toda la lista.
                     contentDescription = "Eliminar ${ingrediente.nombre}",
                     tint = MaterialTheme.colorScheme.error
                 )

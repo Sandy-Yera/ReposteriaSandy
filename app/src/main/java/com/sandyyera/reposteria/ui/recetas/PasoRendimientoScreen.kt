@@ -19,7 +19,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -75,21 +74,24 @@ data class AccionesRendimiento(
     val cambiarPesoNuevo: (String) -> Unit = {},
     val confirmarReescaladoPorPeso: () -> Unit = {},
     val cerrarDialogo: () -> Unit = {},
-    val mensajeMostrado: () -> Unit = {}
+    val mensajeMostrado: () -> Unit = {},
+    val irAlPaso: (PasoDeReceta) -> Unit = {},
+    val cerrarReceta: () -> Unit = {}
 )
 
 /** El paso de rendimiento conectado a su ViewModel. */
 @Composable
 fun PasoRendimientoScreen(
     modelo: RendimientoViewModel,
-    alVolver: () -> Unit,
-    alPasarADuracion: () -> Unit,
+    pasoActual: PasoDeReceta,
+    alElegirPaso: (PasoDeReceta) -> Unit,
+    alCerrarReceta: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val estado by modelo.estado.collectAsStateWithLifecycle()
     val dialogo by modelo.dialogo.collectAsStateWithLifecycle()
 
-    val acciones = remember(modelo) {
+    val acciones = remember(modelo, alElegirPaso, alCerrarReceta) {
         AccionesRendimiento(
             cambiarTrozos = modelo::cambiarTrozos,
             cambiarPesoFinal = modelo::cambiarPesoFinal,
@@ -108,11 +110,13 @@ fun PasoRendimientoScreen(
             cambiarPesoNuevo = modelo::cambiarPesoNuevo,
             confirmarReescaladoPorPeso = modelo::confirmarReescaladoPorPeso,
             cerrarDialogo = modelo::cerrarDialogo,
-            mensajeMostrado = modelo::mensajeMostrado
+            mensajeMostrado = modelo::mensajeMostrado,
+            irAlPaso = alElegirPaso,
+            cerrarReceta = alCerrarReceta
         )
     }
 
-    PasoRendimiento(estado, dialogo, acciones, alVolver, alPasarADuracion, modifier)
+    PasoRendimiento(estado, dialogo, acciones, pasoActual, modifier)
 }
 
 /**
@@ -128,16 +132,17 @@ fun PasoRendimiento(
     estado: EstadoRendimiento,
     dialogo: DialogoRendimiento,
     acciones: AccionesRendimiento,
-    alVolver: () -> Unit,
-    alPasarADuracion: () -> Unit = {},
+    pasoActual: PasoDeReceta = PasoDeReceta.RENDIMIENTO,
     modifier: Modifier = Modifier
 ) {
     val anfitrionDeMensajes = remember { SnackbarHostState() }
 
-    // El botón de atrás del teléfono cierra el cuadro si hay uno, y si no vuelve al paso
-    // anterior. Sin esto saldría de la app en medio de la receta.
+    // El botón de atrás del teléfono cierra el cuadro si hay uno, y si no sale de la receta.
+    // **Ya no vuelve a cantidades**: eso hacía que el mismo gesto significara "un paso
+    // atrás" acá y "salir" en el primer paso. Moverse entre pasos es la fila de arriba.
     BackHandler(enabled = true) {
-        if (dialogo is DialogoRendimiento.Ninguno) alVolver() else acciones.cerrarDialogo()
+        if (dialogo is DialogoRendimiento.Ninguno) acciones.cerrarReceta()
+        else acciones.cerrarDialogo()
     }
 
     LaunchedEffect(estado.mensaje) {
@@ -149,19 +154,25 @@ fun PasoRendimiento(
     Scaffold(
         modifier = modifier,
         topBar = {
-            TopAppBar(
-                title = { Text(estado.receta?.titulo ?: "Rendimiento") },
-                navigationIcon = {
-                    IconButton(onClick = alVolver) {
-                        Icon(Icons.Default.Close, contentDescription = "Volver a cantidades")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
+            Column {
+                TopAppBar(
+                    title = { Text(estado.receta?.titulo ?: "Rendimiento") },
+                    navigationIcon = {
+                        IconButton(onClick = acciones.cerrarReceta) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Salir de la receta"
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        titleContentColor = MaterialTheme.colorScheme.onPrimary,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
+                    )
                 )
-            )
+                FilaDePasos(pasoActual = pasoActual, alElegirPaso = acciones.irAlPaso)
+            }
         },
         snackbarHost = { SnackbarHost(anfitrionDeMensajes) }
     ) { interior ->
@@ -232,13 +243,6 @@ fun PasoRendimiento(
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("Reescalar la receta a otro peso") }
             }
-
-            Button(
-                onClick = alPasarADuracion,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = Medidas.objetivoTactil)
-            ) { Text("Siguiente: cuánto dura") }
         }
     }
 
@@ -544,8 +548,7 @@ private fun VistaPreviaSinMolde() {
         PasoRendimiento(
             estadoDeEjemplo(usaMolde = false),
             DialogoRendimiento.Ninguno,
-            AccionesRendimiento(),
-            alVolver = {}
+            AccionesRendimiento()
         )
     }
 }
@@ -557,8 +560,7 @@ private fun VistaPreviaElegirMolde() {
         PasoRendimiento(
             estadoDeEjemplo(usaMolde = true),
             DialogoRendimiento.ElegirMolde(esReescalado = true),
-            AccionesRendimiento(),
-            alVolver = {}
+            AccionesRendimiento()
         )
     }
 }

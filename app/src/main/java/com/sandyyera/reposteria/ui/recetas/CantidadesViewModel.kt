@@ -18,6 +18,7 @@ import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.logica.validaciones.debenMostrarseLosNombresDeSeccion
 import com.sandyyera.reposteria.logica.validaciones.errorEnCantidadEnGramosTexto
 import com.sandyyera.reposteria.logica.validaciones.errorEnNombreSeccion
+import com.sandyyera.reposteria.logica.validaciones.errorEnTituloReceta
 import com.sandyyera.reposteria.logica.validaciones.textoANumero
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -141,6 +142,29 @@ sealed interface DialogoCantidades {
         val error: String? get() = rechazo ?: errorEnNombreSeccion(nombre)
 
         val puedeGuardar: Boolean get() = errorEnNombreSeccion(nombre) == null && !guardando
+    }
+
+    /**
+     * Cambiarle el título a la receta, sin salir de ella.
+     *
+     * Vive acá y no en la lista de recetas porque ahí ya no hay lápiz: **tocar la cosa la
+     * edita**, y una receta de la lista se toca para abrirla. El título se cambia desde
+     * adentro, que además es donde uno se da cuenta de que la receta terminó siendo otra
+     * cosa de la que se llamó al crearla.
+     *
+     * Lleva [rechazo] por lo mismo que los cuadros de sección: un título repetido lo detecta
+     * el repositorio, y ese aviso va **junto al campo** y no en la franja de abajo, que con
+     * el teclado abierto queda tapada.
+     */
+    data class RenombrarReceta(
+        val titulo: String,
+        val guardando: Boolean = false,
+        val rechazo: String? = null
+    ) : DialogoCantidades {
+
+        val error: String? get() = rechazo ?: errorEnTituloReceta(titulo)
+
+        val puedeGuardar: Boolean get() = errorEnTituloReceta(titulo) == null && !guardando
     }
 
     /** La advertencia antes de borrar una sección con todo lo que lleva. */
@@ -451,6 +475,58 @@ class CantidadesViewModel(
                 is Resultado.NoSePudo -> mensaje.value = r.motivo
             }
             _dialogo.value = DialogoCantidades.Ninguno
+            volverALeer()
+        }
+    }
+
+    // --- El título de la receta ---
+
+    /**
+     * Abre el cuadro para cambiarle el título a la receta.
+     *
+     * El título se lee **de la base** y no de `estado.value`: el `combine` de arriba deja de
+     * emitir cinco segundos después de que la pantalla se oculta, así que su último valor
+     * puede ser de antes del último cambio. Es la misma razón por la que
+     * [abrirAgregarSeccion] consulta en vez de mirar el estado.
+     */
+    fun abrirRenombrarReceta() {
+        viewModelScope.launch {
+            val receta = recetas.obtener(recetaId) ?: return@launch
+            _dialogo.value = DialogoCantidades.RenombrarReceta(titulo = receta.titulo)
+        }
+    }
+
+    // Al escribir, el rechazo anterior deja de aplicar: era sobre el título de antes.
+    fun cambiarTituloDeLaReceta(texto: String) {
+        _dialogo.update { actual ->
+            if (actual is DialogoCantidades.RenombrarReceta) {
+                actual.copy(titulo = texto, rechazo = null)
+            } else {
+                actual
+            }
+        }
+    }
+
+    fun guardarTituloDeLaReceta() {
+        val actual = _dialogo.value as? DialogoCantidades.RenombrarReceta ?: return
+        if (!actual.puedeGuardar) return
+
+        _dialogo.value = actual.copy(guardando = true)
+
+        viewModelScope.launch {
+            when (val resultado = recetas.renombrar(recetaId, actual.titulo.trim())) {
+                is Resultado.Listo -> _dialogo.value = DialogoCantidades.Ninguno
+                // El cuadro queda abierto con lo escrito y el motivo bajo el campo: hay que
+                // corregirlo, no volver a escribirlo entero.
+                is Resultado.NoSePudo -> _dialogo.update { actualDialogo ->
+                    if (actualDialogo is DialogoCantidades.RenombrarReceta) {
+                        actualDialogo.copy(guardando = false, rechazo = resultado.motivo)
+                    } else {
+                        actualDialogo
+                    }
+                }
+            }
+            // Se relee siempre: el título vive en el encabezado de esta misma pantalla.
             volverALeer()
         }
     }

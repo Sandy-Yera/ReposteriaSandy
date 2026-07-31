@@ -53,29 +53,35 @@ data class AccionesDuracion(
     val cambiarCantidad: (TipoDuracion, String) -> Unit = { _, _ -> },
     val cambiarUnidad: (TipoDuracion, UnidadDuracion) -> Unit = { _, _ -> },
     val guardar: () -> Unit = {},
-    val mensajeMostrado: () -> Unit = {}
+    val mensajeMostrado: () -> Unit = {},
+    val irAlPaso: (PasoDeReceta) -> Unit = {},
+    val cerrarReceta: () -> Unit = {}
 )
 
 /** El paso de duración conectado a su ViewModel. */
 @Composable
 fun PasoDuracionScreen(
     modelo: DuracionViewModel,
-    alVolver: () -> Unit,
+    pasoActual: PasoDeReceta,
+    alElegirPaso: (PasoDeReceta) -> Unit,
+    alCerrarReceta: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val estado by modelo.estado.collectAsStateWithLifecycle()
 
-    val acciones = remember(modelo) {
+    val acciones = remember(modelo, alElegirPaso, alCerrarReceta) {
         AccionesDuracion(
             cambiarApto = modelo::cambiarApto,
             cambiarCantidad = modelo::cambiarCantidad,
             cambiarUnidad = modelo::cambiarUnidad,
             guardar = modelo::guardar,
-            mensajeMostrado = modelo::mensajeMostrado
+            mensajeMostrado = modelo::mensajeMostrado,
+            irAlPaso = alElegirPaso,
+            cerrarReceta = alCerrarReceta
         )
     }
 
-    PasoDuracion(estado, acciones, alVolver, modifier)
+    PasoDuracion(estado, acciones, pasoActual, modifier)
 }
 
 /**
@@ -93,12 +99,13 @@ fun PasoDuracionScreen(
 fun PasoDuracion(
     estado: EstadoDuracion,
     acciones: AccionesDuracion,
-    alVolver: () -> Unit,
+    pasoActual: PasoDeReceta = PasoDeReceta.DURACION,
     modifier: Modifier = Modifier
 ) {
     val anfitrionDeMensajes = remember { SnackbarHostState() }
 
-    BackHandler(onBack = alVolver)
+    // Sale de la receta, no vuelve al rendimiento: moverse entre pasos es la fila de arriba.
+    BackHandler(onBack = acciones.cerrarReceta)
 
     LaunchedEffect(estado.mensaje) {
         val texto = estado.mensaje ?: return@LaunchedEffect
@@ -109,19 +116,25 @@ fun PasoDuracion(
     Scaffold(
         modifier = modifier,
         topBar = {
-            TopAppBar(
-                title = { Text(estado.receta?.titulo ?: "Duración") },
-                navigationIcon = {
-                    IconButton(onClick = alVolver) {
-                        Icon(Icons.Default.Close, contentDescription = "Volver al rendimiento")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
+            Column {
+                TopAppBar(
+                    title = { Text(estado.receta?.titulo ?: "Duración") },
+                    navigationIcon = {
+                        IconButton(onClick = acciones.cerrarReceta) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Salir de la receta"
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        titleContentColor = MaterialTheme.colorScheme.onPrimary,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
+                    )
                 )
-            )
+                FilaDePasos(pasoActual = pasoActual, alElegirPaso = acciones.irAlPaso)
+            }
         },
         snackbarHost = { SnackbarHost(anfitrionDeMensajes) }
     ) { interior ->
@@ -259,7 +272,7 @@ private fun estadoDeEjemplo(vacio: Boolean) = EstadoDuracion(
 @Composable
 private fun VistaPreviaDuracionVacia() {
     ReposteriaTheme {
-        PasoDuracion(estadoDeEjemplo(vacio = true), AccionesDuracion(), alVolver = {})
+        PasoDuracion(estadoDeEjemplo(vacio = true), AccionesDuracion())
     }
 }
 
@@ -267,6 +280,6 @@ private fun VistaPreviaDuracionVacia() {
 @Composable
 private fun VistaPreviaDuracionConDatos() {
     ReposteriaTheme {
-        PasoDuracion(estadoDeEjemplo(vacio = false), AccionesDuracion(), alVolver = {})
+        PasoDuracion(estadoDeEjemplo(vacio = false), AccionesDuracion())
     }
 }

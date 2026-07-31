@@ -1202,6 +1202,27 @@ conservar. Los que la original eliminó se van.
 
 Debajo del aviso va **"¿Qué cambió?"**, que al tocarlo despliega un resumen (8.11.5).
 
+**Y una tercera salida: "Desvincular".** Mantener y actualizar son decisiones sobre *este*
+cambio; las dos dejan el vínculo vivo y el próximo cambio vuelve a preguntar. Eso está bien
+mientras la copia siga pareciéndose a la original, pero deja de estarlo cuando ya no: la
+sección de bizcocho que empezó copiada terminó con menos azúcar, otra harina y un ingrediente
+que la original no tiene. A esa altura cada aviso es ruido —"cambió algo allá" ya no dice
+nada sobre lo de acá— y el ruido termina enseñando a ignorar todos los avisos, incluidos los
+que sí importan.
+
+Desvincular corta la referencia para siempre: `recetaOrigenId` y `firmaDelOrigen` pasan a
+`null` y la sección queda como cualquier sección propia. **No toca los ingredientes** —lo que
+está escrito se queda escrito—, solo deja de mirar hacia la original. Se pierde el "vino de
+Bizcocho" y se pierde el "¿Qué cambió?"; es exactamente lo que se está pidiendo.
+
+**No se deshace.** Volver a vincular sería volver a copiar, y eso ya existe: se agrega la
+sección desde la receta original de nuevo. Por eso el diálogo lo dice antes de confirmar, con
+el mismo tono que el resto de la app: *"La sección se queda con lo que tiene. Deja de avisarte
+cuando cambie Bizcocho, y no se puede volver a enlazar"*.
+
+Es la misma salida que ya toma sola el caso de 8.11.4 cuando la original desaparece —ahí
+"Mantener" desvincula—, ofrecida acá a propósito y con la original todavía viva.
+
 #### 8.11.4 Si la original fue borrada
 
 Sale el mismo aviso. Al tocarlo se explica que la receta fue eliminada, y quedan dos salidas:
@@ -1701,6 +1722,16 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 - **Por qué antes de la 7:** son cambios sobre pantallas que ya existen, y cada fase nueva
   que se agregue encima los hace más caros. La 7 además estrena la fila de pasos con un paso
   más, así que conviene que la fila ya esté.
+- **Va en tres tandas, por lo que se pisa entre sí:** la fila de pasos y "tocar edita" juntas
+  (las dos tocan el encabezado y los botones de las mismas cuatro pantallas), después el
+  molde como paso propio con el reescalado del peso final (los dos viven en Rendimiento y el
+  segundo depende de dónde termine quedando el primero), y el guardado automático al final,
+  que es lo único que toca cómo se escribe en la base.
+  - **Tanda 1 — hecha:** `FilaDePasos` en las tres pantallas, sin botones de "Siguiente"; la
+    X y el botón de atrás salen de la receta desde cualquier paso; ni el catálogo de
+    ingredientes, ni la lista de recetas, ni los encabezados de sección, ni las filas de
+    ingrediente tienen ya ícono de editar — se toca la cosa —, y el título de la receta se
+    cambia desde adentro.
 
 ### Fase 7 — Receta: Gastos y Ganancias + Precios/Promociones
 

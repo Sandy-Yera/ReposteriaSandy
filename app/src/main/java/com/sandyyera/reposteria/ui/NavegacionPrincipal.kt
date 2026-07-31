@@ -17,6 +17,7 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -32,6 +33,7 @@ import com.sandyyera.reposteria.ui.recetas.CantidadesViewModel
 import com.sandyyera.reposteria.ui.recetas.ListaRecetasScreen
 import com.sandyyera.reposteria.ui.recetas.DuracionViewModel
 import com.sandyyera.reposteria.ui.recetas.PasoCantidadesScreen
+import com.sandyyera.reposteria.ui.recetas.PasoDeReceta
 import com.sandyyera.reposteria.ui.recetas.PasoDuracionScreen
 import com.sandyyera.reposteria.ui.recetas.PasoRendimientoScreen
 import com.sandyyera.reposteria.ui.recetas.RendimientoViewModel
@@ -46,15 +48,6 @@ import kotlinx.coroutines.launch
  * y no puestas en gris: una opción que no lleva a ninguna parte se toca igual, y da la
  * impresión de que algo se rompió.
  */
-/**
- * Los pasos de una receta abierta (8.1).
- *
- * Van en un `enum` y no en un booleano porque de acá salen los seis pasos del asistente:
- * cantidades, rendimiento, duración, gastos, simulación y pasos. Con un booleano el tercero
- * ya obligaría a rehacerlo.
- */
-enum class PasoDeReceta { CANTIDADES, RENDIMIENTO, DURACION }
-
 enum class Seccion(val titulo: String, val icono: ImageVector) {
     INGREDIENTES("Ingredientes", Icons.Default.ShoppingCart),
     RECETAS("Recetas", Icons.Default.Favorite),
@@ -87,10 +80,21 @@ fun NavegacionPrincipal(
     var pasoActual by rememberSaveable { mutableStateOf(PasoDeReceta.CANTIDADES) }
 
     // Una receta abierta se ve a pantalla completa, sin el menú de secciones: es un paso
-    // dentro de la receta, no una sección de la app. Se sale con la X o con el botón de
-    // atrás del teléfono.
+    // dentro de la receta, no una sección de la app.
+    //
+    // **Salir y cambiar de paso son dos gestos distintos y ya no se pisan**: la X y el
+    // botón de atrás cierran la receta desde cualquier paso, y moverse entre pasos es la
+    // fila de arriba. Antes la X de rendimiento devolvía a cantidades, así que el mismo
+    // ícono significaba una cosa en el primer paso y otra en el segundo.
     val idAbierta = recetaAbierta
     if (idAbierta != null) {
+        // Las dos van en `remember` y no sueltas: sin eso se crean de nuevo en cada
+        // redibujado, y como cada pantalla arma su `Acciones*` con `remember(...)` sobre
+        // ellas, ese `remember` no serviría de nada y la pantalla entera se recompondría
+        // por cada tecla que se escribe en un campo.
+        val cerrarReceta: () -> Unit = remember { { recetaAbierta = null } }
+        val elegirPaso: (PasoDeReceta) -> Unit = remember { { pasoActual = it } }
+
         when (pasoActual) {
             PasoDeReceta.CANTIDADES -> PasoCantidadesScreen(
                 modelo = viewModel(
@@ -104,8 +108,9 @@ fun NavegacionPrincipal(
                         ingredientes = contenedor.ingredientes
                     )
                 ),
-                alVolver = { recetaAbierta = null },
-                alPasarARendimiento = { pasoActual = PasoDeReceta.RENDIMIENTO },
+                pasoActual = pasoActual,
+                alElegirPaso = elegirPaso,
+                alCerrarReceta = cerrarReceta,
                 modifier = modifier
             )
 
@@ -118,10 +123,9 @@ fun NavegacionPrincipal(
                         moldes = contenedor.moldes
                     )
                 ),
-                // Volver es al paso anterior, no a la lista: los pasos de una receta se
-                // recorren en orden y salir del todo es la X del primero.
-                alVolver = { pasoActual = PasoDeReceta.CANTIDADES },
-                alPasarADuracion = { pasoActual = PasoDeReceta.DURACION },
+                pasoActual = pasoActual,
+                alElegirPaso = elegirPaso,
+                alCerrarReceta = cerrarReceta,
                 modifier = modifier
             )
 
@@ -130,7 +134,9 @@ fun NavegacionPrincipal(
                     key = "duracion-$idAbierta",
                     factory = DuracionViewModel.fabrica(idAbierta, contenedor.recetas)
                 ),
-                alVolver = { pasoActual = PasoDeReceta.RENDIMIENTO },
+                pasoActual = pasoActual,
+                alElegirPaso = elegirPaso,
+                alCerrarReceta = cerrarReceta,
                 modifier = modifier
             )
         }

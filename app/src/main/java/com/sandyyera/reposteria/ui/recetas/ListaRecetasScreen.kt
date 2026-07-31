@@ -17,7 +17,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -27,7 +26,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -60,7 +58,6 @@ data class AccionesRecetas(
     val pedirAlta: () -> Unit = {},
     val cambiarTitulo: (String) -> Unit = {},
     val guardar: () -> Unit = {},
-    val editar: (Receta) -> Unit = {},
     val pedirBorrado: (Receta) -> Unit = {},
     val confirmarBorrado: () -> Unit = {},
     val cerrarDialogo: () -> Unit = {},
@@ -98,7 +95,6 @@ fun ListaRecetasScreen(
             pedirAlta = modelo::abrirAlta,
             cambiarTitulo = modelo::cambiarTitulo,
             guardar = modelo::guardar,
-            editar = modelo::abrirCambioDeTitulo,
             pedirBorrado = modelo::pedirBorrado,
             confirmarBorrado = modelo::confirmarBorrado,
             cerrarDialogo = modelo::cerrarDialogo,
@@ -202,15 +198,11 @@ fun ListaRecetas(
                     items(estado.visibles, key = { it.receta.id }) { fila ->
                         TarjetaReceta(
                             fila = fila,
-                            // Una receta repetida no se abre ni se renombra: los dos
-                            // caminos llevan al aviso, y solo queda borrarla.
+                            // Una receta repetida no se abre: el toque lleva al aviso, y
+                            // solo queda borrarla.
                             alAbrir = {
                                 if (fila.repetida) acciones.avisarBloqueada(fila.receta)
                                 else acciones.abrir(fila.receta.id)
-                            },
-                            alEditar = {
-                                if (fila.repetida) acciones.avisarBloqueada(fila.receta)
-                                else acciones.editar(fila.receta)
                             },
                             alBorrar = { acciones.pedirBorrado(fila.receta) }
                         )
@@ -262,19 +254,21 @@ fun ListaRecetas(
  * app y conviene que la lista se reconozca de un vistazo. El ícono de eliminar sigue en
  * frambuesa encima del rosa, con contraste medido (4,57:1), así que no se pierde entre la
  * decoración.
+ *
+ * **Ya no hay lápiz para renombrar.** El título se cambia desde adentro de la receta,
+ * tocándolo en el encabezado: acá el toque está tomado por abrirla, que es lo que se hace
+ * cien veces por cada vez que se le cambia el nombre.
  */
 @Composable
 private fun TarjetaReceta(
     fila: RecetaConCosto,
     alAbrir: () -> Unit,
-    alEditar: () -> Unit,
     alBorrar: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Card(
-        // Tocar la tarjeta abre la receta. Acá sí se usa un gesto sin botón propio, al
-        // revés que en ingredientes: abrir es LA acción de una receta, "tocar para abrir"
-        // se entiende sin explicación, y un cuarto botón dejaría la fila apretada.
+        // Tocar la tarjeta abre la receta: abrir es LA acción de una receta y "tocar para
+        // abrir" se entiende sin explicación.
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = alAbrir),
@@ -300,11 +294,21 @@ private fun TarjetaReceta(
                     style = MaterialTheme.typography.titleMedium
                 )
                 if (fila.repetida) {
-                    Text(
-                        text = "Título repetido: solo se puede eliminar",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(end = Medidas.minimo)
+                        )
+                        Text(
+                            // Sin el lápiz, este texto y el ícono son lo único que avisa
+                            // antes de tocarla; el aviso completo llega al tocar.
+                            text = "Título repetido: solo se puede eliminar",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                 } else {
                     Text(
                         // El costo se lee de la base con el precio actual de cada
@@ -324,22 +328,6 @@ private fun TarjetaReceta(
                 }
             }
 
-            IconButton(onClick = alEditar) {
-                Icon(
-                    // Se deja tocable aunque esté repetida: un botón muerto no explica
-                    // nada, y así el toque lleva al aviso que sí explica por qué no se
-                    // puede. El color tenue avisa antes de tocarlo.
-                    imageVector = if (fila.repetida) Icons.Default.Warning else Icons.Default.Edit,
-                    contentDescription = if (fila.repetida) {
-                        "Por qué no se puede editar ${fila.receta.titulo}"
-                    } else {
-                        "Cambiar el título de ${fila.receta.titulo}"
-                    },
-                    tint = if (fila.repetida) MaterialTheme.colorScheme.error
-                    else LocalContentColor.current
-                )
-            }
-
             IconButton(onClick = alBorrar) {
                 Icon(
                     imageVector = Icons.Default.Delete,
@@ -351,7 +339,12 @@ private fun TarjetaReceta(
     }
 }
 
-/** El cuadro para crear una receta o cambiarle el título. */
+/**
+ * El cuadro para crear una receta.
+ *
+ * Solo crea: el título de una receta que ya existe se cambia desde adentro, tocándolo en el
+ * encabezado del paso de cantidades.
+ */
 @Composable
 private fun FormularioReceta(
     estado: DialogoReceta.Formulario,
@@ -363,9 +356,7 @@ private fun FormularioReceta(
 
     AlertDialog(
         onDismissRequest = alCerrar,
-        title = {
-            Text(if (estado.editando != null) "Cambiar el título" else "Nueva receta")
-        },
+        title = { Text("Nueva receta") },
         text = {
             OutlinedTextField(
                 value = estado.titulo,

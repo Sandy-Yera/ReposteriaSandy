@@ -578,4 +578,81 @@ class CantidadesViewModelTest {
         assertFalse("Tiene una línea cargada, aunque no sume", estado.sinIngredientes)
         assertEquals(1, estado.secciones.single().lineas.size)
     }
+
+    // --- El título, que ahora se cambia desde adentro ---
+
+    @Test
+    fun `renombrar la receta desde adentro cambia el titulo del encabezado`() = probar { modelo ->
+        modelo.abrirRenombrarReceta()
+        advanceUntilIdle()
+
+        // Llega con el título puesto: se corrige, no se vuelve a escribir entero.
+        val abierto = modelo.dialogo.value as DialogoCantidades.RenombrarReceta
+        assertEquals("Torta de manjar", abierto.titulo)
+
+        modelo.cambiarTituloDeLaReceta("Torta de manjar y nuez")
+        modelo.guardarTituloDeLaReceta()
+        advanceUntilIdle()
+
+        assertTrue(modelo.dialogo.value is DialogoCantidades.Ninguno)
+        // El encabezado de esta misma pantalla lo muestra, así que tiene que releerse.
+        assertEquals("Torta de manjar y nuez", modelo.estado.value.receta?.titulo)
+    }
+
+    @Test
+    fun `un titulo repetido avisa junto al campo y no cambia nada`() = probar { modelo ->
+        recetas.crear("Kuchen de nuez")
+        advanceUntilIdle()
+
+        modelo.abrirRenombrarReceta()
+        advanceUntilIdle()
+        modelo.cambiarTituloDeLaReceta("  KUCHEN DE NUÉZ  ")
+        modelo.guardarTituloDeLaReceta()
+        advanceUntilIdle()
+
+        // El cuadro queda abierto con lo escrito: el aviso va bajo el campo porque con el
+        // teclado abierto la franja de abajo queda tapada (12.2.1).
+        val dialogo = modelo.dialogo.value as DialogoCantidades.RenombrarReceta
+        assertNotNull(dialogo.error)
+        assertNull("El aviso no va abajo", modelo.estado.value.mensaje)
+        assertEquals("  KUCHEN DE NUÉZ  ", dialogo.titulo)
+        assertFalse(dialogo.guardando)
+        assertEquals("Torta de manjar", modelo.estado.value.receta?.titulo)
+    }
+
+    @Test
+    fun `un titulo vacio no se puede guardar`() = probar { modelo ->
+        modelo.abrirRenombrarReceta()
+        advanceUntilIdle()
+        modelo.cambiarTituloDeLaReceta("   ")
+
+        val dialogo = modelo.dialogo.value as DialogoCantidades.RenombrarReceta
+        assertFalse(dialogo.puedeGuardar)
+        assertNotNull(dialogo.error)
+
+        // Y aunque se pida igual, no escribe: puedeGuardar corta antes.
+        modelo.guardarTituloDeLaReceta()
+        advanceUntilIdle()
+        assertEquals("Torta de manjar", modelo.estado.value.receta?.titulo)
+    }
+
+    @Test
+    fun `al escribir de nuevo se limpia el rechazo anterior`() = probar { modelo ->
+        recetas.crear("Kuchen de nuez")
+        advanceUntilIdle()
+
+        modelo.abrirRenombrarReceta()
+        advanceUntilIdle()
+        modelo.cambiarTituloDeLaReceta("Kuchen de nuez")
+        modelo.guardarTituloDeLaReceta()
+        advanceUntilIdle()
+        assertNotNull((modelo.dialogo.value as DialogoCantidades.RenombrarReceta).rechazo)
+
+        // El rechazo era sobre el título de antes; al seguir escribiendo deja de aplicar.
+        modelo.cambiarTituloDeLaReceta("Kuchen de nuez y almendra")
+        val dialogo = modelo.dialogo.value as DialogoCantidades.RenombrarReceta
+        assertNull(dialogo.rechazo)
+        assertNull(dialogo.error)
+        assertTrue(dialogo.puedeGuardar)
+    }
 }

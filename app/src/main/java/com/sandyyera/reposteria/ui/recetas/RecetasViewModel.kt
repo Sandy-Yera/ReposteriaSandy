@@ -7,7 +7,6 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.sandyyera.reposteria.data.db.entidades.Receta
 import com.sandyyera.reposteria.data.repositorio.RecetaRepositorio
-import com.sandyyera.reposteria.data.repositorio.Resultado
 import com.sandyyera.reposteria.data.repositorio.ResultadoCrearReceta
 import com.sandyyera.reposteria.logica.busqueda.filtrarPor
 import com.sandyyera.reposteria.logica.busqueda.marcarRepetidos
@@ -24,7 +23,7 @@ import kotlinx.coroutines.launch
  * Una receta de la lista junto con lo que cuesta hacerla ahora mismo.
  *
  * [repetida] marca las que quedaron con un título que ya usaba otra receta anterior. Se
- * pueden ver y borrar, pero no abrir ni renombrar: son datos de antes de que se prohibieran
+ * pueden ver y borrar, pero no abrir: son datos de antes de que se prohibieran
  * los títulos repetidos, y borrarlas solas sería hacer desaparecer trabajo sin preguntar.
  */
 data class RecetaConCosto(
@@ -57,13 +56,18 @@ sealed interface DialogoReceta {
     data class Bloqueada(val receta: Receta) : DialogoReceta
 
     /**
-     * El formulario de alta o de cambio de título.
+     * El formulario de alta.
      *
-     * [editando] es `null` al crear. Igual que en ingredientes, [tocado] evita retar por
-     * un campo vacío que todavía nadie llenó.
+     * **Solo crea; ya no renombra.** Cambiarle el título a una receta que ya existe se hace
+     * desde adentro, tocando el título en el encabezado del paso de cantidades: acá el toque
+     * está tomado por abrirla, que es lo que se hace cien veces por cada renombrado. Por eso
+     * este cuadro perdió su campo `editando` en vez de quedárselo por si acaso — una rama
+     * que nadie recorre es una rama que nadie prueba.
+     *
+     * Igual que en ingredientes, [tocado] evita retar por un campo vacío que todavía nadie
+     * llenó.
      */
     data class Formulario(
-        val editando: Receta? = null,
         val titulo: String = "",
         val tocado: Boolean = false,
         val tituloRepetido: String? = null,
@@ -198,14 +202,6 @@ class RecetasViewModel(
         _dialogo.value = DialogoReceta.Formulario()
     }
 
-    fun abrirCambioDeTitulo(receta: Receta) {
-        _dialogo.value = DialogoReceta.Formulario(
-            editando = receta,
-            titulo = receta.titulo,
-            tocado = true
-        )
-    }
-
     fun cambiarTitulo(texto: String) = enFormulario {
         // Al cambiar el título el aviso de repetido deja de aplicar: era sobre el anterior.
         it.copy(titulo = texto, tocado = true, tituloRepetido = null)
@@ -219,37 +215,24 @@ class RecetasViewModel(
         _dialogo.value = formulario.copy(guardando = true)
 
         viewModelScope.launch {
-            val original = formulario.editando
-            if (original == null) {
-                when (val resultado = repositorio.crear(titulo)) {
-                    is ResultadoCrearReceta.Creada -> {
-                        _dialogo.value = DialogoReceta.Ninguno
-                        // Se abre sola: crear una receta y después tener que buscarla en
-                        // la lista para empezar a llenarla es un paso de más justo cuando
-                        // uno ya sabe lo que quiere hacer.
-                        _recienCreada.value = resultado.recetaId
-                    }
-                    is ResultadoCrearReceta.YaExiste -> enFormulario {
-                        it.copy(
-                            guardando = false,
-                            tituloRepetido = "Ya tienes una receta que se llama " +
-                                "'${resultado.existente.titulo}'"
-                        )
-                    }
-                    is ResultadoCrearReceta.NoValido -> {
-                        enFormulario { it.copy(guardando = false) }
-                        mensaje.value = resultado.motivo
-                    }
+            when (val resultado = repositorio.crear(titulo)) {
+                is ResultadoCrearReceta.Creada -> {
+                    _dialogo.value = DialogoReceta.Ninguno
+                    // Se abre sola: crear una receta y después tener que buscarla en la
+                    // lista para empezar a llenarla es un paso de más justo cuando uno ya
+                    // sabe lo que quiere hacer.
+                    _recienCreada.value = resultado.recetaId
                 }
-            } else {
-                when (val resultado = repositorio.renombrar(original.id, titulo)) {
-                    is Resultado.Listo -> {
-                        _dialogo.value = DialogoReceta.Ninguno
-                        mensaje.value = "Se guardó '$titulo'"
-                    }
-                    is Resultado.NoSePudo -> enFormulario {
-                        it.copy(guardando = false, tituloRepetido = resultado.motivo)
-                    }
+                is ResultadoCrearReceta.YaExiste -> enFormulario {
+                    it.copy(
+                        guardando = false,
+                        tituloRepetido = "Ya tienes una receta que se llama " +
+                            "'${resultado.existente.titulo}'"
+                    )
+                }
+                is ResultadoCrearReceta.NoValido -> {
+                    enFormulario { it.copy(guardando = false) }
+                    mensaje.value = resultado.motivo
                 }
             }
         }
@@ -272,7 +255,7 @@ class RecetasViewModel(
         }
     }
 
-    /** Se llama al intentar abrir o renombrar una receta que quedó repetida. */
+    /** Se llama al intentar abrir una receta que quedó repetida. */
     fun avisarBloqueada(receta: Receta) {
         _dialogo.value = DialogoReceta.Bloqueada(receta)
     }

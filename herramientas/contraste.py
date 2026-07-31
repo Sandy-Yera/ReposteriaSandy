@@ -54,6 +54,7 @@ ROSA_RECETA = "#F9DDE3"        # pastel: solo pinta fondos, nunca texto ni ícon
 # --- Modo oscuro ---
 CHOCO_FONDO = "#1C1512"
 CHOCO_SUPERFICIE = "#2A211C"
+CHOCO_NIVEL3 = "#352A24"        # surfaceVariant: fichas de la fila de pasos
 CHOCO_NIVEL4 = "#40342C"        # tarjetas
 CARAMELO_CLARO = "#E0A96D"
 CARAMELO_CONT_OSCURO = "#5C4322"
@@ -98,6 +99,12 @@ PARES = [
     ("claro", "texto tenue en receta", CHOCOLATE_TENUE, ROSA_RECETA, TEXTO_NORMAL),
     ("claro", "eliminar sobre el rosa", FRAMBUESA, ROSA_RECETA, TEXTO_NORMAL),
 
+    # La fila de pasos de una receta (8.1). El paso actual va relleno en el color
+    # principal y los demás en surfaceVariant; los dos son texto que hay que leer
+    # de reojo mientras se navega, así que van al mínimo de texto normal.
+    ("claro", "paso actual de la receta", BLANCO, CARAMELO, TEXTO_NORMAL),
+    ("claro", "paso no elegido", CHOCOLATE_TENUE, CREMA_NIVEL3, TEXTO_NORMAL),
+
     ("oscuro", "texto en el fondo", CREMA_TEXTO, CHOCO_FONDO, TEXTO_NORMAL),
     ("oscuro", "texto en superficie", CREMA_TEXTO, CHOCO_SUPERFICIE, TEXTO_NORMAL),
     ("oscuro", "texto en tarjeta", CREMA_TEXTO, CHOCO_NIVEL4, TEXTO_NORMAL),
@@ -118,6 +125,9 @@ PARES = [
     ("oscuro", "texto en tarjeta de receta", CREMA_TEXTO, ROSA_RECETA_OSCURO, TEXTO_NORMAL),
     ("oscuro", "texto tenue en receta", CREMA_TENUE, ROSA_RECETA_OSCURO, TEXTO_NORMAL),
     ("oscuro", "eliminar sobre el rosa", FRAMBUESA_OSCURO, ROSA_RECETA_OSCURO, TEXTO_NORMAL),
+
+    ("oscuro", "paso actual de la receta", CHOCO_FONDO, CARAMELO_CLARO, TEXTO_NORMAL),
+    ("oscuro", "paso no elegido", CREMA_TENUE, CHOCO_NIVEL3, TEXTO_NORMAL),
 ]
 
 
