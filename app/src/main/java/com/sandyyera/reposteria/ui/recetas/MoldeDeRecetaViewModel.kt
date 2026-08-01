@@ -144,7 +144,6 @@ class MoldeDeRecetaViewModel(
     private val moldes: MoldeRepositorio
 ) : ViewModel() {
 
-    private val recargar = MutableStateFlow(0)
     private val mensaje = MutableStateFlow<String?>(null)
     private val _dialogo = MutableStateFlow<DialogoMoldeDeReceta>(DialogoMoldeDeReceta.Ninguno)
 
@@ -171,14 +170,22 @@ class MoldeDeRecetaViewModel(
         initialValue = DialogoMoldeDeReceta.Ninguno
     )
 
+    /**
+     * Lo que muestra la pantalla, **observando la base y no leyéndola una vez** (12.2.1).
+     *
+     * El rendimiento lo escriben dos pantallas: acá se elige el molde, y en el paso siguiente
+     * se anota el peso. Con una lectura de una sola vez cada ViewModel se quedaba con su foto
+     * y las dos se contradecían — anotar el peso en Rendimiento y volver acá con el botón de
+     * "Quitar el molde" todavía apagado, porque este lado seguía creyendo que no había peso.
+     */
     val estado: StateFlow<EstadoMoldeDeReceta> = combine(
-        recargar,
+        recetas.observarReceta(recetaId),
+        recetas.observarRendimiento(recetaId),
         mensaje,
         moldes.observarTodos()
-    ) { _, mensajeActual, catalogo ->
-        val rendimiento = recetas.obtenerRendimiento(recetaId)
+    ) { receta, rendimiento, mensajeActual, catalogo ->
         EstadoMoldeDeReceta(
-            receta = recetas.obtener(recetaId),
+            receta = receta,
             usaMolde = rendimiento?.usaMolde ?: false,
             dimensiones = rendimiento?.dimensiones,
             moldeEnlazado = rendimiento?.moldeOrigenId
@@ -192,10 +199,6 @@ class MoldeDeRecetaViewModel(
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = EstadoMoldeDeReceta()
     )
-
-    private fun volverALeer() {
-        recargar.update { it + 1 }
-    }
 
     /**
      * Abre el cuadro de molde, sabiendo solo si es la primera vez o un reescalado.
@@ -275,7 +278,6 @@ class MoldeDeRecetaViewModel(
                     it.copy(guardando = false, rechazo = resultado.motivo)
                 }
             }
-            volverALeer()
         }
     }
 
@@ -290,7 +292,6 @@ class MoldeDeRecetaViewModel(
                 is Resultado.NoSePudo -> mensaje.value = r.motivo
             }
             _dialogo.value = DialogoMoldeDeReceta.Ninguno
-            volverALeer()
         }
     }
 

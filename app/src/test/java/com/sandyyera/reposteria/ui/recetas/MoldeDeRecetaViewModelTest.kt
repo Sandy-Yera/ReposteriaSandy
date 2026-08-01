@@ -311,6 +311,22 @@ class MoldeDeRecetaViewModelTest {
     }
 
     @Test
+    fun `anotar el peso en el otro paso habilita quitar el molde, sin tocar nada aca`() =
+        probar { modelo ->
+            // El caso que costó insistir en el celular: la advertencia decía que faltaba el
+            // peso, se anotaba en Rendimiento, se volvía… y el botón seguía apagado, porque
+            // esta pantalla se había quedado con su foto de cuando se abrió.
+            recetas.definirMolde(recetaId, cuadrado(20.0, 6.0), null)
+            advanceUntilIdle()
+            assertFalse(modelo.estado.value.tienePesoFinal)
+
+            recetas.guardarRendimiento(recetaId, "8", "1.000")
+            advanceUntilIdle()
+
+            assertTrue(modelo.estado.value.tienePesoFinal)
+        }
+
+    @Test
     fun `quitar el molde sin peso final avisa y no lo quita`() = probar { modelo ->
         recetas.definirMolde(recetaId, cuadrado(20.0, 6.0), null)
         advanceUntilIdle()

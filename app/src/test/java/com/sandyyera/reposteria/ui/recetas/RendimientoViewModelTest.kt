@@ -154,15 +154,46 @@ class RendimientoViewModelTest {
     // --- Reescalar por peso, que sigue siendo de este paso ---
 
     @Test
-    fun `solo se ofrece reescalar por peso si la receta no usa molde`() = probar { modelo ->
-        assertTrue(modelo.estado.value.sePuedeReescalarPorPeso)
+    fun `poner el molde desde el otro paso quita la opcion de reescalar por peso`() =
+        probar { modelo ->
+            // **Sin tocar nada de esta pantalla.** Es el bug que se vio en el celular: el
+            // molde lo pone el paso anterior, y acá se seguía ofreciendo "reescalar por
+            // peso" hasta que algo obligara a releer. Al tocarla saltaba el rechazo y recién
+            // ahí desaparecía la opción.
+            assertTrue(modelo.estado.value.sePuedeReescalarPorPeso)
 
-        recetas.definirMolde(recetaId, cuadrado(20.0, 6.0), null)
-        modelo.guardar() // cualquier acción que dispare la relectura del estado
+            recetas.definirMolde(recetaId, cuadrado(20.0, 6.0), null)
+            advanceUntilIdle()
+
+            assertFalse(modelo.estado.value.sePuedeReescalarPorPeso)
+            assertTrue(modelo.estado.value.usaMolde)
+        }
+
+    @Test
+    fun `quitar el molde desde el otro paso devuelve la opcion, sin tocar nada`() =
+        probar { modelo ->
+            // Y al revés, que es como lo describió: quitar el molde y no ver aparecer la
+            // opción hasta darle a "Guardar rendimiento".
+            recetas.definirMolde(recetaId, cuadrado(20.0, 6.0), null)
+            recetas.guardarRendimiento(recetaId, "8", "1.000")
+            advanceUntilIdle()
+            assertFalse(modelo.estado.value.sePuedeReescalarPorPeso)
+
+            recetas.quitarMolde(recetaId)
+            advanceUntilIdle()
+
+            assertTrue(modelo.estado.value.sePuedeReescalarPorPeso)
+        }
+
+    @Test
+    fun `el titulo llega solo cuando lo renombran desde cantidades`() = probar { modelo ->
+        // Los cuatro pasos muestran el mismo título y se renombra desde el primero.
+        assertEquals("Torta de manjar", modelo.estado.value.receta?.titulo)
+
+        recetas.renombrar(recetaId, "Torta de manjar y nuez")
         advanceUntilIdle()
 
-        // Con molde, cambiar de tamaño es cambiar de molde, y eso vive en el paso anterior.
-        assertFalse(modelo.estado.value.sePuedeReescalarPorPeso)
+        assertEquals("Torta de manjar y nuez", modelo.estado.value.receta?.titulo)
     }
 
     @Test
@@ -242,6 +273,60 @@ class RendimientoViewModelTest {
         advanceUntilIdle()
 
         assertFalse("Ni siquiera al volver a entrar", abrirElPaso().estado.value.pesoSinRevisar)
+    }
+
+    @Test
+    fun `el peso reescalado desde el paso del molde llega al campo, sin reabrir`() =
+        probar { modelo ->
+            // Esto es lo que se veía como "el peso no cambió": la base sí lo doblaba, pero
+            // el campo seguía mostrando el número viejo porque se sembraba una sola vez al
+            // crear el ViewModel.
+            recetas.definirMolde(recetaId, cuadrado(10.0, 5.0), null)
+            recetas.guardarRendimiento(recetaId, "8", "1.000")
+            advanceUntilIdle()
+            assertEquals("1.000", modelo.estado.value.pesoFinal)
+
+            recetas.reescalarPorMolde(
+                recetaId, cuadrado(10.0, 10.0), ModoReescalado.CAPACIDAD, null
+            )
+            advanceUntilIdle()
+
+            assertEquals("2.000", modelo.estado.value.pesoFinal)
+            assertTrue(modelo.estado.value.pesoSinRevisar)
+        }
+
+    @Test
+    fun `guardar despues de un reescalado no devuelve el peso viejo`() = probar { modelo ->
+        // El daño de que el campo se quedara viejo no era solo verlo mal: al guardar desde
+        // esta pantalla se escribía el número viejo encima del recalculado. Se notaba al
+        // cerrar y volver a abrir la app, con el peso cambiado sin que nadie lo tocara.
+        recetas.definirMolde(recetaId, cuadrado(10.0, 5.0), null)
+        recetas.guardarRendimiento(recetaId, "8", "1.000")
+        advanceUntilIdle()
+
+        recetas.reescalarPorMolde(recetaId, cuadrado(10.0, 10.0), ModoReescalado.CAPACIDAD, null)
+        advanceUntilIdle()
+
+        modelo.guardar()
+        advanceUntilIdle()
+
+        assertEquals(2000.0, recetas.obtenerRendimiento(recetaId)!!.pesoFinalG!!, 0.001)
+    }
+
+    @Test
+    fun `lo que se esta escribiendo no se pierde por una escritura ajena`() = probar { modelo ->
+        // La contracara del arreglo anterior: los campos siguen a la base, pero solo cuando
+        // **lo guardado** cambia. `marcarPesoRevisado` escribe en la fila del rendimiento sin
+        // tocar el peso, y no puede llevarse por delante lo tecleado a medias.
+        recetas.definirMolde(recetaId, cuadrado(10.0, 5.0), null)
+        recetas.guardarRendimiento(recetaId, "8", "1.000")
+        recetas.reescalarPorMolde(recetaId, cuadrado(10.0, 10.0), ModoReescalado.CAPACIDAD, null)
+        advanceUntilIdle()
+
+        modelo.cambiarPesoFinal("1850")
+        advanceUntilIdle()
+
+        assertEquals("1.850", modelo.estado.value.pesoFinal)
     }
 
     @Test

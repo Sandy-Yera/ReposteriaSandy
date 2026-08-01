@@ -1744,6 +1744,16 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
   molde como paso propio con el reescalado del peso final (los dos viven en Rendimiento y el
   segundo depende de dónde termine quedando el primero), y el guardado automático al final,
   que es lo único que toca cómo se escribe en la base.
+  - **Lo que costó separar los pasos, y quedó arreglado:** partir una pantalla en cuatro
+    dejó a la vista algo que antes no molestaba — cada ViewModel leía la base **una vez** y
+    la refrescaba con un contador propio. Mientras una sola pantalla escribía y mostraba lo
+    mismo, funcionaba; con cuatro pasos, quien escribe casi nunca es quien muestra, y cada
+    uno se quedaba con su copia vieja. De ahí salieron el peso reescalado que no aparecía,
+    la opción de "reescalar por peso" que no se iba al poner el molde, la advertencia de
+    "falta el peso" que seguía después de anotarlo, y el "a veces funciona si insisto".
+    Ahora los cuatro pasos **observan** receta, secciones, ingredientes y rendimiento, que
+    es la regla que ya había dejado escrita `observarCostos`: *lo que se muestra se observa;
+    la foto de un momento es para calcular*.
   - **Tanda 2 — hecha:** el molde es un paso propio, con su `MoldeDeRecetaViewModel` y su
     `PasoMoldeScreen` salidos de Rendimiento; reescalar por molde arrastra el peso del
     producto y lo deja marcado hasta que se toque el campo. **Necesitó migración de base**

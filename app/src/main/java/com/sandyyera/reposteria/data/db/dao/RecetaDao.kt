@@ -31,6 +31,17 @@ interface RecetaDao {
     @Query("SELECT * FROM recetas WHERE id = :recetaId")
     suspend fun obtener(recetaId: Long): Receta?
 
+    /**
+     * Una receta, avisando cuando cambia. **Es la que hay que usar para mostrarla.**
+     *
+     * Misma regla que dejó establecida `observarCostos`: *lo que se muestra se observa; la
+     * foto de un momento es para calcular*. Acá se paga con el título — se renombra desde
+     * dentro de la receta (8.4.1, #3) y el encabezado de los otros pasos tiene que enterarse
+     * sin que nadie se acuerde de refrescarlo.
+     */
+    @Query("SELECT * FROM recetas WHERE id = :recetaId")
+    fun observarReceta(recetaId: Long): Flow<Receta?>
+
     @Insert
     suspend fun insertar(receta: Receta): Long
 
@@ -158,6 +169,9 @@ interface RecetaDao {
     @Query("SELECT * FROM receta_secciones WHERE recetaId = :recetaId ORDER BY orden")
     suspend fun obtenerSecciones(recetaId: Long): List<RecetaSeccion>
 
+    @Query("SELECT * FROM receta_secciones WHERE recetaId = :recetaId ORDER BY orden")
+    fun observarSecciones(recetaId: Long): Flow<List<RecetaSeccion>>
+
     @Query("SELECT COUNT(*) FROM receta_secciones WHERE recetaId = :recetaId")
     suspend fun contarSecciones(recetaId: Long): Int
 
@@ -180,6 +194,17 @@ interface RecetaDao {
         """
     )
     suspend fun obtenerTodosLosIngredientes(recetaId: Long): List<RecetaIngrediente>
+
+    /** Lo mismo, avisando cuando cambia. La que usa la pantalla de cantidades. */
+    @Query(
+        """
+        SELECT ri.* FROM receta_ingredientes ri
+        JOIN receta_secciones rs ON rs.id = ri.seccionId
+        WHERE rs.recetaId = :recetaId
+        ORDER BY rs.orden, ri.orden
+        """
+    )
+    fun observarIngredientesDeReceta(recetaId: Long): Flow<List<RecetaIngrediente>>
 
     /** Cuántos gramos suma una receta. Distinto de [costoTotalReceta]: eso suma dinero. */
     @Query(
@@ -205,6 +230,19 @@ interface RecetaDao {
 
     @Query("SELECT * FROM receta_rendimiento WHERE recetaId = :recetaId")
     suspend fun obtenerRendimiento(recetaId: Long): RecetaRendimiento?
+
+    /**
+     * El rendimiento de una receta, avisando cuando cambia.
+     *
+     * **La necesitan dos pantallas a la vez** desde que el molde es un paso propio (8.4.1,
+     * #2): el paso del molde escribe `usaMolde` y `dimensiones`, y el de rendimiento decide
+     * con `usaMolde` si el peso final es obligatorio y si ofrece reescalar por peso. Con una
+     * lectura de una sola vez cada ViewModel se quedaba con su foto vieja y las dos
+     * pantallas se contradecían — poner el molde y ver todavía "reescalar por peso" del otro
+     * lado, o quitarlo y no verla aparecer hasta tocar algo.
+     */
+    @Query("SELECT * FROM receta_rendimiento WHERE recetaId = :recetaId")
+    fun observarRendimiento(recetaId: Long): Flow<RecetaRendimiento?>
 
     @Query("SELECT trozos FROM receta_rendimiento WHERE recetaId = :recetaId")
     suspend fun obtenerTrozos(recetaId: Long): Int?

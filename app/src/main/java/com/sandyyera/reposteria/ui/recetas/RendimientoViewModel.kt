@@ -19,6 +19,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -104,7 +106,6 @@ class RendimientoViewModel(
     private val recetas: RecetaRepositorio
 ) : ViewModel() {
 
-    private val recargar = MutableStateFlow(0)
     private val mensaje = MutableStateFlow<String?>(null)
     private val _dialogo = MutableStateFlow<DialogoRendimiento>(DialogoRendimiento.Ninguno)
 
@@ -115,15 +116,24 @@ class RendimientoViewModel(
     /** Lo que hay abierto encima, fuera del `combine` del estado (12.2.1). */
     val dialogo: StateFlow<DialogoRendimiento> = _dialogo
 
+    /**
+     * Lo que muestra la pantalla, **observando la base y no leyéndola una vez** (12.2.1).
+     *
+     * `usaMolde` lo escribe el paso anterior, no este. Con una lectura de una sola vez esta
+     * pantalla se quedaba con la foto de cuando se abrió: poner el molde y seguir viendo
+     * "Reescalar la receta a otro peso", o quitarlo y no verlo aparecer hasta tocar algo.
+     * Peor todavía, el peso que reescala el molde tampoco llegaba, así que guardar de acá
+     * volvía a escribir el peso viejo encima del recalculado.
+     */
     val estado: StateFlow<EstadoRendimiento> = combine(
-        recargar,
+        recetas.observarReceta(recetaId),
+        recetas.observarRendimiento(recetaId),
         trozos,
         pesoFinal,
         mensaje
-    ) { _, trozosEscritos, pesoEscrito, mensajeActual ->
-        val rendimiento = recetas.obtenerRendimiento(recetaId)
+    ) { receta, rendimiento, trozosEscritos, pesoEscrito, mensajeActual ->
         EstadoRendimiento(
-            receta = recetas.obtener(recetaId),
+            receta = receta,
             usaMolde = rendimiento?.usaMolde ?: false,
             trozos = trozosEscritos,
             pesoFinal = pesoEscrito,
@@ -138,18 +148,27 @@ class RendimientoViewModel(
     )
 
     init {
-        // Los campos arrancan con lo que ya está guardado, en el formato de la app: así
-        // guardar sin tocar nada no puede cambiar ningún número.
+        // Los campos siguen a lo que está guardado, en el formato de la app: así guardar sin
+        // tocar nada no puede cambiar ningún número.
+        //
+        // **Y siguen también cuando lo cambia otro**, que es lo que antes no pasaba: al
+        // reescalar por molde, el peso del producto se multiplica desde el paso anterior, y
+        // acá el campo seguía mostrando el número viejo. Se veía como que "el peso no
+        // cambió", y encima guardar desde esta pantalla escribía el viejo de vuelta.
+        //
+        // El `distinctUntilChanged` es lo que impide que esto pise lo que se está
+        // escribiendo: solo se re-siembra cuando **lo guardado** cambia de verdad. Sin él,
+        // cualquier escritura que no toque estos dos campos —`marcarPesoRevisado`, por
+        // ejemplo— borraría lo tecleado a medias.
         viewModelScope.launch {
-            recetas.obtenerRendimiento(recetaId)?.let { r ->
-                trozos.value = r.trozos.toString()
-                pesoFinal.value = r.pesoFinalG?.let { formatearNumero(it) } ?: ""
-            }
+            recetas.observarRendimiento(recetaId)
+                .map { it?.trozos to it?.pesoFinalG }
+                .distinctUntilChanged()
+                .collect { (trozosGuardados, pesoGuardado) ->
+                    trozos.value = (trozosGuardados ?: 1).toString()
+                    pesoFinal.value = pesoGuardado?.let { formatearNumero(it) } ?: ""
+                }
         }
-    }
-
-    private fun volverALeer() {
-        recargar.update { it + 1 }
     }
 
     // --- Los dos campos ---
@@ -181,7 +200,6 @@ class RendimientoViewModel(
         if (!estado.value.pesoSinRevisar) return
         viewModelScope.launch {
             recetas.marcarPesoRevisado(recetaId)
-            volverALeer()
         }
     }
 
@@ -191,7 +209,6 @@ class RendimientoViewModel(
                 is Resultado.Listo -> mensaje.value = "Se guardó el rendimiento"
                 is Resultado.NoSePudo -> mensaje.value = r.motivo
             }
-            volverALeer()
         }
     }
 
@@ -232,7 +249,6 @@ class RendimientoViewModel(
                     }
                 }
             }
-            volverALeer()
         }
     }
 

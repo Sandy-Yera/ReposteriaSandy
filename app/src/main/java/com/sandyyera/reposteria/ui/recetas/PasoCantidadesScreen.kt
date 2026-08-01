@@ -169,8 +169,15 @@ fun PasoCantidades(
 
     LaunchedEffect(estado.mensaje) {
         val texto = estado.mensaje ?: return@LaunchedEffect
-        anfitrionDeMensajes.showSnackbar(texto)
-        acciones.mensajeMostrado()
+        try {
+            anfitrionDeMensajes.showSnackbar(texto)
+        } finally {
+            // En `finally` y no después, porque `showSnackbar` se queda esperando a que el
+            // aviso se cierre solo: al cambiar de paso antes de eso, esta corrutina se
+            // cancela y el mensaje quedaba pendiente en el ViewModel. Reaparecía cada vez
+            // que se volvía al paso — "se guardó el rendimiento" una y otra vez.
+            acciones.mensajeMostrado()
+        }
     }
 
     Scaffold(
@@ -180,8 +187,17 @@ fun PasoCantidades(
                 TopAppBar(
                     title = {
                         Text(
-                            text = estado.receta?.titulo ?: "Receta",
-                            modifier = Modifier.clickable(onClick = acciones.renombrarReceta)
+                            // Toda la franja del título, no solo las letras. Con el
+                            // `clickable` pegado al `Text`, el área tocable medía lo que
+                            // medía el texto y había que apuntarle justo — al lado, donde
+                            // parece que sigue el título, no pasaba nada. En el nombre de
+                            // una sección ya funcionaba así porque el `weight(1f)` va antes.
+                            text = estado.receta?.titulo.orEmpty(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = Medidas.objetivoTactil)
+                                .clickable(onClick = acciones.renombrarReceta)
+                                .wrapContentHeight()
                         )
                     },
                     navigationIcon = {

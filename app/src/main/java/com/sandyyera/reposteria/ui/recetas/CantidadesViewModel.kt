@@ -211,15 +211,20 @@ data class EstadoCantidades(
 /**
  * El cerebro del paso "Cantidades" de una receta (8.2).
  *
- * Las consultas de secciones e ingredientes no son reactivas —los DAO devuelven listas, no
- * `Flow`—, así que después de cada cambio hay que volver a leer. Eso lo resuelve
- * [recargar]: un contador que se incrementa al terminar cada operación y que entra al
- * `combine`, lo que dispara una relectura. Es más simple que hacer reactivas siete
- * consultas, y el costo es una lectura por acción, no por segundo.
+ * **Todo lo que muestra lo observa.** Antes las consultas de secciones e ingredientes eran
+ * de una sola vez y se refrescaban con un contador `recargar` que esta misma clase
+ * incrementaba al terminar cada operación. Eso funcionaba mientras la receta cabía en una
+ * pantalla; con cuatro pasos dejó de funcionar, porque **quien cambia los ingredientes puede
+ * ser otro**: reescalar por molde multiplica todas las cantidades desde el paso del molde, y
+ * acá no se enteraba nadie — se veían las cantidades de antes hasta que algo disparara una
+ * relectura. Es exactamente el bug que ya había pasado con los costos de la lista de recetas,
+ * y la regla que salió de ahí vale igual acá: *lo que se muestra se observa; la foto de un
+ * momento es para calcular*.
  *
  * El costo total **se relee de la base** en vez de sumarse acá. Podría sumarse en memoria
  * —cada línea sabe su subtotal— pero entonces habría dos verdades sobre el mismo número, y
- * la que manda cuando se calculan precios y sueldos es la de la base.
+ * la que manda cuando se calculan precios y sueldos es la de la base. Se pide dentro del
+ * `combine`, que ahora se dispara solo cuando cambia cualquiera de las tablas que lo forman.
  */
 class CantidadesViewModel(
     private val recetaId: Long,
@@ -227,7 +232,6 @@ class CantidadesViewModel(
     private val ingredientes: IngredienteRepositorio
 ) : ViewModel() {
 
-    private val recargar = MutableStateFlow(0)
     private val _dialogo = MutableStateFlow<DialogoCantidades>(DialogoCantidades.Ninguno)
     private val mensaje = MutableStateFlow<String?>(null)
 
@@ -245,16 +249,17 @@ class CantidadesViewModel(
     val dialogo: StateFlow<DialogoCantidades> = _dialogo
 
     val estado: StateFlow<EstadoCantidades> = combine(
-        recargar,
+        recetas.observarReceta(recetaId),
+        recetas.observarSecciones(recetaId),
+        recetas.observarIngredientes(recetaId),
         ingredientes.observarTodos(),
         mensaje
-    ) { _, catalogo, mensajeActual ->
+    ) { receta, secciones, items, catalogo, mensajeActual ->
         val porId = catalogo.associateBy { it.id }
-        val items = recetas.obtenerIngredientes(recetaId)
 
         EstadoCantidades(
-            receta = recetas.obtener(recetaId),
-            secciones = recetas.obtenerSecciones(recetaId).map { seccion ->
+            receta = receta,
+            secciones = secciones.map { seccion ->
                 SeccionConIngredientes(
                     seccion = seccion,
                     lineas = items
@@ -277,10 +282,6 @@ class CantidadesViewModel(
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = EstadoCantidades()
     )
-
-    private fun volverALeer() {
-        recargar.update { it + 1 }
-    }
 
     // --- Ingredientes de la receta ---
 
@@ -356,7 +357,6 @@ class CantidadesViewModel(
                 recetas.cambiarCantidad(enEdicion.id, gramos)
             }
             _dialogo.value = DialogoCantidades.Ninguno
-            volverALeer()
         }
     }
 
@@ -364,7 +364,6 @@ class CantidadesViewModel(
         viewModelScope.launch {
             recetas.quitarIngrediente(linea.item.id)
             mensaje.value = "Se quitó '${linea.ingrediente.nombre}'"
-            volverALeer()
         }
     }
 
@@ -409,7 +408,6 @@ class CantidadesViewModel(
             ) {
                 is Resultado.Listo -> {
                     _dialogo.value = DialogoCantidades.Ninguno
-                    volverALeer()
                 }
                 is Resultado.NoSePudo ->
                     // Al campo y no al mensaje de abajo: el teclado está abierto y lo taparía.
@@ -454,7 +452,6 @@ class CantidadesViewModel(
                         }
                     }
             }
-            volverALeer()
         }
     }
 
@@ -475,7 +472,6 @@ class CantidadesViewModel(
                 is Resultado.NoSePudo -> mensaje.value = r.motivo
             }
             _dialogo.value = DialogoCantidades.Ninguno
-            volverALeer()
         }
     }
 
@@ -527,7 +523,6 @@ class CantidadesViewModel(
                 }
             }
             // Se relee siempre: el título vive en el encabezado de esta misma pantalla.
-            volverALeer()
         }
     }
 

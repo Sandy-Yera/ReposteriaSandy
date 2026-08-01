@@ -255,6 +255,7 @@ class RecetaDaoFalso(
                 rendimientos[i] = rendimientos[i].copy(moldeOrigenId = null)
             }
         }
+        cambio()
     }
 
     /** Las filas de ingredientes de una receta, resolviendo el join con las secciones. */
@@ -270,6 +271,26 @@ class RecetaDaoFalso(
 
     override suspend fun obtener(recetaId: Long): Receta? =
         recetas.value.firstOrNull { it.id == recetaId }
+
+    /**
+     * Las cuatro consultas reactivas cuelgan de las mismas fuentes que en Room.
+     *
+     * `observarReceta` de la lista de recetas; las otras tres del contador [cambios], que es
+     * la imitación del `InvalidationTracker`. Que sean `Flow` de verdad y no un valor suelto
+     * es lo que permite probar el bug que las motivó: dos pantallas mirando el mismo
+     * rendimiento y quedándose cada una con su foto vieja.
+     */
+    override fun observarReceta(recetaId: Long): Flow<Receta?> =
+        recetas.map { lista -> lista.firstOrNull { it.id == recetaId } }
+
+    override fun observarSecciones(recetaId: Long): Flow<List<RecetaSeccion>> =
+        cambios.map { secciones.filter { it.recetaId == recetaId }.sortedBy { it.orden } }
+
+    override fun observarIngredientesDeReceta(recetaId: Long): Flow<List<RecetaIngrediente>> =
+        cambios.map { itemsDe(recetaId) }
+
+    override fun observarRendimiento(recetaId: Long): Flow<RecetaRendimiento?> =
+        cambios.map { rendimientos.firstOrNull { it.recetaId == recetaId } }
 
     override suspend fun insertar(receta: Receta): Long {
         val id = nuevoId()
@@ -414,11 +435,13 @@ class RecetaDaoFalso(
 
     override suspend fun insertarRendimiento(rendimiento: RecetaRendimiento) {
         rendimientos += rendimiento
+        cambio()
     }
 
     override suspend fun actualizarRendimiento(rendimiento: RecetaRendimiento) {
         val posicion = rendimientos.indexOfFirst { it.recetaId == rendimiento.recetaId }
         if (posicion >= 0) rendimientos[posicion] = rendimiento
+        cambio()
     }
 
     // --- Duración ---

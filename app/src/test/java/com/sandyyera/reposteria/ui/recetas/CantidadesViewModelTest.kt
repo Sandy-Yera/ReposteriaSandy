@@ -8,6 +8,9 @@ import com.sandyyera.reposteria.data.repositorio.HistorialRepositorio
 import com.sandyyera.reposteria.data.repositorio.IngredienteRepositorio
 import com.sandyyera.reposteria.data.repositorio.RecetaRepositorio
 import com.sandyyera.reposteria.data.repositorio.ResultadoCrearReceta
+import com.sandyyera.reposteria.logica.moldes.DimensionesMolde
+import com.sandyyera.reposteria.logica.moldes.ModoReescalado
+import com.sandyyera.reposteria.logica.moldes.TipoFormaMolde
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
@@ -577,6 +580,51 @@ class CantidadesViewModelTest {
         assertEquals(0.0, estado.costoTotal, 0.001)
         assertFalse("Tiene una línea cargada, aunque no sume", estado.sinIngredientes)
         assertEquals(1, estado.secciones.single().lineas.size)
+    }
+
+    // --- Lo que cambia desde otro paso ---
+
+    @Test
+    fun `reescalar desde el paso del molde se ve aca sin tocar nada`() = probar { modelo ->
+        // Es el bug que se veía como "al volver a un molde menor no reescala el
+        // ingrediente": la base sí lo cambiaba, pero esta pantalla mostraba su copia vieja
+        // hasta que alguna acción de acá disparara una relectura. Por eso "a veces funciona
+        // si se insiste".
+        sembrar("Harina", 2.0)
+        advanceUntilIdle()
+        val seccion = modelo.estado.value.secciones.single().seccion.id
+        modelo.abrirAgregarIngrediente(seccion)
+        modelo.elegirIngrediente(modelo.estado.value.catalogo.single())
+        modelo.cambiarCantidadEscrita("500")
+        modelo.guardarIngrediente()
+        advanceUntilIdle()
+        assertEquals(1000.0, modelo.estado.value.costoTotal, 0.001)
+
+        // Nadie toca esta pantalla: el reescalado ocurre en el paso del molde.
+        recetas.definirMolde(
+            recetaId,
+            DimensionesMolde(
+                tipoForma = TipoFormaMolde.CUADRADO, ladoCm = 10.0, alturaMoldeCm = 5.0
+            ),
+            moldeOrigenId = null
+        )
+        recetas.reescalarPorMolde(
+            recetaId,
+            DimensionesMolde(
+                tipoForma = TipoFormaMolde.CUADRADO, ladoCm = 10.0, alturaMoldeCm = 10.0
+            ),
+            ModoReescalado.CAPACIDAD,
+            moldeOrigenId = null
+        )
+        advanceUntilIdle()
+
+        assertEquals(
+            "Los gramos que se ven son los de la base",
+            1000.0,
+            modelo.estado.value.secciones.single().lineas.single().item.cantidadG,
+            0.001
+        )
+        assertEquals("Y el costo también", 2000.0, modelo.estado.value.costoTotal, 0.001)
     }
 
     // --- El título, que ahora se cambia desde adentro ---

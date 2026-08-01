@@ -120,8 +120,15 @@ fun PasoRendimiento(
 
     LaunchedEffect(estado.mensaje) {
         val texto = estado.mensaje ?: return@LaunchedEffect
-        anfitrionDeMensajes.showSnackbar(texto)
-        acciones.mensajeMostrado()
+        try {
+            anfitrionDeMensajes.showSnackbar(texto)
+        } finally {
+            // En `finally` y no después, porque `showSnackbar` se queda esperando a que el
+            // aviso se cierre solo: al cambiar de paso antes de eso, esta corrutina se
+            // cancela y el mensaje quedaba pendiente en el ViewModel. Reaparecía cada vez
+            // que se volvía al paso — "se guardó el rendimiento" una y otra vez.
+            acciones.mensajeMostrado()
+        }
     }
 
     Scaffold(
@@ -129,7 +136,7 @@ fun PasoRendimiento(
         topBar = {
             Column {
                 TopAppBar(
-                    title = { Text(estado.receta?.titulo ?: "Rendimiento") },
+                    title = { Text(estado.receta?.titulo.orEmpty()) },
                     navigationIcon = {
                         IconButton(onClick = acciones.cerrarReceta) {
                             Icon(

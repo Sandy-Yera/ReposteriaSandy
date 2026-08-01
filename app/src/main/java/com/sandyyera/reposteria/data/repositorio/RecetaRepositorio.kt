@@ -63,6 +63,16 @@ class RecetaRepositorio(
 
     fun observarTodas(): Flow<List<Receta>> = dao.observarTodas()
 
+    /**
+     * Una receta, avisando cuando cambia. **La que hay que usar para mostrarla.**
+     *
+     * Sigue la regla que dejó `observarCostos`: *lo que se muestra se observa; la foto de un
+     * momento es para calcular*. Los cuatro pasos de una receta muestran su título en el
+     * encabezado y se renombra desde adentro (8.4.1, #3), así que sin esto los otros tres se
+     * quedan con el nombre viejo hasta que algo los haga releer.
+     */
+    fun observarReceta(recetaId: Long): Flow<Receta?> = dao.observarReceta(recetaId)
+
     suspend fun obtener(recetaId: Long): Receta? = dao.obtener(recetaId)
 
     /**
@@ -144,6 +154,23 @@ class RecetaRepositorio(
     }
 
     // --- Secciones ---
+
+    fun observarSecciones(recetaId: Long): Flow<List<RecetaSeccion>> =
+        dao.observarSecciones(recetaId)
+
+    fun observarIngredientes(recetaId: Long): Flow<List<RecetaIngrediente>> =
+        dao.observarIngredientesDeReceta(recetaId)
+
+    /**
+     * El rendimiento de una receta, avisando cuando cambia.
+     *
+     * **Lo miran dos pantallas a la vez** desde que el molde es un paso propio: el paso del
+     * molde escribe `usaMolde` y `dimensiones`, y el de rendimiento decide con `usaMolde` si
+     * el peso final es obligatorio y si ofrece reescalar por peso. Cada uno con su lectura de
+     * una sola vez, las dos pantallas se contradecían.
+     */
+    fun observarRendimiento(recetaId: Long): Flow<RecetaRendimiento?> =
+        dao.observarRendimiento(recetaId)
 
     suspend fun obtenerSecciones(recetaId: Long): List<RecetaSeccion> =
         dao.obtenerSecciones(recetaId)

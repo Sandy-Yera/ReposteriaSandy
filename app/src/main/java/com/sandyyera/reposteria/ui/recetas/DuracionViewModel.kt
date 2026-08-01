@@ -86,12 +86,13 @@ class DuracionViewModel(
 
     private val bloques = MutableStateFlow(ORDEN_DE_LOS_BLOQUES.map { BloqueDeDuracion(it) })
     private val mensaje = MutableStateFlow<String?>(null)
-    private val receta = MutableStateFlow<Receta?>(null)
 
     val estado: StateFlow<EstadoDuracion> = combine(
         bloques,
         mensaje,
-        receta
+        // El título **se observa** y no se lee una vez: se renombra desde el paso de
+        // cantidades (8.4.1, #3) y este encabezado tiene que enterarse solo.
+        recetas.observarReceta(recetaId)
     ) { losBloques, mensajeActual, laReceta ->
         EstadoDuracion(
             receta = laReceta,
@@ -107,7 +108,6 @@ class DuracionViewModel(
 
     init {
         viewModelScope.launch {
-            receta.value = recetas.obtener(recetaId)
             val guardadas = recetas.obtenerDuraciones(recetaId)
             // Los tipos que no están son los que nadie llenó: su bloque queda en blanco.
             bloques.value = ORDEN_DE_LOS_BLOQUES.map { tipo ->
