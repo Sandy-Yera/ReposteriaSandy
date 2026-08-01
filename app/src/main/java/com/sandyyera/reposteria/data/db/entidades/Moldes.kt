@@ -1,5 +1,6 @@
 package com.sandyyera.reposteria.data.db.entidades
 
+import androidx.room.ColumnInfo
 import androidx.room.Embedded
 import androidx.room.Entity
 import androidx.room.ForeignKey
@@ -55,5 +56,20 @@ data class RecetaRendimiento(
 
     // Arranca en 1 y nunca en 0: así ninguna división por trozos puede reventar mientras
     // la receta está a medio crear en el asistente.
-    val trozos: Int = 1
+    val trozos: Int = 1,
+
+    /**
+     * Si el peso guardado salió de una multiplicación y todavía nadie lo miró (8.4.1, #4).
+     *
+     * Al cambiar de molde, el peso final se reescala con el mismo factor que los
+     * ingredientes. Eso es una **estimación, no una medición**: el peso real depende de
+     * cuánta masa quede pegada al molde y de cuánta agua se evapore. Por eso queda marcado
+     * hasta que alguien toque el campo.
+     *
+     * **Es una columna y no un dato de la pantalla**, y tiene que serlo: quien reescala hoy
+     * pesa el producto mañana, cuando salga del horno, y para entonces la app ya se cerró
+     * cien veces. Un aviso que vive en memoria se pierde justo antes de servir.
+     */
+    @ColumnInfo(defaultValue = "0")
+    val pesoReescaladoSinRevisar: Boolean = false
 )

@@ -441,6 +441,13 @@ class RecetaRepositorio(
      *
      * Al terminar guarda las medidas nuevas **y el vínculo**: enlazada si se eligió un molde
      * del catálogo, suelta si fue modo prueba, aunque antes estuviera enlazada a otro.
+     *
+     * **El peso final se reescala junto con los ingredientes** (8.4.1, #4). Antes no se
+     * tocaba, y eso dejaba la receta diciéndose cosas contradictorias: el doble de masa y el
+     * mismo peso de producto, con lo que el peso por trozo —que sale de dividir uno por
+     * otro— quedaba a la mitad de lo que corresponde sin que nada lo avisara. Como la
+     * proporción es una estimación y no una medición, queda marcado con
+     * `pesoReescaladoSinRevisar` hasta que alguien mire el campo.
      */
     suspend fun reescalarPorMolde(
         recetaId: Long,
@@ -459,8 +466,16 @@ class RecetaRepositorio(
             .getOrElse { return Resultado.NoSePudo(it.message ?: "No se pudo reescalar") }
 
         multiplicarIngredientes(recetaId, factor)
+        // Sin peso anotado no hay nada que reescalar ni nada que comprobar: la marca se
+        // queda apagada en vez de pedir revisar un campo vacío.
+        val pesoReescalado = actual.pesoFinalG?.let { redondearADosDecimales(it * factor) }
         dao.actualizarRendimiento(
-            actual.copy(dimensiones = nuevo, moldeOrigenId = moldeOrigenId)
+            actual.copy(
+                dimensiones = nuevo,
+                moldeOrigenId = moldeOrigenId,
+                pesoFinalG = pesoReescalado,
+                pesoReescaladoSinRevisar = pesoReescalado != null
+            )
         )
         historial.registrar(
             tipo = TipoEvento.EDICION,
@@ -469,6 +484,22 @@ class RecetaRepositorio(
             detalleAdicional = "Factor ${formatearNumero(factor)}"
         )
         return Resultado.Listo
+    }
+
+    /**
+     * Apaga el aviso de "peso reescalado, compruébalo" (8.4.1, #4).
+     *
+     * Se llama al **tocar el campo del peso**, haya cambiado o no. Que el número siga siendo
+     * el mismo no significa que nadie lo haya revisado: lo que confirma el dato es haberlo
+     * mirado, y mirarlo es justamente tocar el campo. Pedir además que se edite obligaría a
+     * borrar y reescribir el mismo número para callar un aviso, que es peor que el aviso.
+     *
+     * No registra evento en el historial: no cambió ningún dato de la receta, solo se leyó.
+     */
+    suspend fun marcarPesoRevisado(recetaId: Long) {
+        val actual = dao.obtenerRendimiento(recetaId) ?: return
+        if (!actual.pesoReescaladoSinRevisar) return
+        dao.actualizarRendimiento(actual.copy(pesoReescaladoSinRevisar = false))
     }
 
     /**
@@ -497,7 +528,11 @@ class RecetaRepositorio(
         }
 
         multiplicarIngredientes(recetaId, nuevoPeso / pesoActual)
-        dao.actualizarRendimiento(actual.copy(pesoFinalG = nuevoPeso))
+        // Acá el peso es lo que se escribió, no lo que salió de una cuenta, así que si
+        // quedaba encendido el aviso de "compruébalo" ya no aplica: se acaba de comprobar.
+        dao.actualizarRendimiento(
+            actual.copy(pesoFinalG = nuevoPeso, pesoReescaladoSinRevisar = false)
+        )
         historial.registrar(
             tipo = TipoEvento.EDICION,
             entidad = EntidadEvento.RECETA,

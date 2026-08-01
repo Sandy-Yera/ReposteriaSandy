@@ -2,19 +2,15 @@ package com.sandyyera.reposteria.ui.recetas
 
 import com.sandyyera.reposteria.data.HistorialDaoFalso
 import com.sandyyera.reposteria.data.IngredienteDaoFalso
-import com.sandyyera.reposteria.data.MoldeDaoFalso
 import com.sandyyera.reposteria.data.RecetaDaoFalso
 import com.sandyyera.reposteria.data.db.entidades.Ingrediente
-import com.sandyyera.reposteria.data.db.entidades.Molde
 import com.sandyyera.reposteria.data.repositorio.HistorialRepositorio
-import com.sandyyera.reposteria.data.repositorio.MoldeRepositorio
 import com.sandyyera.reposteria.data.repositorio.RecetaRepositorio
 import com.sandyyera.reposteria.data.repositorio.ResultadoCrearReceta
 import com.sandyyera.reposteria.logica.moldes.DimensionesMolde
 import com.sandyyera.reposteria.logica.moldes.ModoReescalado
 import com.sandyyera.reposteria.logica.moldes.TipoFormaMolde
 import com.sandyyera.reposteria.logica.rendimiento.PESO_NO_ESPECIFICADO
-import com.sandyyera.reposteria.logica.validaciones.CampoDeMolde
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
@@ -34,11 +30,11 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * El paso "Rendimiento" visto desde la pantalla (8.3).
+ * El paso "Rendimiento" visto desde la pantalla (8.3): trozos y peso.
  *
- * Lo que se prueba acá y no en el repositorio: que el cuadro de molde **sepa solo** si es la
- * primera vez o un reescalado, y que un rechazo quede a la vista dentro del cuadro en vez de
- * en la franja de abajo, que con el teclado abierto no se ve.
+ * **Ya no prueba el molde**: eso se fue a `MoldeDeRecetaViewModelTest` cuando el molde pasó a
+ * ser un paso propio (8.4.1, #2). Lo único del molde que queda acá es `usaMolde`, porque de
+ * eso depende que el peso final sea opcional u obligatorio.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class RendimientoViewModelTest {
@@ -47,9 +43,7 @@ class RendimientoViewModelTest {
 
     private lateinit var catalogo: IngredienteDaoFalso
     private lateinit var recetaDao: RecetaDaoFalso
-    private lateinit var moldeDao: MoldeDaoFalso
     private lateinit var recetas: RecetaRepositorio
-    private lateinit var moldes: MoldeRepositorio
     private var recetaId: Long = 0
 
     @Before
@@ -57,10 +51,7 @@ class RendimientoViewModelTest {
         Dispatchers.setMain(despachador)
         catalogo = IngredienteDaoFalso()
         recetaDao = RecetaDaoFalso(catalogo)
-        moldeDao = MoldeDaoFalso(recetaDao)
-        val historial = HistorialRepositorio(HistorialDaoFalso())
-        recetas = RecetaRepositorio(recetaDao, historial)
-        moldes = MoldeRepositorio(moldeDao, recetas, historial)
+        recetas = RecetaRepositorio(recetaDao, HistorialRepositorio(HistorialDaoFalso()))
     }
 
     @After
@@ -80,17 +71,23 @@ class RendimientoViewModelTest {
             val seccion = recetas.obtenerSecciones(recetaId).single()
             recetas.agregarIngrediente(seccion.id, harina.id, 500.0)
 
-            val modelo = RendimientoViewModel(recetaId, recetas, moldes)
-            backgroundScope.launch(despachador) { modelo.estado.collect { } }
-            backgroundScope.launch(despachador) { modelo.dialogo.collect { } }
-            advanceUntilIdle()
+            val modelo = abrirElPaso()
             cuerpo(modelo)
         }
 
-    private fun cuadroDeMolde(modelo: RendimientoViewModel) =
-        modelo.dialogo.value as DialogoRendimiento.ElegirMolde
-
-    private suspend fun gramos(): Double = recetas.obtenerIngredientes(recetaId).single().cantidadG
+    /**
+     * Arma el ViewModel y lo deja escuchando, como haría la pantalla.
+     *
+     * Está aparte para poder llamarlo **dos veces** en la misma prueba: crear uno nuevo sobre
+     * la misma base es lo más parecido a cerrar la app y volver a entrar, que es justo lo que
+     * hay que comprobar del aviso del peso reescalado.
+     */
+    private fun TestScope.abrirElPaso(): RendimientoViewModel {
+        val modelo = RendimientoViewModel(recetaId, recetas)
+        backgroundScope.launch(despachador) { modelo.estado.collect { } }
+        advanceUntilIdle()
+        return modelo
+    }
 
     // --- Los dos campos ---
 
@@ -154,161 +151,18 @@ class RendimientoViewModelTest {
         assertEquals(1200.0, rendimiento.pesoFinalG!!, 0.001)
     }
 
-    // --- Definir el molde por primera vez ---
+    // --- Reescalar por peso, que sigue siendo de este paso ---
 
     @Test
-    fun `la primera vez el cuadro no es un reescalado y no pide modo`() = probar { modelo ->
-        modelo.abrirElegirMolde()
-        advanceUntilIdle()
+    fun `solo se ofrece reescalar por peso si la receta no usa molde`() = probar { modelo ->
+        assertTrue(modelo.estado.value.sePuedeReescalarPorPeso)
 
-        assertFalse(
-            "Sin molde previo no hay nada que conservar",
-            cuadroDeMolde(modelo).esReescalado
-        )
-    }
-
-    @Test
-    fun `elegir un molde guardado la primera vez no reescala nada`() = probar { modelo ->
-        moldeDao.sembrar(Molde(nombre = "Redondo", dimensiones = cuadrado(20.0, 6.0)))
-        advanceUntilIdle()
-        modelo.abrirElegirMolde()
-        advanceUntilIdle()
-
-        modelo.elegirMoldeGuardado(cuadroDeMolde(modelo).candidatos.single())
-        modelo.confirmarMolde()
-        advanceUntilIdle()
-
-        assertEquals("Los ingredientes quedan como estaban", 500.0, gramos(), 0.001)
-        assertTrue(modelo.estado.value.usaMolde)
-        assertTrue("Y queda enlazada al catálogo", modelo.estado.value.enlazadaAlCatalogo)
-    }
-
-    @Test
-    fun `un molde de prueba deja la receta sin vinculo`() = probar { modelo ->
-        modelo.abrirElegirMolde()
-        advanceUntilIdle()
-        modelo.cambiarOrigenDelMolde(OrigenDelMolde.PRUEBA)
-        modelo.elegirFormaDePrueba(TipoFormaMolde.CUADRADO)
-        modelo.cambiarMedidaDePrueba(CampoDeMolde.LADO, "20")
-        modelo.cambiarMedidaDePrueba(CampoDeMolde.ALTURA_MOLDE, "6")
-        advanceUntilIdle()
-
-        assertTrue(cuadroDeMolde(modelo).puedeGuardar)
-        modelo.confirmarMolde()
-        advanceUntilIdle()
-
-        assertTrue(modelo.estado.value.usaMolde)
-        assertFalse(
-            "No recibe correcciones del catálogo",
-            modelo.estado.value.enlazadaAlCatalogo
-        )
-    }
-
-    @Test
-    fun `el cuadro de prueba pide solo los campos de la forma elegida`() = probar { modelo ->
-        modelo.abrirElegirMolde()
-        advanceUntilIdle()
-        modelo.cambiarOrigenDelMolde(OrigenDelMolde.PRUEBA)
-
-        modelo.elegirFormaDePrueba(TipoFormaMolde.CIRCULO)
-        advanceUntilIdle()
-        assertEquals(
-            listOf(CampoDeMolde.DIAMETRO, CampoDeMolde.ALTURA_MOLDE),
-            cuadroDeMolde(modelo).campos
-        )
-    }
-
-    @Test
-    fun `sin nada elegido no se puede confirmar el molde`() = probar { modelo ->
-        modelo.abrirElegirMolde()
-        advanceUntilIdle()
-
-        assertFalse(cuadroDeMolde(modelo).puedeGuardar)
-    }
-
-    // --- Reescalar ---
-
-    @Test
-    fun `con molde ya puesto el cuadro sabe que es un reescalado`() = probar { modelo ->
-        recetas.definirMolde(recetaId, cuadrado(10.0, 5.0), null)
-        advanceUntilIdle()
-
-        modelo.abrirElegirMolde()
-        advanceUntilIdle()
-
-        assertTrue(cuadroDeMolde(modelo).esReescalado)
-    }
-
-    @Test
-    fun `reescalar a un molde del doble de volumen dobla los ingredientes`() = probar { modelo ->
-        recetas.definirMolde(recetaId, cuadrado(10.0, 5.0), null)
-        moldeDao.sembrar(Molde(nombre = "Alto", dimensiones = cuadrado(10.0, 10.0)))
-        advanceUntilIdle()
-
-        modelo.abrirElegirMolde()
-        advanceUntilIdle()
-        modelo.elegirMoldeGuardado(cuadroDeMolde(modelo).candidatos.single())
-        modelo.elegirModoDeReescalado(ModoReescalado.CAPACIDAD)
-        modelo.confirmarMolde()
-        advanceUntilIdle()
-
-        assertEquals(1000.0, gramos(), 0.001)
-    }
-
-    @Test
-    fun `un reescalado rechazado deja el motivo dentro del cuadro`() = probar { modelo ->
-        // Y no en la franja de abajo: con el teclado abierto no se ve, y además el selector
-        // de modo que resuelve el problema está justo ahí adentro.
-        recetas.definirMolde(recetaId, cuadrado(10.0, 5.0), null)
-        moldeDao.sembrar(Molde(nombre = "Muy alto", dimensiones = cuadrado(10.0, 12.0)))
-        advanceUntilIdle()
-
-        modelo.abrirElegirMolde()
-        advanceUntilIdle()
-        modelo.elegirMoldeGuardado(cuadroDeMolde(modelo).candidatos.single())
-        modelo.elegirModoDeReescalado(ModoReescalado.ALTURA)
-        modelo.confirmarMolde()
-        advanceUntilIdle()
-
-        val cuadro = cuadroDeMolde(modelo)
-        assertNotNull("El cuadro sigue abierto, con el motivo", cuadro.rechazo)
-        assertFalse(cuadro.guardando)
-        assertNull("Y no por abajo", modelo.estado.value.mensaje)
-        assertEquals("Sin tocar los ingredientes", 500.0, gramos(), 0.001)
-    }
-
-    @Test
-    fun `al cambiar de modo el rechazo anterior desaparece`() = probar { modelo ->
-        recetas.definirMolde(recetaId, cuadrado(10.0, 5.0), null)
-        moldeDao.sembrar(Molde(nombre = "Muy alto", dimensiones = cuadrado(10.0, 12.0)))
-        advanceUntilIdle()
-        modelo.abrirElegirMolde()
-        advanceUntilIdle()
-        modelo.elegirMoldeGuardado(cuadroDeMolde(modelo).candidatos.single())
-        modelo.elegirModoDeReescalado(ModoReescalado.ALTURA)
-        modelo.confirmarMolde()
-        advanceUntilIdle()
-        assertNotNull(cuadroDeMolde(modelo).rechazo)
-
-        modelo.elegirModoDeReescalado(ModoReescalado.CAPACIDAD)
-        advanceUntilIdle()
-
-        assertNull("El rechazo era sobre el modo anterior", cuadroDeMolde(modelo).rechazo)
-    }
-
-    // --- Quitar el molde y reescalar por peso ---
-
-    @Test
-    fun `quitar el molde sin peso final avisa y no lo quita`() = probar { modelo ->
         recetas.definirMolde(recetaId, cuadrado(20.0, 6.0), null)
+        modelo.guardar() // cualquier acción que dispare la relectura del estado
         advanceUntilIdle()
 
-        modelo.pedirQuitarMolde()
-        modelo.confirmarQuitarMolde()
-        advanceUntilIdle()
-
-        assertTrue(modelo.estado.value.usaMolde)
-        assertNotNull(modelo.estado.value.mensaje)
+        // Con molde, cambiar de tamaño es cambiar de molde, y eso vive en el paso anterior.
+        assertFalse(modelo.estado.value.sePuedeReescalarPorPeso)
     }
 
     @Test
@@ -323,7 +177,83 @@ class RendimientoViewModelTest {
         modelo.confirmarReescaladoPorPeso()
         advanceUntilIdle()
 
-        assertEquals(1000.0, gramos(), 0.001)
+        assertEquals(1000.0, recetas.obtenerIngredientes(recetaId).single().cantidadG, 0.001)
         assertEquals("Y el campo queda con el peso nuevo", "2.000", modelo.estado.value.pesoFinal)
+    }
+
+    // --- El aviso de "peso reescalado, compruébalo" (8.4.1, #4) ---
+
+    /** Deja la receta con molde, peso anotado y ya reescalada al doble de volumen. */
+    private suspend fun reescalarPorMolde() {
+        recetas.definirMolde(recetaId, cuadrado(10.0, 5.0), null)
+        recetas.guardarRendimiento(recetaId, "8", "1.000")
+        recetas.reescalarPorMolde(recetaId, cuadrado(10.0, 10.0), ModoReescalado.CAPACIDAD, null)
+    }
+
+    @Test
+    fun `despues de reescalar por molde el peso queda marcado para comprobar`() =
+        probar { modelo ->
+            reescalarPorMolde()
+            val recienAbierto = abrirElPaso()
+
+            assertTrue(recienAbierto.estado.value.pesoSinRevisar)
+            assertNotNull(
+                "Y la pantalla tiene el texto que mostrar",
+                recienAbierto.estado.value.avisoDelPeso
+            )
+            // El peso se dobló junto con los ingredientes: si no, la receta diría el doble
+            // de masa y el mismo peso de producto, y el peso por trozo saldría a la mitad.
+            assertEquals("2.000", recienAbierto.estado.value.pesoFinal)
+        }
+
+    @Test
+    fun `tocar el campo del peso apaga el aviso, aunque no se cambie el numero`() =
+        probar { modelo ->
+            reescalarPorMolde()
+            val recienAbierto = abrirElPaso()
+            assertTrue(recienAbierto.estado.value.pesoSinRevisar)
+
+            // Es lo que hace la pantalla cuando el campo recibe el foco. No se escribe nada:
+            // lo que confirma el dato es haberlo mirado.
+            recienAbierto.marcarPesoRevisado()
+            advanceUntilIdle()
+
+            assertFalse(recienAbierto.estado.value.pesoSinRevisar)
+            assertNull(recienAbierto.estado.value.avisoDelPeso)
+            assertEquals("Y el número no se movió", "2.000", recienAbierto.estado.value.pesoFinal)
+        }
+
+    @Test
+    fun `el aviso sobrevive a cerrar la app y volver a entrar`() = probar { modelo ->
+        // Es la razón de que sea una columna y no un dato de la sesión: quien reescala hoy
+        // pesa el producto mañana, cuando salga del horno.
+        reescalarPorMolde()
+        assertTrue(abrirElPaso().estado.value.pesoSinRevisar)
+
+        // Otro ViewModel sobre la misma base = cerrar la app y volver a entrar.
+        assertTrue(abrirElPaso().estado.value.pesoSinRevisar)
+    }
+
+    @Test
+    fun `una vez comprobado el aviso no vuelve`() = probar { modelo ->
+        reescalarPorMolde()
+        val primero = abrirElPaso()
+        primero.marcarPesoRevisado()
+        advanceUntilIdle()
+
+        assertFalse("Ni siquiera al volver a entrar", abrirElPaso().estado.value.pesoSinRevisar)
+    }
+
+    @Test
+    fun `escribir en el campo tambien apaga el aviso`() = probar { modelo ->
+        // El foco es el camino normal, pero se puede llegar al campo con el "siguiente" del
+        // teclado desde los trozos y escribir sin haberlo tocado con el dedo.
+        reescalarPorMolde()
+        val recienAbierto = abrirElPaso()
+
+        recienAbierto.cambiarPesoFinal("1950")
+        advanceUntilIdle()
+
+        assertFalse(recienAbierto.estado.value.pesoSinRevisar)
     }
 }

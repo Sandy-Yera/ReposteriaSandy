@@ -99,6 +99,53 @@ class MigracionTest {
     }
 
     /**
+     * 2 → 3: el peso final de una receta pasa a poder estar "reescalado sin comprobar".
+     *
+     * Mismas dos mitades que la anterior: que el esquema quede como dice `3.json` —lo que
+     * atrapa un `DEFAULT` que no calce con el `@ColumnInfo` de la entidad— y que la fila que
+     * ya estaba siga ahí con su peso intacto.
+     *
+     * Lo que se comprueba además es **el valor con que quedan las filas viejas**: un peso
+     * escrito a mano antes de esta versión no salió de ninguna multiplicación, así que
+     * marcarlo como "por comprobar" sería pedirle a Sandy que revise pesos que ella misma
+     * pesó. Por eso el `DEFAULT 0` y por eso se verifica.
+     */
+    @Test
+    fun la_migracion_2_a_3_conserva_el_peso_y_no_marca_nada_por_comprobar() {
+        ayudante.createDatabase(nombreDeLaBase, 2).use { base ->
+            base.execSQL(
+                "INSERT INTO recetas (id, titulo, pasoPrevio, creadoEn, actualizadoEn) " +
+                    "VALUES (1, 'Torta de manjar', 'No necesita', 1000, 1000)"
+            )
+            base.execSQL(
+                "INSERT INTO receta_rendimiento " +
+                    "(recetaId, usaMolde, moldeOrigenId, pesoFinalG, trozos) " +
+                    "VALUES (1, 0, NULL, 1200.0, 8)"
+            )
+        }
+
+        val migrada = ayudante.runMigrationsAndValidate(
+            nombreDeLaBase, 3, true, AppDatabase.MIGRACION_2_3
+        )
+
+        migrada
+            .query(
+                "SELECT pesoFinalG, trozos, pesoReescaladoSinRevisar " +
+                    "FROM receta_rendimiento WHERE recetaId = 1"
+            )
+            .use { fila ->
+                assertTrue("La migración se llevó la fila que ya estaba", fila.moveToFirst())
+                assertEquals(1200.0, fila.getDouble(0), 0.001)
+                assertEquals(8, fila.getInt(1))
+                assertEquals(
+                    "Un peso escrito a mano no salió de ninguna multiplicación",
+                    0,
+                    fila.getInt(2)
+                )
+            }
+    }
+
+    /**
      * Abrir la base con la app entera después de migrar.
      *
      * `runMigrationsAndValidate` compara esquemas, pero es Room quien al abrir revisa el
@@ -114,13 +161,18 @@ class MigracionTest {
                     "VALUES (1, 'Torta de manjar', 'No necesita', 1000, 1000)"
             )
         }
+        // Encadenadas hasta la versión actual: es el camino que recorre de verdad un
+        // celular que venía con la primera instalación, y el que se rompe si una migración
+        // nueva no calza con la anterior.
         ayudante
-            .runMigrationsAndValidate(nombreDeLaBase, 2, true, AppDatabase.MIGRACION_1_2)
+            .runMigrationsAndValidate(
+                nombreDeLaBase, 3, true, AppDatabase.MIGRACION_1_2, AppDatabase.MIGRACION_2_3
+            )
             .close()
 
         val contexto = InstrumentationRegistry.getInstrumentation().targetContext
         val base = Room.databaseBuilder(contexto, AppDatabase::class.java, nombreDeLaBase)
-            .addMigrations(AppDatabase.MIGRACION_1_2)
+            .addMigrations(AppDatabase.MIGRACION_1_2, AppDatabase.MIGRACION_2_3)
             .build()
 
         try {

@@ -379,4 +379,69 @@ class FlujoCompletoTest {
         assertEquals(3, duraciones.getValue(TipoDuracion.AMBIENTE).cantidad)
         assertEquals(1000.0, recetas.obtenerIngredientes(receta).single().cantidadG, 0.001)
     }
+
+    /**
+     * Cambiar de molde deja la receta diciendo lo mismo sobre sí misma (8.4.1, #4).
+     *
+     * Este es el desacuerdo que motivó el cambio, y es de los que esta prueba existe para
+     * ver: los ingredientes los multiplica `reescalarPorMolde`, el peso del producto lo
+     * guarda `receta_rendimiento`, y el peso por trozo sale de dividir uno por otro en la
+     * pantalla. Mientras el peso no se reescalaba, cada pieza estaba bien por separado y
+     * juntas mentían — el doble de masa rindiendo el mismo peso.
+     *
+     * Lo que tiene que quedar igual **no es el peso**, que sube, sino **la proporción entre
+     * la masa que entra y el producto que sale**: eso es una propiedad de la receta y no del
+     * molde, así que reescalar no puede moverla.
+     */
+    @Test
+    fun `reescalar por molde mantiene la proporcion entre masa y producto`() = runBlocking {
+        val harina = crearIngrediente("Harina", 2.0)
+        val receta = (recetas.crear("Bizcocho") as ResultadoCrearReceta.Creada).recetaId
+        recetas.agregarIngrediente(recetas.obtenerSecciones(receta).single().id, harina, 500.0)
+
+        val chico = DimensionesMolde(
+            tipoForma = TipoFormaMolde.CUADRADO, ladoCm = 10.0, alturaMoldeCm = 5.0
+        )
+        val grande = DimensionesMolde(
+            tipoForma = TipoFormaMolde.CUADRADO, ladoCm = 10.0, alturaMoldeCm = 10.0
+        )
+
+        recetas.definirMolde(receta, chico, moldeOrigenId = null)
+        assertTrue(recetas.guardarRendimiento(receta, "8", "400") is Resultado.Listo)
+
+        val masaAntes = recetas.obtenerIngredientes(receta).sumOf { it.cantidadG }
+        val productoAntes = recetas.obtenerRendimiento(receta)!!.pesoFinalG!!
+
+        assertTrue(
+            recetas.reescalarPorMolde(receta, grande, ModoReescalado.CAPACIDAD, null)
+                is Resultado.Listo
+        )
+
+        val despues = recetas.obtenerRendimiento(receta)!!
+        val masaDespues = recetas.obtenerIngredientes(receta).sumOf { it.cantidadG }
+
+        assertEquals("La masa se dobló", 1000.0, masaDespues, 0.001)
+        assertEquals("Y el producto también", 800.0, despues.pesoFinalG!!, 0.001)
+        assertEquals(
+            "La proporción es de la receta, no del molde: no se mueve",
+            masaAntes / productoAntes,
+            masaDespues / despues.pesoFinalG!!,
+            0.001
+        )
+        assertTrue(
+            "Y queda pidiendo que alguien pese el resultado de verdad",
+            despues.pesoReescaladoSinRevisar
+        )
+
+        // Mirar el campo lo da por comprobado, y eso sí se guarda: el aviso tiene que
+        // sobrevivir a cerrar la app, así que apagarlo también.
+        recetas.marcarPesoRevisado(receta)
+        assertTrue(!recetas.obtenerRendimiento(receta)!!.pesoReescaladoSinRevisar)
+        assertEquals(
+            "Apagar el aviso no toca el número",
+            800.0,
+            recetas.obtenerRendimiento(receta)!!.pesoFinalG!!,
+            0.001
+        )
+    }
 }

@@ -56,7 +56,7 @@ import com.sandyyera.reposteria.data.db.entidades.RecetaSimulacionVenta
         EmpleadoSimulacionMultipleDetalle::class,
         EventoCambio::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = true
 )
 @TypeConverters(Convertidores::class)
@@ -103,7 +103,7 @@ abstract class AppDatabase : RoomDatabase() {
                 NOMBRE_ARCHIVO
             )
                 .addCallback(SembrarDatosIniciales)
-                .addMigrations(MIGRACION_1_2)
+                .addMigrations(MIGRACION_1_2, MIGRACION_2_3)
                 .build()
 
         /**
@@ -126,6 +126,34 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL(
                     "ALTER TABLE receta_precios " +
                         "ADD COLUMN esReferencia INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
+        /**
+         * 2 → 3: el peso final puede venir de un reescalado y estar sin comprobar.
+         *
+         * Al cambiar de molde, el peso del producto se multiplica por el mismo factor que
+         * los ingredientes (8.4.1, #4). Eso es una estimación —el peso real depende de la
+         * masa que quede pegada al molde y del agua que se evapore—, así que queda marcado
+         * hasta que alguien mire el campo.
+         *
+         * Tenía que ser una columna: quien reescala hoy pesa el producto mañana, cuando
+         * salga del horno, y para entonces la app ya se cerró. Un aviso en memoria se
+         * pierde justo antes de servir.
+         *
+         * Las filas que ya existían quedan en `0`, que es lo correcto: sus pesos los
+         * escribió alguien a mano, no salieron de ninguna multiplicación.
+         *
+         * Mismo cuidado que en la 1 → 2: el `DEFAULT 0` es obligatorio —SQLite no deja
+         * agregar una columna `NOT NULL` sin él— y tiene que calzar con el
+         * `@ColumnInfo(defaultValue = "0")` de la entidad, o la app no arranca.
+         */
+        val MIGRACION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE receta_rendimiento " +
+                        "ADD COLUMN pesoReescaladoSinRevisar INTEGER NOT NULL DEFAULT 0"
                 )
             }
         }

@@ -32,9 +32,11 @@ import com.sandyyera.reposteria.ui.moldes.MoldesViewModel
 import com.sandyyera.reposteria.ui.recetas.CantidadesViewModel
 import com.sandyyera.reposteria.ui.recetas.ListaRecetasScreen
 import com.sandyyera.reposteria.ui.recetas.DuracionViewModel
+import com.sandyyera.reposteria.ui.recetas.MoldeDeRecetaViewModel
 import com.sandyyera.reposteria.ui.recetas.PasoCantidadesScreen
 import com.sandyyera.reposteria.ui.recetas.PasoDeReceta
 import com.sandyyera.reposteria.ui.recetas.PasoDuracionScreen
+import com.sandyyera.reposteria.ui.recetas.PasoMoldeScreen
 import com.sandyyera.reposteria.ui.recetas.PasoRendimientoScreen
 import com.sandyyera.reposteria.ui.recetas.RendimientoViewModel
 import com.sandyyera.reposteria.ui.recetas.RecetasViewModel
@@ -114,13 +116,27 @@ fun NavegacionPrincipal(
                 modifier = modifier
             )
 
+            PasoDeReceta.MOLDE -> PasoMoldeScreen(
+                modelo = viewModel(
+                    key = "molde-$idAbierta",
+                    factory = MoldeDeRecetaViewModel.fabrica(
+                        recetaId = idAbierta,
+                        recetas = contenedor.recetas,
+                        moldes = contenedor.moldes
+                    )
+                ),
+                pasoActual = pasoActual,
+                alElegirPaso = elegirPaso,
+                alCerrarReceta = cerrarReceta,
+                modifier = modifier
+            )
+
             PasoDeReceta.RENDIMIENTO -> PasoRendimientoScreen(
                 modelo = viewModel(
                     key = "rendimiento-$idAbierta",
                     factory = RendimientoViewModel.fabrica(
                         recetaId = idAbierta,
-                        recetas = contenedor.recetas,
-                        moldes = contenedor.moldes
+                        recetas = contenedor.recetas
                     )
                 ),
                 pasoActual = pasoActual,

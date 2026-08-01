@@ -223,6 +223,11 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Qué hacen: las reglas del paso de duración, que son más blandas que las del resto a propósito.
 - Cómo funcionan: `errorEnCantidadDeDuracion(texto, apto)` acepta el **vacío** —"no lo sé" es una respuesta legítima y la más común— pero rechaza el 0 (para eso está el switch de "no apto") y los decimales (las unidades ya bajan de escala: medio día son 12 horas). Con `apto = false` no revisa nada: ahí la cantidad se ignora por completo. `elBloqueDiceAlgo` es la que decide si hay algo que guardar, y **un bloque "no apto" sí lo tiene** aunque no tenga números — ese es el caso que se olvida al escribirlo como "tiene cantidad". `ORDEN_DE_LOS_BLOQUES` los pone de la forma más común a la menos.
 
+### AVISO_PESO_REESCALADO ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/rendimiento/Rendimiento.kt
+- Qué hace: el texto que acompaña a un peso final que salió de un reescalado por molde (8.4.1, #4).
+- Cómo funciona: constante con el texto `"El peso de este producto ha sido reescalado automáticamente. Por favor, compruebe el peso."`. **Pide comprobar y no da por bueno**, y esa palabra es todo el punto: la proporción es una estimación y no una medición — el peso real depende de cuánta masa quede pegada al molde y de cuánta agua se evapore, y ninguna de las dos escala con el área. Es constante y no un texto suelto en la pantalla por lo mismo que `MENSAJE_ALTURA_RIESGOSA`.
+
 ### pesoPorTrozo ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/rendimiento/Rendimiento.kt
 - Qué hace: calcula cuánto pesa cada trozo dividiendo el peso final del producto entre la cantidad de trozos.
@@ -473,6 +478,11 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Qué hace: la base de datos de la app; reúne las 15 tablas y da acceso a los DAO.
 - Cómo funciona: clase `@Database` en **versión 2** con `exportSchema = true`, que deja el esquema en `app/schemas/` — esos archivos se versionan porque son el registro de las migraciones. Lleva `MIGRACION_1_2` declarada. `obtener(context)` devuelve una única instancia compartida (doble chequeo con `@Volatile`), ya que abrir varias sobre el mismo archivo puede corromper datos. Room activa por su cuenta las claves foráneas y el modo WAL.
 
+### MIGRACION_2_3 ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/db/AppDatabase.kt
+- Qué hace: agrega la columna `pesoReescaladoSinRevisar` a `receta_rendimiento` al pasar de la versión 2 a la 3.
+- Cómo funciona: `Migration(2, 3)` con un `ALTER TABLE ... ADD COLUMN pesoReescaladoSinRevisar INTEGER NOT NULL DEFAULT 0`, con el mismo cuidado que la 1 → 2: el `DEFAULT 0` es obligatorio en SQLite y tiene que calzar con el `@ColumnInfo(defaultValue = "0")` de la entidad. **Tenía que ser una columna y no un dato de la pantalla**: quien reescala hoy pesa el producto mañana, cuando salga del horno, y para entonces la app ya se cerró. Las filas que ya existían quedan en `0`, que es lo correcto — sus pesos los escribió alguien a mano, no salieron de ninguna multiplicación. **`app/schemas/3.json` lo genera Room al compilar** y hay que versionarlo.
+
 ### MIGRACION_1_2 ✅ IMPLEMENTADA
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/data/db/AppDatabase.kt
 - Qué hace: agrega la columna `esReferencia` a `receta_precios` al pasar de la versión 1 a la 2.
@@ -646,7 +656,7 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 ### CampoNumerico ✅ IMPLEMENTADA
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/componentes/CampoNumerico.kt
 - Qué hace: el campo donde se escribe un monto o una cantidad. Pone el punto de mil solo y deja el cursor donde corresponde.
-- Cómo funciona: Composable que recibe el valor, qué hacer al cambiar, la etiqueta y opcionalmente un error y un texto de ayuda. Guarda un `TextFieldValue` y no un `String` porque el `String` no lleva la posición del cursor: el campo la conserva como un número, y ese número deja de significar lo mismo cuando el texto se alarga con el punto de mil. Dónde va el cursor lo decide `formatearMientrasSeEscribe(texto, cursor)`, en `logica/`. **Es la única puerta de entrada de números de la app**: cualquier campo numérico nuevo va por acá y no con un `OutlinedTextField` suelto, porque si no hay que volver a resolver lo del cursor en cada pantalla.
+- Cómo funciona: Composable que recibe el valor, qué hacer al cambiar, la etiqueta y opcionalmente un error, un texto de ayuda y un `alEnfocar`. `alEnfocar` avisa cuando el campo **recibe el foco** —o sea cuando alguien lo toca para mirarlo, aunque no escriba nada—; lo pidió el aviso de "peso reescalado, compruébalo" (8.4.1, #4), que tiene que irse al mirar el campo y no al editarlo, porque el número puede estar bien y exigir una edición sería obligar a borrar y reescribir lo mismo. Guarda un `TextFieldValue` y no un `String` porque el `String` no lleva la posición del cursor: el campo la conserva como un número, y ese número deja de significar lo mismo cuando el texto se alarga con el punto de mil. Dónde va el cursor lo decide `formatearMientrasSeEscribe(texto, cursor)`, en `logica/`. **Es la única puerta de entrada de números de la app**: cualquier campo numérico nuevo va por acá y no con un `OutlinedTextField` suelto, porque si no hay que volver a resolver lo del cursor en cada pantalla.
 
 ### ComboBuscable ✅ IMPLEMENTADA
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/componentes/ComboBuscable.kt
@@ -707,6 +717,11 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Ubicación: app/src/test/java/com/sandyyera/reposteria/ui/recetas/PasoDeRecetaTest.kt
 - Qué hace: comprueba que los pasos que dibuja `FilaDePasos` tengan título, que ninguno se repita y que el primero sea Cantidades.
 - Cómo funciona: JUnit puro, sin corrutinas ni base. La fila en sí es un Composable y no se puede probar sin celular, pero **todo lo que la fila muestra sale del enum**: un paso sin título deja una ficha en blanco y dos títulos iguales dejan la fila imposible de usar. Es lo que se olvida al agregar el cuarto paso (Gastos, Fase 7).
+
+### MoldeDeRecetaViewModelTest y RendimientoViewModelTest ✅ IMPLEMENTADAS
+- Ubicación: app/src/test/java/com/sandyyera/reposteria/ui/recetas/
+- Qué hacen: prueban los dos pasos que antes eran uno solo.
+- Cómo funcionan: `MoldeDeRecetaViewModelTest` se quedó con todo lo del molde —que el cuadro **sepa solo** si es la primera vez o un reescalado, que un rechazo quede dentro del cuadro y no en la franja de abajo, y que reescalar arrastre el peso del producto además de los ingredientes—; `RendimientoViewModelTest` con los dos campos y el aviso del peso. Este último arma el ViewModel con un método aparte (`abrirElPaso`) para poder **crearlo dos veces sobre la misma base**, que es lo más parecido a cerrar la app y volver a entrar: es la única forma de comprobar que el aviso sobrevive, que es toda la razón de que sea una columna.
 
 ### MigracionTest ✅ IMPLEMENTADA
 - Ubicación: app/src/androidTest/java/com/sandyyera/reposteria/data/db/MigracionTest.kt
@@ -780,23 +795,38 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 
 ### RendimientoViewModel ✅ IMPLEMENTADA
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/recetas/RendimientoViewModel.kt
-- Qué hace: el cerebro del paso "Rendimiento" (8.3): trozos, peso final, molde y reescalado.
-- Cómo funciona: mismo patrón de siempre, con el diálogo fuera del `combine` (12.2.1). Lo propio es que **`abrirElegirMolde` decide solo si es la primera vez o un reescalado**, leyendo si la receta ya tiene molde: esa distinción no la puede tomar la pantalla. `confirmarMolde` llama a `definirMolde` o a `reescalarPorMolde` según eso, y son dos funciones distintas a propósito — una sola que "haga lo que corresponda" reescalaría una receta que solo quería estrenar molde ante un error en la condición, y eso no se ve hasta que las cantidades ya están mal. Un rechazo queda **dentro del cuadro** y no en la franja de abajo, porque ahí mismo está el selector de modo que lo resuelve.
+- Qué hace: el cerebro del paso "Rendimiento" (8.3): en cuántos trozos rinde y cuánto pesa.
+- Cómo funciona: mismo patrón de siempre, con el diálogo fuera del `combine` (12.2.1). **Ya no se ocupa del molde**: eso se fue entero a `MoldeDeRecetaViewModel` al hacerse un paso propio (8.4.1, #2), y lo único que queda del molde acá es `usaMolde`, porque de eso depende que el peso final sea opcional u obligatorio. Sus acciones: `cambiarTrozos`, `cambiarPesoFinal`, `marcarPesoRevisado`, `guardar`, `abrirReescalarPorPeso`, `cambiarPesoNuevo`, `confirmarReescaladoPorPeso`, `cerrarDialogo` y `mensajeMostrado`. Lo nuevo es `pesoSinRevisar`, que **viene de la base y no de la sesión**: al cambiar de molde el peso se multiplica por el mismo factor que los ingredientes, y eso es una estimación que hay que ir a comprobar mañana, cuando el producto salga del horno. `marcarPesoRevisado` lo apaga, y la pantalla la llama **cuando el campo recibe el foco** — tocarlo para mirarlo es lo que el aviso pide, y exigir además una edición obligaría a borrar y reescribir el mismo número.
 
-### DialogoRendimiento, EstadoRendimiento y OrigenDelMolde ✅ IMPLEMENTADAS
+### MoldeDeRecetaViewModel ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/recetas/MoldeDeRecetaViewModel.kt
+- Qué hace: el cerebro del paso "Molde" de una receta (8.3.1 y 9.3) — qué molde usa y el reescalado.
+- Cómo funciona: **salió de `RendimientoViewModel`**, que hacía las dos cosas; se separó porque el reescalado es la operación más delicada de la app —multiplica todas las cantidades de una vez— y compartiendo pantalla con dos campos de texto quedaba a un toque de quien solo venía a corregir los trozos (8.4.1, #2). **No confundir con `MoldesViewModel`** (plural, en `ui/moldes/`), que es el catálogo de moldes de la app; este es el molde de **una** receta y del catálogo solo lee. Lo propio es que **`abrirElegirMolde` decide solo si es la primera vez o un reescalado**, leyendo si la receta ya tiene molde: esa distinción no la puede tomar la pantalla. `confirmarMolde` llama a `definirMolde` o a `reescalarPorMolde` según eso, y son dos funciones distintas a propósito — una sola que "haga lo que corresponda" reescalaría una receta que solo quería estrenar molde ante un error en la condición, y eso no se ve hasta que las cantidades ya están mal. Un rechazo queda **dentro del cuadro** y no en la franja de abajo, porque ahí mismo está el selector de modo que lo resuelve. El aviso de un reescalado **manda a Rendimiento**, que es donde quedó el peso multiplicado esperando que alguien lo mire.
+
+### DialogoRendimiento y EstadoRendimiento ✅ IMPLEMENTADAS
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/recetas/RendimientoViewModel.kt
 - Qué hacen: los tipos del paso de rendimiento.
-- Cómo funcionan: `OrigenDelMolde` distingue `GUARDADO` (queda enlazada al catálogo y recibe correcciones) de `PRUEBA` (medidas propias, sin vínculo) — **no da lo mismo cuál**, y la pantalla lo dice con todas las letras porque es la única diferencia invisible entre dos recetas con las mismas medidas. `DialogoRendimiento.ElegirMolde` calcula sus `dimensiones` y su `moldeOrigenId` según el origen, y solo muestra el selector de modo cuando `esReescalado`. `EstadoRendimiento` expone `pesoDeCadaTrozo` en vivo —usando `pesoPorTrozo` y `textoANumero`, sin reglas propias sobre cómo se escribe un número— y `medidasDelMolde` envuelto en `runCatching`, para que un molde a medio guardar no cierre la pantalla.
+- Cómo funcionan: `DialogoRendimiento` quedó con `Ninguno` y `ReescalarPorPeso` — los del molde se fueron a `DialogoMoldeDeReceta`. `EstadoRendimiento` expone `pesoDeCadaTrozo` en vivo —usando `pesoPorTrozo` y `textoANumero`, sin reglas propias sobre cómo se escribe un número—, `avisoDelPeso` (el texto de `AVISO_PESO_REESCALADO`, o `null` si no hay nada que comprobar) y `sePuedeReescalarPorPeso`, que es **solo sin molde**: con molde, cambiar de tamaño es cambiar de molde y eso vive en el paso anterior.
+
+### DialogoMoldeDeReceta, EstadoMoldeDeReceta y OrigenDelMolde ✅ IMPLEMENTADAS
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/recetas/MoldeDeRecetaViewModel.kt
+- Qué hacen: los tipos del paso del molde.
+- Cómo funcionan: `OrigenDelMolde` distingue `GUARDADO` (queda enlazada al catálogo y recibe correcciones) de `PRUEBA` (medidas propias, sin vínculo) — **no da lo mismo cuál**, y la pantalla lo dice con todas las letras porque es la única diferencia invisible entre dos recetas con las mismas medidas. `DialogoMoldeDeReceta.Elegir` calcula sus `dimensiones` y su `moldeOrigenId` según el origen, y solo muestra el selector de modo cuando `esReescalado`. `EstadoMoldeDeReceta` expone `medidasDelMolde` envuelto en `runCatching` —para que un molde a medio guardar no cierre la pantalla—, `enlazadaAlCatalogo` y `tienePesoFinal`, que apaga el botón de quitar el molde **antes** de confirmar: el repositorio lo rechazaría igual, pero enterarse al confirmar es enterarse cuando ya se decidió.
 
 ### PasoRendimientoScreen, PasoRendimiento y AccionesRendimiento ✅ IMPLEMENTADAS
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/recetas/PasoRendimientoScreen.kt
-- Qué hacen: la pantalla del paso 2 de una receta.
-- Cómo funcionan: la división de siempre. **El molde va arriba de todo**, porque decide lo demás: con molde el peso final es opcional y sin molde es obligatorio, así que preguntar el peso antes obligaría a cambiar la respuesta después. El cuadro de molde dice en una línea qué va a pasar —"solo se guardan las medidas" o "las cantidades se van a recalcular"—, que es la confusión de 9.3 puesta a la vista. El selector de modo usa las palabras del resultado y no las de la fórmula: "Que rinda más" y "El mismo grosor", con la explicación debajo. Lleva `FilaDePasos` bajo el `TopAppBar`, y con ella se fue el botón de "Siguiente: cuánto dura"; la X y el botón de atrás **salen de la receta** en vez de volver a cantidades, que era el choque de gestos de 8.1.
+- Qué hacen: la pantalla del paso "Rendimiento": trozos, peso y el peso por trozo.
+- Cómo funcionan: la división de siempre. **El molde se fue a su propio paso** (8.4.1, #2) y acá quedaron los dos campos y el número que sale de ellos. Lleva `FilaDePasos` bajo el `TopAppBar`; la X y el botón de atrás **salen de la receta** en vez de volver a cantidades, que era el choque de gestos de 8.1. Si el peso viene de un reescalado por molde, arriba de todo aparece `AvisoDePesoReescalado` — **en el color de error y no en el pastel de las tarjetas de dato**, siguiendo la regla de 12.6 de que los pasteles pintan fondos y las señales pintan íconos y texto. Va arriba y no como texto de ayuda del campo porque ese hueco ya lo ocupa la explicación de si el peso es obligatorio, y un aviso que aparece y desaparece ahí haría saltar el formulario.
+
+### PasoMoldeScreen, PasoMolde y AccionesMoldeDeReceta ✅ IMPLEMENTADAS
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/recetas/PasoMoldeScreen.kt
+- Qué hacen: la pantalla del paso "Molde" de una receta.
+- Cómo funcionan: la división de siempre. El cuadro de molde dice en una línea qué va a pasar —"solo se guardan las medidas" o "las cantidades y el peso se van a recalcular"—, que es la confusión de 9.3 puesta a la vista. El selector de modo usa las palabras del resultado y no las de la fórmula: "Que rinda más" y "El mismo grosor", con la explicación debajo. La tarjeta del molde dice **siempre si la receta está enlazada al catálogo o no**, porque de eso depende que una corrección de medidas le llegue, y es lo único que distingue dos recetas con las mismas medidas.
 
 ### PasoDeReceta ✅ IMPLEMENTADA
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/recetas/FilaDePasos.kt
 - Qué hace: en qué paso de una receta abierta se está, y cómo se llama ese paso en la pantalla.
-- Cómo funciona: `enum` con `CANTIDADES`, `RENDIMIENTO` y `DURACION`, **cada uno con su `titulo`**, en `rememberSaveable` para que girar el teléfono no devuelva al primero. Es enum y no un booleano porque de acá salen los seis pasos del asistente (8.1): con un booleano el tercero ya obligaría a rehacerlo. **Se movió desde `NavegacionPrincipal.kt`** al agregarse la fila de pasos: el enum y el Composable que lo dibuja son la misma decisión y separarlos obligaba a que el paquete `ui` supiera de recetas. El `titulo` vive acá y no en la pantalla por lo mismo que la etiqueta de `CampoDeMolde`: dos listas de textos paralelas se desincronizan sin que nadie lo note. Abrir una receta siempre empieza por el primer paso — quedarse donde se dejó la anterior confundiría más de lo que ahorra.
+- Cómo funciona: `enum` con `CANTIDADES`, `MOLDE`, `RENDIMIENTO` y `DURACION`, **cada uno con su `titulo`**. `MOLDE` va **antes** que rendimiento y no después, porque decide lo de allá: con molde el peso final es opcional y sin molde es obligatorio (8.3), así que preguntar el peso primero obligaría a cambiar la respuesta después, en `rememberSaveable` para que girar el teléfono no devuelva al primero. Es enum y no un booleano porque de acá salen los seis pasos del asistente (8.1): con un booleano el tercero ya obligaría a rehacerlo. **Se movió desde `NavegacionPrincipal.kt`** al agregarse la fila de pasos: el enum y el Composable que lo dibuja son la misma decisión y separarlos obligaba a que el paquete `ui` supiera de recetas. El `titulo` vive acá y no en la pantalla por lo mismo que la etiqueta de `CampoDeMolde`: dos listas de textos paralelas se desincronizan sin que nadie lo note. Abrir una receta siempre empieza por el primer paso — quedarse donde se dejó la anterior confundiría más de lo que ahorra.
 
 ### FilaDePasos ✅ IMPLEMENTADA
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/recetas/FilaDePasos.kt
@@ -838,6 +868,11 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Qué hacen: guardar trozos y peso final, y dejar de usar molde.
 - Cómo funcionan: `suspend`, devuelven `Resultado`. `guardarRendimiento` **avisa antes de romper una promoción**: si bajar los trozos deja imposible alguna promo por trozo, no escribe nada y devuelve el motivo nombrándolas. `quitarMolde` exige tener peso final anotado —sin molde pasa a ser obligatorio— y **conserva las medidas** por si fue un error, cortando solo el vínculo.
 
+### RecetaRepositorio.marcarPesoRevisado ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/RecetaRepositorio.kt
+- Qué hace: apaga el aviso de "peso reescalado, compruébalo" de una receta (8.4.1, #4).
+- Cómo funciona: `suspend`, recibe `recetaId` y no devuelve nada. Pone `pesoReescaladoSinRevisar` en `false` y **se corta sola si ya estaba apagado**, porque la llama la pantalla cada vez que el campo del peso recibe el foco y no tiene sentido escribir en la base por mirar. **No registra evento en el historial**: no cambió ningún dato de la receta, solo se leyó uno.
+
 ### RecetaRepositorio.observarCostos ✅ IMPLEMENTADA
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/RecetaRepositorio.kt
 - Qué hace: el costo de todas las recetas, avisando solo cuando cambia. Es la que hay que usar para **mostrar** costos.
@@ -871,7 +906,7 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 ### probar_todo.sh ✅ IMPLEMENTADO
 - Ubicación: herramientas/probar_todo.sh
 - Qué hace: corre de una vez todo lo que se puede comprobar sin celular.
-- Cómo funciona: cuatro pasos en orden de rapidez —`revisar_kotlin.py`, `contraste.py`, `:logica:test`, `:app:test`— y **se detiene en el primero que falle**: seguir veinte minutos de pruebas cuando ya hay un archivo con una llave sin cerrar no aporta nada. Al terminar recuerda lo que sí necesita el celular (`connectedAndroidTest` e `installDebug`) y que el respaldo va antes. No reemplaza a ninguno: es el orden, para no tener que acordarse de los cuatro.
+- Cómo funciona: cuatro pasos en orden de rapidez —`revisar_kotlin.py`, `contraste.py`, `:logica:test`, `:app:test`— y **se detiene en el primero que falle**. Tiene una sola aclaración especial, `recordar_esquema`, para el único fallo esperable que no es un error: al subir la versión de la base, `app/schemas/N.json` lo escribe Room al compilar, así que hasta el primer `./gradlew :app:assembleDebug` no existe. No se le hace excepción a la revisión —es la que se asegura de que ese archivo quede versionado— pero sí se dice qué hacer: seguir veinte minutos de pruebas cuando ya hay un archivo con una llave sin cerrar no aporta nada. Al terminar recuerda lo que sí necesita el celular (`connectedAndroidTest` e `installDebug`) y que el respaldo va antes. No reemplaza a ninguno: es el orden, para no tener que acordarse de los cuatro.
 
 ### respaldo_bd.sh (bajar, subir, listar) ✅ IMPLEMENTADO
 - Ubicación: herramientas/respaldo_bd.sh

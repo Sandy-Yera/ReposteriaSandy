@@ -789,7 +789,12 @@ Ese número **se suma en memoria**, al revés que el costo total, y no es una in
 
 **El costo que se muestra tiene que seguir vivo.** La lista de recetas pide los costos con un `Flow` (`observarCostos`) y no con una consulta de una sola vez. La primera versión colgaba la consulta del aviso de la tabla `recetas`, y eso dejó pasar un bug que se vio en el celular: borrar ingredientes del catálogo y volver a Recetas mostraba los costos de antes, porque borrar un ingrediente no toca la tabla `recetas` y nada volvía a preguntar. Con un `Flow`, Room vigila las tres tablas que aparecen en la consulta —`receta_ingredientes`, `receta_secciones` e `ingredientes`— y reemite en cuanto cambia cualquiera. **Regla general: lo que se muestra se observa; la foto de un momento (`costosDe`) es para calcular, no para mostrar.**
 
-### 8.3 Paso 2 — Rendimiento (con moldes)
+### 8.3 Paso 2 — Molde, y paso 3 — Rendimiento
+
+Eran un solo paso y se separaron (8.4.1, #2). Lo de abajo vale igual: lo que cambió es dónde
+se pregunta cada cosa, no qué se pregunta. **El molde va primero** porque decide lo otro —con
+molde el peso final es opcional y sin molde es obligatorio—, y el reescalado, que es la
+operación más delicada de la app, deja de compartir pantalla con dos campos de texto.
 
 | Caso | Molde | Peso final (del producto) |
 |---|---|---|
@@ -908,6 +913,18 @@ favor, compruebe el peso"*, que desaparece al tocar el campo — **haya cambiado
 porque lo que confirma el dato es haberlo mirado. La proporción es una estimación, no una
 medición: el peso real depende de cuánta masa quede pegada al molde y de cuánta agua se
 evapore, y por eso el aviso pide comprobar en vez de dar por bueno.
+
+Sin esto la receta se contradecía: el doble de masa y el mismo peso de producto, con lo que
+el peso por trozo —que sale de dividir uno por otro— quedaba a la mitad de lo que
+corresponde y nada lo avisaba. Lo que **no** se mueve al reescalar es la proporción entre la
+masa que entra y el producto que sale: eso es una propiedad de la receta, no del molde.
+
+**El aviso es una columna de la base** (`receta_rendimiento.pesoReescaladoSinRevisar`,
+versión 3), no un dato de la pantalla, y tenía que serlo: quien reescala hoy pesa el producto
+mañana, cuando salga del horno, y para entonces la app se cerró veinte veces. Un aviso que
+vive en memoria se pierde justo antes de servir. Se apaga cuando el campo **recibe el foco**
+—tocarlo para mirarlo es exactamente lo que el aviso pide—, y no al editarlo: exigir una
+edición obligaría a borrar y reescribir el mismo número solo para callar un aviso.
 
 **5. Recetas que usan otras recetas.** Ver 8.11, que es donde vive el diseño completo.
 
@@ -1727,6 +1744,10 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
   molde como paso propio con el reescalado del peso final (los dos viven en Rendimiento y el
   segundo depende de dónde termine quedando el primero), y el guardado automático al final,
   que es lo único que toca cómo se escribe en la base.
+  - **Tanda 2 — hecha:** el molde es un paso propio, con su `MoldeDeRecetaViewModel` y su
+    `PasoMoldeScreen` salidos de Rendimiento; reescalar por molde arrastra el peso del
+    producto y lo deja marcado hasta que se toque el campo. **Necesitó migración de base**
+    (versión 3): una columna en `receta_rendimiento`.
   - **Tanda 1 — hecha:** `FilaDePasos` en las tres pantallas, sin botones de "Siguiente"; la
     X y el botón de atrás salen de la receta desde cualquier paso; ni el catálogo de
     ingredientes, ni la lista de recetas, ni los encabezados de sección, ni las filas de

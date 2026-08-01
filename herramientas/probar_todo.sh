@@ -31,8 +31,22 @@ fallo() {
     exit 1
 }
 
+# El único fallo esperable que NO es un error: al subir la versión de la base, el esquema
+# `app/schemas/N.json` lo escribe Room al compilar, así que hasta el primer compilado no
+# existe. No se le hace excepción a la revisión —es la que se asegura de que ese archivo
+# quede versionado— pero sí se dice qué hacer, porque el mensaje solo no lo aclara.
+recordar_esquema() {
+    echo
+    echo "Si lo que falló es 'falta el esquema de: N.json', no hay nada roto: la base"
+    echo "cambió de versión y ese archivo lo genera Room al compilar. Corre una vez"
+    echo
+    echo "    ./gradlew :app:assembleDebug"
+    echo
+    echo "y vuelve a intentar; después hay que versionar el archivo que apareció."
+}
+
 paso "1/4  Revisiones del Kotlin (sin compilador, segundos)"
-python3 herramientas/revisar_kotlin.py || fallo "revisar_kotlin.py"
+python3 herramientas/revisar_kotlin.py || { recordar_esquema; fallo "revisar_kotlin.py"; }
 
 paso "2/4  Contraste de la paleta (WCAG, sección 12.6)"
 python3 herramientas/contraste.py || fallo "contraste.py"

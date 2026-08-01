@@ -34,6 +34,13 @@ import com.sandyyera.reposteria.ui.theme.ReposteriaTheme
  */
 enum class PasoDeReceta(val titulo: String) {
     CANTIDADES("Cantidades"),
+
+    /**
+     * El molde va **antes** que rendimiento y no después, porque decide lo de allá: con
+     * molde el peso final es opcional y sin molde es obligatorio (8.3). Preguntando el peso
+     * primero habría que cambiar la respuesta después.
+     */
+    MOLDE("Molde"),
     RENDIMIENTO("Rendimiento"),
     DURACION("Duración")
 }

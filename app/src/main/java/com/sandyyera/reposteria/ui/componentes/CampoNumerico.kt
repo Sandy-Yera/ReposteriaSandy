@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -35,6 +36,11 @@ import com.sandyyera.reposteria.ui.theme.ReposteriaTheme
  * Este Composable es la única puerta de entrada de números en la app. Cualquier campo
  * numérico nuevo va por acá y no con un `OutlinedTextField` suelto: si no, hay que volver
  * a resolver lo del cursor en cada pantalla, y basta olvidarlo una vez.
+ *
+ * [alEnfocar] avisa cuando el campo **recibe el foco**, o sea cuando alguien lo toca para
+ * mirarlo, aunque no escriba nada. Lo pidió el aviso de "peso reescalado, compruébalo"
+ * (8.4.1, #4): ese aviso tiene que irse al mirar el campo, no al editarlo, porque el número
+ * puede estar bien y exigir una edición sería obligar a borrar y reescribir lo mismo.
  */
 @Composable
 fun CampoNumerico(
@@ -44,7 +50,8 @@ fun CampoNumerico(
     modifier: Modifier = Modifier,
     error: String? = null,
     ayuda: String? = null,
-    accionDelTeclado: ImeAction = ImeAction.Done
+    accionDelTeclado: ImeAction = ImeAction.Done,
+    alEnfocar: () -> Unit = {}
 ) {
     var recordado by remember {
         mutableStateOf(TextFieldValue(valor, TextRange(valor.length)))
@@ -67,7 +74,11 @@ fun CampoNumerico(
             recordado = TextFieldValue(resultado.texto, TextRange(resultado.cursor))
             alCambiar(resultado.texto)
         },
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            // Solo al ganarlo: `onFocusChanged` también avisa al perderlo, y ahí ya no hay
+            // nada que marcar como mirado.
+            .onFocusChanged { if (it.isFocused) alEnfocar() },
         label = { Text(etiqueta) },
         singleLine = true,
         isError = error != null,
