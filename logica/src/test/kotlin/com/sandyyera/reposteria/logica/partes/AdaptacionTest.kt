@@ -1,7 +1,11 @@
 package com.sandyyera.reposteria.logica.partes
 
+import com.sandyyera.reposteria.logica.validaciones.LARGO_MAXIMO_NOMBRE
+import com.sandyyera.reposteria.logica.validaciones.errorEnNombreSeccion
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -81,6 +85,36 @@ class AdaptacionTest {
     @Test
     fun `los espacios sobrantes no cuentan como un nombre distinto`() {
         assertEquals("Crema 2", nombreSinChocar("  Crema  ", listOf("Crema")))
+    }
+
+    @Test
+    fun `el nombre propuesto nunca pasa del tope, aunque el original ya estuviera al limite`() {
+        // El mismo `errorEnNombreSeccion` que exige nombres únicos exige que quepan en 60.
+        // Pegarle " 2" a un nombre de 60 lo dejaba en 62, y la copia se rechazaba por el
+        // nombre que esta misma función acababa de proponer.
+        val alLimite = "C".repeat(LARGO_MAXIMO_NOMBRE)
+
+        val propuesto = nombreSinChocar(alLimite, listOf(alLimite))
+        assertTrue(propuesto.length <= LARGO_MAXIMO_NOMBRE)
+        assertNull("Y la validación lo acepta", errorEnNombreSeccion(propuesto))
+        assertTrue("Sigue distinguiéndose por el número", propuesto.endsWith(" 2"))
+    }
+
+    @Test
+    fun `un nombre larguisimo se recorta aunque no choque con nada`() {
+        val largo = "C".repeat(LARGO_MAXIMO_NOMBRE + 20)
+        assertNull(errorEnNombreSeccion(nombreSinChocar(largo, emptyList())))
+    }
+
+    @Test
+    fun `si el recortado tambien choca, sigue subiendo el numero`() {
+        val alLimite = "C".repeat(LARGO_MAXIMO_NOMBRE)
+        val yaConDos = nombreSinChocar(alLimite, listOf(alLimite))
+
+        val tercero = nombreSinChocar(alLimite, listOf(alLimite, yaConDos))
+        assertTrue(tercero.length <= LARGO_MAXIMO_NOMBRE)
+        assertNotEquals(yaConDos, tercero)
+        assertNull(errorEnNombreSeccion(tercero))
     }
 
     // --- Un solo nivel (8.11.6) ---

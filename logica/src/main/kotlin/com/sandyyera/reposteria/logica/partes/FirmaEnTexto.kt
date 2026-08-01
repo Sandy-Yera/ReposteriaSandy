@@ -9,15 +9,22 @@ package com.sandyyera.reposteria.logica.partes
  * números contra otro y **nunca se consulta por ellos**, así que no hace falta que la base los
  * entienda.
  *
- * El formato es de líneas, para que se pueda leer de un vistazo abriendo la base:
+ * El formato es de líneas y de campos fijos, para que se pueda leer de un vistazo abriendo la
+ * base:
  *
  * ```
  * v1
- * S|Bizcocho|Harina=550|Azúcar=200
- * S|Crema|Crema de leche=300
- * T|Bizcocho=3
+ * S|12|Bizcocho
+ * I|12|34|Harina|550.0
+ * I|12|35|Azúcar|200.0
+ * T|12|Bizcocho|3
  * G|2
  * ```
+ *
+ * `S` es una sección (id y nombre), `I` un ingrediente dentro de ella (sección, id de la
+ * fila, nombre y gramos), `T` cuántos pasos van bajo un título y `G` cuántos pasos generales
+ * hay. **Las claves son números y los nombres van escapados**, así que un nombre raro puede
+ * ensuciar lo que se lee pero nunca puede partir un campo en dos.
  *
  * La `v1` de la primera línea es lo que permite cambiar el formato más adelante sin romper lo
  * ya guardado: una firma que no se entienda se descarta y la sección deja de avisar, que es
@@ -29,18 +36,21 @@ private const val VERSION_DE_LA_FIRMA = "v1"
  * Convierte una firma a texto, escapando lo que podría partir el formato.
  *
  * El escape no es prolijidad: los nombres de sección y de ingrediente los escribe una
- * persona, y nada le impide llamar a algo "Crema 50|50" o "Azúcar = flor". Sin escapar, un
- * nombre así partiría la línea en pedazos y la firma se leería mal para siempre, en silencio.
+ * persona, y nada le impide llamar a algo "Crema 50|50". Sin escapar, un nombre así partiría
+ * la línea en pedazos y la firma se leería mal para siempre, en silencio.
  */
 fun textoDeFirma(firma: FirmaDeReceta): String {
     val lineas = mutableListOf(VERSION_DE_LA_FIRMA)
 
-    firma.secciones.forEach { (seccion, ingredientes) ->
-        val partes = ingredientes.map { (nombre, gramos) -> "${escapar(nombre)}=$gramos" }
-        lineas += (listOf("S", escapar(seccion)) + partes).joinToString("|")
+    firma.secciones.forEach { seccion ->
+        lineas += "S|${seccion.seccionId}|${escapar(seccion.nombre)}"
+        seccion.lineas.forEach { linea ->
+            lineas += "I|${seccion.seccionId}|${linea.lineaId}|" +
+                "${escapar(linea.nombre)}|${linea.gramos}"
+        }
     }
-    firma.pasosPorTitulo.forEach { (titulo, cuantos) ->
-        lineas += "T|${escapar(titulo)}=$cuantos"
+    firma.titulos.forEach {
+        lineas += "T|${it.seccionId}|${escapar(it.nombre)}|${it.cuantosPasos}"
     }
     lineas += "G|${firma.pasosGenerales}"
 
@@ -58,46 +68,65 @@ fun firmaDesdeTexto(texto: String?): FirmaDeReceta? {
     val lineas = texto?.lines()?.filter { it.isNotBlank() } ?: return null
     if (lineas.firstOrNull() != VERSION_DE_LA_FIRMA) return null
 
-    val secciones = linkedMapOf<String, Map<String, Double>>()
-    val pasosPorTitulo = linkedMapOf<String, Int>()
+    // Se arma en orden y con listas mutables porque los ingredientes llegan después de su
+    // sección: un mapa por id evita tener que buscarla recorriendo.
+    val orden = mutableListOf<Long>()
+    val nombres = mutableMapOf<Long, String>()
+    val contenido = mutableMapOf<Long, MutableList<LineaDeFirma>>()
+    val titulos = mutableListOf<TituloDeFirma>()
     var generales = 0
 
     lineas.drop(1).forEach { linea ->
         val campos = linea.split("|")
         when (campos.firstOrNull()) {
             "S" -> {
-                val nombre = campos.getOrNull(1)?.let(::desescapar) ?: return null
-                val ingredientes = linkedMapOf<String, Double>()
-                campos.drop(2).forEach { campo ->
-                    val (clave, valor) = partirEnDos(campo) ?: return null
-                    ingredientes[desescapar(clave)] = valor.toDoubleOrNull() ?: return null
-                }
-                secciones[nombre] = ingredientes
+                if (campos.size != 3) return null
+                val id = campos[1].toLongOrNull() ?: return null
+                orden += id
+                nombres[id] = desescapar(campos[2])
+                contenido[id] = mutableListOf()
+            }
+            "I" -> {
+                if (campos.size != 5) return null
+                val seccionId = campos[1].toLongOrNull() ?: return null
+                // Un ingrediente cuya sección no vino antes es una firma rota, no una a la
+                // que le falte un dato: descartarla entera es más honesto que inventar.
+                val destino = contenido[seccionId] ?: return null
+                destino += LineaDeFirma(
+                    lineaId = campos[2].toLongOrNull() ?: return null,
+                    nombre = desescapar(campos[3]),
+                    gramos = campos[4].toDoubleOrNull() ?: return null
+                )
             }
             "T" -> {
-                val (clave, valor) = campos.getOrNull(1)?.let(::partirEnDos) ?: return null
-                pasosPorTitulo[desescapar(clave)] = valor.toIntOrNull() ?: return null
+                if (campos.size != 4) return null
+                titulos += TituloDeFirma(
+                    seccionId = campos[1].toLongOrNull() ?: return null,
+                    nombre = desescapar(campos[2]),
+                    cuantosPasos = campos[3].toIntOrNull() ?: return null
+                )
             }
-            "G" -> generales = campos.getOrNull(1)?.toIntOrNull() ?: return null
+            "G" -> {
+                if (campos.size != 2) return null
+                generales = campos[1].toIntOrNull() ?: return null
+            }
             else -> return null
         }
     }
 
-    return FirmaDeReceta(secciones, pasosPorTitulo, generales)
-}
-
-/** Parte `"Harina=550"` por el **último** `=`, que es el separador real: el nombre va escapado. */
-private fun partirEnDos(campo: String): Pair<String, String>? {
-    val corte = campo.lastIndexOf('=')
-    if (corte <= 0) return null
-    return campo.take(corte) to campo.substring(corte + 1)
+    return FirmaDeReceta(
+        secciones = orden.map {
+            SeccionDeFirma(it, nombres.getValue(it), contenido.getValue(it))
+        },
+        titulos = titulos,
+        pasosGenerales = generales
+    )
 }
 
 // El orden importa: la barra invertida se escapa primero, o se volvería a escapar a sí misma.
 private fun escapar(texto: String): String = texto
     .replace("\\", "\\\\")
     .replace("|", "\\p")
-    .replace("=", "\\e")
     .replace("\n", "\\n")
 
 private fun desescapar(texto: String): String {
@@ -113,7 +142,6 @@ private fun desescapar(texto: String): String {
         when (texto[i + 1]) {
             '\\' -> salida.append('\\')
             'p' -> salida.append('|')
-            'e' -> salida.append('=')
             'n' -> salida.append('\n')
             else -> salida.append(texto[i + 1])
         }

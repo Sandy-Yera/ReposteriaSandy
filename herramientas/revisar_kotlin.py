@@ -40,6 +40,9 @@ CONOCIDOS = {
     "String", "Int", "Long", "Double", "Boolean", "Float", "List", "Map", "Set", "Unit",
     "Any", "Exception", "IllegalArgumentException", "IllegalStateException", "Pair",
     "Triple", "Char", "StringBuilder", "Nothing", "NotImplementedError",
+    # Las colecciones mutables son de Kotlin igual que List y Map, y se escriben como tipo
+    # (`val x = mutableListOf<Long>()` no las nombra, pero `val x: MutableList<Long>` sí).
+    "MutableList", "MutableMap", "MutableSet",
     "Array", "System", "Locale", "Regex", "Volatile", "Suppress", "OptIn", "Callback",
     "RoomDatabase", "Migration", "T",
 }

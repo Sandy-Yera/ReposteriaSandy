@@ -417,6 +417,12 @@ class RecetaRepositorio(
      * [moldeOrigenId] enlaza la receta al molde del catálogo, para que reciba sus
      * correcciones (5.2). En "modo prueba" viene `null` y la receta queda con las medidas
      * pero sin vínculo.
+     *
+     * **Volver a poner molde después de quitarlo entra por acá y tampoco reescala**, aunque
+     * la receta haya conservado las medidas del molde viejo y técnicamente hubiera contra qué
+     * comparar. Es una decisión tomada: el caso real es equivocarse de molde y querer
+     * corregirlo, y ahí reescalar sería multiplicar las cantidades por un error. Para
+     * reescalar de verdad se cambia de molde sin quitarlo antes.
      */
     suspend fun definirMolde(
         recetaId: Long,

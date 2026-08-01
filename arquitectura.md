@@ -475,6 +475,8 @@ Un índice es una lista ordenada que SQLite mantiene aparte para no tener que re
 | `receta_precios` | `recetaId` | Ya declarado en 5.1 |
 | `receta_rendimiento` | `moldeOrigenId` | Ya declarado en 5.2. Es el que usa `obtenerRecetasConMoldeOrigen` al propagar la edición de un molde |
 | `receta_pasos` | `recetaId` | FK + cascada |
+| `receta_secciones` | `recetaOrigenId` | FK a `recetas` con `SET_NULL` (5.5.1). Sin él, borrar una receta recorre la tabla entera para desvincular |
+| `receta_pasos` | `tituloSeccionId` | FK a `receta_secciones` (5.5.1) |
 | `empleado_receta_sueldo` | (`empleadoId`, `recetaId`) **ÚNICO** | Ver nota abajo |
 | `empleado_receta_sueldo` | `recetaId` | El compuesto de arriba no sirve para buscar solo por receta, y la cascada al borrar una receta lo necesita |
 | `empleado_sim_multiple_detalle` | (`empleadoId`, `recetaId`) **ÚNICO** + `recetaId` | Misma lógica que la anterior |
@@ -1290,6 +1292,70 @@ bizcocho tendría que propagarse en cadena por todo lo que lo usa indirectamente
 se multiplicarían y la copia dejaría de ser algo que uno pueda seguir con la cabeza. Un
 nivel cubre el caso real —una receta hecha de partes— sin abrir el problema del árbol.
 
+#### 8.11.7 Lo que encontró la revisión antes de implementar
+
+La lógica pura de esta sección se escribió y se probó antes que las pantallas (ver Fase 9), y
+revisarla contra el resto de la app destapó cosas. Las tres primeras ya están arregladas y
+con prueba; las demás son decisiones que hay que tomar **durante** la implementación, y están
+acá para que no se descubran con datos reales adentro.
+
+**Arreglado: la firma se identifica por id, no por nombre.** La primera versión guardaba
+`nombre → gramos`. Con eso, renombrar "Azúcar" en el catálogo —algo que no toca ninguna
+receta— habría hecho que cada copia avisara *"Se eliminó 'Azúcar'"* y *"Se agregó 'Azúcar
+flor'"*, y peor: la adaptación en proporción habría tratado el ingrediente como nuevo y
+**pisado la cantidad ajustada a mano**, que es exactamente lo que 8.11.3 promete no hacer.
+
+**Arreglado: el mismo ingrediente dos veces en una sección.** No hay índice único en
+`(seccionId, ingredienteId)` ni comprobación en `agregarIngrediente`, así que pasa. Con el
+nombre de clave, las dos filas se aplastaban en una y **una cantidad desaparecía en
+silencio**. Con el id de la fila, cada una es una.
+
+**Arreglado: "Crema 2" podía pasarse del tope de nombre.** El mismo `errorEnNombreSeccion`
+que exige nombres únicos exige que quepan en 60 caracteres; a un nombre ya al límite,
+pegarle " 2" lo dejaba en 62 y la copia se rechazaba **por el nombre que la propia app acababa
+de proponer**.
+
+**Por decidir: borrar la original borra la evidencia.** `recetaOrigenId` es `SET_NULL`, así
+que cuando la original se borra el vínculo lo corta SQLite sola — antes de que nadie elija
+nada. Pero 8.11.4 necesita que la copia **sepa** que la original desapareció para ofrecer
+"Mantener" o "Borrar", y una sección con el id en `null` se ve igual que una desvinculada a
+mano (8.11.3). Lo que las distingue tiene que quedar escrito y respetado:
+
+| `recetaOrigenId` | `firmaDelOrigen` | Qué significa |
+|---|---|---|
+| tiene id | tiene firma | vínculo vivo: avisa cuando la original cambia |
+| `null` | **tiene firma** | la original se borró: hay que preguntar (8.11.4) |
+| `null` | `null` | desvinculada a mano: no avisa nunca más (8.11.3) |
+
+De ahí que "Desvincular" tenga que limpiar **las dos** columnas, no solo el id.
+
+**Por decidir: borrar una receta todavía no dice a qué otras afecta.** 8.11.4 lo exige y
+`confirmarEliminacion` no lo hace: hoy enumera lo que se va con la receta, no lo que queda
+esperando afuera.
+
+**Falta: dos índices.** `receta_secciones.recetaOrigenId` y `receta_pasos.tituloSeccionId`
+son claves foráneas, y Room avisa en compilación si no están indexadas; sin ellas, además, el
+`SET_NULL` al borrar una receta recorre la tabla entera (5.6).
+
+**Por decidir: reescalar la original produce una frase por ingrediente.** Cambiar de molde
+multiplica **todas** las cantidades, así que "¿Qué cambió?" mostraría doce líneas en una
+receta de doce ingredientes. Es cierto pero ilegible; conviene resumirlo en una sola frase
+cuando el factor es el mismo para todas.
+
+**Por decidir: una receta de título repetido no debería ofrecerse como parte.** Esas no se
+pueden ni abrir (`marcarRepetidos`), así que traerlas dentro de otra sería peor.
+`sePuedeUsarComoParte` no lo sabe: hay que filtrarlas al armar la lista.
+
+**Por decidir: la sección "General" que se siembra al crear la receta.** Una receta nueva
+nace con una sección vacía (8.10). Al traerle una receta entera queda esa "General" vacía al
+lado de las importadas; hay que decidir si se reutiliza para la primera que llega o se
+elimina.
+
+**Aceptado: lo que inserta `:ingredientes:` queda congelado.** Es texto dentro del paso, así
+que si después se renombra o se quita ese ingrediente, el paso sigue diciendo lo de antes. Es
+lo mismo que ya pasa con cualquier cosa escrita a mano en un paso, y arreglarlo obligaría a
+que los pasos dejaran de ser texto libre.
+
 ## 9. Módulo Moldes (nuevo)
 
 ### 9.1 Medir el molde (paso 1 de cualquier reescalado)
@@ -1319,6 +1385,12 @@ En el paso "Rendimiento" de una receta (8.3.1), al reescalar se elige el molde n
 2. **Modo prueba:** se ingresan las dimensiones directamente en el mismo formulario de 9.2, sin persistirlas como `Molde` — pensado para cuando reescalas una receta ajena y no necesariamente quieres guardar ese molde en tu catálogo. Deja la receta **sin vínculo** (`moldeOrigenId = null`), incluso si antes estaba enlazada a otro molde — sus dimensiones quedan fijas hasta el próximo reescalado.
 
 Con el molde nuevo (guardado o de prueba) ya definido, se elige el modo (Altura o Capacidad, 8.3.1) y se aplica `factorEscala()`.
+
+**Volver a poner molde después de quitarlo tampoco reescala, y es una decisión tomada.** La
+receta conserva las medidas del molde viejo (5.2), así que técnicamente habría contra qué
+comparar — pero el caso real es equivocarse de molde y querer corregirlo, y ahí reescalar
+sería multiplicar las cantidades por un error. Quitar el molde y poner otro **solo asigna
+medidas**; para reescalar de verdad está el cambio de molde sin quitarlo antes.
 
 **Primera vez ≠ reescalado.** El mismo selector (guardado vs. prueba) se reutiliza al definir el molde por primera vez en una receta nueva (8.3), pero ahí **no se reescala nada**: no hay molde original contra el cual comparar, así que no hay factor, no se elige modo, y las cantidades de ingredientes quedan tal como las escribiste. Solo se guardan `dimensiones` + `moldeOrigenId`. Por eso `reescalarRecetaPorMolde()` (8.3.1) corta con un error si la receta todavía no tiene molde: esa función es exclusivamente para el segundo molde en adelante.
 

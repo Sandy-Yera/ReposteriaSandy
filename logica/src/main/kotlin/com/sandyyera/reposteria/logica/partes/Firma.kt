@@ -3,6 +3,48 @@ package com.sandyyera.reposteria.logica.partes
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 
 /**
+ * Una línea de ingrediente dentro de la firma.
+ *
+ * **La clave es [lineaId], no el nombre**, y esa decisión se pagó cara antes de tomarla. La
+ * primera versión guardaba las cantidades en un mapa `nombre → gramos`, y eso tenía dos
+ * agujeros que no se ven hasta que hay datos reales:
+ *
+ * 1. **Un ingrediente del catálogo se puede renombrar.** Cambiar "Azúcar" por "Azúcar flor"
+ *    no toca ninguna receta, pero con el nombre de clave toda copia habría avisado
+ *    *"Se eliminó 'Azúcar'"* y *"Se agregó 'Azúcar flor'"* — una alarma sobre algo que no
+ *    pasó, y peor, la adaptación en proporción habría tratado el ingrediente como nuevo y
+ *    pisado la cantidad ajustada a mano.
+ * 2. **El mismo ingrediente puede estar dos veces en una sección**: no hay índice único que
+ *    lo impida ni comprobación en `agregarIngrediente`. Con el nombre de clave, las dos
+ *    filas se aplastaban en una y una cantidad desaparecía **en silencio**.
+ *
+ * El id de la fila no se renombra y no se repite, así que cierra los dos.
+ *
+ * [nombre] queda solo para la frase que se muestra. Se lee del estado **actual** cuando la
+ * línea sigue existiendo, así un renombre se ve con el nombre nuevo sin generar aviso.
+ */
+data class LineaDeFirma(
+    val lineaId: Long,
+    val nombre: String,
+    val gramos: Double
+)
+
+/** Una sección de la receta original, con lo que llevaba al momento de copiarla. */
+data class SeccionDeFirma(
+    /** El id de la sección **en la receta original**. Es la clave, por lo mismo de arriba. */
+    val seccionId: Long,
+    val nombre: String,
+    val lineas: List<LineaDeFirma>
+)
+
+/** Cuántos pasos había bajo un título, que es una sección de la receta original (8.8). */
+data class TituloDeFirma(
+    val seccionId: Long,
+    val nombre: String,
+    val cuantosPasos: Int
+)
+
+/**
  * La foto de una receta al momento de copiarla dentro de otra (8.11.5).
  *
  * **No es un diff.** Un diff de verdad —qué línea cambió, qué palabra— es caro de calcular y
@@ -12,24 +54,28 @@ import com.sandyyera.reposteria.logica.formato.formatearNumero
  * Lleva **la cantidad de cada ingrediente** y no solo cuántos hay, y esa es la parte que la
  * convierte en algo más que contadores: al actualizar una copia las cantidades se adaptan
  * *en proporción* (8.11.3), y para calcular esa proporción hay que saber de cuánto a cuánto
- * cambió cada ingrediente. Contando ingredientes no se puede.
+ * cambió cada línea. Contando ingredientes no se puede.
  *
  * **Lo que no detecta, y está aceptado:** reescribir el texto de un paso sin cambiar cuántos
- * hay, y renombrar una sección. Es el precio de no hacer un diff.
+ * hay, y renombrar una sección o un ingrediente — eso último ahora es a propósito y no un
+ * descuido: renombrar no cambia la receta, así que avisar sería una falsa alarma.
  */
 data class FirmaDeReceta(
-    /** Nombre de sección → (nombre de ingrediente → cuántos gramos lleva). */
-    val secciones: Map<String, Map<String, Double>>,
-    /** Título de los pasos → cuántos pasos van bajo él (8.8). */
-    val pasosPorTitulo: Map<String, Int>,
-    /** Cuántos pasos hay sin título, los "General" de la receta. */
+    val secciones: List<SeccionDeFirma>,
+    val titulos: List<TituloDeFirma>,
     val pasosGenerales: Int
 ) {
     val cuantasSecciones: Int get() = secciones.size
 
-    val cuantosIngredientes: Int get() = secciones.values.sumOf { it.size }
+    val cuantosIngredientes: Int get() = secciones.sumOf { it.lineas.size }
 
-    val cuantosTitulos: Int get() = pasosPorTitulo.size
+    val cuantosTitulos: Int get() = titulos.size
+
+    /** La línea con ese id, mirando en todas las secciones. La usa la adaptación (8.11.3). */
+    fun linea(lineaId: Long): LineaDeFirma? =
+        secciones.firstNotNullOfOrNull { seccion ->
+            seccion.lineas.firstOrNull { it.lineaId == lineaId }
+        }
 }
 
 /** Qué cambió en la receta original desde que se copió. Cada uno se lee tal cual (8.11.5). */
@@ -52,42 +98,56 @@ data class CambioDetectado(val frase: String)
 fun compararFirmas(antes: FirmaDeReceta, ahora: FirmaDeReceta): List<CambioDetectado> {
     val cambios = mutableListOf<String>()
 
-    val seccionesIdas = antes.secciones.keys - ahora.secciones.keys
-    val seccionesNuevas = ahora.secciones.keys - antes.secciones.keys
-    seccionesIdas.sorted().forEach { cambios += "Se eliminó la sección '$it'" }
-    seccionesNuevas.sorted().forEach { cambios += "Se agregó la sección '$it'" }
+    val seccionesAntes = antes.secciones.associateBy { it.seccionId }
+    val seccionesAhora = ahora.secciones.associateBy { it.seccionId }
+
+    // Los nombres salen del estado **actual** cuando la sección sigue existiendo: así una
+    // sección renombrada se nombra como se llama hoy, sin que el renombre genere aviso.
+    (seccionesAntes.keys - seccionesAhora.keys).forEach {
+        cambios += "Se eliminó la sección '${seccionesAntes.getValue(it).nombre}'"
+    }
+    (seccionesAhora.keys - seccionesAntes.keys).forEach {
+        cambios += "Se agregó la sección '${seccionesAhora.getValue(it).nombre}'"
+    }
 
     // Solo las que siguen existiendo: en las que se fueron o llegaron enteras, hablar de sus
     // ingredientes uno por uno sería repetir la misma noticia varias veces.
-    (antes.secciones.keys intersect ahora.secciones.keys).sorted().forEach { seccion ->
-        val deAntes = antes.secciones.getValue(seccion)
-        val deAhora = ahora.secciones.getValue(seccion)
+    seccionesAntes.keys.filter { it in seccionesAhora }.forEach { id ->
+        val deAntes = seccionesAntes.getValue(id).lineas.associateBy { it.lineaId }
+        val laDeAhora = seccionesAhora.getValue(id)
+        val deAhora = laDeAhora.lineas.associateBy { it.lineaId }
+        val donde = "la sección '${laDeAhora.nombre}'"
 
-        (deAntes.keys - deAhora.keys).sorted().forEach {
-            cambios += "Se eliminó '$it' de la sección '$seccion'"
+        (deAntes.keys - deAhora.keys).forEach {
+            cambios += "Se eliminó '${deAntes.getValue(it).nombre}' de $donde"
         }
-        (deAhora.keys - deAntes.keys).sorted().forEach {
-            cambios += "Se agregó '$it' a la sección '$seccion'"
+        (deAhora.keys - deAntes.keys).forEach {
+            cambios += "Se agregó '${deAhora.getValue(it).nombre}' a $donde"
         }
-        (deAntes.keys intersect deAhora.keys).sorted().forEach { ingrediente ->
-            val viejo = deAntes.getValue(ingrediente)
-            val nuevo = deAhora.getValue(ingrediente)
-            if (!sonElMismoGramaje(viejo, nuevo)) {
-                cambios += "'$ingrediente' pasó de ${formatearNumero(viejo)} a " +
-                    "${formatearNumero(nuevo)} g"
+        deAntes.keys.filter { it in deAhora }.forEach { lineaId ->
+            val viejo = deAntes.getValue(lineaId).gramos
+            val nuevo = deAhora.getValue(lineaId)
+            if (!sonElMismoGramaje(viejo, nuevo.gramos)) {
+                cambios += "'${nuevo.nombre}' pasó de ${formatearNumero(viejo)} a " +
+                    "${formatearNumero(nuevo.gramos)} g"
             }
         }
     }
 
-    (antes.pasosPorTitulo.keys - ahora.pasosPorTitulo.keys).sorted().forEach {
-        cambios += "Se eliminaron los pasos de '$it'"
+    val titulosAntes = antes.titulos.associateBy { it.seccionId }
+    val titulosAhora = ahora.titulos.associateBy { it.seccionId }
+
+    (titulosAntes.keys - titulosAhora.keys).forEach {
+        cambios += "Se eliminaron los pasos de '${titulosAntes.getValue(it).nombre}'"
     }
-    (ahora.pasosPorTitulo.keys - antes.pasosPorTitulo.keys).sorted().forEach {
-        cambios += "Se agregaron pasos en '$it'"
+    (titulosAhora.keys - titulosAntes.keys).forEach {
+        cambios += "Se agregaron pasos en '${titulosAhora.getValue(it).nombre}'"
     }
-    (antes.pasosPorTitulo.keys intersect ahora.pasosPorTitulo.keys).sorted().forEach { titulo ->
-        val diferencia = ahora.pasosPorTitulo.getValue(titulo) - antes.pasosPorTitulo.getValue(titulo)
-        if (diferencia != 0) cambios += frasePasos(diferencia, "en '$titulo'", "en '$titulo'")
+    titulosAntes.keys.filter { it in titulosAhora }.forEach { id ->
+        val ahoraTitulo = titulosAhora.getValue(id)
+        val diferencia = ahoraTitulo.cuantosPasos - titulosAntes.getValue(id).cuantosPasos
+        val donde = "en '${ahoraTitulo.nombre}'"
+        if (diferencia != 0) cambios += frasePasos(diferencia, donde, donde)
     }
 
     val generales = ahora.pasosGenerales - antes.pasosGenerales

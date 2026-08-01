@@ -2,6 +2,7 @@ package com.sandyyera.reposteria.logica.partes
 
 import com.sandyyera.reposteria.logica.busqueda.sonElMismoTexto
 import com.sandyyera.reposteria.logica.formato.redondearADosDecimales
+import com.sandyyera.reposteria.logica.validaciones.LARGO_MAXIMO_NOMBRE
 
 /**
  * Cuánto pasa a llevar un ingrediente de la copia cuando la receta original cambió (8.11.3).
@@ -44,14 +45,26 @@ fun cantidadAdaptada(
  * Compara con `sonElMismoTexto`, o sea ignorando mayúsculas y tildes, porque es la misma
  * comparación que hace la validación que rechazaría el nombre: si acá se usara `==`, se
  * propondría "Crema" existiendo "crema" y la copia fallaría igual.
+ *
+ * **El resultado nunca pasa de `LARGO_MAXIMO_NOMBRE`**, y eso tampoco es prolijidad: el
+ * mismo `errorEnNombreSeccion` que exige nombres únicos exige también que quepan en 60
+ * caracteres. Con un nombre ya al límite, pegarle " 2" lo dejaba en 62 y la copia se
+ * rechazaba por el nombre que esta función acababa de proponer — un callejón sin salida, con
+ * un mensaje que además culpaba a la persona de algo que no escribió. Se recorta la base, no
+ * el sufijo: el número es lo que hace único al nombre.
  */
 fun nombreSinChocar(deseado: String, yaUsados: List<String>): String {
     val limpio = deseado.trim()
-    if (yaUsados.none { sonElMismoTexto(it, limpio) }) return limpio
+    if (yaUsados.none { sonElMismoTexto(it, limpio) }) return limpio.take(LARGO_MAXIMO_NOMBRE)
 
     var numero = 2
-    while (yaUsados.any { sonElMismoTexto(it, "$limpio $numero") }) numero++
-    return "$limpio $numero"
+    while (true) {
+        val sufijo = " $numero"
+        val base = limpio.take(LARGO_MAXIMO_NOMBRE - sufijo.length).trimEnd()
+        val candidato = base + sufijo
+        if (yaUsados.none { sonElMismoTexto(it, candidato) }) return candidato
+        numero++
+    }
 }
 
 /**
