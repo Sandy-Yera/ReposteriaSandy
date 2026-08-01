@@ -1754,6 +1754,10 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
     Ahora los cuatro pasos **observan** receta, secciones, ingredientes y rendimiento, que
     es la regla que ya había dejado escrita `observarCostos`: *lo que se muestra se observa;
     la foto de un momento es para calcular*.
+  - **Tanda 3 — hecha:** los dos pasos guardan solos y se fueron los botones de "Guardar
+    rendimiento" y "Guardar duraciones". Rendimiento espera medio segundo de silencio —con
+    lo escrito a medias no escribe, y el rechazo de las promociones sale bajo el campo de los
+    trozos—; Duración guarda **al salir del campo**, y al instante en el switch y la unidad.
   - **Tanda 2 — hecha:** el molde es un paso propio, con su `MoldeDeRecetaViewModel` y su
     `PasoMoldeScreen` salidos de Rendimiento; reescalar por molde arrastra el peso del
     producto y lo deja marcado hasta que se toque el campo. **Necesitó migración de base**
@@ -1787,7 +1791,22 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 - **Va junto y no en dos fases** porque los pasos con título son la mitad de lo que se copia:
   hacer primero las recetas anidadas obligaría a copiar pasos que todavía no tienen dónde ir.
 - **Necesita migración de base** (5.5.1): dos columnas en `receta_secciones` y dos en
-  `receta_pasos`.
+  `receta_pasos`. Será la versión 4.
+- **Ya está construida y probada la lógica pura**, en `logica/partes/` (36 pruebas):
+  - `FirmaDeReceta`, `textoDeFirma` y `firmaDesdeTexto` — la foto que va en `firmaDelOrigen`,
+    con su escapado y su descarte silencioso de una firma ilegible.
+  - `compararFirmas` — las frases de "¿Qué cambió?" (8.11.5).
+  - `cantidadAdaptada` — la adaptación en proporción de 8.11.3.
+  - `nombreSinChocar` — "Crema" → "Crema 2" de 8.11.2.
+  - `sePuedeUsarComoParte` — el tope de un nivel de 8.11.6.
+  - `AtajoDePaso`, `atajoAntesDelCursor` y `reemplazarAtajo` — los `:titulo:` e
+    `:ingredientes:` de 8.8.
+  Se hizo primero **porque es lo único de esta fase que se puede verificar sin el celular**:
+  son funciones puras y corren con `./gradlew :logica:test`. Lo que queda —la migración, las
+  consultas y las pantallas— se apoya encima y solo se comprueba compilando.
+- **La migración se deja para el mismo cambio que las pantallas**, a propósito: adelantarla
+  obligaría a instalar una versión de base nueva en el celular para una funcionalidad que
+  todavía no existe, y a versionar un `4.json` que nadie usa.
 
 ### Fase 10 — Vista final de receta + lista
 

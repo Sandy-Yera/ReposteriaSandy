@@ -18,12 +18,22 @@ import com.sandyyera.reposteria.logica.validaciones.textoANumero
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+
+/**
+ * Cuánto silencio se espera antes de guardar solo, en milisegundos.
+ *
+ * Ni tan corto que escriba en cada tecla —escribiendo "12" se pasa por "1", y ahí una
+ * promoción de 3 trozos no cabe—, ni tan largo que cambiar de paso alcance a irse sin
+ * guardar. Medio segundo es más de lo que dura una pausa entre dos dígitos y menos de lo que
+ * tarda un dedo en llegar a la fila de pasos.
+ */
+private const val ESPERA_ANTES_DE_GUARDAR_MS = 500L
 
 /** Qué hay abierto encima del paso de rendimiento. */
 sealed interface DialogoRendimiento {
@@ -53,13 +63,25 @@ data class EstadoRendimiento(
      * cuando salga del horno, y para entonces la app ya se cerró.
      */
     val pesoSinRevisar: Boolean = false,
+    /**
+     * Lo que contestó el repositorio al guardar solo, si rechazó (8.4.1).
+     *
+     * Va **junto al campo de los trozos** y no en la franja de abajo, por la misma regla de
+     * 8.2 que ya valía para los nombres repetidos: un aviso sobre lo que se acaba de escribir
+     * con el teclado abierto queda tapado ahí. Y sin botón que apretar, la franja de abajo
+     * además llegaría en un momento que nadie asocia con lo que hizo. El único rechazo
+     * posible es el de las promociones que no caben, que es exactamente sobre los trozos.
+     */
+    val rechazoAlGuardar: String? = null,
     val mensaje: String? = null,
     val cargando: Boolean = true
 ) {
     private val errores get() = revisarRendimiento(trozos, pesoFinal, usaMolde)
 
-    val errorTrozos: String? get() = errores.trozos
+    val errorTrozos: String? get() = rechazoAlGuardar ?: errores.trozos
     val errorPesoFinal: String? get() = errores.pesoFinal
+
+    /** Si lo escrito sirve para guardarse. Lo consulta el guardado automático. */
     val puedeGuardar: Boolean get() = errores.sirve
 
     /** El aviso de "compruébalo", o `null` si no hay nada que comprobar. */
@@ -113,6 +135,12 @@ class RendimientoViewModel(
     private val trozos = MutableStateFlow("1")
     private val pesoFinal = MutableStateFlow("")
 
+    /** El motivo del último rechazo del guardado automático, o `null` si guardó bien. */
+    private val rechazo = MutableStateFlow<String?>(null)
+
+    /** El guardado que está esperando su turno, para poder cancelarlo si se sigue escribiendo. */
+    private var guardadoPendiente: Job? = null
+
     /** Lo que hay abierto encima, fuera del `combine` del estado (12.2.1). */
     val dialogo: StateFlow<DialogoRendimiento> = _dialogo
 
@@ -128,16 +156,17 @@ class RendimientoViewModel(
     val estado: StateFlow<EstadoRendimiento> = combine(
         recetas.observarReceta(recetaId),
         recetas.observarRendimiento(recetaId),
-        trozos,
-        pesoFinal,
+        combine(trozos, pesoFinal) { t, p -> t to p },
+        rechazo,
         mensaje
-    ) { receta, rendimiento, trozosEscritos, pesoEscrito, mensajeActual ->
+    ) { receta, rendimiento, escrito, rechazoActual, mensajeActual ->
         EstadoRendimiento(
             receta = receta,
             usaMolde = rendimiento?.usaMolde ?: false,
-            trozos = trozosEscritos,
-            pesoFinal = pesoEscrito,
+            trozos = escrito.first,
+            pesoFinal = escrito.second,
             pesoSinRevisar = rendimiento?.pesoReescaladoSinRevisar ?: false,
+            rechazoAlGuardar = rechazoActual,
             mensaje = mensajeActual,
             cargando = false
         )
@@ -148,27 +177,29 @@ class RendimientoViewModel(
     )
 
     init {
-        // Los campos siguen a lo que está guardado, en el formato de la app: así guardar sin
-        // tocar nada no puede cambiar ningún número.
+        // Los campos siguen a lo que está guardado, en el formato de la app.
         //
-        // **Y siguen también cuando lo cambia otro**, que es lo que antes no pasaba: al
-        // reescalar por molde, el peso del producto se multiplica desde el paso anterior, y
-        // acá el campo seguía mostrando el número viejo. Se veía como que "el peso no
-        // cambió", y encima guardar desde esta pantalla escribía el viejo de vuelta.
+        // **Y siguen también cuando lo cambia otro**: al reescalar por molde, el peso del
+        // producto se multiplica desde el paso anterior, y acá el campo se quedaba con el
+        // número viejo. Se veía como que "el peso no cambió".
         //
-        // El `distinctUntilChanged` es lo que impide que esto pise lo que se está
-        // escribiendo: solo se re-siembra cuando **lo guardado** cambia de verdad. Sin él,
-        // cualquier escritura que no toque estos dos campos —`marcarPesoRevisado`, por
-        // ejemplo— borraría lo tecleado a medias.
+        // La comparación es **por valor y no por texto**, y eso es lo que hace convivir esto
+        // con el guardado automático: al guardar solo, la fila vuelve por el `Flow` y si se
+        // comparara el texto se re-sembraría el campo en mitad de una palabra — escribir
+        // "0008" quedaría en "8" bajo el dedo. Comparando lo que el texto *significa*, el eco
+        // del propio guardado no toca nada y un reescalado ajeno sí.
         viewModelScope.launch {
-            recetas.observarRendimiento(recetaId)
-                .map { it?.trozos to it?.pesoFinalG }
-                .distinctUntilChanged()
-                .collect { (trozosGuardados, pesoGuardado) ->
-                    trozos.value = (trozosGuardados ?: 1).toString()
-                    pesoFinal.value = pesoGuardado?.let { formatearNumero(it) } ?: ""
+            recetas.observarRendimiento(recetaId).collect { fila ->
+                val trozosGuardados = fila?.trozos ?: 1
+                if (trozos.value.toIntOrNull() != trozosGuardados) {
+                    trozos.value = trozosGuardados.toString()
                 }
+                if (textoANumero(pesoFinal.value) != fila?.pesoFinalG) {
+                    pesoFinal.value = fila?.pesoFinalG?.let { formatearNumero(it) } ?: ""
+                }
+            }
         }
+
     }
 
     // --- Los dos campos ---
@@ -176,10 +207,14 @@ class RendimientoViewModel(
     fun cambiarTrozos(texto: String) {
         // Sin decimales ni punto de mil: los trozos son unidades y "1.000 trozos" no existe.
         trozos.value = texto.filter { it.isDigit() }
+        // Al escribir, el rechazo anterior deja de aplicar: era sobre el número de antes.
+        rechazo.value = null
+        programarGuardado()
     }
 
     fun cambiarPesoFinal(texto: String) {
         pesoFinal.value = formatearMientrasSeEscribe(texto)
+        programarGuardado()
         // Escribir en el campo es haberlo mirado, así que el aviso ya no aplica. Va acá
         // además de en `marcarPesoRevisado` porque se puede llegar al campo sin tocarlo —
         // con el "siguiente" del teclado desde los trozos, por ejemplo.
@@ -203,11 +238,46 @@ class RendimientoViewModel(
         }
     }
 
+    /**
+     * Programa un guardado para dentro de [ESPERA_ANTES_DE_GUARDAR_MS], cancelando el anterior.
+     *
+     * Es el guardado automático de 8.4.1. Se fue el botón de "Guardar rendimiento", que
+     * parecía inútil porque al volver los datos seguían ahí — pero **no estaban guardados**:
+     * lo que sobrevivía era el ViewModel, que Android conserva mientras la app viva. Cerrarla
+     * los perdía, y ese es justo el momento en que uno cree tenerlos a salvo.
+     *
+     * Espera un silencio en vez de escribir en cada tecla, y no es solo por ahorrar
+     * escrituras: tecleando "12" se pasa por "1", y con 1 trozo una promoción de 3 no cabe,
+     * así que se rechazaría a mitad de una palabra.
+     *
+     * Se dispara desde los dos `cambiar…` y no colgado del `Flow` de los campos a propósito:
+     * esos campos también se re-siembran solos cuando el paso del molde reescala el peso, y
+     * eso no es alguien escribiendo — volver a guardarlo no aportaría nada y de paso borraría
+     * un rechazo que sigue vigente.
+     */
+    private fun programarGuardado() {
+        guardadoPendiente?.cancel()
+        guardadoPendiente = viewModelScope.launch {
+            delay(ESPERA_ANTES_DE_GUARDAR_MS)
+            guardar()
+        }
+    }
+
+    /**
+     * Guarda lo escrito, si sirve. **La llama sola el guardado automático**, no un botón.
+     *
+     * Con lo escrito a medias no hace nada: un campo vacío mientras se corrige un número no
+     * puede borrar lo que estaba guardado. Y **no anuncia el éxito**: sin botón que apretar,
+     * un "se guardó" cada vez que se deja de escribir es ruido puro. Lo que sí se dice es el
+     * rechazo, y va junto al campo de los trozos.
+     */
     fun guardar() {
+        if (!estado.value.puedeGuardar) return
+
         viewModelScope.launch {
             when (val r = recetas.guardarRendimiento(recetaId, trozos.value, pesoFinal.value)) {
-                is Resultado.Listo -> mensaje.value = "Se guardó el rendimiento"
-                is Resultado.NoSePudo -> mensaje.value = r.motivo
+                is Resultado.Listo -> rechazo.value = null
+                is Resultado.NoSePudo -> rechazo.value = r.motivo
             }
         }
     }

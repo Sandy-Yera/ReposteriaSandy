@@ -168,29 +168,52 @@ class DuracionViewModelTest {
         assertTrue(modelo.estado.value.puedeGuardar)
     }
 
-    // --- Guardar y volver a abrir ---
+    // --- El guardado automático (8.4.1) ---
 
     @Test
-    fun `guardar deja los tres bloques escritos en la base`() = probar { modelo ->
+    fun `salir del campo guarda ese bloque`() = probar { modelo ->
         modelo.cambiarCantidad(TipoDuracion.AMBIENTE, "2")
         modelo.cambiarUnidad(TipoDuracion.AMBIENTE, UnidadDuracion.DIAS)
-        modelo.cambiarCantidad(TipoDuracion.REFRIGERADA, "1")
-        modelo.cambiarUnidad(TipoDuracion.REFRIGERADA, UnidadDuracion.SEMANAS)
-        modelo.cambiarApto(TipoDuracion.CONGELADA, apto = false)
-        modelo.guardar()
+        advanceUntilIdle()
+
+        // Lo que hace la pantalla cuando el campo pierde el foco. Ya no hay botón.
+        modelo.guardarBloque(TipoDuracion.AMBIENTE)
         advanceUntilIdle()
 
         val guardadas = recetas.obtenerDuraciones(recetaId)
-        assertEquals(3, guardadas.size)
         assertEquals(2, guardadas.getValue(TipoDuracion.AMBIENTE).cantidad)
-        assertEquals(UnidadDuracion.SEMANAS, guardadas.getValue(TipoDuracion.REFRIGERADA).unidad)
-        assertFalse(guardadas.getValue(TipoDuracion.CONGELADA).apto)
     }
 
     @Test
-    fun `escribir sin guardar no toca la base`() = probar { modelo ->
-        // Es la diferencia con el paso de cantidades: acá se guarda de una vez, porque un
-        // bloque a medio escribir se ve igual que uno vaciado a propósito.
+    fun `el switch de no apto guarda al instante, sin salir de nada`() = probar { modelo ->
+        // Un switch no se toca a medias: se elige. Por eso no espera a perder el foco.
+        modelo.cambiarApto(TipoDuracion.CONGELADA, apto = false)
+        advanceUntilIdle()
+
+        val guardadas = recetas.obtenerDuraciones(recetaId)
+        assertFalse(
+            "Que algo no se pueda congelar es justamente el dato",
+            guardadas.getValue(TipoDuracion.CONGELADA).apto
+        )
+    }
+
+    @Test
+    fun `la unidad tambien guarda al instante`() = probar { modelo ->
+        modelo.cambiarCantidad(TipoDuracion.AMBIENTE, "3")
+        modelo.guardarBloque(TipoDuracion.AMBIENTE)
+        advanceUntilIdle()
+
+        modelo.cambiarUnidad(TipoDuracion.AMBIENTE, UnidadDuracion.MESES)
+        advanceUntilIdle()
+
+        val guardadas = recetas.obtenerDuraciones(recetaId)
+        assertEquals(UnidadDuracion.MESES, guardadas.getValue(TipoDuracion.AMBIENTE).unidad)
+    }
+
+    @Test
+    fun `escribir sin salir del campo todavia no toca la base`() = probar { modelo ->
+        // Es la diferencia con el paso de cantidades, y sigue valiendo: un bloque a medio
+        // escribir se ve igual que uno vaciado a propósito.
         modelo.cambiarCantidad(TipoDuracion.AMBIENTE, "3")
         advanceUntilIdle()
 
@@ -198,10 +221,46 @@ class DuracionViewModelTest {
     }
 
     @Test
+    fun `un numero invalido no escribe nada`() = probar { modelo ->
+        // El 0 no es una duración -- para eso está el switch de "no apto" -- y el error ya
+        // sale bajo el campo, así que no hace falta avisar dos veces.
+        modelo.cambiarCantidad(TipoDuracion.AMBIENTE, "0")
+        modelo.guardarBloque(TipoDuracion.AMBIENTE)
+        advanceUntilIdle()
+
+        assertTrue(recetas.obtenerDuraciones(recetaId).isEmpty())
+        assertNotNull(bloque(modelo, TipoDuracion.AMBIENTE).error)
+    }
+
+    @Test
+    fun `guardar un bloque no toca los otros dos`() = probar { modelo ->
+        // Son independientes, y por eso se guardan de a uno: escribir en ambiente no tiene
+        // por qué tocar las filas de refrigerada ni de congelada.
+        modelo.cambiarCantidad(TipoDuracion.AMBIENTE, "2")
+        modelo.cambiarCantidad(TipoDuracion.REFRIGERADA, "5")
+        modelo.guardarBloque(TipoDuracion.AMBIENTE)
+        advanceUntilIdle()
+
+        val guardadas = recetas.obtenerDuraciones(recetaId)
+        assertEquals(1, guardadas.size)
+        assertNull(guardadas[TipoDuracion.REFRIGERADA])
+    }
+
+    @Test
+    fun `guardar no anuncia el exito`() = probar { modelo ->
+        // Sin botón que apretar, un "se guardó" cada vez que se sale de un campo es ruido, y
+        // encima aparecería justo mientras se pasa al bloque siguiente.
+        modelo.cambiarCantidad(TipoDuracion.AMBIENTE, "2")
+        modelo.guardarBloque(TipoDuracion.AMBIENTE)
+        advanceUntilIdle()
+
+        assertNull(modelo.estado.value.mensaje)
+    }
+
+    @Test
     fun `al reabrir el paso vuelve lo guardado`() = probar { modelo ->
         modelo.cambiarCantidad(TipoDuracion.AMBIENTE, "3")
         modelo.cambiarUnidad(TipoDuracion.AMBIENTE, UnidadDuracion.MESES)
-        modelo.guardar()
         advanceUntilIdle()
 
         val reabierto = DuracionViewModel(recetaId, recetas)
@@ -215,23 +274,14 @@ class DuracionViewModelTest {
     }
 
     @Test
-    fun `guardar el paso vacio no crea filas`() = probar { modelo ->
-        modelo.guardar()
-        advanceUntilIdle()
-
-        assertTrue(recetas.obtenerDuraciones(recetaId).isEmpty())
-        assertNotNull("Pero avisa que guardó, para no dejar dudas", modelo.estado.value.mensaje)
-    }
-
-    @Test
-    fun `vaciar un bloque ya guardado lo borra`() = probar { modelo ->
+    fun `vaciar un bloque ya guardado lo borra al salir del campo`() = probar { modelo ->
         modelo.cambiarCantidad(TipoDuracion.AMBIENTE, "3")
-        modelo.guardar()
+        modelo.guardarBloque(TipoDuracion.AMBIENTE)
         advanceUntilIdle()
         assertEquals(1, recetas.obtenerDuraciones(recetaId).size)
 
         modelo.cambiarCantidad(TipoDuracion.AMBIENTE, "")
-        modelo.guardar()
+        modelo.guardarBloque(TipoDuracion.AMBIENTE)
         advanceUntilIdle()
 
         assertTrue(recetas.obtenerDuraciones(recetaId).isEmpty())

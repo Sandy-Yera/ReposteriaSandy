@@ -41,6 +41,11 @@ import com.sandyyera.reposteria.ui.theme.ReposteriaTheme
  * mirarlo, aunque no escriba nada. Lo pidió el aviso de "peso reescalado, compruébalo"
  * (8.4.1, #4): ese aviso tiene que irse al mirar el campo, no al editarlo, porque el número
  * puede estar bien y exigir una edición sería obligar a borrar y reescribir lo mismo.
+ *
+ * [alSalirDelCampo] avisa cuando lo **pierde**, que es el momento en que lo escrito deja de
+ * estar a medias. Lo pidió el guardado automático de las duraciones (8.4.1): ahí un bloque a
+ * medio escribir se ve igual que uno vaciado a propósito, así que guardar en cada tecla
+ * escribiría y borraría filas mientras la persona todavía decide.
  */
 @Composable
 fun CampoNumerico(
@@ -51,11 +56,16 @@ fun CampoNumerico(
     error: String? = null,
     ayuda: String? = null,
     accionDelTeclado: ImeAction = ImeAction.Done,
-    alEnfocar: () -> Unit = {}
+    alEnfocar: () -> Unit = {},
+    alSalirDelCampo: () -> Unit = {}
 ) {
     var recordado by remember {
         mutableStateOf(TextFieldValue(valor, TextRange(valor.length)))
     }
+
+    // `onFocusChanged` avisa de cada cambio, no de las transiciones: sin recordar el estado
+    // anterior no se distingue "acaba de recibir el foco" de "sigue teniéndolo".
+    var teniaElFoco by remember { mutableStateOf(false) }
 
     // Lo normal es que [valor] venga de lo último que se escribió acá, y entonces se usa
     // lo recordado, que además trae la posición del cursor. Si viene distinto es porque lo
@@ -76,9 +86,11 @@ fun CampoNumerico(
         },
         modifier = modifier
             .fillMaxWidth()
-            // Solo al ganarlo: `onFocusChanged` también avisa al perderlo, y ahí ya no hay
-            // nada que marcar como mirado.
-            .onFocusChanged { if (it.isFocused) alEnfocar() },
+            .onFocusChanged { foco ->
+                if (foco.isFocused && !teniaElFoco) alEnfocar()
+                if (!foco.isFocused && teniaElFoco) alSalirDelCampo()
+                teniaElFoco = foco.isFocused
+            },
         label = { Text(etiqueta) },
         singleLine = true,
         isError = error != null,

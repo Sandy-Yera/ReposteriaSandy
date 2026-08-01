@@ -26,9 +26,10 @@ import kotlinx.coroutines.launch
 /**
  * Lo escrito en un bloque de duración.
  *
- * Vive en memoria mientras se edita: **el paso no guarda por su cuenta en cada tecla**, a
- * diferencia de los ingredientes. Acá tres bloques se llenan de corrido y guardar en cada
- * letra escribiría y borraría filas mientras la persona todavía está decidiendo.
+ * Vive en memoria mientras se edita: **el paso no guarda en cada tecla**, a diferencia de
+ * los ingredientes. Acá un bloque a medio escribir se ve igual que uno vaciado a propósito,
+ * así que guardar por tecla escribiría y borraría filas mientras la persona todavía decide.
+ * Lo que dispara el guardado es **salir del campo** (8.4.1).
  */
 data class BloqueDeDuracion(
     val tipo: TipoDuracion,
@@ -74,10 +75,18 @@ data class EstadoDuracion(
  * simulaciones. Por eso acá no hay nada que "recalcular en vivo" y las reglas son blandas:
  * lo que se revisa es que lo escrito signifique algo, no que esté completo.
  *
- * Los tres bloques se editan en memoria y se guardan de una vez al tocar Guardar. Guardar en
- * cada tecla —como sí hace el paso de cantidades— acá escribiría y borraría filas mientras la
- * persona todavía está decidiendo, porque un bloque a medio escribir se ve igual que uno
- * vaciado a propósito.
+ * **Guarda solo, bloque por bloque** (8.4.1). Se fue el botón de "Guardar duraciones", que
+ * era el mismo espejismo que el de rendimiento: al volver los datos seguían ahí porque
+ * sobrevivía el ViewModel, no porque estuvieran guardados.
+ *
+ * Lo que dispara el guardado es **salir del campo**, no cada tecla, y esa diferencia con el
+ * paso de cantidades es deliberada: un bloque a medio escribir se ve igual que uno vaciado a
+ * propósito, así que guardar por tecla escribiría y borraría filas mientras la persona
+ * todavía decide. El switch de "no apto" y el selector de unidad sí guardan al instante:
+ * esos no se escriben a medias, se eligen.
+ *
+ * Cada bloque se guarda **solo**, y no los tres juntos: son independientes, y escribir en
+ * uno no tiene por qué tocar las filas de los otros dos.
  */
 class DuracionViewModel(
     private val recetaId: Long,
@@ -123,48 +132,51 @@ class DuracionViewModel(
         }
     }
 
-    fun cambiarApto(tipo: TipoDuracion, apto: Boolean) = enBloque(tipo) {
+    fun cambiarApto(tipo: TipoDuracion, apto: Boolean) {
         // Lo escrito **no se borra** al marcar "no apto": si fue un toque por error, volver
         // a marcarlo apto devuelve el número. Lo que no se guarda es otra cosa, y eso lo
         // decide el repositorio.
-        it.copy(apto = apto, tocado = true)
+        enBloque(tipo) { it.copy(apto = apto, tocado = true) }
+        // Al instante: un switch no se toca a medias, se elige.
+        guardarBloque(tipo)
     }
 
     fun cambiarCantidad(tipo: TipoDuracion, texto: String) = enBloque(tipo) {
         // Solo dígitos: las duraciones son enteras y el punto de mil no aplica a "99 meses".
+        // **No guarda acá**: eso pasa al salir del campo (ver [guardarBloque]).
         it.copy(cantidad = texto.filter { caracter -> caracter.isDigit() }, tocado = true)
     }
 
-    fun cambiarUnidad(tipo: TipoDuracion, unidad: UnidadDuracion) = enBloque(tipo) {
-        it.copy(unidad = unidad, tocado = true)
+    fun cambiarUnidad(tipo: TipoDuracion, unidad: UnidadDuracion) {
+        enBloque(tipo) { it.copy(unidad = unidad, tocado = true) }
+        // Al instante, por lo mismo que el switch: es una elección, no algo que se teclea.
+        guardarBloque(tipo)
     }
 
     /**
-     * Guarda los tres bloques de una vez.
+     * Guarda **un** bloque, si lo que tiene escrito sirve.
      *
-     * Va bloque por bloque y no en una transacción porque cada uno es independiente: si uno
-     * falla, que los otros dos hayan quedado guardados es mejor que perderlos todos. Y no
-     * pueden fallar a medias por otra razón — la validación ya corrió antes de escribir.
+     * La llama la pantalla al salir del campo, y el propio ViewModel al cambiar el switch o
+     * la unidad. Con un número inválido no escribe nada y deja el error bajo el campo, que ya
+     * lo calcula el bloque: no hace falta avisar dos veces de lo mismo.
+     *
+     * **No anuncia el éxito.** Sin botón que apretar, un "se guardó" cada vez que se sale de
+     * un campo es ruido — y encima aparecería justo mientras se pasa al bloque siguiente.
+     * Solo se dice lo que salió mal, que es lo único que pide una decisión.
      */
-    fun guardar() {
-        val actuales = bloques.value
-        if (!estado.value.puedeGuardar) {
-            bloques.value = actuales.map { it.copy(tocado = true) }
-            return
-        }
+    fun guardarBloque(tipo: TipoDuracion) {
+        val bloque = bloques.value.firstOrNull { it.tipo == tipo } ?: return
+        if (errorEnCantidadDeDuracion(bloque.cantidad, bloque.apto) != null) return
 
         viewModelScope.launch {
-            val fallo = actuales.firstNotNullOfOrNull { bloque ->
-                val r = recetas.guardarDuracion(
-                    recetaId = recetaId,
-                    tipo = bloque.tipo,
-                    apto = bloque.apto,
-                    cantidadTexto = bloque.cantidad,
-                    unidad = bloque.unidad
-                )
-                (r as? Resultado.NoSePudo)?.motivo
-            }
-            mensaje.value = fallo ?: "Se guardaron las duraciones"
+            val r = recetas.guardarDuracion(
+                recetaId = recetaId,
+                tipo = bloque.tipo,
+                apto = bloque.apto,
+                cantidadTexto = bloque.cantidad,
+                unidad = bloque.unidad
+            )
+            (r as? Resultado.NoSePudo)?.let { mensaje.value = it.motivo }
         }
     }
 

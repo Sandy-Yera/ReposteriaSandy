@@ -4,12 +4,14 @@ import com.sandyyera.reposteria.data.HistorialDaoFalso
 import com.sandyyera.reposteria.data.IngredienteDaoFalso
 import com.sandyyera.reposteria.data.RecetaDaoFalso
 import com.sandyyera.reposteria.data.db.entidades.Ingrediente
+import com.sandyyera.reposteria.data.db.entidades.RecetaPrecio
 import com.sandyyera.reposteria.data.repositorio.HistorialRepositorio
 import com.sandyyera.reposteria.data.repositorio.RecetaRepositorio
 import com.sandyyera.reposteria.data.repositorio.ResultadoCrearReceta
 import com.sandyyera.reposteria.logica.moldes.DimensionesMolde
 import com.sandyyera.reposteria.logica.moldes.ModoReescalado
 import com.sandyyera.reposteria.logica.moldes.TipoFormaMolde
+import com.sandyyera.reposteria.logica.precios.ModoPrecio
 import com.sandyyera.reposteria.logica.rendimiento.PESO_NO_ESPECIFICADO
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -139,16 +141,119 @@ class RendimientoViewModelTest {
         assertEquals("1.200", modelo.estado.value.pesoFinal)
     }
 
+    // --- El guardado automático (8.4.1) ---
+
     @Test
-    fun `guardar deja los datos escritos`() = probar { modelo ->
+    fun `escribir guarda solo, sin ningun boton`() = probar { modelo ->
         modelo.cambiarTrozos("8")
         modelo.cambiarPesoFinal("1200")
-        modelo.guardar()
+        // `advanceUntilIdle` corre también la espera del guardado: en las pruebas el tiempo
+        // es virtual, así que no hay que esperar medio segundo de verdad.
         advanceUntilIdle()
 
         val rendimiento = recetas.obtenerRendimiento(recetaId)!!
         assertEquals(8, rendimiento.trozos)
         assertEquals(1200.0, rendimiento.pesoFinalG!!, 0.001)
+    }
+
+    @Test
+    fun `lo escrito a medias no borra lo que ya estaba guardado`() = probar { modelo ->
+        modelo.cambiarTrozos("8")
+        modelo.cambiarPesoFinal("1200")
+        advanceUntilIdle()
+
+        // Vaciar el peso para corregirlo: sin molde eso es inválido, y un guardado
+        // automático que escribiera igual dejaría la receta sin peso a mitad de una
+        // corrección.
+        modelo.cambiarPesoFinal("")
+        advanceUntilIdle()
+
+        assertEquals(1200.0, recetas.obtenerRendimiento(recetaId)!!.pesoFinalG!!, 0.001)
+    }
+
+    @Test
+    fun `el guardado espera a que se deje de escribir`() = probar { modelo ->
+        // Tecleando "12" se pasa por "1", y con 1 trozo una promoción de 3 no cabría: si se
+        // guardara en cada tecla, el rechazo saltaría a mitad de una palabra.
+        modelo.cambiarPesoFinal("1200")
+        advanceUntilIdle()
+
+        modelo.cambiarTrozos("1")
+        modelo.cambiarTrozos("12")
+        advanceUntilIdle()
+
+        assertEquals(12, recetas.obtenerRendimiento(recetaId)!!.trozos)
+    }
+
+    @Test
+    fun `un rechazo del guardado sale junto al campo de los trozos`() = probar { modelo ->
+        // El único rechazo posible es el de las promociones que no caben, y es sobre los
+        // trozos. Va bajo el campo y no en la franja de abajo: con el teclado abierto esa
+        // franja queda tapada, y sin botón que apretar llegaría en un momento que nadie
+        // asocia con lo que acaba de hacer.
+        modelo.cambiarPesoFinal("1200")
+        modelo.cambiarTrozos("8")
+        advanceUntilIdle()
+        recetaDao.insertarPrecio(
+            RecetaPrecio(recetaId = recetaId, modo = ModoPrecio.TROZO, cantidad = 6,
+                precioTotal = 5000.0, etiqueta = "Promo 6")
+        )
+
+        modelo.cambiarTrozos("2")
+        advanceUntilIdle()
+
+        assertNotNull(modelo.estado.value.rechazoAlGuardar)
+        assertEquals(
+            "Y se ve donde se está escribiendo",
+            modelo.estado.value.rechazoAlGuardar,
+            modelo.estado.value.errorTrozos
+        )
+        assertNull("No por abajo", modelo.estado.value.mensaje)
+        assertEquals("Sin escribir nada", 8, recetas.obtenerRendimiento(recetaId)!!.trozos)
+    }
+
+    @Test
+    fun `al corregir los trozos el rechazo desaparece`() = probar { modelo ->
+        modelo.cambiarPesoFinal("1200")
+        modelo.cambiarTrozos("8")
+        advanceUntilIdle()
+        recetaDao.insertarPrecio(
+            RecetaPrecio(recetaId = recetaId, modo = ModoPrecio.TROZO, cantidad = 6,
+                precioTotal = 5000.0, etiqueta = "Promo 6")
+        )
+        modelo.cambiarTrozos("2")
+        advanceUntilIdle()
+        assertNotNull(modelo.estado.value.rechazoAlGuardar)
+
+        modelo.cambiarTrozos("10")
+        advanceUntilIdle()
+
+        assertNull("El rechazo era sobre el número de antes", modelo.estado.value.rechazoAlGuardar)
+        assertEquals(10, recetas.obtenerRendimiento(recetaId)!!.trozos)
+    }
+
+    @Test
+    fun `guardar solo no anuncia nada por abajo`() = probar { modelo ->
+        // Sin botón que apretar, un "se guardó el rendimiento" cada vez que se deja de
+        // escribir es ruido puro.
+        modelo.cambiarTrozos("8")
+        modelo.cambiarPesoFinal("1200")
+        advanceUntilIdle()
+
+        assertNull(modelo.estado.value.mensaje)
+    }
+
+    @Test
+    fun `lo escrito sobrevive a cerrar la app`() = probar { modelo ->
+        // Es lo que el botón hacía creer que pasaba y no pasaba: al volver los datos seguían
+        // ahí porque sobrevivía el ViewModel, no la fila.
+        modelo.cambiarTrozos("8")
+        modelo.cambiarPesoFinal("1200")
+        advanceUntilIdle()
+
+        val recienAbierto = abrirElPaso()
+        assertEquals("8", recienAbierto.estado.value.trozos)
+        assertEquals("1.200", recienAbierto.estado.value.pesoFinal)
     }
 
     // --- Reescalar por peso, que sigue siendo de este paso ---
@@ -200,7 +305,6 @@ class RendimientoViewModelTest {
     fun `reescalar por peso multiplica los ingredientes`() = probar { modelo ->
         modelo.cambiarTrozos("1")
         modelo.cambiarPesoFinal("1000")
-        modelo.guardar()
         advanceUntilIdle()
 
         modelo.abrirReescalarPorPeso()
@@ -307,7 +411,8 @@ class RendimientoViewModelTest {
         recetas.reescalarPorMolde(recetaId, cuadrado(10.0, 10.0), ModoReescalado.CAPACIDAD, null)
         advanceUntilIdle()
 
-        modelo.guardar()
+        // Y aunque se escriba otra cosa después, se guarda eso y no el número viejo.
+        modelo.cambiarTrozos("4")
         advanceUntilIdle()
 
         assertEquals(2000.0, recetas.obtenerRendimiento(recetaId)!!.pesoFinalG!!, 0.001)

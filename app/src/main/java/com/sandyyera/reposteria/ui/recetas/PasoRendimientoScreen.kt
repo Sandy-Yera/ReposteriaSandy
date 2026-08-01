@@ -20,7 +20,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -47,7 +46,6 @@ data class AccionesRendimiento(
     val cambiarTrozos: (String) -> Unit = {},
     val cambiarPesoFinal: (String) -> Unit = {},
     val marcarPesoRevisado: () -> Unit = {},
-    val guardar: () -> Unit = {},
     val abrirReescalarPorPeso: () -> Unit = {},
     val cambiarPesoNuevo: (String) -> Unit = {},
     val confirmarReescaladoPorPeso: () -> Unit = {},
@@ -74,7 +72,6 @@ fun PasoRendimientoScreen(
             cambiarTrozos = modelo::cambiarTrozos,
             cambiarPesoFinal = modelo::cambiarPesoFinal,
             marcarPesoRevisado = modelo::marcarPesoRevisado,
-            guardar = modelo::guardar,
             abrirReescalarPorPeso = modelo::abrirReescalarPorPeso,
             cambiarPesoNuevo = modelo::cambiarPesoNuevo,
             confirmarReescaladoPorPeso = modelo::confirmarReescaladoPorPeso,
@@ -98,6 +95,13 @@ fun PasoRendimientoScreen(
  *
  * Si el peso viene de un reescalado por molde, arriba de todo aparece el aviso de
  * comprobarlo, y se va al tocar el campo (8.4.1, #4).
+ *
+ * **No hay botón de guardar** (8.4.1). Se guarda solo, medio segundo después de dejar de
+ * escribir. El botón que había parecía innecesario porque al volver los datos seguían ahí,
+ * pero no estaban guardados: sobrevivía el ViewModel, no la fila. Sin botón, lo único que
+ * queda por decir es cuando el guardado se rechaza, y eso va **bajo el campo de los trozos**
+ * —único rechazo posible, el de las promociones que no caben— y no en la franja de abajo,
+ * que con el teclado abierto no se ve.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -209,14 +213,6 @@ fun PasoRendimiento(
                     )
                 }
             }
-
-            OutlinedButton(
-                onClick = acciones.guardar,
-                enabled = estado.puedeGuardar,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = Medidas.objetivoTactil)
-            ) { Text("Guardar rendimiento") }
 
             if (estado.sePuedeReescalarPorPeso) {
                 // Solo sin molde: con molde, cambiar de tamaño es cambiar de molde, y eso

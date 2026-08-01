@@ -14,7 +14,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -52,7 +51,7 @@ data class AccionesDuracion(
     val cambiarApto: (TipoDuracion, Boolean) -> Unit = { _, _ -> },
     val cambiarCantidad: (TipoDuracion, String) -> Unit = { _, _ -> },
     val cambiarUnidad: (TipoDuracion, UnidadDuracion) -> Unit = { _, _ -> },
-    val guardar: () -> Unit = {},
+    val guardarBloque: (TipoDuracion) -> Unit = {},
     val mensajeMostrado: () -> Unit = {},
     val irAlPaso: (PasoDeReceta) -> Unit = {},
     val cerrarReceta: () -> Unit = {}
@@ -74,7 +73,7 @@ fun PasoDuracionScreen(
             cambiarApto = modelo::cambiarApto,
             cambiarCantidad = modelo::cambiarCantidad,
             cambiarUnidad = modelo::cambiarUnidad,
-            guardar = modelo::guardar,
+            guardarBloque = modelo::guardarBloque,
             mensajeMostrado = modelo::mensajeMostrado,
             irAlPaso = alElegirPaso,
             cerrarReceta = alCerrarReceta
@@ -93,6 +92,10 @@ fun PasoDuracionScreen(
  *
  * El paso puede quedar completamente vacío y la pantalla lo dice, para que no parezca que
  * falta llenarlo.
+ *
+ * **No hay botón de guardar** (8.4.1): cada bloque se guarda al salir de su campo, y el
+ * switch y la unidad al instante. Salir del campo y no cada tecla, porque acá un bloque a
+ * medio escribir se ve igual que uno vaciado a propósito.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -182,13 +185,6 @@ fun PasoDuracion(
                 BloqueDeDuracionCard(bloque, acciones)
             }
 
-            Button(
-                onClick = acciones.guardar,
-                enabled = estado.puedeGuardar,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = Medidas.objetivoTactil)
-            ) { Text("Guardar duraciones") }
         }
     }
 }
@@ -241,7 +237,10 @@ private fun BloqueDeDuracionCard(
                     valor = bloque.cantidad,
                     alCambiar = { acciones.cambiarCantidad(bloque.tipo, it) },
                     etiqueta = "Cuánto dura",
-                    error = bloque.error
+                    error = bloque.error,
+                    // Al salir del campo, no en cada tecla: acá "3" a medio escribir de un
+                    // "30" se ve igual que un bloque que alguien acaba de vaciar (8.4.1).
+                    alSalirDelCampo = { acciones.guardarBloque(bloque.tipo) }
                 )
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(Medidas.chico)) {
                     UnidadDuracion.entries.forEach { unidad ->
