@@ -1118,6 +1118,16 @@ adelante y atrás**: equivocarse escribiendo eso es raro, y así el atajo no se 
 al escribir la palabra en medio de una frase. El título elegido se resalta como encabezado,
 no como un paso más.
 
+**El General no es un nombre, es la ausencia de sección.** En los datos, el título de un paso
+es el id de su sección y `null` es el General (5.5.1). Parece un detalle y no lo es:
+**bautizar una sección "General" se puede** (8.2), y si el General fuera un nombre reservado
+los dos serían el mismo. Con `null` se distinguen siempre.
+
+Queda una colisión **visual** que hay que resolver al dibujar: una receta con una sección
+llamada "General" mostraría dos encabezados que dicen lo mismo. Es raro pero posible, y lo
+más simple es que el bloque sin sección se muestre distinto de todos modos —ya lo tiene que
+hacer para el general anidado—, no prohibir el nombre.
+
 **Qué títulos se pueden repetir.** Solo "General". Los que nombran una sección de la receta
 —propia o traída de otra— **se usan una sola vez**: dos bloques "Crema" en el mismo listado
 no dicen en cuál va cada cosa.
@@ -1884,6 +1894,11 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 
 ### Fase 8 — Receta: Ganancias simuladas
 
+- **Ya está construida y probada la lógica pura**: `simulacion()` y `SEMANAS_POR_MES` estaban
+  desde antes, y se les sumó la **validación de los dos campos**
+  (`logica/validaciones/Simulacion.kt`), que era el hueco. Lo raro de este paso es que **nada
+  explota** con un número absurdo —se multiplica y ya—, así que sin reglas un 200 escrito en
+  vez de un 20 sale como una proyección creíble y diez veces falsa.
 - **Construyes:** `diasPorSemana`/`unidadesPorDia`, cálculo semanal/mensual con `SEMANAS_POR_MES = 4.33`.
 - **Hecho cuando:** el ejemplo (5.000 × 4 × 2 = 40.000 semanal) funciona, y editar los valores después de guardado recalcula todo.
 

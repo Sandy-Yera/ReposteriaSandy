@@ -6,7 +6,7 @@ eso pasa los errores viajan a ciegas. Esto no reemplaza al compilador —no veri
 de verdad— pero atrapa las cosas que sí se han colado hasta ahora:
 
 1. Llaves o paréntesis sin cerrar.
-2. Un identificador usado sin importar.
+2. Un identificador usado sin importar (incluidos los que declara un `typealias`).
 3. Una acción de pantalla declarada con un tipo y atada a un método del ViewModel que
    recibe otro.
 4. Lo mismo, pero cuando la acción se ata a un parámetro que la pantalla recibe de más
@@ -100,7 +100,9 @@ def revisar_importaciones(rutas):
         texto = open(ruta, encoding="utf-8").read()
         paquete = re.search(r"^package\s+([\w.]+)", texto, re.M).group(1)
         codigo = sin_comentarios_ni_textos(re.sub(r"^import .*$", "", texto, flags=re.M))
-        nombres = set(re.findall(r"\b(?:class|interface|object|enum class)\s+([A-Z]\w*)", codigo))
+        nombres = set(re.findall(
+            r"\b(?:class|interface|object|enum class|typealias)\s+([A-Z]\w*)", codigo
+        ))
         nombres |= set(re.findall(r"\bfun\s+(?:<[^>]*>\s*)?([A-Z]\w*)\s*\(", codigo))
         nombres |= set(re.findall(r"\bval\s+([A-Z]\w*)\b", codigo))
         por_paquete.setdefault(paquete, set()).update(nombres)
@@ -111,7 +113,9 @@ def revisar_importaciones(rutas):
         paquete = re.search(r"^package\s+([\w.]+)", texto, re.M).group(1)
         importados = {i.split(".")[-1] for i in re.findall(r"^import\s+([\w.]+)", texto, re.M)}
         codigo = sin_comentarios_ni_textos(re.sub(r"^import .*$", "", texto, flags=re.M))
-        propios = set(re.findall(r"\b(?:class|interface|object|enum class)\s+([A-Z]\w*)", codigo))
+        propios = set(re.findall(
+            r"\b(?:class|interface|object|enum class|typealias)\s+([A-Z]\w*)", codigo
+        ))
         propios |= set(re.findall(r"\bfun\s+(?:<[^>]*>\s*)?([A-Z]\w*)\s*\(", codigo))
         propios |= set(re.findall(r"\bval\s+([A-Z]\w*)\b", codigo))
         # CamelCase usado como tipo o llamada, sin un punto delante
