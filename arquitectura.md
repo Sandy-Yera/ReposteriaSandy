@@ -882,6 +882,14 @@ suspend fun reescalarRecetaPorMolde(
 - La UI muestra un ícono "?" (`InfoTooltip.kt`) junto al selector de modo, con el texto de arriba, para no tener que memorizar cuál usar.
 - Al elegir el molde nuevo: se puede seleccionar uno guardado del catálogo (9) o ingresar dimensiones sueltas sin guardarlas ("modo prueba" — útil para reescalar una receta ajena sin ensuciar el catálogo de moldes propios).
 
+**El costo de cada trozo se muestra acá, junto al peso de cada trozo.** Son las dos mitades
+de la misma pregunta —qué se entrega en cada trozo y qué cuesta entregarlo— y las dos salen
+de dividir algo entre los mismos `trozos` que se escriben en este paso. Vuelve a aparecer en
+Gastos y Ganancias (8.5) al lado del precio, y ahí no es repetir: **allá la pregunta es a
+cuánto vender, y este número es contra qué se compara**. La división es una sola en toda la
+app (`repartirEntreTrozos`), para que el costo por trozo que se ve acá y el que alimenta la
+ganancia no puedan discrepar.
+
 ### 8.4 Paso 3 — Duración (opcional)
 
 Banner fijo: *"Las duraciones son estimaciones no precisas"*. Tres bloques (ambiente / refrigerada / congelada) con `cantidad + unidad`, o el switch "No apto" que anula los otros dos campos de ese bloque.
@@ -1842,6 +1850,12 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 
 ### Fase 7 — Receta: Gastos y Ganancias + Precios/Promociones
 
+- **Ya está construida y probada la lógica pura**: las fórmulas (`precioDeReferencia`,
+  `trozoGanador`, `ingresoBruto`…) estaban desde antes, y se les sumó la **validación del
+  formulario** (`revisarPrecio` y compañía, en `logica/validaciones/Precios.kt`), que era el
+  hueco: nada revisaba lo que se escribe **antes** de crear un precio, y de ahí salen dos
+  divisiones por cero que reventarían mucho después y en otra pantalla. Queda por hacer el
+  repositorio (crear, editar y borrar precios) y la pantalla.
 - **Construyes:** precio base (primera fila de `RecetaPrecio`, sin campo `activo`), `precioDeMenorGanancia`, `precioEfectivoPorTrozo`, `trozoGanador`, lista visual de todos los precios guardados.
 - **Hecho cuando:** el ejemplo base (costo 1.400, precio 500 → trozo 3, ganancia 100) y el ejemplo con promo (2×1.500 → trozo 2, ganancia 100) dan esos resultados exactos; agregar una segunda promo con más ganancia no cambia los campos automáticos mientras no la elijas como referencia, y elegirla los cambia en el momento; elegir como referencia una promo que se vende bajo el costo se rechaza con el aviso "Esta promoción genera pérdidas" y deja la anterior intacta; una receta que se vende bajo su costo muestra la advertencia de "no alcanza a cubrir su costo" en vez de un trozo ganador imposible; y el tope del último trozo rechaza una promo de más trozos de los que rinde la receta.
 

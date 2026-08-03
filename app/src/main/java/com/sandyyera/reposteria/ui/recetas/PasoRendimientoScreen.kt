@@ -37,6 +37,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sandyyera.reposteria.data.db.entidades.Receta
+import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.ui.componentes.CampoNumerico
 import com.sandyyera.reposteria.ui.theme.Medidas
 import com.sandyyera.reposteria.ui.theme.ReposteriaTheme
@@ -196,6 +197,8 @@ fun PasoRendimiento(
                 alEnfocar = acciones.marcarPesoRevisado
             )
 
+            // Las dos mitades de la misma pregunta: qué se entrega en cada trozo y qué
+            // cuesta entregarlo. Salen las dos de los trozos que se escriben arriba.
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
@@ -203,14 +206,38 @@ fun PasoRendimiento(
                     contentColor = MaterialTheme.colorScheme.onTertiaryContainer
                 )
             ) {
-                Column(modifier = Modifier.padding(Medidas.medio)) {
-                    Text("Cada trozo pesa", style = MaterialTheme.typography.bodySmall)
-                    Text(
-                        // La unidad va acá y no dentro de `pesoPorTrozo`, porque esa función
-                        // también devuelve "No especificado", y "No especificado g" no se lee.
-                        text = estado.pesoDeCadaTrozo + estado.unidadDelPeso,
-                        style = MaterialTheme.typography.headlineMedium
-                    )
+                Column(
+                    modifier = Modifier.padding(Medidas.medio),
+                    verticalArrangement = Arrangement.spacedBy(Medidas.medio)
+                ) {
+                    Column {
+                        Text("Cada trozo pesa", style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            // La unidad va acá y no dentro de `pesoPorTrozo`, porque esa
+                            // función también devuelve "No especificado", y "No especificado
+                            // g" no se lee.
+                            text = estado.pesoDeCadaTrozo + estado.unidadDelPeso,
+                            style = MaterialTheme.typography.headlineMedium
+                        )
+                    }
+                    Column {
+                        Text("Cada trozo cuesta", style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            text = "$${formatearNumero(estado.costoDeCadaTrozo)}",
+                            style = MaterialTheme.typography.headlineMedium
+                        )
+                        Text(
+                            // Se mira `tieneIngredientes` y no el costo: un ingrediente puede
+                            // valer 0 a propósito, y decirle "sin ingredientes" a una receta
+                            // que sí los tiene manda a buscar un problema que no existe.
+                            text = if (estado.tieneIngredientes) {
+                                "Es el piso de cualquier precio que le pongas."
+                            } else {
+                                "Todavía sin ingredientes: cárgalos en Cantidades."
+                            },
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                 }
             }
 

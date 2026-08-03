@@ -218,6 +218,16 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Qué hacen: los tipos del paso "Duración" (8.4) y cómo se leen en la pantalla.
 - Cómo funcionan: los dos `enum` **se movieron desde `data/db/entidades/` a `:logica`**, por lo mismo que `ModoPrecio` y `TipoFormaMolde` ya vivían allá: las validaciones y el texto que se muestra son lógica pura y se prueban sin base de datos. La entidad de Room los importa. `describirDuracion(apto, cantidad, unidad)` devuelve **texto y no un número**, porque los tres estados posibles son distintos y ninguno es una cifra: no apto, sin anotar, o una cantidad con su unidad; devolver `Int?` obligaría a cada pantalla a decidir cómo se lee cada caso, y ahí aparecen los "0 días". `nombreDeLaUnidad` resuelve el singular: "1 día" y no "1 días".
 
+### errorEnPrecioTotalTexto, errorEnCantidadDePrecio, errorEnEtiquetaDePrecio, revisarPrecio y ErroresPrecio ✅ IMPLEMENTADAS
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Precios.kt
+- Qué hacen: revisan el formulario de un precio o promoción (6.2 y 8.5).
+- Cómo funcionan: reciben lo escrito y devuelven el motivo o `null`, como el resto del paquete; `revisarPrecio` los junta en un `ErroresPrecio` **por campo**, para que cada aviso se pinte bajo el suyo (con el teclado abierto, la franja de abajo no se ve). Era el hueco de la Fase 7: las fórmulas que usan precios ya estaban escritas y probadas, pero **nada revisaba lo que se escribe antes de crearlos**, y de ahí salen dos divisiones por cero que reventarían mucho después y en otra pantalla (`precioPorTrozoDe` divide por la cantidad, `trozoGanador` por el precio). **El precio en 0 se rechaza**, a diferencia del valor por gramo de un ingrediente: un ingrediente regalado cuesta 0 y eso es un dato; un precio de venta en 0 no. `errorEnCantidadDePrecio` aplica el **tope del último trozo** de 6.2 —una promo de 3 trozos no cabe en una receta que rinde 2— **solo en modo trozo**, porque vender 3 productos completos sí es posible; su aviso nombra cuántos rinde la receta y va después del tope general, porque es el que más explica. La etiqueta es opcional y usa `LARGO_MAXIMO_NOMBRE`. **No reemplaza al repositorio**, que además sabe algo que acá no se puede saber: si el precio elegido como referencia pierde plata.
+
+### MAXIMA_CANTIDAD_DE_PRECIO ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Precios.kt
+- Qué hace: cuántos trozos o productos como máximo puede cubrir una promoción.
+- Cómo funciona: constante `200`. No es una regla del negocio: "200 trozos por $1.500" no es una promoción, es un 2 escrito tres veces. El tope real en modo trozo lo pone la receta; este existe para el modo producto, que no tiene ninguno.
+
 ### errorEnCantidadDeDuracion, elBloqueDiceAlgo y ORDEN_DE_LOS_BLOQUES ✅ IMPLEMENTADAS
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Duracion.kt
 - Qué hacen: las reglas del paso de duración, que son más blandas que las del resto a propósito.
@@ -227,6 +237,11 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/rendimiento/Rendimiento.kt
 - Qué hace: el texto que acompaña a un peso final que salió de un reescalado por molde (8.4.1, #4).
 - Cómo funciona: constante con el texto `"El peso de este producto ha sido reescalado automáticamente. Por favor, compruebe el peso."`. **Pide comprobar y no da por bueno**, y esa palabra es todo el punto: la proporción es una estimación y no una medición — el peso real depende de cuánta masa quede pegada al molde y de cuánta agua se evapore, y ninguna de las dos escala con el área. Es constante y no un texto suelto en la pantalla por lo mismo que `MENSAJE_ALTURA_RIESGOSA`.
+
+### repartirEntreTrozos ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/rendimiento/Rendimiento.kt
+- Qué hace: divide un total entre los trozos de la receta. **Es la única división por trozos de la app.**
+- Cómo funciona: recibe `total: Double` y `trozos: Int`, devuelve `Double`; lanza excepción con 0 o menos en vez de devolver infinito. Existe porque la misma cuenta hacía falta en dos lugares que no se hablan — el peso de cada trozo (que se muestra en Rendimiento) y el costo de cada trozo (del que salen la ganancia y el trozo ganador) — y escrita dos veces son dos verdades sobre el mismo número, con la segunda olvidándose de comprobar el 0. `pesoPorTrozo` y `precios.costoPorTrozo` **delegan acá**; ninguna vuelve a dividir por su cuenta.
 
 ### pesoPorTrozo ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/rendimiento/Rendimiento.kt
@@ -841,7 +856,7 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 ### DialogoRendimiento y EstadoRendimiento ✅ IMPLEMENTADAS
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/recetas/RendimientoViewModel.kt
 - Qué hacen: los tipos del paso de rendimiento.
-- Cómo funcionan: `EstadoRendimiento.rechazoAlGuardar` lleva lo que contestó el repositorio al guardar solo, y entra en `errorTrozos` **antes** que la validación del campo: sin botón que apretar, un aviso en la franja de abajo llegaría en un momento que nadie asocia con lo que hizo, y con el teclado abierto ni se ve (8.2). El único rechazo posible es el de las promociones que no caben, que es exactamente sobre los trozos. `DialogoRendimiento` quedó con `Ninguno` y `ReescalarPorPeso` — los del molde se fueron a `DialogoMoldeDeReceta`. `EstadoRendimiento` expone `pesoDeCadaTrozo` en vivo —usando `pesoPorTrozo` y `textoANumero`, sin reglas propias sobre cómo se escribe un número—, `avisoDelPeso` (el texto de `AVISO_PESO_REESCALADO`, o `null` si no hay nada que comprobar) y `sePuedeReescalarPorPeso`, que es **solo sin molde**: con molde, cambiar de tamaño es cambiar de molde y eso vive en el paso anterior.
+- Cómo funcionan: `EstadoRendimiento` expone `costoDeCadaTrozo`, que sale de `repartirEntreTrozos` —la misma división que da el peso por trozo y el costo con que se calculan las ganancias— y de un `costoTotal` **observado** con `observarCostos`, porque quien lo mueve son los ingredientes y esos se cargan en otro paso. Lleva `tieneIngredientes` **aparte del costo**, repitiendo la lección que ya costó un bug en la lista de recetas: un ingrediente puede valer 0 a propósito y una receta hecha solo de esos cuesta 0 sin estar vacía. `rechazoAlGuardar` lleva lo que contestó el repositorio al guardar solo, y entra en `errorTrozos` **antes** que la validación del campo: sin botón que apretar, un aviso en la franja de abajo llegaría en un momento que nadie asocia con lo que hizo, y con el teclado abierto ni se ve (8.2). El único rechazo posible es el de las promociones que no caben, que es exactamente sobre los trozos. `DialogoRendimiento` quedó con `Ninguno` y `ReescalarPorPeso` — los del molde se fueron a `DialogoMoldeDeReceta`. `EstadoRendimiento` expone `pesoDeCadaTrozo` en vivo —usando `pesoPorTrozo` y `textoANumero`, sin reglas propias sobre cómo se escribe un número—, `avisoDelPeso` (el texto de `AVISO_PESO_REESCALADO`, o `null` si no hay nada que comprobar) y `sePuedeReescalarPorPeso`, que es **solo sin molde**: con molde, cambiar de tamaño es cambiar de molde y eso vive en el paso anterior.
 
 ### DialogoMoldeDeReceta, EstadoMoldeDeReceta y OrigenDelMolde ✅ IMPLEMENTADAS
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/ui/recetas/MoldeDeRecetaViewModel.kt

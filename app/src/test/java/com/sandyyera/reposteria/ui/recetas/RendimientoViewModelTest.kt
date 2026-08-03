@@ -141,6 +141,71 @@ class RendimientoViewModelTest {
         assertEquals("1.200", modelo.estado.value.pesoFinal)
     }
 
+    // --- El costo de cada trozo, que es tan del rendimiento como el peso ---
+
+    @Test
+    fun `el costo de cada trozo sale de los trozos que se escriben aca`() = probar { modelo ->
+        // La receta lleva 500 g de harina a $2 el gramo = $1.000.
+        assertEquals(1000.0, modelo.estado.value.costoTotal, 0.001)
+
+        modelo.cambiarTrozos("8")
+        advanceUntilIdle()
+
+        assertEquals(125.0, modelo.estado.value.costoDeCadaTrozo, 0.001)
+    }
+
+    @Test
+    fun `cambiar los ingredientes desde otro paso mueve el costo por trozo`() = probar { modelo ->
+        // Los ingredientes se cargan en Cantidades, no acá: el costo **se observa**.
+        modelo.cambiarTrozos("4")
+        advanceUntilIdle()
+        assertEquals(250.0, modelo.estado.value.costoDeCadaTrozo, 0.001)
+
+        val seccion = recetas.obtenerSecciones(recetaId).single()
+        catalogo.sembrar(Ingrediente(nombre = "Azúcar", valorPorGramo = 1.0))
+        val otro = catalogo.obtenerTodosUnaVez().first { it.nombre == "Azúcar" }
+        recetas.agregarIngrediente(seccion.id, otro.id, 200.0)
+        advanceUntilIdle()
+
+        assertEquals(1200.0, modelo.estado.value.costoTotal, 0.001)
+        assertEquals(300.0, modelo.estado.value.costoDeCadaTrozo, 0.001)
+    }
+
+    @Test
+    fun `sin trozos escritos no divide por cero`() = probar { modelo ->
+        // Vaciar el campo para corregirlo es normal, y `repartirEntreTrozos` lanza con 0.
+        modelo.cambiarTrozos("")
+        advanceUntilIdle()
+
+        assertEquals("Cae a 1, que es con lo que se siembra la receta",
+            1000.0, modelo.estado.value.costoDeCadaTrozo, 0.001)
+    }
+
+    @Test
+    fun `una receta de ingredientes que valen cero cuesta cero pero no esta vacia`() =
+        probar { modelo ->
+            // El bug que ya costó una vez: deducir "sin ingredientes" de que el costo sea 0.
+            // Un ingrediente puede valer 0 a propósito (6.2).
+            val seccion = recetas.obtenerSecciones(recetaId).single()
+            recetas.obtenerIngredientes(recetaId).forEach { recetas.quitarIngrediente(it.id) }
+            catalogo.sembrar(Ingrediente(nombre = "Agua", valorPorGramo = 0.0))
+            val agua = catalogo.obtenerTodosUnaVez().first { it.nombre == "Agua" }
+            recetas.agregarIngrediente(seccion.id, agua.id, 300.0)
+            advanceUntilIdle()
+
+            assertEquals(0.0, modelo.estado.value.costoTotal, 0.001)
+            assertTrue("Tiene una línea cargada, aunque no sume", modelo.estado.value.tieneIngredientes)
+        }
+
+    @Test
+    fun `una receta sin ingredientes si se distingue`() = probar { modelo ->
+        recetas.obtenerIngredientes(recetaId).forEach { recetas.quitarIngrediente(it.id) }
+        advanceUntilIdle()
+
+        assertEquals(0.0, modelo.estado.value.costoTotal, 0.001)
+        assertFalse(modelo.estado.value.tieneIngredientes)
+    }
+
     // --- El guardado automático (8.4.1) ---
 
     @Test

@@ -24,14 +24,28 @@ const val AVISO_PESO_REESCALADO =
         "Por favor, compruebe el peso."
 
 /**
+ * Reparte un total entre los trozos de la receta. **Es la única división por trozos.**
+ *
+ * Existe porque la misma cuenta hacía falta en dos lugares que no se hablan: el peso de cada
+ * trozo, que se muestra en Rendimiento, y el costo de cada trozo, del que salen la ganancia y
+ * el trozo ganador (8.5). Escrita dos veces son dos verdades sobre el mismo número, y la
+ * segunda es la que se olvida de comprobar que `trozos` no sea 0.
+ *
+ * Lanza excepción con 0 o menos en vez de devolver infinito: una receta siempre tiene al
+ * menos 1 trozo (se siembra así, 8.10), y si llegara un 0 es que algo se rompió antes.
+ */
+fun repartirEntreTrozos(total: Double, trozos: Int): Double {
+    require(trozos >= 1) { "Una receta siempre tiene al menos 1 trozo (llegó $trozos)" }
+    return total / trozos
+}
+
+/**
  * Cuánto pesa cada trozo, ya formateado para mostrar.
  *
  * Devuelve texto y no un número porque el peso final es opcional en las recetas con
  * molde: cuando no está, lo que corresponde mostrar es "No especificado", no un cero
  * que se confundiría con un dato real.
  */
-fun pesoPorTrozo(pesoFinalG: Double?, trozos: Int): String {
-    require(trozos >= 1) { "Una receta siempre tiene al menos 1 trozo (llegó $trozos)" }
-    return if (pesoFinalG == null) PESO_NO_ESPECIFICADO
-    else formatearNumero(pesoFinalG / trozos)
-}
+fun pesoPorTrozo(pesoFinalG: Double?, trozos: Int): String =
+    if (pesoFinalG == null) PESO_NO_ESPECIFICADO
+    else formatearNumero(repartirEntreTrozos(pesoFinalG, trozos))

@@ -13,6 +13,7 @@ import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.logica.rendimiento.AVISO_PESO_REESCALADO
 import com.sandyyera.reposteria.logica.rendimiento.PESO_NO_ESPECIFICADO
 import com.sandyyera.reposteria.logica.rendimiento.pesoPorTrozo
+import com.sandyyera.reposteria.logica.rendimiento.repartirEntreTrozos
 import com.sandyyera.reposteria.logica.validaciones.revisarRendimiento
 import com.sandyyera.reposteria.logica.validaciones.textoANumero
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -56,6 +57,24 @@ data class EstadoRendimiento(
     val usaMolde: Boolean = false,
     val trozos: String = "1",
     val pesoFinal: String = "",
+    /**
+     * Lo que cuesta hacer la receta entera, observado (8.2).
+     *
+     * Vive acá para poder mostrar el costo de cada trozo, que es tan del rendimiento como el
+     * peso de cada trozo: los dos salen de dividir algo entre los mismos trozos que se
+     * escriben en esta pantalla. Cambiar los trozos y no ver moverse el costo por trozo era
+     * justamente la pregunta que quedaba sin responder acá.
+     */
+    val costoTotal: Double = 0.0,
+    /**
+     * Si la receta tiene al menos un ingrediente cargado.
+     *
+     * **Es un dato aparte del costo, y tiene que serlo** — la misma lección que ya costó un
+     * bug en la lista de recetas: un ingrediente puede valer 0 a propósito (6.2), y una
+     * receta hecha solo de esos cuesta 0 sin estar vacía. Deducirlo de `costoTotal <= 0`
+     * mandaría a buscar un problema que no existe.
+     */
+    val tieneIngredientes: Boolean = false,
     /**
      * Si el peso guardado salió de un reescalado y nadie lo ha mirado todavía (8.4.1, #4).
      *
@@ -105,6 +124,22 @@ data class EstadoRendimiento(
      * "No especificado", y "No especificado g" no se lee.
      */
     val unidadDelPeso: String get() = if (pesoDeCadaTrozo == PESO_NO_ESPECIFICADO) "" else " g"
+
+    /**
+     * Cuánto cuesta hacer cada trozo. **Es el piso de cualquier precio** (8.5).
+     *
+     * Se muestra acá y no solo en Gastos porque es la otra mitad de la misma pregunta: el
+     * peso de cada trozo dice qué se entrega y este dice qué cuesta entregarlo, y los dos
+     * salen de los trozos que se escriben en esta pantalla. Vuelve a aparecer en Gastos, al
+     * lado del precio, y ahí no es repetir: allá la pregunta es a cuánto vender, y este
+     * número es contra qué se compara.
+     *
+     * Usa `repartirEntreTrozos`, la misma división de la que sale el peso por trozo y el
+     * costo con que se calculan las ganancias: escribirla acá otra vez serían dos verdades
+     * sobre el mismo número.
+     */
+    val costoDeCadaTrozo: Double
+        get() = repartirEntreTrozos(costoTotal, trozos.toIntOrNull()?.takeIf { it >= 1 } ?: 1)
 
     /** Si se ofrece reescalar por peso: solo sin molde (con molde se cambia de molde). */
     val sePuedeReescalarPorPeso: Boolean get() = !usaMolde
@@ -156,18 +191,24 @@ class RendimientoViewModel(
     val estado: StateFlow<EstadoRendimiento> = combine(
         recetas.observarReceta(recetaId),
         recetas.observarRendimiento(recetaId),
+        // El costo **se observa**: lo mueven los ingredientes, que se cargan en otro paso.
+        // El mapa no trae entrada para las recetas sin ingredientes, y ahí 0 es correcto.
+        recetas.observarCostos(),
         combine(trozos, pesoFinal) { t, p -> t to p },
-        rechazo,
-        mensaje
-    ) { receta, rendimiento, escrito, rechazoActual, mensajeActual ->
+        combine(rechazo, mensaje) { r, m -> r to m }
+    ) { receta, rendimiento, costos, escrito, avisos ->
         EstadoRendimiento(
             receta = receta,
             usaMolde = rendimiento?.usaMolde ?: false,
             trozos = escrito.first,
             pesoFinal = escrito.second,
+            costoTotal = costos[recetaId] ?: 0.0,
+            // La consulta agrupa por receta, así que solo trae fila para las que tienen algo
+            // cargado: estar en el mapa es exactamente "tiene ingredientes".
+            tieneIngredientes = recetaId in costos,
             pesoSinRevisar = rendimiento?.pesoReescaladoSinRevisar ?: false,
-            rechazoAlGuardar = rechazoActual,
-            mensaje = mensajeActual,
+            rechazoAlGuardar = avisos.first,
+            mensaje = avisos.second,
             cargando = false
         )
     }.stateIn(

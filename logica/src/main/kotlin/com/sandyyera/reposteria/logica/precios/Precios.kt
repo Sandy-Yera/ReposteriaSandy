@@ -1,5 +1,7 @@
 package com.sandyyera.reposteria.logica.precios
 
+import com.sandyyera.reposteria.logica.rendimiento.repartirEntreTrozos
+
 /** Si un precio guardado es por trozo o por producto completo. */
 enum class ModoPrecio { TROZO, PRODUCTO }
 
@@ -88,7 +90,8 @@ fun precioPorTrozoDe(precio: PrecioVigente, d: DatosCalculoReceta): Double {
 }
 
 /** Lo que cuesta producir cada trozo. Igual para todos los precios de la misma receta. */
-fun costoPorTrozo(d: DatosCalculoReceta): Double = d.costoTotal / d.trozos
+fun costoPorTrozo(d: DatosCalculoReceta): Double =
+    repartirEntreTrozos(d.costoTotal, d.trozos)
 
 /** Ganancia por trozo con un precio concreto. Puede ser negativa si no cubre el costo. */
 fun gananciaPorTrozoDe(precio: PrecioVigente, d: DatosCalculoReceta): Double =
