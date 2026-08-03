@@ -500,6 +500,41 @@ class RendimientoViewModelTest {
     }
 
     @Test
+    fun `tocar el campo y escribir enseguida no borra lo tecleado`() = probar { modelo ->
+        // El bug: `marcarPesoRevisado` escribe en la fila del rendimiento, y
+        // `observarRendimiento` reemite ante cualquier escritura — también ante una que solo
+        // mueve un booleano. Cuando esa emisión volvía, lo tecleado ya era distinto de lo
+        // guardado y el campo se re-sembraba con el número viejo, bajo el dedo.
+        //
+        // En el celular es la secuencia normal: tocar el campo para corregir el peso
+        // reescalado y empezar a escribir sin esperar.
+        reescalarPorMolde()
+        val recienAbierto = abrirElPaso()
+        assertTrue(recienAbierto.estado.value.pesoSinRevisar)
+
+        recienAbierto.marcarPesoRevisado()
+        recienAbierto.cambiarPesoFinal("1950")
+        advanceUntilIdle()
+
+        assertEquals("1.950", recienAbierto.estado.value.pesoFinal)
+        assertEquals(1950.0, recetas.obtenerRendimiento(recetaId)!!.pesoFinalG!!, 0.001)
+    }
+
+    @Test
+    fun `escribir en trozos tampoco se pierde por una escritura ajena`() = probar { modelo ->
+        modelo.cambiarPesoFinal("1200")
+        advanceUntilIdle()
+
+        // Se teclea, y antes de que el guardado ocurra llega otra escritura a la misma fila.
+        modelo.cambiarTrozos("8")
+        recetas.marcarPesoRevisado(recetaId)
+        advanceUntilIdle()
+
+        assertEquals("8", modelo.estado.value.trozos)
+        assertEquals(8, recetas.obtenerRendimiento(recetaId)!!.trozos)
+    }
+
+    @Test
     fun `escribir en el campo tambien apaga el aviso`() = probar { modelo ->
         // El foco es el camino normal, pero se puede llegar al campo con el "siguiente" del
         // teclado desde los trozos y escribir sin haberlo tocado con el dedo.

@@ -59,10 +59,6 @@ data class EstadoDuracion(
     val mensaje: String? = null,
     val cargando: Boolean = true
 ) {
-    /** Si hay algo escrito que no sirve. Vacío no cuenta: el paso puede quedar en blanco. */
-    val puedeGuardar: Boolean
-        get() = bloques.all { errorEnCantidadDeDuracion(it.cantidad, it.apto) == null }
-
     /** Si el paso quedó completamente sin llenar, que es un estado válido (8.4). */
     val todoVacio: Boolean get() = bloques.none { it.diceAlgo }
 }

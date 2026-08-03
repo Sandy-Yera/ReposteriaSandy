@@ -29,6 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -233,6 +234,14 @@ private fun BloqueDeDuracionCard(
             }
 
             if (bloque.apto) {
+                // Cambiar de paso o salir de la receta desmonta esta pantalla, y ahí el
+                // campo puede irse **sin** llegar a avisar que perdió el foco. Sin esto, la
+                // duración recién escrita se perdía en silencio — que es exactamente lo que
+                // el guardado automático vino a evitar.
+                DisposableEffect(bloque.tipo) {
+                    onDispose { acciones.guardarBloque(bloque.tipo) }
+                }
+
                 CampoNumerico(
                     valor = bloque.cantidad,
                     alCambiar = { acciones.cambiarCantidad(bloque.tipo, it) },

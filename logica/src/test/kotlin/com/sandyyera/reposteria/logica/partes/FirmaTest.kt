@@ -100,6 +100,20 @@ class FirmaTest {
     }
 
     @Test
+    fun `un salto de linea dentro de un nombre no parte la firma en dos`() {
+        // El formato es de líneas, así que un nombre con un salto adentro rompería el
+        // archivo entero. Puede llegar pegando texto desde otra app.
+        val firma = FirmaDeReceta(
+            secciones = listOf(
+                SeccionDeFirma(1, "Crema\nde leche", listOf(LineaDeFirma(10, "Azúcar\nflor", 5.0)))
+            ),
+            titulos = emptyList(),
+            pasosGenerales = 0
+        )
+        assertEquals(firma, firmaDesdeTexto(textoDeFirma(firma)))
+    }
+
+    @Test
     fun `una firma ilegible se descarta en vez de reventar`() {
         // Una firma de una versión vieja del formato, o una fila a medio escribir, no puede
         // impedir abrir la receta: lo que se pierde es el aviso, no la receta.

@@ -743,6 +743,15 @@ Es una **pantalla completa** y no un `AlertDialog`: tiene dos partes (la cuenta 
 
 ### 8.1 Flujo general
 
+**Los siete pasos, en orden:** Cantidades (8.2), Molde (8.3), Rendimiento (8.3), Duración
+(8.4), Gastos y Ganancias (8.5), Ganancias simuladas (8.7) y Pasos (8.8). Eran seis hasta que
+el molde se separó de rendimiento (8.4.1, #2); están enumerados acá porque la numeración de
+los títulos de abajo ya se había desfasado una vez y nadie la miraba de conjunto.
+
+Se recorren con la **fila de pasos** que va bajo el título (8.4.1, #1), en cualquier orden y
+sin botón de "Siguiente"; la X sale de la receta desde cualquiera de ellos. Cada paso
+**guarda solo**, sin botón (8.4.1).
+
 Un `RecetaViewModel` con estado compartido entre los pasos del wizard (`wizard/`), y navegación entre pasos vía Navigation Compose. Al finalizar, se abre `DetalleRecetaScreen.kt` con cada paso como sección tipo acordeón (`SeccionColapsable`), editable en cualquier momento — no hay estado "bloqueado" tras terminar.
 
 ### 8.2 Paso 1 — Cantidades y precios
@@ -890,7 +899,7 @@ cuánto vender, y este número es contra qué se compara**. La división es una 
 app (`repartirEntreTrozos`), para que el costo por trozo que se ve acá y el que alimenta la
 ganancia no puedan discrepar.
 
-### 8.4 Paso 3 — Duración (opcional)
+### 8.4 Paso 4 — Duración (opcional)
 
 Banner fijo: *"Las duraciones son estimaciones no precisas"*. Tres bloques (ambiente / refrigerada / congelada) con `cantidad + unidad`, o el switch "No apto" que anula los otros dos campos de ese bloque.
 
@@ -938,6 +947,20 @@ edición obligaría a borrar y reescribir el mismo número solo para callar un a
 
 **5. Recetas que usan otras recetas.** Ver 8.11, que es donde vive el diseño completo.
 
+**Lo que costó el guardado automático, y hay que respetar.** Guardar solo convierte la
+pantalla en dos fuentes de verdad a la vez —lo que está escrito y lo que está guardado— y de
+ahí salieron dos trampas que ya se pagaron:
+
+- **La fila vuelve por el `Flow` ante *cualquier* escritura**, no solo ante la que cambia lo
+  que se ve. Marcar el peso como revisado mueve un booleano, pero reemite igual; si los
+  campos se re-siembran ante cada emisión, tocar el campo para corregirlo borra lo que se
+  está tecleando. Por eso la re-siembra exige **dos** condiciones: que lo guardado haya
+  cambiado de verdad, y que no haya un guardado esperando su turno.
+- **Salir de la pantalla es salir del campo.** En Duración el guardado lo dispara perder el
+  foco, y al cambiar de paso el campo puede irse sin llegar a avisarlo; hace falta guardar
+  también al desmontarse, o lo recién escrito se pierde en silencio — justo lo que el
+  guardado automático vino a evitar.
+
 **Nada de guardar con botón.** Los pasos guardan **en cuanto lo escrito es válido**. Hoy
 Rendimiento tiene un botón que parece innecesario porque al volver los datos siguen ahí,
 pero **no están guardados**: lo que sobrevive es el ViewModel, que Android conserva mientras
@@ -945,7 +968,7 @@ la app viva. Guardando solo, el botón sobra de verdad y se va. Duración hace l
 una salvedad: ahí un bloque a medio escribir se ve igual que uno vaciado a propósito, así
 que lo que dispara el guardado es **salir del campo**, no cada tecla.
 
-### 8.5 Paso 4 — Gastos y Ganancias
+### 8.5 Paso 5 — Gastos y Ganancias
 
 El valor que ingresas aquí (modo "trozo" o "producto" + un número) crea la primera fila de `RecetaPrecio` (`cantidad = 1`) — tu precio base. Todo lo automático de este paso se recalcula según el **precio de referencia** entre todos los guardados (base + promos, decisión #4). El primero que creas queda como referencia por ser el único; al agregar promos eliges cuál manda:
 
@@ -1047,7 +1070,7 @@ Devolver el motivo o `null` —y no lanzar excepción— es el mismo formato de 
 
 Todas las cifras se recalculan sobre el snapshot que ya está en memoria (6.4): son divisiones y restas sobre datos ya cargados, sin volver a consultar la base. Tocar otra promo y ver todo actualizado no tiene demora perceptible.
 
-### 8.7 Paso 5 — Ganancias simuladas
+### 8.7 Paso 6 — Ganancias simuladas
 
 ```kotlin
 const val SEMANAS_POR_MES = 4.33
@@ -1072,7 +1095,7 @@ fun simulacion(ingresoBase: Double, costoBase: Double, dias: Int, unidades: Int)
 
 `simulacion()` ya era pura y se queda igual. Sus dos entradas salen del mismo snapshot que el resto de la pantalla: `ingresoBase = ingresoBruto(d)` y `costoBase = d.costoTotal`, ambos derivados del precio de referencia (8.5). `diasPorSemana` / `unidadesPorDia` quedan visibles y editables al final; cualquier cambio recalcula todo en el momento — y como recalcular es aritmética sobre datos ya en memoria, es instantáneo y no vuelve a consultar la base.
 
-### 8.8 Paso 6 — Pasos
+### 8.8 Paso 7 — Pasos
 
 Los pasos no son una lista plana: van **agrupados bajo títulos**, y los títulos son las
 secciones de la receta más "General".
@@ -1119,7 +1142,7 @@ que hay que tener hecho *antes* de empezar, no un paso de la preparación.
 
 ### 8.10 Recetas a medio crear (el caso que más puede reventar)
 
-El wizard tiene 6 pasos y **guarda al terminar cada uno**, no solo al final — si no, cerrar la app o que suene el teléfono a mitad de camino te haría perder todo lo escrito. La consecuencia es que existen recetas incompletas, y casi todas las fórmulas de este documento dividen por algo que en ese estado podría no existir todavía:
+El wizard tiene 7 pasos —el molde se separó de rendimiento en 8.4.1— y **guarda en cuanto lo escrito es válido**, no solo al final — si no, cerrar la app o que suene el teléfono a mitad de camino te haría perder todo lo escrito. La consecuencia es que existen recetas incompletas, y casi todas las fórmulas de este documento dividen por algo que en ese estado podría no existir todavía:
 
 | División | Explota si… | Cuándo puede pasar |
 |---|---|---|
@@ -1922,7 +1945,7 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 ### Fase 15 — QA final y APK firmado (última fase)
 
 - **Construyes:** nada nuevo — checklist completo contra tu especificación original, prueba de estrés (recetas grandes), revisión de formatos numéricos, manejo de errores en cada formulario, y la generación de un **APK de release firmado** (`./gradlew assembleRelease` con tu keystore).
-- **Hecho cuando:** instalas el APK directo en tu celular (sin Android Studio conectado), usas la app de principio a fin — ingredientes, moldes, receta completa con sus 6 pasos, sueldos de empleados, historial de cambios — y todo respalda solo en Drive. Este es el ejecutable final.
+- **Hecho cuando:** instalas el APK directo en tu celular (sin Android Studio conectado), usas la app de principio a fin — ingredientes, moldes, receta completa con sus 7 pasos, sueldos de empleados, historial de cambios — y todo respalda solo en Drive. Este es el ejecutable final.
 
 ---
 

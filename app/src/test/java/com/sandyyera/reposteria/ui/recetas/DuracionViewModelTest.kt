@@ -76,7 +76,6 @@ class DuracionViewModelTest {
             estado.bloques.map { it.tipo }
         )
         assertTrue("El paso puede quedar en blanco, y arranca así", estado.todoVacio)
-        assertTrue("Y vacío se puede guardar igual", estado.puedeGuardar)
     }
 
     @Test
@@ -123,12 +122,14 @@ class DuracionViewModelTest {
     }
 
     @Test
-    fun `un cero no deja guardar y avisa en su bloque`() = probar { modelo ->
+    fun `un cero avisa en su bloque y no escribe nada`() = probar { modelo ->
+        // "Dura cero días" no dice nada; para eso está el switch de "no apto".
         modelo.cambiarCantidad(TipoDuracion.AMBIENTE, "0")
+        modelo.guardarBloque(TipoDuracion.AMBIENTE)
         advanceUntilIdle()
 
         assertNotNull(bloque(modelo, TipoDuracion.AMBIENTE).error)
-        assertFalse(modelo.estado.value.puedeGuardar)
+        assertTrue(recetas.obtenerDuraciones(recetaId).isEmpty())
     }
 
     // --- "No apto" ---
@@ -158,14 +159,15 @@ class DuracionViewModelTest {
     }
 
     @Test
-    fun `un bloque no apto con una cantidad invalida igual se puede guardar`() = probar { modelo ->
+    fun `un bloque no apto con una cantidad invalida igual se guarda`() = probar { modelo ->
         // Con "no apto" la cantidad se ignora por completo: no tiene sentido retar por un
-        // campo que ya no significa nada.
+        // campo que ya no significa nada, y el dato -que no se puede congelar- sí se guarda.
         modelo.cambiarCantidad(TipoDuracion.CONGELADA, "0")
         modelo.cambiarApto(TipoDuracion.CONGELADA, apto = false)
         advanceUntilIdle()
 
-        assertTrue(modelo.estado.value.puedeGuardar)
+        val guardadas = recetas.obtenerDuraciones(recetaId)
+        assertFalse(guardadas.getValue(TipoDuracion.CONGELADA).apto)
     }
 
     // --- El guardado automático (8.4.1) ---

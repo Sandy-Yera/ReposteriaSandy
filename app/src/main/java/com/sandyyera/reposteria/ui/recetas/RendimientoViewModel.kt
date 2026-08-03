@@ -224,23 +224,29 @@ class RendimientoViewModel(
         // producto se multiplica desde el paso anterior, y acá el campo se quedaba con el
         // número viejo. Se veía como que "el peso no cambió".
         //
-        // La comparación es **por valor y no por texto**, y eso es lo que hace convivir esto
-        // con el guardado automático: al guardar solo, la fila vuelve por el `Flow` y si se
-        // comparara el texto se re-sembraría el campo en mitad de una palabra — escribir
-        // "0008" quedaría en "8" bajo el dedo. Comparando lo que el texto *significa*, el eco
-        // del propio guardado no toca nada y un reescalado ajeno sí.
+        // Las dos condiciones de abajo son las que hacen que esto no se lleve por delante lo
+        // que se está escribiendo, y cada una tapa un agujero distinto:
+        //
+        // 1. **Solo si lo guardado cambió de verdad.** `observarRendimiento` reemite ante
+        //    *cualquier* escritura en la fila, incluida `marcarPesoRevisado`, que solo mueve
+        //    un booleano. Sin esta condición, tocar el campo del peso para corregirlo lanzaba
+        //    esa escritura, y cuando volvía —con lo tecleado ya distinto de lo guardado— el
+        //    campo se re-sembraba con el número viejo y borraba lo escrito bajo el dedo.
+        // 2. **Y solo si no hay un guardado esperando.** Mientras haya algo escrito sin
+        //    escribir todavía, el campo manda: lo guardado es lo viejo por definición.
+        var ultimoGuardado: Pair<Int, Double?>? = null
+
         viewModelScope.launch {
             recetas.observarRendimiento(recetaId).collect { fila ->
-                val trozosGuardados = fila?.trozos ?: 1
-                if (trozos.value.toIntOrNull() != trozosGuardados) {
-                    trozos.value = trozosGuardados.toString()
-                }
-                if (textoANumero(pesoFinal.value) != fila?.pesoFinalG) {
-                    pesoFinal.value = fila?.pesoFinalG?.let { formatearNumero(it) } ?: ""
-                }
+                val ahora = (fila?.trozos ?: 1) to fila?.pesoFinalG
+                val cambioLoGuardado = ultimoGuardado != ahora
+                ultimoGuardado = ahora
+
+                if (!cambioLoGuardado || guardadoPendiente?.isActive == true) return@collect
+                trozos.value = ahora.first.toString()
+                pesoFinal.value = ahora.second?.let { formatearNumero(it) } ?: ""
             }
         }
-
     }
 
     // --- Los dos campos ---
@@ -304,22 +310,26 @@ class RendimientoViewModel(
         }
     }
 
+
+
     /**
-     * Guarda lo escrito, si sirve. **La llama sola el guardado automático**, no un botón.
+     * Guarda lo escrito, si sirve. **La llama sola [programarGuardado]**, no un botón.
+     *
+     * Es `suspend` y no lanza su propia corrutina a propósito: así el trabajo ocurre *dentro*
+     * de `guardadoPendiente` y ese `Job` sigue activo mientras se escribe en la base, que es
+     * de lo que se agarra la re-siembra de los campos para no pisar lo que se está tecleando.
      *
      * Con lo escrito a medias no hace nada: un campo vacío mientras se corrige un número no
      * puede borrar lo que estaba guardado. Y **no anuncia el éxito**: sin botón que apretar,
      * un "se guardó" cada vez que se deja de escribir es ruido puro. Lo que sí se dice es el
      * rechazo, y va junto al campo de los trozos.
      */
-    fun guardar() {
+    private suspend fun guardar() {
         if (!estado.value.puedeGuardar) return
 
-        viewModelScope.launch {
-            when (val r = recetas.guardarRendimiento(recetaId, trozos.value, pesoFinal.value)) {
-                is Resultado.Listo -> rechazo.value = null
-                is Resultado.NoSePudo -> rechazo.value = r.motivo
-            }
+        when (val r = recetas.guardarRendimiento(recetaId, trozos.value, pesoFinal.value)) {
+            is Resultado.Listo -> rechazo.value = null
+            is Resultado.NoSePudo -> rechazo.value = r.motivo
         }
     }
 

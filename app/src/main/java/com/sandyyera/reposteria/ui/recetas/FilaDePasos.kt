@@ -24,9 +24,10 @@ import com.sandyyera.reposteria.ui.theme.ReposteriaTheme
 /**
  * Los pasos de una receta abierta (8.1).
  *
- * Van en un `enum` y no en un booleano porque de acá salen los seis pasos del asistente:
- * cantidades, rendimiento, duración, gastos, simulación y pasos. Con un booleano el tercero
- * ya obligaría a rehacerlo.
+ * Van en un `enum` y no en un booleano porque de acá salen los **siete** pasos del asistente
+ * (8.1): cantidades, molde, rendimiento, duración, gastos, simulación y pasos. Con un
+ * booleano el tercero ya obligaría a rehacerlo — y de hecho el molde llegó después, que es
+ * justamente el caso que un booleano no habría aguantado.
  *
  * El [titulo] vive en el enum y no en la pantalla por lo mismo que la etiqueta de
  * `CampoDeMolde`: la fila de arriba y cualquier otro lugar que nombre un paso tienen que
@@ -58,9 +59,9 @@ enum class PasoDeReceta(val titulo: String) {
  * dos cosas según dónde se estuviera. Con la fila, **la X siempre sale de la receta** y
  * moverse entre pasos es la fila; los dos gestos dejan de competir.
  *
- * Se desplaza en horizontal aunque hoy los tres quepan: al llegar gastos, simulación y pasos
- * serán seis, y una fila que se apretuja hasta dejar los títulos ilegibles es peor que una
- * que se arrastra.
+ * Se desplaza en horizontal aunque hoy los cuatro quepan: al llegar gastos, simulación y
+ * pasos serán siete, y una fila que se apretuja hasta dejar los títulos ilegibles es peor que
+ * una que se arrastra.
  */
 @Composable
 fun FilaDePasos(
