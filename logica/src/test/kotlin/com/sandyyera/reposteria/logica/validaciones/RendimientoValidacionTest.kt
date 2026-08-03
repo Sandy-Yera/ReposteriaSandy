@@ -47,6 +47,18 @@ class RendimientoValidacionTest {
     }
 
     @Test
+    fun `y un numero enorme recibe ese mismo aviso, no el de los decimales`() {
+        // Este campo ya lo hacía bien —usaba `floor`— y es el que enseñó cómo se revisa. Se
+        // deja anotado para que siga así: la comparación contra `toInt()` que había en los
+        // otros cuatro campos habría respondido "los trozos son un número entero" sobre un
+        // número entero.
+        assertEquals(
+            "¿Seguro? Más de $MAXIMO_TROZOS trozos parece un error",
+            errorEnTrozosTexto("10000000000")
+        )
+    }
+
+    @Test
     fun `un campo de trozos vacio o que no es numero no sirve`() {
         assertNotNull(errorEnTrozosTexto(""))
         assertNotNull(errorEnTrozosTexto("   "))

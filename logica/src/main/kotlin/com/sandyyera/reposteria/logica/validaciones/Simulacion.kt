@@ -34,7 +34,7 @@ fun errorEnDiasPorSemanaTexto(texto: String): String? {
     val numero = textoANumero(texto) ?: return "Escribe un número válido"
     return when {
         numero.isNaN() || numero.isInfinite() -> "Escribe un número válido"
-        numero != numero.toInt().toDouble() -> "Tiene que ser un número entero de días"
+        !esNumeroEntero(numero) -> "Tiene que ser un número entero de días"
         numero < 1 -> "Al menos un día. Si no la vendes, pon 0 unidades por día"
         numero > DIAS_MAXIMOS_POR_SEMANA ->
             "Una semana tiene $DIAS_MAXIMOS_POR_SEMANA días"
@@ -54,7 +54,7 @@ fun errorEnUnidadesPorDiaTexto(texto: String): String? {
     val numero = textoANumero(texto) ?: return "Escribe un número válido"
     return when {
         numero.isNaN() || numero.isInfinite() -> "Escribe un número válido"
-        numero != numero.toInt().toDouble() -> "Tiene que ser un número entero de unidades"
+        !esNumeroEntero(numero) -> "Tiene que ser un número entero de unidades"
         numero < 0 -> "No puede ser negativo"
         numero > MAXIMAS_UNIDADES_POR_DIA ->
             "Más de $MAXIMAS_UNIDADES_POR_DIA al día parece un error"

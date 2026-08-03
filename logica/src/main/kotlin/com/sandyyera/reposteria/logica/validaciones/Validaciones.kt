@@ -1,5 +1,7 @@
 package com.sandyyera.reposteria.logica.validaciones
 
+import kotlin.math.floor
+
 /**
  * Las reglas que decide si un dato sirve **antes** de guardarlo.
  *
@@ -92,6 +94,21 @@ fun errorEnValorPorGramo(valor: Double): String? = when {
  */
 fun textoANumero(texto: String): Double? =
     texto.trim().replace(".", "").replace(',', '.').toDoubleOrNull()
+
+/**
+ * Si un número escrito no tiene decimales.
+ *
+ * Existe por un error concreto que estaba repetido en cuatro campos: la forma "obvia" de
+ * preguntarlo es `numero != numero.toInt().toDouble()`, y **está mal para números grandes**.
+ * `toInt()` no desborda sino que se pega al tope de `Int`, así que un `10000000000` —que es
+ * entero— se convierte en `2147483647`, deja de coincidir consigo mismo y el campo responde
+ * "tiene que ser un número entero" sobre un número entero. El aviso queda mintiendo, y el
+ * tope de verdad (que sí tenía algo que decir) nunca llega a revisarse.
+ *
+ * Con `floor` no hay tope que cruzar: un `Double` grande es igual a su propia parte entera y
+ * la revisión sigue de largo hasta el aviso que corresponde.
+ */
+fun esNumeroEntero(numero: Double): Boolean = numero == floor(numero)
 
 /**
  * Revisa el valor por gramo **tal como está escrito en el campo**, no ya convertido.

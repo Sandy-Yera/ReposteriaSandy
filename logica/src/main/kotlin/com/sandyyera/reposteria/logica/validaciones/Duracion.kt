@@ -39,7 +39,7 @@ fun errorEnCantidadDeDuracion(texto: String, apto: Boolean): String? {
     val numero = textoANumero(texto) ?: return "Escribe un número válido"
     return when {
         numero.isNaN() || numero.isInfinite() -> "Escribe un número válido"
-        numero != numero.toInt().toDouble() -> "Usa un número entero, o cambia la unidad"
+        !esNumeroEntero(numero) -> "Usa un número entero, o cambia la unidad"
         numero < 1 -> "Si no corresponde guardarlo así, marca 'No apto'"
         numero > MAXIMA_CANTIDAD_DE_DURACION ->
             "Más de $MAXIMA_CANTIDAD_DE_DURACION parece un error: prueba con otra unidad"

@@ -1,5 +1,6 @@
 package com.sandyyera.reposteria.logica.validaciones
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -72,6 +73,21 @@ class SimulacionTest {
         assertNotNull(errorEnUnidadesPorDiaTexto("1,5"))
         assertNotNull(errorEnUnidadesPorDiaTexto("-3"))
         assertNotNull(errorEnUnidadesPorDiaTexto(""))
+    }
+
+    // --- Números enormes ---
+
+    @Test
+    fun `un numero enorme recibe el aviso del tope, no el de los decimales`() {
+        // Con el dedo pegado en la tecla salen once dígitos. Ese número ES entero, así que
+        // lo que corresponde decir es que se pasó del tope. Comparar contra
+        // `toInt().toDouble()` respondía "tiene que ser un número entero" —un aviso falso,
+        // y el único que no enseña cómo arreglarlo.
+        assertEquals("Una semana tiene 7 días", errorEnDiasPorSemanaTexto("10000000000"))
+        assertEquals(
+            "Más de $MAXIMAS_UNIDADES_POR_DIA al día parece un error",
+            errorEnUnidadesPorDiaTexto("10000000000")
+        )
     }
 
     // --- Los dos juntos ---

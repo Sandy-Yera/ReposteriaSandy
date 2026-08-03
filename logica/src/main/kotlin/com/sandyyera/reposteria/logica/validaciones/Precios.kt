@@ -50,7 +50,7 @@ fun errorEnCantidadDePrecio(
     val numero = textoANumero(texto) ?: return "Escribe un número válido"
     return when {
         numero.isNaN() || numero.isInfinite() -> "Escribe un número válido"
-        numero != numero.toInt().toDouble() -> "Tiene que ser un número entero"
+        !esNumeroEntero(numero) -> "Tiene que ser un número entero"
         numero < 1 -> "Tiene que ser al menos 1"
         numero > MAXIMA_CANTIDAD_DE_PRECIO ->
             "Más de $MAXIMA_CANTIDAD_DE_PRECIO parece un error"
@@ -67,13 +67,13 @@ fun errorEnCantidadDePrecio(
  * Vacía está bien: una promoción sin nombre se describe sola por su forma ("3 trozos"), y eso
  * ya lo resuelve `descripcionDePromocion`. Lo único que se revisa es que quepa, con el mismo
  * tope que cualquier otro nombre escrito a mano.
+ *
+ * De ahí que la revisión se delegue en [errorEnNombreEscrito] en vez de repetir su tope y su
+ * texto: escrito aparte, el día que el aviso cambie ahí quedaría una sola pantalla diciendo
+ * la frase vieja. Lo único propio es dejar pasar el vacío, que es la diferencia real.
  */
 fun errorEnEtiquetaDePrecio(texto: String): String? =
-    if (texto.trim().length > LARGO_MAXIMO_NOMBRE) {
-        "El nombre no puede pasar de $LARGO_MAXIMO_NOMBRE caracteres"
-    } else {
-        null
-    }
+    if (texto.isBlank()) null else errorEnNombreEscrito(texto)
 
 /** Los problemas del formulario de un precio, uno por campo. */
 data class ErroresPrecio(

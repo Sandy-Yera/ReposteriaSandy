@@ -1,6 +1,7 @@
 package com.sandyyera.reposteria.logica.validaciones
 
 import com.sandyyera.reposteria.logica.precios.ModoPrecio
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -86,6 +87,16 @@ class PreciosTest {
         assertTrue("Nombra la receta y no un tope abstracto", error!!.contains("8"))
     }
 
+    @Test
+    fun `una cantidad enorme recibe el aviso del tope, no el de los decimales`() {
+        // Once dígitos salen con el dedo pegado, y ese número ES entero: decir "tiene que
+        // ser un número entero" es falso y además no enseña nada.
+        assertEquals(
+            "Más de $MAXIMA_CANTIDAD_DE_PRECIO parece un error",
+            cantidad("10000000000", modo = ModoPrecio.PRODUCTO, trozos = 8)
+        )
+    }
+
     // --- La etiqueta ---
 
     @Test
@@ -98,6 +109,14 @@ class PreciosTest {
     fun `la etiqueta usa el mismo tope que cualquier nombre escrito a mano`() {
         assertNull(errorEnEtiquetaDePrecio("P".repeat(LARGO_MAXIMO_NOMBRE)))
         assertNotNull(errorEnEtiquetaDePrecio("P".repeat(LARGO_MAXIMO_NOMBRE + 1)))
+    }
+
+    @Test
+    fun `y dice exactamente lo mismo que cualquier otro nombre`() {
+        // No es cosmético: son dos pantallas distintas y el aviso se escribía dos veces. El
+        // día que cambie, una de las dos se quedaría con la frase vieja.
+        val largo = "P".repeat(LARGO_MAXIMO_NOMBRE + 1)
+        assertEquals(errorEnNombreEscrito(largo), errorEnEtiquetaDePrecio(largo))
     }
 
     // --- El formulario completo ---

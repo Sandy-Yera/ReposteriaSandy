@@ -1123,10 +1123,24 @@ es el id de su sección y `null` es el General (5.5.1). Parece un detalle y no l
 **bautizar una sección "General" se puede** (8.2), y si el General fuera un nombre reservado
 los dos serían el mismo. Con `null` se distinguen siempre.
 
-Queda una colisión **visual** que hay que resolver al dibujar: una receta con una sección
-llamada "General" mostraría dos encabezados que dicen lo mismo. Es raro pero posible, y lo
-más simple es que el bloque sin sección se muestre distinto de todos modos —ya lo tiene que
-hacer para el general anidado—, no prohibir el nombre.
+**La colisión de los dos "General" no es un caso raro: es el estado inicial.** Toda receta
+nace con una sección llamada exactamente "General" (`crearReceta`, 8.10), así que el menú de
+títulos de cualquier receta recién creada ofrecería dos veces la misma palabra — la sección
+que la app creó sola y el bloque sin sección. La salida ya estaba escrita en otra parte de la
+app: esa sección **no se muestra** mientras siga sola y sin renombrar (8.2,
+`debenMostrarseLosNombresDeSeccion`), y lo que no se muestra tampoco se ofrece como título.
+`titulosDisponibles` usa esa misma función y no una regla propia. Con eso, una receta de una
+sola parte ofrece solo el General, que además es lo correcto: no hace falta decir a cuál parte
+pertenece cada paso cuando hay una sola.
+
+Lo que queda después de eso sí es raro: una receta con **dos o más** secciones, una de ellas
+bautizada a mano "General". Ahí se muestran dos encabezados iguales y es una colisión
+puramente visual. Lo más simple es que el bloque sin sección se dibuje distinto de todos modos
+—ya lo tiene que hacer para el general anidado—, no prohibir el nombre.
+
+Por la misma razón, el encabezado "General" **no se dibuja cuando es el único bloque**: repite
+lo que ya dice el título de la receta. Es el mismo criterio que esconde el nombre de la sección
+automática, aplicado a los pasos.
 
 **Qué títulos se pueden repetir.** Solo "General". Los que nombran una sección de la receta
 —propia o traída de otra— **se usan una sola vez**: dos bloques "Crema" en el mismo listado

@@ -96,6 +96,18 @@ class DuracionTest {
     fun `un numero absurdo se rechaza y sugiere cambiar de unidad`() {
         assertNull(errorEnCantidadDeDuracion("$MAXIMA_CANTIDAD_DE_DURACION", apto = true))
         assertNotNull(errorEnCantidadDeDuracion("${MAXIMA_CANTIDAD_DE_DURACION + 1}", apto = true))
+    }
+
+    @Test
+    fun `una cantidad enorme recibe el aviso del tope, no el de los decimales`() {
+        // Este campo arrastraba el mismo error que los demás desde antes: comparar contra
+        // `toInt().toDouble()` se pega al tope de Int, así que un número entero de once
+        // dígitos respondía "usa un número entero" —falso— en vez del aviso que sí enseña
+        // qué hacer, que es probar con otra unidad.
+        assertEquals(
+            "Más de $MAXIMA_CANTIDAD_DE_DURACION parece un error: prueba con otra unidad",
+            errorEnCantidadDeDuracion("10000000000", apto = true)
+        )
         assertNotNull(errorEnCantidadDeDuracion("300", apto = true))
     }
 

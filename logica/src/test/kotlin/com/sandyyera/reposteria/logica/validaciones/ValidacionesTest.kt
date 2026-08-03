@@ -167,4 +167,27 @@ class ValidacionesTest {
         assertNotNull(errores.nombre)
         assertNotNull(errores.valorPorGramo)
     }
+
+    // --- Si un número es entero ---
+
+    @Test
+    fun `reconoce los enteros y los decimales`() {
+        assertTrue(esNumeroEntero(0.0))
+        assertTrue(esNumeroEntero(7.0))
+        assertTrue(esNumeroEntero(-3.0))
+        assertFalse(esNumeroEntero(2.5))
+        assertFalse(esNumeroEntero(-1.5))
+    }
+
+    @Test
+    fun `un numero enorme sigue siendo entero`() {
+        // Es la razón de que la función exista. La forma "obvia" —comparar contra
+        // `toInt().toDouble()`— se pega al tope de Int en vez de desbordar, así que este
+        // número dejaba de coincidir consigo mismo y cuatro campos respondían "tiene que
+        // ser un número entero" sobre un número entero. El aviso mentía y el tope de
+        // verdad nunca llegaba a revisarse.
+        assertTrue(esNumeroEntero(10_000_000_000.0))
+        assertTrue(esNumeroEntero(-10_000_000_000.0))
+        assertTrue(esNumeroEntero(1e20))
+    }
 }

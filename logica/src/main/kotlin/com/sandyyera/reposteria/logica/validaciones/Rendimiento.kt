@@ -2,7 +2,6 @@ package com.sandyyera.reposteria.logica.validaciones
 
 import com.sandyyera.reposteria.logica.precios.ModoPrecio
 import com.sandyyera.reposteria.logica.precios.PrecioVigente
-import kotlin.math.floor
 
 /**
  * Las reglas del paso "Rendimiento" (8.3), que no necesitan mirar la base de datos.
@@ -32,7 +31,7 @@ fun errorEnTrozosTexto(texto: String): String? {
     val numero = textoANumero(texto) ?: return "Escribe un número válido"
     return when {
         numero.isNaN() || numero.isInfinite() -> "Escribe un número válido"
-        numero != floor(numero) -> "Los trozos son un número entero"
+        !esNumeroEntero(numero) -> "Los trozos son un número entero"
         numero < 1 -> "Tiene que rendir al menos 1 trozo"
         numero > MAXIMO_TROZOS -> "¿Seguro? Más de $MAXIMO_TROZOS trozos parece un error"
         else -> null
