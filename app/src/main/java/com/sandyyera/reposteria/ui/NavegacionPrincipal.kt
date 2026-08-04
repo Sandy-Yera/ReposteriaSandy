@@ -31,12 +31,14 @@ import com.sandyyera.reposteria.ui.ingredientes.ListaIngredientesScreen
 import com.sandyyera.reposteria.ui.moldes.ListaMoldesScreen
 import com.sandyyera.reposteria.ui.moldes.MoldesViewModel
 import com.sandyyera.reposteria.ui.recetas.CantidadesViewModel
+import com.sandyyera.reposteria.ui.recetas.GastosViewModel
 import com.sandyyera.reposteria.ui.recetas.ListaRecetasScreen
 import com.sandyyera.reposteria.ui.recetas.DuracionViewModel
 import com.sandyyera.reposteria.ui.recetas.MoldeDeRecetaViewModel
 import com.sandyyera.reposteria.ui.recetas.PasoCantidadesScreen
 import com.sandyyera.reposteria.ui.recetas.PasoDeReceta
 import com.sandyyera.reposteria.ui.recetas.PasoDuracionScreen
+import com.sandyyera.reposteria.ui.recetas.PasoGastosScreen
 import com.sandyyera.reposteria.ui.recetas.PasoMoldeScreen
 import com.sandyyera.reposteria.ui.recetas.PasoRendimientoScreen
 import com.sandyyera.reposteria.ui.recetas.RendimientoViewModel
@@ -166,6 +168,18 @@ fun NavegacionPrincipal(
                 modelo = viewModel(
                     key = "duracion-$idAbierta",
                     factory = DuracionViewModel.fabrica(idAbierta, contenedor.recetas)
+                ),
+                pasoActual = pasoActual,
+                alElegirPaso = elegirPaso,
+                alCerrarReceta = cerrarReceta,
+                modifier = modifier
+            )
+
+            PasoDeReceta.GASTOS -> PasoGastosScreen(
+                tituloReceta = tituloReceta,
+                modelo = viewModel(
+                    key = "gastos-$idAbierta",
+                    factory = GastosViewModel.fabrica(idAbierta, contenedor.recetas)
                 ),
                 pasoActual = pasoActual,
                 alElegirPaso = elegirPaso,

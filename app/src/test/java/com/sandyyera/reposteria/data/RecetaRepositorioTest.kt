@@ -14,6 +14,7 @@ import com.sandyyera.reposteria.logica.validaciones.NOMBRE_SECCION_POR_DEFECTO
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -154,6 +155,114 @@ class RecetaRepositorioTest {
 
         assertTrue(enLaOtra is Resultado.Listo)
         assertEquals(2, repositorio.obtenerIngredientes(id).size)
+    }
+
+    // --- Precios (8.6) ---
+
+    private suspend fun recetaConCosto(): Long {
+        val id = crearReceta()
+        repositorio.agregarIngrediente(
+            repositorio.obtenerSecciones(id).single().id, ingrediente("Harina", 1.4), 1000.0
+        )
+        repositorio.guardarRendimiento(id, "6", "1.000")
+        return id
+    }
+
+    @Test
+    fun `crear un precio lo deja guardado y anotado`() = runBlocking {
+        val id = recetaConCosto()
+
+        val r = repositorio.crearPrecio(id, ModoPrecio.TROZO, "1", "500")
+
+        assertTrue(r is Resultado.Listo)
+        val guardado = repositorio.observarPrecios(id).first().single()
+        assertEquals(500.0, guardado.precioTotal, 0.001)
+        assertEquals(1, guardado.cantidad)
+        assertEquals(TipoEvento.CREACION, historial.eventos.last().tipo)
+    }
+
+    @Test
+    fun `el primero no queda marcado como referencia, y no hace falta`() = runBlocking {
+        // `precioDeReferencia` cae solo en el de menor ganancia cuando nadie eligió, así que
+        // con un precio único ese manda igual. Marcarlo diría que alguien lo decidió, y la
+        // pantalla usa esa diferencia para distinguir "lo elegiste tú" del respaldo.
+        val id = recetaConCosto()
+
+        repositorio.crearPrecio(id, ModoPrecio.TROZO, "1", "500")
+
+        assertFalse(repositorio.observarPrecios(id).first().single().esReferencia)
+    }
+
+    @Test
+    fun `no se puede crear una promo de mas trozos de los que rinde`() = runBlocking {
+        val id = recetaConCosto()   // rinde 6
+
+        val r = repositorio.crearPrecio(id, ModoPrecio.TROZO, "8", "4.000")
+
+        assertTrue(r is Resultado.NoSePudo)
+        assertTrue(repositorio.observarPrecios(id).first().isEmpty())
+    }
+
+    @Test
+    fun `editar un precio conserva cual es la referencia`() = runBlocking {
+        // Escribir la fila entera sin este cuidado apagaría la referencia en silencio.
+        val id = recetaConCosto()
+        repositorio.crearPrecio(id, ModoPrecio.TROZO, "1", "500")
+        repositorio.crearPrecio(id, ModoPrecio.TROZO, "2", "1.500")
+        val laPromo = repositorio.observarPrecios(id).first().first { it.cantidad == 2 }
+        repositorio.elegirPrecioDeReferencia(id, laPromo.id)
+
+        repositorio.editarPrecio(laPromo.id, ModoPrecio.TROZO, "2", "1.800")
+
+        val despues = repositorio.observarPrecios(id).first().first { it.cantidad == 2 }
+        assertEquals(1800.0, despues.precioTotal, 0.001)
+        assertTrue(despues.esReferencia)
+    }
+
+    @Test
+    fun `se puede dejar la referencia perdiendo plata, y es a proposito`() = runBlocking {
+        // `errorAlElegirReferencia` protege el acto de ELEGIR una promo que pierde, que es una
+        // decisión. Bajarle el precio a la que ya manda es otra cosa, y bloquearlo sería una
+        // regla que no se sostiene: al mismo estado se llega sin tocar precios, con que suba
+        // el costo de un ingrediente en otra pantalla. Lo que corresponde es avisarlo.
+        val id = recetaConCosto()
+        repositorio.crearPrecio(id, ModoPrecio.TROZO, "1", "500")
+        val elUnico = repositorio.observarPrecios(id).first().single()
+
+        val r = repositorio.editarPrecio(elUnico.id, ModoPrecio.TROZO, "1", "50")
+
+        assertTrue(r is Resultado.Listo)
+        assertEquals(50.0, repositorio.observarPrecios(id).first().single().precioTotal, 0.001)
+    }
+
+    @Test
+    fun `borrar un precio lo nombra en el historial antes de que desaparezca`() = runBlocking {
+        val id = recetaConCosto()
+        repositorio.crearPrecio(id, ModoPrecio.TROZO, "2", "1.500", etiqueta = "Promo sábado")
+        val elPrecio = repositorio.observarPrecios(id).first().single()
+
+        repositorio.eliminarPrecio(elPrecio.id)
+
+        assertTrue(repositorio.observarPrecios(id).first().isEmpty())
+        val evento = historial.eventos.last()
+        assertEquals(TipoEvento.ELIMINACION, evento.tipo)
+        assertTrue("Lo nombra", evento.descripcion.contains("Promo sábado"))
+    }
+
+    @Test
+    fun `el snapshot observado se entera de lo que escriben los otros pasos`() = runBlocking {
+        val id = recetaConCosto()
+        repositorio.crearPrecio(id, ModoPrecio.TROZO, "1", "500")
+        assertEquals(1400.0, repositorio.observarDatosCalculo(id).first()!!.costoTotal, 0.001)
+
+        repositorio.agregarIngrediente(
+            repositorio.obtenerSecciones(id).single().id, ingrediente("Manjar", 4.0), 100.0
+        )
+
+        val despues = repositorio.observarDatosCalculo(id).first()!!
+        assertEquals("Subió 400", 1800.0, despues.costoTotal, 0.001)
+        assertEquals(6, despues.trozos)
+        assertEquals(1, despues.precios.size)
     }
 
     // --- El costo (8.2 y decisión #3) ---

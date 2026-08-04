@@ -5,6 +5,7 @@ import com.sandyyera.reposteria.data.db.entidades.EntidadEvento
 import com.sandyyera.reposteria.data.db.entidades.Receta
 import com.sandyyera.reposteria.data.db.entidades.RecetaDuracion
 import com.sandyyera.reposteria.data.db.entidades.RecetaIngrediente
+import com.sandyyera.reposteria.data.db.entidades.RecetaPrecio
 import com.sandyyera.reposteria.data.db.entidades.RecetaSeccion
 import com.sandyyera.reposteria.data.db.entidades.TipoEvento
 import com.sandyyera.reposteria.data.db.entidades.aVigente
@@ -17,6 +18,7 @@ import com.sandyyera.reposteria.logica.moldes.DimensionesMolde
 import com.sandyyera.reposteria.logica.moldes.ModoReescalado
 import com.sandyyera.reposteria.logica.moldes.factorEscala
 import com.sandyyera.reposteria.logica.precios.DatosCalculoReceta
+import com.sandyyera.reposteria.logica.precios.ModoPrecio
 import com.sandyyera.reposteria.logica.busqueda.sonElMismoTexto
 import com.sandyyera.reposteria.logica.precios.errorAlElegirReferencia
 import com.sandyyera.reposteria.logica.validaciones.NOMBRE_SECCION_POR_DEFECTO
@@ -26,12 +28,14 @@ import com.sandyyera.reposteria.logica.validaciones.errorEnCantidadDeDuracion
 import com.sandyyera.reposteria.logica.validaciones.errorEnNombreSeccion
 import com.sandyyera.reposteria.logica.validaciones.errorEnNumeroPositivoTexto
 import com.sandyyera.reposteria.logica.validaciones.promocionesQueNoCabenEn
+import com.sandyyera.reposteria.logica.validaciones.revisarPrecio
 import com.sandyyera.reposteria.logica.validaciones.revisarRendimiento
 import com.sandyyera.reposteria.logica.validaciones.textoANumero
 import com.sandyyera.reposteria.logica.validaciones.esNombreAutomaticoDeSeccion
 import com.sandyyera.reposteria.logica.validaciones.errorEnTituloReceta
 import com.sandyyera.reposteria.logica.validaciones.nombreSugeridoParaPrimeraSeccion
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
@@ -738,6 +742,175 @@ class RecetaRepositorio(
                 precios = precios[id].orEmpty().map { it.aVigente() }
             )
         }.toMap()
+    }
+
+    /** Los precios de una receta, avisando cuando cambian. La que usa la pantalla (8.6). */
+    fun observarPrecios(recetaId: Long): Flow<List<RecetaPrecio>> = dao.observarPrecios(recetaId)
+
+    /**
+     * El snapshot de una receta, **avisando cuando cambia** (8.5).
+     *
+     * Es a `obtenerDatosCalculo` lo que `observarCostos` es a `costosDe`: la misma foto, pero
+     * para mostrar en vez de para calcular. Hace falta porque de las cinco cosas que lleva el
+     * snapshot, **tres las escriben otros pasos**: el costo sale de los ingredientes
+     * (paso 1), los trozos del rendimiento (paso 3) y el título del primero. Con una lectura
+     * de una sola vez, este paso mostraría ganancias calculadas contra un costo que ya cambió
+     * — que es exactamente el error que costó la tanda 3.
+     *
+     * Devuelve `null` mientras la receta no exista o no tenga rendimiento: es un estado real
+     * —la receta se está creando, o se acaba de borrar— y no un error. Los trozos caen a 1
+     * cuando falta la fila, que es el valor con que se siembra la receta y el único que no
+     * revienta las divisiones.
+     */
+    fun observarDatosCalculo(recetaId: Long): Flow<DatosCalculoReceta?> = combine(
+        dao.observarReceta(recetaId),
+        dao.observarRendimiento(recetaId),
+        dao.observarCostos(),
+        dao.observarPrecios(recetaId)
+    ) { receta, rendimiento, costos, precios ->
+        receta?.let {
+            DatosCalculoReceta(
+                recetaId = it.id,
+                titulo = it.titulo,
+                // El mapa no trae entrada para las recetas sin ingredientes: el `GROUP BY` no
+                // les da fila, y ahí 0 es el costo correcto.
+                costoTotal = costos[recetaId] ?: 0.0,
+                trozos = rendimiento?.trozos ?: 1,
+                precios = precios.map { precio -> precio.aVigente() }
+            )
+        }
+    }
+
+    /**
+     * Crea un precio o promoción de la receta (8.6).
+     *
+     * Revisa lo escrito con `revisarPrecio` **antes** de tocar nada, y necesita los trozos de
+     * la receta para el tope del último trozo — una promo de 3 trozos no cabe en una receta
+     * que rinde 2 (6.2).
+     *
+     * **No lo deja como referencia**, ni siquiera al ser el primero. No hace falta:
+     * `precioDeReferencia` cae solo en el de menor ganancia cuando nadie eligió, así que con
+     * un precio único ese precio manda igual. Marcarlo diría que alguien lo decidió, y la
+     * pantalla usa justamente esa diferencia para distinguir "lo elegiste tú" de "es el
+     * respaldo".
+     */
+    suspend fun crearPrecio(
+        recetaId: Long,
+        modo: ModoPrecio,
+        cantidadTexto: String,
+        precioTotalTexto: String,
+        etiqueta: String = ""
+    ): Resultado {
+        val trozos = dao.obtenerRendimiento(recetaId)?.trozos ?: 1
+        revisarPrecio(precioTotalTexto, cantidadTexto, modo, trozos, etiqueta).let { errores ->
+            if (!errores.sirve) {
+                return Resultado.NoSePudo(
+                    errores.precioTotal ?: errores.cantidad ?: errores.etiqueta.orEmpty()
+                )
+            }
+        }
+        val cantidad = textoANumero(cantidadTexto)?.toInt() ?: return Resultado.NoSePudo(
+            "Escribe cuántos lleva"
+        )
+        val total = textoANumero(precioTotalTexto) ?: return Resultado.NoSePudo(
+            "Escribe a cuánto lo vendes"
+        )
+
+        dao.insertarPrecio(
+            RecetaPrecio(
+                recetaId = recetaId,
+                modo = modo,
+                cantidad = cantidad,
+                precioTotal = redondearADosDecimales(total),
+                etiqueta = etiqueta.trim().ifBlank { null }
+            )
+        )
+        historial.registrar(
+            tipo = TipoEvento.CREACION,
+            entidad = EntidadEvento.RECETA,
+            descripcion = "Se agregó un precio a '${dao.obtener(recetaId)?.titulo}'",
+            detalleAdicional = etiqueta.trim().ifBlank { null }
+        )
+        return Resultado.Listo
+    }
+
+    /**
+     * Cambia un precio que ya existe.
+     *
+     * **Se puede dejar la referencia perdiendo plata, y es a propósito.** `errorAlElegirReferencia`
+     * protege el acto de *elegir* una promo que pierde, que es una decisión; bajarle el precio
+     * a la que ya manda es otra cosa, y bloquearlo sería además una regla que no se sostiene:
+     * el mismo estado se alcanza sin tocar los precios, con que suba el costo de un
+     * ingrediente en otra pantalla. Lo que corresponde no es impedirlo sino **decirlo**, y de
+     * eso se encarga el aviso de la pantalla.
+     */
+    suspend fun editarPrecio(
+        precioId: Long,
+        modo: ModoPrecio,
+        cantidadTexto: String,
+        precioTotalTexto: String,
+        etiqueta: String = ""
+    ): Resultado {
+        val actual = dao.obtenerPrecioPorId(precioId)
+            ?: return Resultado.NoSePudo("Ese precio ya no existe")
+        val trozos = dao.obtenerRendimiento(actual.recetaId)?.trozos ?: 1
+        revisarPrecio(precioTotalTexto, cantidadTexto, modo, trozos, etiqueta).let { errores ->
+            if (!errores.sirve) {
+                return Resultado.NoSePudo(
+                    errores.precioTotal ?: errores.cantidad ?: errores.etiqueta.orEmpty()
+                )
+            }
+        }
+        val cantidad = textoANumero(cantidadTexto)?.toInt() ?: return Resultado.NoSePudo(
+            "Escribe cuántos lleva"
+        )
+        val total = textoANumero(precioTotalTexto) ?: return Resultado.NoSePudo(
+            "Escribe a cuánto lo vendes"
+        )
+
+        // Se conservan `id`, `recetaId` y **`esReferencia`**: editar un precio no cambia cuál
+        // manda. Escribir el objeto entero sin ese cuidado apagaría la referencia en silencio.
+        dao.actualizarPrecio(
+            actual.copy(
+                modo = modo,
+                cantidad = cantidad,
+                precioTotal = redondearADosDecimales(total),
+                etiqueta = etiqueta.trim().ifBlank { null }
+            )
+        )
+        historial.registrar(
+            tipo = TipoEvento.EDICION,
+            entidad = EntidadEvento.RECETA,
+            descripcion = "Se editó un precio de '${dao.obtener(actual.recetaId)?.titulo}'",
+            detalleAdicional = etiqueta.trim().ifBlank { null }
+        )
+        return Resultado.Listo
+    }
+
+    /**
+     * Borra un precio.
+     *
+     * **Borrar el de referencia no deja la receta rota**: `precioDeReferencia` vuelve a caer
+     * en el de menor ganancia, que es el mismo respaldo de una receta que nunca eligió. Y
+     * borrar el último tampoco: una receta sin precios es exactamente una receta que todavía
+     * no pasó por este paso, y las cifras automáticas se esconden solas (`tienePrecio`).
+     *
+     * No pide confirmación: eso es de la pantalla (6.3).
+     */
+    suspend fun eliminarPrecio(precioId: Long): Resultado {
+        val precio = dao.obtenerPrecioPorId(precioId)
+            ?: return Resultado.NoSePudo("Ese precio ya no existe")
+        // El nombre se lee **antes** de borrar, porque después no habría cómo nombrarlo.
+        val comoSeLlama = descripcionDePromocion(precio.aVigente())
+        val titulo = dao.obtener(precio.recetaId)?.titulo
+
+        dao.eliminarPrecio(precioId)
+        historial.registrar(
+            tipo = TipoEvento.ELIMINACION,
+            entidad = EntidadEvento.RECETA,
+            descripcion = "Se quitó el precio '$comoSeLlama' de '$titulo'"
+        )
+        return Resultado.Listo
     }
 
     /**

@@ -43,7 +43,15 @@ enum class PasoDeReceta(val titulo: String) {
      */
     MOLDE("Molde"),
     RENDIMIENTO("Rendimiento"),
-    DURACION("Duración")
+    DURACION("Duración"),
+
+    /**
+     * Gastos y ganancias (8.5). Va **después** de rendimiento y duración porque necesita las
+     * dos cosas que aquellos definen: el costo sale de los ingredientes y todo se reparte
+     * entre los trozos. Preguntando el precio antes, cada cifra que se muestre acá es una
+     * cuenta hecha contra datos que todavía no existen.
+     */
+    GASTOS("Gastos y ganancias")
 }
 
 /**

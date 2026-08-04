@@ -1070,6 +1070,8 @@ Antes no se elegía: mandaba siempre la de menor ganancia. Eso servía para no p
 
 **Si no hay ninguna elegida** —una receta recién creada, o filas anteriores a esta versión— se usa la de menor ganancia. Es el respaldo más prudente y es exactamente el comportamiento anterior, así que nada cambia hasta que se elija.
 
+Ese respaldo tiene una consecuencia que hay que tener presente: **puede caer en un precio que pierde plata**, precisamente porque elige el que menos deja. O sea que el estado que `errorAlElegirReferencia` impide alcanzar a mano se alcanza solo, sin que nadie haga nada. No es contradictorio ni se arregla prohibiendo: al mismo lugar se llega sin tocar los precios, con que suba el costo de un ingrediente en otra pantalla. La conclusión es que **"la referencia pierde plata" es un estado que hay que mostrar, no uno que se pueda prevenir** — y por eso el aviso de la pantalla cuelga del estado y no de la acción.
+
 #### La referencia no puede perder plata
 
 Elegir como referencia una promo que se vende bajo el costo **se rechaza**: la referencia queda como estaba y se muestra el aviso `MENSAJE_PROMOCION_CON_PERDIDAS` ("Esta promoción genera pérdidas").
@@ -1932,12 +1934,20 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 
 ### Fase 7 — Receta: Gastos y Ganancias + Precios/Promociones
 
-- **Ya está construida y probada la lógica pura**: las fórmulas (`precioDeReferencia`,
-  `trozoGanador`, `ingresoBruto`…) estaban desde antes, y se les sumó la **validación del
-  formulario** (`revisarPrecio` y compañía, en `logica/validaciones/Precios.kt`), que era el
-  hueco: nada revisaba lo que se escribe **antes** de crear un precio, y de ahí salen dos
-  divisiones por cero que reventarían mucho después y en otra pantalla. Queda por hacer el
-  repositorio (crear, editar y borrar precios) y la pantalla.
+- **Hecha.** La lógica pura estaba desde antes (`precioDeReferencia`, `trozoGanador`,
+  `ingresoBruto`…) y se le sumó la validación del formulario (`revisarPrecio`); encima de eso
+  se construyeron el repositorio —`crearPrecio`, `editarPrecio`, `eliminarPrecio`,
+  `observarPrecios` y `observarDatosCalculo`— y el **quinto paso** de la receta, con su
+  `GastosViewModel` y su `PasoGastosScreen`.
+- **Lo que apareció al construirla:** el respaldo automático **puede caer en un precio que
+  pierde plata**, y no es un descuido de ninguno de los dos lados. `precioDeMenorGanancia`
+  elige a propósito el que menos deja —o sea el más probable de estar en pérdida— mientras que
+  `errorAlElegirReferencia` prohíbe elegir ese mismo a mano. Con varios precios y ninguno
+  elegido, manda el malo. **No se tapa prohibiendo**, porque al mismo estado se llega sin
+  tocar los precios: basta que suba el costo de un ingrediente en otra pantalla. Lo que
+  corresponde es decirlo, y por eso la pantalla lleva el aviso "Con este precio la receta no
+  alcanza a cubrir su costo" ligado al estado y no a la acción que lo produjo. Por lo mismo
+  `editarPrecio` **no** bloquea dejar la referencia en pérdida.
 - **Construyes:** precio base (primera fila de `RecetaPrecio`, sin campo `activo`), `precioDeMenorGanancia`, `precioEfectivoPorTrozo`, `trozoGanador`, lista visual de todos los precios guardados.
 - **Hecho cuando:** el ejemplo base (costo 1.400, precio 500 → trozo 3, ganancia 100) y el ejemplo con promo (2×1.500 → trozo 2, ganancia 100) dan esos resultados exactos; agregar una segunda promo con más ganancia no cambia los campos automáticos mientras no la elijas como referencia, y elegirla los cambia en el momento; elegir como referencia una promo que se vende bajo el costo se rechaza con el aviso "Esta promoción genera pérdidas" y deja la anterior intacta; una receta que se vende bajo su costo muestra la advertencia de "no alcanza a cubrir su costo" en vez de un trozo ganador imposible; y el tope del último trozo rechaza una promo de más trozos de los que rinde la receta.
 

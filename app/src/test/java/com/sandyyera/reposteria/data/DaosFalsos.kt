@@ -478,30 +478,44 @@ class RecetaDaoFalso(
     override suspend fun preciosDeVariasRecetas(recetaIds: List<Long>): List<RecetaPrecio> =
         precios.filter { it.recetaId in recetaIds }.sortedWith(compareBy({ it.recetaId }, { it.id }))
 
+    // Cuelga del contador `cambios`, la imitación del InvalidationTracker. Que sea un `Flow`
+    // de verdad es lo que permite probar el paso de gastos: sus cifras dependen del costo y
+    // de los trozos, que escriben otros dos pasos.
+    override fun observarPrecios(recetaId: Long): Flow<List<RecetaPrecio>> =
+        cambios.map { precios.filter { p -> p.recetaId == recetaId }.sortedBy { p -> p.id } }
+
+    override suspend fun obtenerPrecioPorId(precioId: Long): RecetaPrecio? =
+        precios.firstOrNull { it.id == precioId }
+
     override suspend fun insertarPrecio(precio: RecetaPrecio): Long {
         val id = nuevoId()
         precios += precio.copy(id = id)
+        cambio()
         return id
     }
 
     override suspend fun actualizarPrecio(precio: RecetaPrecio) {
         val posicion = precios.indexOfFirst { it.id == precio.id }
         if (posicion >= 0) precios[posicion] = precio
+        cambio()
     }
 
     override suspend fun eliminarPrecio(precioId: Long) {
         precios.removeAll { it.id == precioId }
+        cambio()
     }
 
     override suspend fun quitarReferenciaATodos(recetaId: Long) {
         for (i in precios.indices) {
             if (precios[i].recetaId == recetaId) precios[i] = precios[i].copy(esReferencia = false)
         }
+        cambio()
     }
 
     override suspend fun marcarComoReferencia(precioId: Long) {
         val posicion = precios.indexOfFirst { it.id == precioId }
         if (posicion >= 0) precios[posicion] = precios[posicion].copy(esReferencia = true)
+        cambio()
     }
 
     // --- Simulación de venta ---

@@ -320,8 +320,16 @@ interface RecetaDao {
     @Query("SELECT * FROM receta_precios WHERE recetaId = :recetaId ORDER BY id")
     suspend fun obtenerPrecios(recetaId: Long): List<RecetaPrecio>
 
+    /** Lo mismo, avisando cuando cambian. **La que hay que usar para mostrarlos.** */
+    @Query("SELECT * FROM receta_precios WHERE recetaId = :recetaId ORDER BY id")
+    fun observarPrecios(recetaId: Long): Flow<List<RecetaPrecio>>
+
     @Query("SELECT * FROM receta_precios WHERE recetaId IN (:recetaIds) ORDER BY recetaId, id")
     suspend fun preciosDeVariasRecetas(recetaIds: List<Long>): List<RecetaPrecio>
+
+    /** Un precio suelto por su id. La usan editar y borrar, que reciben solo eso. */
+    @Query("SELECT * FROM receta_precios WHERE id = :precioId")
+    suspend fun obtenerPrecioPorId(precioId: Long): RecetaPrecio?
 
     @Insert
     suspend fun insertarPrecio(precio: RecetaPrecio): Long
