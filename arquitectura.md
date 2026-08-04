@@ -1170,7 +1170,29 @@ fun simulacion(ingresoBase: Double, costoBase: Double, dias: Int, unidades: Int)
 }
 ```
 
-`simulacion()` ya era pura y se queda igual. Sus dos entradas salen del mismo snapshot que el resto de la pantalla: `ingresoBase = ingresoBruto(d)` y `costoBase = d.costoTotal`, ambos derivados del precio de referencia (8.5). `diasPorSemana` / `unidadesPorDia` quedan visibles y editables al final; cualquier cambio recalcula todo en el momento — y como recalcular es aritmética sobre datos ya en memoria, es instantáneo y no vuelve a consultar la base.
+**`simulacion()` sola no alcanza, y ahí se paga la deuda de 8.6.1.** Multiplicar
+`ingresoBruto(d)` por los días y las unidades arrastra el resto de cada producto: una receta de
+3 trozos con una promo de 2 deja siempre uno suelto mirando producto por producto, pero
+vendiendo dos productos son 6 trozos y la promo entra tres veces justas. Multiplicando daría
+10.000 donde entran 9.000 — mil pesos que no existen.
+
+Por eso la pantalla usa `simulacionDeVenta(d, dias, unidades)`, que **reparte el total de la
+semana**: tantas promociones como quepan en todo lo que se vende, y el resto al precio
+individual. `simulacion()` se queda como la aritmética pura, que es lo que necesita la
+simulación de varias recetas de un empleado (10.2), donde el ingreso de cada una ya viene
+calculado.
+
+**El costo sí se multiplica y no se reparte.** Producir dos tortas cuesta el doble que producir
+una, sin promociones que valgan. Esa asimetría es real y conviene tenerla presente al leer las
+cifras.
+
+`diasPorSemana` / `unidadesPorDia` quedan visibles y editables, y guardan solos como el resto
+de los pasos (8.4.1). Cualquier cambio recalcula todo en el momento — es aritmética sobre datos
+ya en memoria, sin volver a la base.
+
+**Los dos campos van arriba y las cifras debajo**, al revés que en gastos: acá lo que se viene a
+hacer es *mover* los números y mirar qué pasa, así que tenerlos a mano importa más que ver el
+resultado primero.
 
 ### 8.8 Paso 7 — Pasos
 
@@ -2036,8 +2058,11 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
   (`logica/validaciones/Simulacion.kt`), que era el hueco. Lo raro de este paso es que **nada
   explota** con un número absurdo —se multiplica y ya—, así que sin reglas un 200 escrito en
   vez de un 20 sale como una proyección creíble y diez veces falsa.
-- **Construyes:** `diasPorSemana`/`unidadesPorDia`, cálculo semanal/mensual con `SEMANAS_POR_MES = 4.33`.
-- **Hecho cuando:** el ejemplo (5.000 × 4 × 2 = 40.000 semanal) funciona, y editar los valores después de guardado recalcula todo.
+- **Hecha.** Se construyeron el sexto paso con su `SimulacionViewModel` y su
+  `PasoSimulacionScreen`, el guardado automático de los dos campos, y sobre todo
+  `simulacionDeVenta`, que **reparte el total de la semana** en vez de multiplicar el ingreso
+  de un producto — la deuda que había quedado escrita en 8.6.1. El ejemplo de arriba funciona,
+  y la asimetría queda a la vista: el ingreso se reparte y el costo se multiplica.
 
 ### Fase 9 — Receta: Pasos con títulos + recetas que usan recetas (8.8 y 8.11)
 

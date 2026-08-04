@@ -29,6 +29,8 @@ import com.sandyyera.reposteria.logica.validaciones.errorEnNombreSeccion
 import com.sandyyera.reposteria.logica.validaciones.errorEnNumeroPositivoTexto
 import com.sandyyera.reposteria.logica.validaciones.promocionesQueNoCabenEn
 import com.sandyyera.reposteria.logica.validaciones.revisarPrecio
+import com.sandyyera.reposteria.data.db.entidades.RecetaSimulacionVenta
+import com.sandyyera.reposteria.logica.validaciones.revisarSimulacion
 import com.sandyyera.reposteria.logica.validaciones.revisarRendimiento
 import com.sandyyera.reposteria.logica.validaciones.textoANumero
 import com.sandyyera.reposteria.logica.validaciones.esNombreAutomaticoDeSeccion
@@ -912,6 +914,52 @@ class RecetaRepositorio(
             tipo = TipoEvento.ELIMINACION,
             entidad = EntidadEvento.RECETA,
             descripcion = "Se quitó el precio '$comoSeLlama' de '$titulo'"
+        )
+        return Resultado.Listo
+    }
+
+    // --- Simulación de ventas (8.7) ---
+
+    /** Cuántos días y cuántas unidades, avisando cuando cambian. */
+    fun observarSimulacion(recetaId: Long): Flow<RecetaSimulacionVenta?> =
+        dao.observarSimulacionVenta(recetaId)
+
+    /**
+     * Guarda los dos campos de la simulación.
+     *
+     * Revisa antes de escribir, con las reglas de `logica/validaciones/Simulacion.kt`. Lo
+     * particular de este paso es que **nada explota** con un número absurdo —los dos campos se
+     * multiplican y ya— así que sin esa revisión un 200 escrito en vez de un 20 se guardaría
+     * tan campante y saldría como una proyección mensual creíble y diez veces falsa.
+     *
+     * **No registra evento en el historial**: esto no es un dato de la receta sino una
+     * pregunta de "qué pasaría si", que se cambia muchas veces seguidas justamente para
+     * comparar. Anotar cada tanteo llenaría el historial de ruido.
+     */
+    suspend fun guardarSimulacion(
+        recetaId: Long,
+        diasTexto: String,
+        unidadesTexto: String
+    ): Resultado {
+        val errores = revisarSimulacion(diasTexto, unidadesTexto)
+        if (!errores.sirve) {
+            return Resultado.NoSePudo(errores.diasPorSemana ?: errores.unidadesPorDia.orEmpty())
+        }
+        val dias = textoANumero(diasTexto)?.toInt() ?: return Resultado.NoSePudo(
+            "Escribe cuántos días la vendes"
+        )
+        val unidades = textoANumero(unidadesTexto)?.toInt() ?: return Resultado.NoSePudo(
+            "Escribe cuántas vendes por día"
+        )
+        // La fila se siembra al crear la receta, así que existe siempre; si no existiera, la
+        // receta se borró mientras se escribía.
+        dao.obtenerSimulacionVenta(recetaId) ?: return Resultado.NoSePudo("Esa receta ya no existe")
+        dao.actualizarSimulacionVenta(
+            RecetaSimulacionVenta(
+                recetaId = recetaId,
+                diasPorSemana = dias,
+                unidadesPorDia = unidades
+            )
         )
         return Resultado.Listo
     }

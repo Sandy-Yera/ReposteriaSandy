@@ -52,7 +52,13 @@ enum class PasoDeReceta(val titulo: String) {
      * entre los trozos. Preguntando el precio antes, cada cifra que se muestre acá es una
      * cuenta hecha contra datos que todavía no existen.
      */
-    GASTOS("Gastos y ganancias")
+    GASTOS("Gastos y ganancias"),
+
+    /**
+     * Ganancias simuladas (8.7). Va **después** de gastos porque proyecta lo que aquel
+     * calcula: sin precio de referencia no hay nada que multiplicar por los días.
+     */
+    SIMULACION("Ganancias simuladas")
 }
 
 /**

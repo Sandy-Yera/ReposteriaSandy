@@ -370,6 +370,10 @@ interface RecetaDao {
     @Query("SELECT * FROM receta_simulacion_venta WHERE recetaId = :recetaId")
     suspend fun obtenerSimulacionVenta(recetaId: Long): RecetaSimulacionVenta?
 
+    /** Lo mismo, avisando cuando cambia. La que usa la pantalla (8.7). */
+    @Query("SELECT * FROM receta_simulacion_venta WHERE recetaId = :recetaId")
+    fun observarSimulacionVenta(recetaId: Long): Flow<RecetaSimulacionVenta?>
+
     @Update
     suspend fun actualizarSimulacionVenta(simulacion: RecetaSimulacionVenta)
 

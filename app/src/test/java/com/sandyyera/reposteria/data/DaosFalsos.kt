@@ -527,9 +527,16 @@ class RecetaDaoFalso(
     override suspend fun obtenerSimulacionVenta(recetaId: Long): RecetaSimulacionVenta? =
         simulaciones.firstOrNull { it.recetaId == recetaId }
 
+    // Cuelga del contador `cambios`, como el resto de las consultas reactivas del falso.
+    override fun observarSimulacionVenta(recetaId: Long): Flow<RecetaSimulacionVenta?> =
+        cambios.map { simulaciones.firstOrNull { fila -> fila.recetaId == recetaId } }
+
     override suspend fun actualizarSimulacionVenta(simulacion: RecetaSimulacionVenta) {
         val posicion = simulaciones.indexOfFirst { it.recetaId == simulacion.recetaId }
         if (posicion >= 0) simulaciones[posicion] = simulacion
+        // Después de escribir, no antes: avisar de un cambio que todavía no pasó haría que
+        // quien reaccione lea la fila vieja.
+        cambio()
     }
 
     // --- Lo que todavía no hace falta ---
