@@ -146,6 +146,74 @@ class MigracionTest {
     }
 
     /**
+     * 3 → 4: los moldes aprenden **cómo se cortan** (9.4).
+     *
+     * Lo que más importa comprobar acá no es que las columnas existan sino **que no toquen
+     * nada**: el corte solo dice de qué tamaño queda cada trozo, y si llegara a rozar el área
+     * o el volumen cambiaría el reescalado, o sea las cantidades de todas las recetas
+     * enlazadas. Por eso se revisa que las medidas del molde queden idénticas.
+     *
+     * Las columnas van en **las dos tablas**, porque `DimensionesMolde` se embebe suelta en
+     * `moldes` y con prefijo `molde_` en `receta_rendimiento`. Olvidar la segunda deja la app
+     * sin arrancar, y eso solo se ve acá.
+     *
+     * **Sin `DEFAULT`, a diferencia de las dos anteriores**: son columnas nulables y ahí
+     * `null` significa algo — "el corte que corresponda a la forma" — que para el rectángulo,
+     * el cuadrado y el círculo ya es la respuesta correcta sin que nadie los edite.
+     */
+    @Test
+    fun la_migracion_3_a_4_agrega_el_corte_sin_tocar_las_medidas() {
+        ayudante.createDatabase(nombreDeLaBase, 3).use { base ->
+            base.execSQL(
+                "INSERT INTO moldes (id, nombre, tipoForma, largoCm, anchoCm, alturaMoldeCm, " +
+                    "creadoEn, actualizadoEn) " +
+                    "VALUES (1, 'Rectangular', 'RECTANGULO', 30.0, 20.0, 6.0, 1000, 1000)"
+            )
+            base.execSQL(
+                "INSERT INTO recetas (id, titulo, pasoPrevio, creadoEn, actualizadoEn) " +
+                    "VALUES (1, 'Torta de manjar', 'No necesita', 1000, 1000)"
+            )
+            base.execSQL(
+                "INSERT INTO receta_rendimiento " +
+                    "(recetaId, usaMolde, moldeOrigenId, pesoFinalG, trozos, " +
+                    "molde_tipoForma, molde_largoCm, molde_anchoCm, molde_alturaMoldeCm, " +
+                    "pesoReescaladoSinRevisar) " +
+                    "VALUES (1, 1, 1, 1200.0, 8, 'RECTANGULO', 30.0, 20.0, 6.0, 0)"
+            )
+        }
+
+        val migrada = ayudante.runMigrationsAndValidate(
+            nombreDeLaBase, 4, true, AppDatabase.MIGRACION_3_4
+        )
+
+        migrada
+            .query(
+                "SELECT largoCm, anchoCm, alturaMoldeCm, formaDelCorte, largoDeCorteCm " +
+                    "FROM moldes WHERE id = 1"
+            )
+            .use { fila ->
+                assertTrue("El molde que ya estaba sigue ahí", fila.moveToFirst())
+                assertEquals("Y sus medidas intactas", 30.0, fila.getDouble(0), 0.001)
+                assertEquals(20.0, fila.getDouble(1), 0.001)
+                assertEquals(6.0, fila.getDouble(2), 0.001)
+                assertTrue("Sin corte anotado: se deduce de la forma", fila.isNull(3))
+                assertTrue(fila.isNull(4))
+            }
+
+        migrada
+            .query(
+                "SELECT molde_largoCm, molde_anchoCm, molde_formaDelCorte " +
+                    "FROM receta_rendimiento WHERE recetaId = 1"
+            )
+            .use { fila ->
+                assertTrue("Y la receta enlazada también", fila.moveToFirst())
+                assertEquals(30.0, fila.getDouble(0), 0.001)
+                assertEquals(20.0, fila.getDouble(1), 0.001)
+                assertTrue(fila.isNull(2))
+            }
+    }
+
+    /**
      * Abrir la base con la app entera después de migrar.
      *
      * `runMigrationsAndValidate` compara esquemas, pero es Room quien al abrir revisa el
@@ -166,13 +234,16 @@ class MigracionTest {
         // nueva no calza con la anterior.
         ayudante
             .runMigrationsAndValidate(
-                nombreDeLaBase, 3, true, AppDatabase.MIGRACION_1_2, AppDatabase.MIGRACION_2_3
+                nombreDeLaBase, 4, true,
+                AppDatabase.MIGRACION_1_2, AppDatabase.MIGRACION_2_3, AppDatabase.MIGRACION_3_4
             )
             .close()
 
         val contexto = InstrumentationRegistry.getInstrumentation().targetContext
         val base = Room.databaseBuilder(contexto, AppDatabase::class.java, nombreDeLaBase)
-            .addMigrations(AppDatabase.MIGRACION_1_2, AppDatabase.MIGRACION_2_3)
+            .addMigrations(
+                AppDatabase.MIGRACION_1_2, AppDatabase.MIGRACION_2_3, AppDatabase.MIGRACION_3_4
+            )
             .build()
 
         try {

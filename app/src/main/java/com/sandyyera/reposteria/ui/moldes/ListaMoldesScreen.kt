@@ -50,6 +50,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sandyyera.reposteria.data.db.entidades.Molde
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.logica.moldes.DimensionesMolde
+import com.sandyyera.reposteria.logica.moldes.FormaDelCorte
+import com.sandyyera.reposteria.logica.moldes.nombreDelCorte
 import com.sandyyera.reposteria.logica.moldes.medidasEnTexto
 import com.sandyyera.reposteria.logica.moldes.TipoFormaMolde
 import com.sandyyera.reposteria.logica.validaciones.CampoDeMolde
@@ -66,6 +68,9 @@ data class AccionesMoldes(
     val cambiarNombre: (String) -> Unit = {},
     val elegirForma: (TipoFormaMolde) -> Unit = {},
     val cambiarMedida: (CampoDeMolde, String) -> Unit = { _, _ -> },
+    val elegirCorte: (FormaDelCorte) -> Unit = {},
+    val cambiarLargoDeCorte: (String) -> Unit = {},
+    val cambiarAnchoDeCorte: (String) -> Unit = {},
     val guardar: () -> Unit = {},
     val pedirBorrado: (Molde) -> Unit = {},
     val confirmarBorrado: () -> Unit = {},
@@ -93,6 +98,9 @@ fun ListaMoldesScreen(
             cambiarNombre = modelo::cambiarNombre,
             elegirForma = modelo::elegirForma,
             cambiarMedida = modelo::cambiarMedida,
+            elegirCorte = modelo::elegirCorte,
+            cambiarLargoDeCorte = modelo::cambiarLargoDeCorte,
+            cambiarAnchoDeCorte = modelo::cambiarAnchoDeCorte,
             guardar = modelo::guardar,
             pedirBorrado = modelo::pedirBorrado,
             confirmarBorrado = modelo::confirmarBorrado,
@@ -371,6 +379,54 @@ private fun FormularioMolde(
                         error = estado.errorDe(campo),
                         accionDelTeclado =
                             if (campo == estado.campos.last()) ImeAction.Done else ImeAction.Next
+                    )
+                }
+
+                // --- Cómo se corta (9.4) ---
+                //
+                // Solo se pregunta en el triángulo y el exótico: en las otras tres la
+                // respuesta es obvia y `corteSugerido` ya la sabe. Preguntarla siempre sería
+                // pedir que confirmen algo que nadie discute.
+                if (estado.hayQuePreguntarElCorte) {
+                    Text(
+                        text = "¿Cómo se corta?",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        // Se dice para qué sirve, porque es opcional y si no nadie entiende
+                        // por qué se lo preguntan.
+                        text = "Es solo para saber de qué tamaño queda cada trozo. No cambia " +
+                            "el volumen ni las cantidades de las recetas.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    FormaDelCorte.entries.forEach { corte ->
+                        FilterChip(
+                            selected = estado.corteEfectivo == corte,
+                            onClick = { acciones.elegirCorte(corte) },
+                            label = { Text(nombreDelCorte(corte)) }
+                        )
+                    }
+                }
+
+                if (estado.pideMedidasDeCorte) {
+                    Text(
+                        text = "De qué tamaño es la parte que se corta, si la sabes:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    CampoNumerico(
+                        valor = estado.largoDeCorte,
+                        alCambiar = acciones.cambiarLargoDeCorte,
+                        etiqueta = "Largo para cortar (cm)",
+                        error = estado.errorCorte,
+                        accionDelTeclado = ImeAction.Next
+                    )
+                    CampoNumerico(
+                        valor = estado.anchoDeCorte,
+                        alCambiar = acciones.cambiarAnchoDeCorte,
+                        etiqueta = "Ancho para cortar (cm)",
+                        accionDelTeclado = ImeAction.Done
                     )
                 }
 

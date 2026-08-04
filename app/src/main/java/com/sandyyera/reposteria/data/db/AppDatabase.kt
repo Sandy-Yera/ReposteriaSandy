@@ -56,7 +56,7 @@ import com.sandyyera.reposteria.data.db.entidades.RecetaSimulacionVenta
         EmpleadoSimulacionMultipleDetalle::class,
         EventoCambio::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 @TypeConverters(Convertidores::class)
@@ -103,7 +103,7 @@ abstract class AppDatabase : RoomDatabase() {
                 NOMBRE_ARCHIVO
             )
                 .addCallback(SembrarDatosIniciales)
-                .addMigrations(MIGRACION_1_2, MIGRACION_2_3)
+                .addMigrations(MIGRACION_1_2, MIGRACION_2_3, MIGRACION_3_4)
                 .build()
 
         /**
@@ -149,6 +149,34 @@ abstract class AppDatabase : RoomDatabase() {
          * agregar una columna `NOT NULL` sin él— y tiene que calzar con el
          * `@ColumnInfo(defaultValue = "0")` de la entidad, o la app no arranca.
          */
+        /**
+         * 3 → 4: cómo se corta un molde (9.4).
+         *
+         * Tres columnas por tabla, y van en **las dos** porque `DimensionesMolde` se embebe
+         * dos veces: suelta en `moldes` y con el prefijo `molde_` en `receta_rendimiento`.
+         * Olvidar la segunda dejaría la app sin arrancar, porque Room compara el esquema
+         * entero al abrir.
+         *
+         * **Sin `DEFAULT`, a diferencia de las dos migraciones anteriores**, y no es un
+         * descuido: estas columnas son nulables, y ahí `null` significa algo — "el corte que
+         * corresponda a la forma", que para el rectángulo, el cuadrado y el círculo es la
+         * respuesta correcta sin que nadie los edite. Las dos migraciones de antes agregaban
+         * columnas `NOT NULL`, que en SQLite sí exigen un valor por defecto.
+         *
+         * **Ninguna de estas columnas entra en el área ni en el volumen.** El corte solo dice
+         * de qué tamaño queda cada trozo; el reescalado no las mira.
+         */
+        val MIGRACION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE moldes ADD COLUMN formaDelCorte TEXT")
+                db.execSQL("ALTER TABLE moldes ADD COLUMN largoDeCorteCm REAL")
+                db.execSQL("ALTER TABLE moldes ADD COLUMN anchoDeCorteCm REAL")
+                db.execSQL("ALTER TABLE receta_rendimiento ADD COLUMN molde_formaDelCorte TEXT")
+                db.execSQL("ALTER TABLE receta_rendimiento ADD COLUMN molde_largoDeCorteCm REAL")
+                db.execSQL("ALTER TABLE receta_rendimiento ADD COLUMN molde_anchoDeCorteCm REAL")
+            }
+        }
+
         val MIGRACION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(

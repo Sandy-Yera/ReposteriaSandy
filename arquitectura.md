@@ -1528,6 +1528,44 @@ medidas**; para reescalar de verdad está el cambio de molde sin quitarlo antes.
 
 ---
 
+### 9.4 Cómo se corta un molde
+
+**El corte no es la forma, y esa distinción es todo el punto.** La forma decide el área y el
+volumen, o sea el reescalado — la operación que multiplica todas las cantidades de una receta.
+El corte no toca ninguno de esos números: solo dice de qué tamaño queda cada trozo.
+
+Salió de una pregunta que apuntaba a lo correcto con la palabra equivocada: *"¿a qué figura se
+parece este molde?"*. Un molde de rosca **no se parece** a un círculo — le falta el centro y su
+volumen es otro, medido con agua justamente porque no hay fórmula. Pero **se corta** como un
+círculo, en cuñas, y eso sí es cierto. Preguntando por el parecido quedaba abierta la puerta a
+recalcular ese volumen como si fuera un cilindro, y ahí las cantidades se van al tacho en
+silencio. Preguntando por el corte, no.
+
+**Tres formas de cortar:** en cuñas (como una torta redonda), en cuadros o tiras, y no se
+corta — que es el caso de las galletas con forma, donde cada pieza **es** un trozo. La tercera
+no es "no sé": es un dato.
+
+**Solo se pregunta donde no es obvio.** Rectángulo y cuadrado se cortan en cuadros; el círculo
+en cuñas. Esas tres las deduce `corteSugerido` y no hace falta contestarlas — y de paso, los
+moldes que ya existían quedan con corte sin que nadie los edite. El triángulo y el exótico sí
+se preguntan: en el primero depende de por dónde se corte, y el segundo puede ser cualquier
+cosa.
+
+**En cuñas la respuesta son grados, no centímetros.** Un trozo de torta redonda es una porción,
+y sus lados no miden lo mismo cerca del centro que en el borde: decir "4 × 6 cm" ahí sería
+falso, decir "porciones de 45°" es exacto. En cuadros se corta el lado largo y se conservan el
+corto y la altura, que es como se corta de verdad.
+
+**Las medidas del corte son opcionales y van aparte de las del molde.** Un triángulo o un
+exótico cortados en cuadros no tienen de dónde sacar los lados, así que se escriben a mano; y
+si no se escriben, la app **no dice nada** en vez de inventar un número. Van en campos propios
+(`largoDeCorteCm`, `anchoDeCorteCm`) y no reusando los del molde, para que quede en el código
+lo mismo que dice esta sección: describir un corte no puede cambiar un área.
+
+**Dónde se ve:** el tamaño de cada trozo aparece en Rendimiento, pegado al peso de cada trozo.
+Son la misma pregunta partida en dos — aquel dice cuánto pesa lo que se entrega y este de qué
+porte es — y los dos salen de los mismos trozos.
+
 ## 10. Módulo Empleados
 
 ### 10.1 Cálculo de sueldo por receta

@@ -44,7 +44,21 @@ data class DimensionesMolde(
     val baseTrianguloCm: Double? = null,   // triángulo: base, para el área
     val alturaTrianguloCm: Double? = null, // triángulo: altura de esa base (NO la del molde)
     val volumenExoticoCm3: Double? = null, // exótico: medido llenando el molde con agua
-    val alturaMoldeCm: Double? = null      // profundidad real del molde
+    val alturaMoldeCm: Double? = null,     // profundidad real del molde
+
+    // --- Cómo se corta (9.4) ---
+    //
+    // **Nada de esto entra en `areaCm2` ni en `volumenCm3`**, y por eso está separado de las
+    // medidas de arriba en vez de reusarlas: el área y el volumen son los que mueven el
+    // reescalado, y el corte solo dice de qué tamaño queda cada trozo. Mezclarlos sería
+    // abrirle la puerta a que describir un corte cambie las cantidades de una receta.
+
+    /** En cuñas, en cuadrícula o nada. `null` = el que corresponda a la forma. */
+    val formaDelCorte: FormaDelCorte? = null,
+
+    /** Los dos lados con los que se corta, **solo** cuando la forma no los da (9.4). */
+    val largoDeCorteCm: Double? = null,
+    val anchoDeCorteCm: Double? = null
 ) {
     /**
      * Superficie de la base del molde.

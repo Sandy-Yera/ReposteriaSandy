@@ -9,6 +9,8 @@ import com.sandyyera.reposteria.data.repositorio.RecetaRepositorio
 import com.sandyyera.reposteria.data.repositorio.Resultado
 import com.sandyyera.reposteria.logica.formato.formatearMientrasSeEscribe
 import com.sandyyera.reposteria.logica.formato.formatearNumero
+import com.sandyyera.reposteria.logica.moldes.DimensionesMolde
+import com.sandyyera.reposteria.logica.moldes.medidaDelTrozo
 import com.sandyyera.reposteria.logica.rendimiento.AVISO_PESO_REESCALADO
 import com.sandyyera.reposteria.logica.rendimiento.PESO_NO_ESPECIFICADO
 import com.sandyyera.reposteria.logica.rendimiento.pesoPorTrozo
@@ -80,6 +82,8 @@ data class EstadoRendimiento(
      * cuando salga del horno, y para entonces la app ya se cerró.
      */
     val pesoSinRevisar: Boolean = false,
+    /** Las medidas del molde, si usa uno. De acá sale el tamaño de cada trozo (9.4). */
+    val dimensionesDelMolde: DimensionesMolde? = null,
     /**
      * Lo que contestó el repositorio al guardar solo, si rechazó (8.4.1).
      *
@@ -103,6 +107,24 @@ data class EstadoRendimiento(
 
     /** El aviso de "compruébalo", o `null` si no hay nada que comprobar. */
     val avisoDelPeso: String? get() = AVISO_PESO_REESCALADO.takeIf { pesoSinRevisar }
+
+    /**
+     * De qué tamaño queda cada trozo, según cómo se corte el molde (9.4).
+     *
+     * Va **al lado del peso de cada trozo**, que es la otra mitad de la misma pregunta: aquel
+     * dice cuánto pesa lo que se entrega y este de qué porte es. Los dos salen de los trozos,
+     * así que cambiar el número los mueve a la vez.
+     *
+     * Es `null` muchas veces y está bien: sin molde no hay nada que medir, un molde con forma
+     * de persona no se corta, y de un triángulo sin medidas anotadas no se puede afirmar
+     * nada. **Mejor no decir nada que decir un número inventado.**
+     */
+    val medidaDeCadaTrozo: String?
+        get() {
+            val d = dimensionesDelMolde ?: return null
+            val cuantos = trozos.toIntOrNull()?.takeIf { it >= 1 } ?: return null
+            return medidaDelTrozo(d, d.formaDelCorte, cuantos, ::formatearNumero)
+        }
 
     /** Cuánto pesa cada trozo, o "No especificado" si no hay peso anotado (8.3). */
     val pesoDeCadaTrozo: String
@@ -203,6 +225,9 @@ class RendimientoViewModel(
             // cargado: estar en el mapa es exactamente "tiene ingredientes".
             tieneIngredientes = recetaId in costos,
             pesoSinRevisar = rendimiento?.pesoReescaladoSinRevisar ?: false,
+            // Solo si de verdad usa molde: `quitarMolde` conserva las medidas por si fue un
+            // error, así que la fila las tiene igual (la misma trampa del paso anterior).
+            dimensionesDelMolde = rendimiento?.dimensiones?.takeIf { rendimiento.usaMolde },
             rechazoAlGuardar = avisos.first,
             mensaje = avisos.second,
             cargando = false

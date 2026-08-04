@@ -79,10 +79,32 @@ fun errorEnMedidaDeMoldeTexto(texto: String): String? =
 data class ErroresMolde(
     val nombre: String? = null,
     val forma: String? = null,
-    val medidas: Map<CampoDeMolde, String> = emptyMap()
+    val medidas: Map<CampoDeMolde, String> = emptyMap(),
+    /** Lo que esté mal en las medidas **del corte**, que son opcionales (9.4). */
+    val corte: String? = null
 ) {
     /** `true` cuando no queda nada por corregir y el molde se puede guardar. */
-    val sirve: Boolean get() = nombre == null && forma == null && medidas.isEmpty()
+    val sirve: Boolean
+        get() = nombre == null && forma == null && medidas.isEmpty() && corte == null
+}
+
+/**
+ * Revisa las dos medidas **del corte**, que son opcionales y van juntas o no van (9.4).
+ *
+ * Son otra cosa que las medidas del molde y por eso se revisan aparte: aquellas deciden el
+ * área y el volumen —o sea el reescalado— y son obligatorias; estas solo dicen de qué tamaño
+ * queda cada trozo, y no anotarlas es una respuesta perfectamente válida. La app se limita a
+ * no mostrar el tamaño del trozo.
+ *
+ * Lo único que se exige es que **estén las dos o ninguna**: con un solo lado no se puede
+ * medir nada, y dejarlo pasar guardaría un dato a medias que después no sirve.
+ */
+fun errorEnMedidasDeCorte(largoTexto: String, anchoTexto: String): String? {
+    val largoVacio = largoTexto.isBlank()
+    val anchoVacio = anchoTexto.isBlank()
+    if (largoVacio && anchoVacio) return null
+    if (largoVacio || anchoVacio) return "Escribe los dos lados, o ninguno"
+    return errorEnMedidaDeMoldeTexto(largoTexto) ?: errorEnMedidaDeMoldeTexto(anchoTexto)
 }
 
 /**
@@ -95,18 +117,27 @@ data class ErroresMolde(
 fun revisarMolde(
     nombre: String,
     forma: TipoFormaMolde?,
-    medidas: Map<CampoDeMolde, String>
+    medidas: Map<CampoDeMolde, String>,
+    largoDeCorteTexto: String = "",
+    anchoDeCorteTexto: String = ""
 ): ErroresMolde {
+    // Las medidas del corte se revisan igual sin forma elegida: son independientes de ella.
+    val corte = errorEnMedidasDeCorte(largoDeCorteTexto, anchoDeCorteTexto)
     if (forma == null) {
         return ErroresMolde(
             nombre = errorEnNombreEscrito(nombre),
-            forma = "Elige la forma del molde"
+            forma = "Elige la forma del molde",
+            corte = corte
         )
     }
     val problemas = camposDe(forma).mapNotNull { campo ->
         errorEnMedidaDeMoldeTexto(medidas[campo].orEmpty())?.let { campo to it }
     }
-    return ErroresMolde(nombre = errorEnNombreEscrito(nombre), medidas = problemas.toMap())
+    return ErroresMolde(
+        nombre = errorEnNombreEscrito(nombre),
+        medidas = problemas.toMap(),
+        corte = corte
+    )
 }
 
 /**

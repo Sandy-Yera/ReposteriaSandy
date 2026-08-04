@@ -268,6 +268,21 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Qué hace: el texto fijo del campo molde cuando la receta no usa ninguno (una salsa, por ejemplo).
 - Cómo funciona: constante con el texto `"No utiliza molde"`, especificado en la tabla de la sección 8.3. **Todavía no la usa nadie**: su consumidor es el paso "Rendimiento" de la Fase 5. Queda registrada justamente para que ahí se reutilice en vez de escribir el texto suelto en el Composable.
 
+### FormaDelCorte, corteSugerido, medidaDelTrozo y nombreDelCorte ✅ IMPLEMENTADAS
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/moldes/Corte.kt
+- Qué hacen: de qué tamaño queda cada trozo según cómo se parta el molde (9.4).
+- Cómo funcionan: `FormaDelCorte` es `CUNAS`, `CUADRICULA` o `NO_SE_CORTA`. **El corte no es la forma**, y esa separación es la razón de que exista: la forma decide el área y el volumen —o sea el reescalado— y el corte solo dice el tamaño del trozo. Nació de la pregunta "¿a qué figura se parece este molde?", que apunta a lo correcto con la palabra equivocada: un molde de rosca **no se parece** a un círculo —le falta el centro y su volumen es otro, medido con agua— pero **se corta** como uno. Con "parecido" quedaba abierta la puerta a recalcular ese volumen y llevarse por delante las cantidades. `corteSugerido` devuelve `null` justo en el triángulo y el exótico, que son los dos que hay que preguntar; las otras tres formas quedan resueltas sin que nadie las edite. `medidaDelTrozo` devuelve **grados en cuñas y centímetros en cuadrícula** —un trozo de torta redonda es una porción y sus lados no miden lo mismo cerca del centro que en el borde—, corta el lado largo conservando el corto y la altura, y **devuelve `null` cuando no se puede afirmar nada**: sin medidas de corte anotadas, o con un molde que no se corta. Mejor no decir nada que decir un número inventado.
+
+### errorEnMedidasDeCorte ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Moldes.kt
+- Qué hace: revisa las dos medidas **del corte**, que son opcionales (9.4).
+- Cómo funciona: recibe los dos textos y devuelve el motivo o `null`. Son otra cosa que las medidas del molde y por eso se revisan aparte: aquellas deciden el área y el volumen y son obligatorias; estas solo dicen el tamaño del trozo, y no anotarlas es una respuesta válida — la app simplemente no muestra el tamaño. Lo único que se exige es que **estén las dos o ninguna**: con un solo lado no se mide nada y guardarlo dejaría un dato a medias. `revisarMolde` las recibe con valor por defecto, así que todo lo que ya la llamaba sigue igual.
+
+### MIGRACION_3_4 ✅ IMPLEMENTADA
+- Ubicación: app/src/main/java/com/sandyyera/reposteria/data/db/AppDatabase.kt
+- Qué hace: agrega las tres columnas del corte al pasar de la versión 3 a la 4 (9.4).
+- Cómo funciona: `Migration(3, 4)` con seis `ALTER TABLE` — tres en `moldes` y tres en `receta_rendimiento` con el prefijo `molde_`, porque `DimensionesMolde` se embebe en las dos y olvidar una deja la app sin arrancar. **Sin `DEFAULT`, al revés que las dos anteriores**, y no es descuido: estas columnas son nulables y ahí `null` significa algo — "el corte que corresponda a la forma", que para rectángulo, cuadrado y círculo ya es la respuesta correcta sin editarlos. Las anteriores agregaban columnas `NOT NULL`, que en SQLite sí exigen valor por defecto. La prueba de migración comprueba sobre todo **que las medidas del molde queden idénticas**: si el corte llegara a rozar el área o el volumen, cambiaría el reescalado de todas las recetas enlazadas. **`app/schemas/4.json` lo genera Room al compilar** y hay que versionarlo.
+
 ### medidasEnTexto ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/moldes/Moldes.kt
 - Qué hace: las medidas de un molde **tal como se tomaron**, en una línea: "30 × 20 cm, 6 de alto".

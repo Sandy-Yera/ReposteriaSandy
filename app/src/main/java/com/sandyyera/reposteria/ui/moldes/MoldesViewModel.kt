@@ -12,6 +12,8 @@ import com.sandyyera.reposteria.data.repositorio.ResultadoGuardarMolde
 import com.sandyyera.reposteria.logica.busqueda.filtrarPor
 import com.sandyyera.reposteria.logica.formato.formatearMientrasSeEscribe
 import com.sandyyera.reposteria.logica.formato.formatearNumero
+import com.sandyyera.reposteria.logica.moldes.FormaDelCorte
+import com.sandyyera.reposteria.logica.moldes.corteSugerido
 import com.sandyyera.reposteria.logica.moldes.TipoFormaMolde
 import com.sandyyera.reposteria.logica.validaciones.CampoDeMolde
 import com.sandyyera.reposteria.logica.validaciones.ErroresMolde
@@ -67,13 +69,47 @@ sealed interface DialogoMolde {
         val medidas: Map<CampoDeMolde, String> = emptyMap(),
         val tocado: Boolean = false,
         val guardando: Boolean = false,
-        val rechazo: String? = null
+        val rechazo: String? = null,
+
+        // --- Cómo se corta (9.4) ---
+        /** `null` = el que corresponda a la forma. Solo hay que elegirlo en dos formas. */
+        val corte: FormaDelCorte? = null,
+        val largoDeCorte: String = "",
+        val anchoDeCorte: String = ""
     ) : DialogoMolde {
 
         /** Las medidas que hay que pedir ahora mismo. Vacía mientras no haya forma elegida. */
         val campos: List<CampoDeMolde> get() = forma?.let { camposDe(it) } ?: emptyList()
 
-        private val errores: ErroresMolde get() = revisarMolde(nombre, forma, medidas)
+        /** El corte que se va a guardar: el elegido, o el que sugiere la forma. */
+        val corteEfectivo: FormaDelCorte? get() = corte ?: corteSugerido(forma)
+
+        /**
+         * Si hay que **preguntar** cómo se corta.
+         *
+         * En el rectángulo, el cuadrado y el círculo la respuesta es obvia y `corteSugerido`
+         * la sabe; preguntarla sería pedir que confirmen algo que nadie discute. En el
+         * triángulo y el exótico no hay forma de deducirla, y esos son justamente los dos
+         * casos que motivaron todo esto.
+         */
+        val hayQuePreguntarElCorte: Boolean get() = forma != null && corteSugerido(forma) == null
+
+        /**
+         * Si hacen falta las dos medidas del corte escritas a mano.
+         *
+         * Solo cuando se corta en cuadrícula **y la forma no da los lados**: un rectángulo ya
+         * los tiene, un triángulo no.
+         */
+        val pideMedidasDeCorte: Boolean
+            get() = corteEfectivo == FormaDelCorte.CUADRICULA &&
+                forma != TipoFormaMolde.RECTANGULO &&
+                forma != TipoFormaMolde.CUADRADO
+
+        private val errores: ErroresMolde
+            get() = revisarMolde(nombre, forma, medidas, largoDeCorte, anchoDeCorte)
+
+        /** Lo que esté mal en las medidas del corte, que son opcionales. */
+        val errorCorte: String? get() = errores.corte.takeIf { tocado }
 
         /**
          * [rechazo] va primero, igual que en las secciones: es lo que contestó el
@@ -200,7 +236,10 @@ class MoldesViewModel(
             nombre = molde.nombre,
             forma = d.tipoForma,
             medidas = escritas,
-            tocado = true
+            tocado = true,
+            corte = d.formaDelCorte,
+            largoDeCorte = d.largoDeCorteCm?.let { formatearNumero(it) }.orEmpty(),
+            anchoDeCorte = d.anchoDeCorteCm?.let { formatearNumero(it) }.orEmpty()
         )
     }
 
@@ -220,6 +259,16 @@ class MoldesViewModel(
         it.copy(forma = forma, tocado = true)
     }
 
+    fun elegirCorte(corte: FormaDelCorte) = enFormulario { it.copy(corte = corte, tocado = true) }
+
+    fun cambiarLargoDeCorte(texto: String) = enFormulario {
+        it.copy(largoDeCorte = formatearMientrasSeEscribe(texto), tocado = true)
+    }
+
+    fun cambiarAnchoDeCorte(texto: String) = enFormulario {
+        it.copy(anchoDeCorte = formatearMientrasSeEscribe(texto), tocado = true)
+    }
+
     fun cambiarMedida(campo: CampoDeMolde, texto: String) = enFormulario {
         // Por el mismo camino que el resto de los campos numéricos: el punto de mil lo pone
         // el ViewModel, no el Composable.
@@ -235,13 +284,26 @@ class MoldesViewModel(
         viewModelScope.launch {
             val editando = formulario.editando
             val resultado = if (editando == null) {
-                repositorio.crear(formulario.nombre, formulario.forma, formulario.medidas)
+                repositorio.crear(
+                    nombre = formulario.nombre,
+                    forma = formulario.forma,
+                    medidas = formulario.medidas,
+                    // Se guarda el efectivo y no el elegido: así un molde rectangular queda
+                    // con su corte anotado sin que nadie lo haya tocado, y la medida del
+                    // trozo aparece sola.
+                    corte = formulario.corteEfectivo,
+                    largoDeCorteTexto = formulario.largoDeCorte,
+                    anchoDeCorteTexto = formulario.anchoDeCorte
+                )
             } else {
                 repositorio.actualizar(
-                    editando.id,
-                    formulario.nombre,
-                    formulario.forma,
-                    formulario.medidas
+                    moldeId = editando.id,
+                    nombre = formulario.nombre,
+                    forma = formulario.forma,
+                    medidas = formulario.medidas,
+                    corte = formulario.corteEfectivo,
+                    largoDeCorteTexto = formulario.largoDeCorte,
+                    anchoDeCorteTexto = formulario.anchoDeCorte
                 )
             }
 

@@ -357,6 +357,43 @@ class RendimientoViewModelTest {
         }
 
     @Test
+    fun `la medida de cada trozo sale del molde y se mueve con los trozos`() = probar { modelo ->
+        // Un molde cuadrado de 20 en 4 trozos da tiras de 5 x 20. Cambiar los trozos la mueve,
+        // igual que al peso: los dos salen de la misma división.
+        recetas.definirMolde(recetaId, cuadrado(20.0, 6.0), null)
+        advanceUntilIdle()
+
+        modelo.cambiarTrozos("4")
+        advanceUntilIdle()
+        assertEquals("5 × 20 cm, 6 de alto", modelo.estado.value.medidaDeCadaTrozo)
+
+        modelo.cambiarTrozos("2")
+        advanceUntilIdle()
+        assertEquals("10 × 20 cm, 6 de alto", modelo.estado.value.medidaDeCadaTrozo)
+    }
+
+    @Test
+    fun `sin molde no hay medida de trozo que mostrar`() = probar { modelo ->
+        // Y eso está bien: no hay nada que medir. Mejor no decir nada que inventar.
+        assertNull(modelo.estado.value.medidaDeCadaTrozo)
+    }
+
+    @Test
+    fun `al quitar el molde la medida del trozo desaparece`() = probar { modelo ->
+        // La misma trampa del paso anterior: `quitarMolde` conserva las medidas por si fue un
+        // error, así que hay que mirar `usaMolde` y no solo si hay dimensiones.
+        recetas.definirMolde(recetaId, cuadrado(20.0, 6.0), null)
+        recetas.guardarRendimiento(recetaId, "4", "1.000")
+        advanceUntilIdle()
+        assertNotNull(modelo.estado.value.medidaDeCadaTrozo)
+
+        recetas.quitarMolde(recetaId)
+        advanceUntilIdle()
+
+        assertNull(modelo.estado.value.medidaDeCadaTrozo)
+    }
+
+    @Test
     fun `la advertencia de la promocion se va sola al borrarla`() = probar { modelo ->
         // Se vio en el celular: bajar los trozos con una promo que no cabe deja la
         // advertencia, y borrar la promo desde el otro paso no la sacaba — el aviso quedaba

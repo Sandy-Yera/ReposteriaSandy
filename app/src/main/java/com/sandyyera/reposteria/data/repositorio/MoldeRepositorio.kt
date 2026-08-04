@@ -10,6 +10,8 @@ import com.sandyyera.reposteria.logica.moldes.TipoFormaMolde
 import com.sandyyera.reposteria.logica.validaciones.CampoDeMolde
 import com.sandyyera.reposteria.logica.validaciones.ErroresMolde
 import com.sandyyera.reposteria.logica.validaciones.dimensionesDesde
+import com.sandyyera.reposteria.logica.moldes.FormaDelCorte
+import com.sandyyera.reposteria.logica.validaciones.textoANumero
 import com.sandyyera.reposteria.logica.validaciones.revisarMolde
 import kotlinx.coroutines.flow.Flow
 
@@ -74,17 +76,27 @@ class MoldeRepositorio(
     suspend fun crear(
         nombre: String,
         forma: TipoFormaMolde?,
-        medidas: Map<CampoDeMolde, String>
+        medidas: Map<CampoDeMolde, String>,
+        corte: FormaDelCorte? = null,
+        largoDeCorteTexto: String = "",
+        anchoDeCorteTexto: String = ""
     ): ResultadoGuardarMolde {
         val limpio = nombre.trim()
-        val errores = revisarMolde(limpio, forma, medidas)
+        val errores = revisarMolde(limpio, forma, medidas, largoDeCorteTexto, anchoDeCorteTexto)
         if (!errores.sirve) return ResultadoGuardarMolde.NoValido(errores)
 
         buscarParecido(limpio)?.let { return ResultadoGuardarMolde.YaExiste(it) }
 
         // No puede ser null: `revisarMolde` ya aprobó las mismas medidas, y hay una prueba
         // en `logica/` de que todo lo que aprueba se puede convertir.
-        val dimensiones = dimensionesDesde(forma, medidas)
+        // El corte se pega **después** de armar las dimensiones y con un `copy`, no
+        // dentro de `dimensionesDesde`: así queda a la vista que no participa del área ni del
+        // volumen, que son los que mueven el reescalado (9.4).
+        val dimensiones = dimensionesDesde(forma, medidas)?.copy(
+            formaDelCorte = corte,
+            largoDeCorteCm = textoANumero(largoDeCorteTexto),
+            anchoDeCorteCm = textoANumero(anchoDeCorteTexto)
+        )
             ?: return ResultadoGuardarMolde.NoValido(errores)
 
         val id = dao.insertar(Molde(nombre = limpio, dimensiones = dimensiones))
@@ -111,10 +123,13 @@ class MoldeRepositorio(
         moldeId: Long,
         nombre: String,
         forma: TipoFormaMolde?,
-        medidas: Map<CampoDeMolde, String>
+        medidas: Map<CampoDeMolde, String>,
+        corte: FormaDelCorte? = null,
+        largoDeCorteTexto: String = "",
+        anchoDeCorteTexto: String = ""
     ): ResultadoGuardarMolde {
         val limpio = nombre.trim()
-        val errores = revisarMolde(limpio, forma, medidas)
+        val errores = revisarMolde(limpio, forma, medidas, largoDeCorteTexto, anchoDeCorteTexto)
         if (!errores.sirve) return ResultadoGuardarMolde.NoValido(errores)
 
         buscarParecido(limpio, exceptoId = moldeId)?.let {
@@ -125,7 +140,14 @@ class MoldeRepositorio(
             ?: return ResultadoGuardarMolde.NoValido(
                 errores.copy(nombre = "Ese molde ya no existe")
             )
-        val dimensiones = dimensionesDesde(forma, medidas)
+        // El corte se pega **después** de armar las dimensiones y con un `copy`, no
+        // dentro de `dimensionesDesde`: así queda a la vista que no participa del área ni del
+        // volumen, que son los que mueven el reescalado (9.4).
+        val dimensiones = dimensionesDesde(forma, medidas)?.copy(
+            formaDelCorte = corte,
+            largoDeCorteCm = textoANumero(largoDeCorteTexto),
+            anchoDeCorteCm = textoANumero(anchoDeCorteTexto)
+        )
             ?: return ResultadoGuardarMolde.NoValido(errores)
 
         dao.actualizar(

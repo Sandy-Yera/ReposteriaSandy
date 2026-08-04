@@ -5,6 +5,7 @@ import com.sandyyera.reposteria.data.db.entidades.EntidadEvento
 import com.sandyyera.reposteria.logica.duracion.TipoDuracion
 import com.sandyyera.reposteria.data.db.entidades.TipoEvento
 import com.sandyyera.reposteria.logica.duracion.UnidadDuracion
+import com.sandyyera.reposteria.logica.moldes.FormaDelCorte
 import com.sandyyera.reposteria.logica.moldes.TipoFormaMolde
 import com.sandyyera.reposteria.logica.precios.ModoPrecio
 
@@ -18,6 +19,8 @@ import com.sandyyera.reposteria.logica.precios.ModoPrecio
 class Convertidores {
 
     @TypeConverter fun formaATexto(v: TipoFormaMolde?): String? = v?.name
+    @TypeConverter fun corteATexto(v: FormaDelCorte?): String? = v?.name
+    @TypeConverter fun textoACorte(v: String?): FormaDelCorte? = v?.let { FormaDelCorte.valueOf(it) }
     @TypeConverter fun textoAForma(v: String?): TipoFormaMolde? = v?.let { TipoFormaMolde.valueOf(it) }
 
     @TypeConverter fun modoPrecioATexto(v: ModoPrecio?): String? = v?.name

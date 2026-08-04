@@ -272,4 +272,59 @@ class MoldesValidacionTest {
             assertTrue("$forma: volumen en cero", dimensiones.volumenCm3 > 0)
         }
     }
+
+    // --- Las medidas del corte, que son opcionales (9.4) ---
+
+    @Test
+    fun `no anotar las medidas de corte esta bien`() {
+        // Son otra cosa que las medidas del molde: aquellas deciden el área y el volumen y
+        // son obligatorias; estas solo dicen el tamaño del trozo, y no saberlo es normal.
+        assertNull(errorEnMedidasDeCorte("", ""))
+    }
+
+    @Test
+    fun `pero van las dos o ninguna`() {
+        // Con un solo lado no se puede medir nada, y guardarlo dejaría un dato a medias.
+        assertNotNull(errorEnMedidasDeCorte("20", ""))
+        assertNotNull(errorEnMedidasDeCorte("", "10"))
+    }
+
+    @Test
+    fun `y si van, tienen que ser medidas de verdad`() {
+        assertNull(errorEnMedidasDeCorte("20", "10"))
+        assertNotNull(errorEnMedidasDeCorte("0", "10"))
+        assertNotNull(errorEnMedidasDeCorte("20", "abc"))
+    }
+
+    @Test
+    fun `un molde sin medidas de corte se puede guardar igual`() {
+        val errores = revisarMolde(
+            "Rectangular",
+            TipoFormaMolde.RECTANGULO,
+            mapOf(
+                CampoDeMolde.LARGO to "30",
+                CampoDeMolde.ANCHO to "20",
+                CampoDeMolde.ALTURA_MOLDE to "6"
+            )
+        )
+
+        assertTrue(errores.sirve)
+    }
+
+    @Test
+    fun `y con una sola medida de corte no`() {
+        val errores = revisarMolde(
+            "Rectangular",
+            TipoFormaMolde.RECTANGULO,
+            mapOf(
+                CampoDeMolde.LARGO to "30",
+                CampoDeMolde.ANCHO to "20",
+                CampoDeMolde.ALTURA_MOLDE to "6"
+            ),
+            largoDeCorteTexto = "10"
+        )
+
+        assertFalse(errores.sirve)
+        assertNotNull(errores.corte)
+    }
 }

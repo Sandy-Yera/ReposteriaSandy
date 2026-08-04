@@ -235,6 +235,16 @@ fun PasoRendimiento(
                             text = estado.pesoDeCadaTrozo + estado.unidadDelPeso,
                             style = MaterialTheme.typography.headlineMedium
                         )
+                        // De qué porte queda, cuando se puede saber (9.4). Va pegado al peso
+                        // porque son la misma pregunta: aquel dice cuánto pesa lo que se
+                        // entrega y este de qué tamaño es. Sin molde, o con uno que no se
+                        // corta, simplemente no aparece.
+                        estado.medidaDeCadaTrozo?.let {
+                            Text(
+                                text = it,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
                     }
                     Column {
                         Text("Cada trozo cuesta", style = MaterialTheme.typography.bodySmall)
