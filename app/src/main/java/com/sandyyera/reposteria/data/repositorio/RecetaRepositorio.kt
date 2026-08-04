@@ -765,7 +765,10 @@ class RecetaRepositorio(
     fun observarDatosCalculo(recetaId: Long): Flow<DatosCalculoReceta?> = combine(
         dao.observarReceta(recetaId),
         dao.observarRendimiento(recetaId),
-        dao.observarCostos(),
+        // **La del repositorio y no la del DAO**: aquella devuelve las filas de la consulta
+        // y esta el mapa ya armado. Pedirle el mapa a la del DAO es indexar una lista por el
+        // id de la receta, que además compila hasta que los tipos no dan.
+        observarCostos(),
         dao.observarPrecios(recetaId)
     ) { receta, rendimiento, costos, precios ->
         receta?.let {
