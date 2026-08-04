@@ -9,6 +9,7 @@ import com.sandyyera.reposteria.data.repositorio.ResultadoCrearReceta
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -49,7 +50,9 @@ class TituloDeRecetaViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun probar(cuerpo: suspend (TituloDeRecetaViewModel) -> Unit) =
+    // Con receptor `TestScope`, igual que el resto de las pruebas de ViewModel: sin él,
+    // `advanceUntilIdle()` dentro del cuerpo no encuentra a quién avanzarle el reloj.
+    private fun probar(cuerpo: suspend TestScope.(TituloDeRecetaViewModel) -> Unit) =
         runTest(despachador) {
             recetaId = (recetas.crear("Torta de manjar") as ResultadoCrearReceta.Creada).recetaId
             val modelo = TituloDeRecetaViewModel(recetaId, recetas)

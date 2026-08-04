@@ -344,6 +344,36 @@ def revisar_constantes(rutas):
     return problemas
 
 
+def revisar_aserciones(rutas):
+    """8. Una aserción de JUnit usada sin su `import org.junit.Assert.assertX`.
+
+    La revisión 2 no la ve **y no es un descuido de aquella**: mira nombres en CamelCase,
+    porque así se llaman los tipos, y las aserciones empiezan en minúscula. El agujero se
+    pagó con `assertNull` en `DuracionViewModelTest`, que además no se notaba al instalar la
+    app: `installDebug` no compila las pruebas, así que el error esperó hasta el siguiente
+    `:app:test` — dos minutos de build para enterarse de un import.
+
+    Se limita a `org.junit.Assert` a propósito. Cualquier función suelta usada sin importar
+    sería lo mismo en general, pero eso no se puede saber sin resolver el paquete de cada
+    llamada; acá el conjunto es cerrado y conocido, así que no hay falsos positivos.
+    """
+    problemas = 0
+    for ruta in rutas:
+        texto = open(ruta, encoding="utf-8").read()
+        # Con el import de estrella o de la clase entera, se califican de otra forma.
+        if re.search(r"^import\s+org\.junit\.Assert(\.\*)?$", texto, re.M):
+            continue
+        importadas = set(re.findall(r"^import\s+org\.junit\.Assert\.(\w+)", texto, re.M))
+        if not importadas:
+            continue
+        codigo = sin_comentarios_ni_textos(texto)
+        for uso in sorted(set(re.findall(r"(?<![\w.])(assert\w+)\s*\(", codigo)) - importadas):
+            print(f"  {os.path.relpath(ruta, RAIZ)}: usa '{uso}' sin importarla de "
+                  f"org.junit.Assert")
+            problemas += 1
+    return problemas
+
+
 def main():
     rutas = archivos_kotlin()
     print(f"Revisando {len(rutas)} archivos Kotlin.\n")
@@ -357,6 +387,7 @@ def main():
         ("Constantes calificadas", revisar_constantes),
         ("Nombres entre acentos graves", revisar_nombres_con_acentos),
         ("Esquemas de Room", revisar_esquemas),
+        ("Aserciones de JUnit", revisar_aserciones),
     ]:
         encontrados = revision(rutas)
         estado = "ok" if encontrados == 0 else f"{encontrados} problema(s)"
