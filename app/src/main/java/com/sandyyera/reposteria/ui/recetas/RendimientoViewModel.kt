@@ -243,6 +243,22 @@ class RendimientoViewModel(
                 pesoFinal.value = ahora.second?.let { formatearNumero(it) } ?: ""
             }
         }
+
+        // **El rechazo se reintenta cuando desaparece el obstáculo.**
+        //
+        // El único rechazo posible acá es "esta promoción no cabe si bajas los trozos". Si se
+        // borra esa promoción desde el paso de gastos, el aviso se quedaba puesto hasta que
+        // alguien tocara el campo — acusando de algo que ya no existe.
+        //
+        // No basta con borrarlo: los trozos que se pidieron **siguen sin guardarse**, así que
+        // limpiar el aviso dejaría la pantalla diciendo un número que la base no tiene. Lo
+        // que corresponde es volver a intentar lo que quedó pendiente, que es lo que se
+        // quería en primer lugar.
+        viewModelScope.launch {
+            recetas.observarPrecios(recetaId).collect {
+                if (rechazo.value != null) guardar()
+            }
+        }
     }
 
     // --- Los dos campos ---

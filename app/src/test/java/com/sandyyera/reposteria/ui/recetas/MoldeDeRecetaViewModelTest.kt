@@ -97,6 +97,49 @@ class MoldeDeRecetaViewModelTest {
     private suspend fun pesoSinRevisar(): Boolean =
         recetas.obtenerRendimiento(recetaId)?.pesoReescaladoSinRevisar ?: false
 
+    // --- Lo que la tarjeta muestra ---
+
+    @Test
+    fun `al quitar el molde no queda el rastro de sus medidas`() = probar { modelo ->
+        // `quitarMolde` conserva las medidas a propósito, por si fue un error. Pero la
+        // tarjeta las seguía mostrando debajo de "No utiliza molde", que es un rastro de algo
+        // que ya no está.
+        moldeDao.sembrar(Molde(nombre = "Redondo", dimensiones = cuadrado(20.0, 6.0)))
+        advanceUntilIdle()
+        modelo.abrirElegirMolde()
+        advanceUntilIdle()
+        modelo.elegirMoldeGuardado(cuadro(modelo).candidatos.single())
+        modelo.confirmarMolde()
+        recetas.guardarRendimiento(recetaId, "8", "1.000")
+        advanceUntilIdle()
+        assertNotNull("Con molde sí se ven", modelo.estado.value.medidasDelMolde)
+
+        modelo.pedirQuitarMolde()
+        modelo.confirmarQuitarMolde()
+        advanceUntilIdle()
+
+        assertFalse(modelo.estado.value.usaMolde)
+        assertNull("Sin molde no queda rastro", modelo.estado.value.medidasDelMolde)
+        assertNull(modelo.estado.value.areaYVolumen)
+    }
+
+    @Test
+    fun `la tarjeta dice cuanto mide el molde, no solo su area`() = probar { modelo ->
+        // Frente al mueble uno busca el de 20 por 20, no el de 400 cm².
+        moldeDao.sembrar(Molde(nombre = "Cuadrado", dimensiones = cuadrado(20.0, 6.0)))
+        advanceUntilIdle()
+        modelo.abrirElegirMolde()
+        advanceUntilIdle()
+        modelo.elegirMoldeGuardado(cuadro(modelo).candidatos.single())
+        modelo.confirmarMolde()
+        advanceUntilIdle()
+
+        val medidas = modelo.estado.value.medidasDelMolde!!
+        assertTrue("Dice los lados", medidas.contains("20"))
+        assertTrue("Y el alto", medidas.contains("6"))
+        assertTrue("El área queda aparte", modelo.estado.value.areaYVolumen!!.contains("cm²"))
+    }
+
     // --- Cuál es el molde en uso ---
 
     @Test

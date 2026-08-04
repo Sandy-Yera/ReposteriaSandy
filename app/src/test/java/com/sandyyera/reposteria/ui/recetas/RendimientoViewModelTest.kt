@@ -14,6 +14,7 @@ import com.sandyyera.reposteria.logica.moldes.TipoFormaMolde
 import com.sandyyera.reposteria.logica.precios.ModoPrecio
 import com.sandyyera.reposteria.logica.rendimiento.PESO_NO_ESPECIFICADO
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -354,6 +355,30 @@ class RendimientoViewModelTest {
 
             assertTrue(modelo.estado.value.sePuedeReescalarPorPeso)
         }
+
+    @Test
+    fun `la advertencia de la promocion se va sola al borrarla`() = probar { modelo ->
+        // Se vio en el celular: bajar los trozos con una promo que no cabe deja la
+        // advertencia, y borrar la promo desde el otro paso no la sacaba — el aviso quedaba
+        // acusando de algo que ya no existía hasta que alguien tocara el campo.
+        recetas.crearPrecio(recetaId, ModoPrecio.TROZO, "3", "3.000")
+        recetas.guardarRendimiento(recetaId, "3", "1.000")
+        advanceUntilIdle()
+
+        modelo.cambiarTrozos("2")
+        advanceUntilIdle()
+        assertNotNull("La promo de 3 no cabe en 2 trozos", modelo.estado.value.errorTrozos)
+
+        val laPromo = recetas.observarPrecios(recetaId).first().single()
+        recetas.eliminarPrecio(laPromo.id)
+        advanceUntilIdle()
+
+        assertNull("Sin la promo ya no hay nada que impedir", modelo.estado.value.errorTrozos)
+        // Y no solo se limpia el aviso: lo que se había pedido se guarda, que es lo que se
+        // quería. Borrar el aviso a secas dejaría la pantalla mostrando un 2 que la base no
+        // tiene.
+        assertEquals(2, recetas.obtenerRendimiento(recetaId)?.trozos)
+    }
 
     @Test
     fun `reescalar por peso multiplica los ingredientes`() = probar { modelo ->

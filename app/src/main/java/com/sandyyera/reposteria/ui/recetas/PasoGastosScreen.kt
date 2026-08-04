@@ -40,6 +40,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.foundation.ScrollState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -82,6 +83,7 @@ data class AccionesGastos(
 @Composable
 fun PasoGastosScreen(
     tituloReceta: String,
+    desplazamientoDePasos: ScrollState,
     modelo: GastosViewModel,
     pasoActual: PasoDeReceta,
     alElegirPaso: (PasoDeReceta) -> Unit,
@@ -110,7 +112,15 @@ fun PasoGastosScreen(
         )
     }
 
-    PasoGastos(tituloReceta, estado, dialogo, acciones, pasoActual, modifier)
+    PasoGastos(
+        tituloReceta = tituloReceta,
+        estado = estado,
+        dialogo = dialogo,
+        acciones = acciones,
+        pasoActual = pasoActual,
+        modifier = modifier,
+        desplazamientoDePasos = desplazamientoDePasos
+    )
 }
 
 /**
@@ -132,7 +142,8 @@ fun PasoGastos(
     dialogo: DialogoGastos,
     acciones: AccionesGastos,
     pasoActual: PasoDeReceta = PasoDeReceta.GASTOS,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    desplazamientoDePasos: ScrollState = rememberScrollState()
 ) {
     val anfitrionDeMensajes = remember { SnackbarHostState() }
 
@@ -175,7 +186,11 @@ fun PasoGastos(
                         navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
                     )
                 )
-                FilaDePasos(pasoActual = pasoActual, alElegirPaso = acciones.irAlPaso)
+                FilaDePasos(
+                    pasoActual = pasoActual,
+                    alElegirPaso = acciones.irAlPaso,
+                    desplazamiento = desplazamientoDePasos
+                )
             }
         },
         snackbarHost = { SnackbarHost(anfitrionDeMensajes) }

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -67,21 +68,33 @@ enum class PasoDeReceta(val titulo: String) {
  * dos cosas según dónde se estuviera. Con la fila, **la X siempre sale de la receta** y
  * moverse entre pasos es la fila; los dos gestos dejan de competir.
  *
- * Se desplaza en horizontal aunque hoy los cuatro quepan: al llegar gastos, simulación y
- * pasos serán siete, y una fila que se apretuja hasta dejar los títulos ilegibles es peor que
- * una que se arrastra.
+ * Se desplaza en horizontal aunque hoy los primeros quepan: al llegar simulación y pasos
+ * serán siete, y una fila que se apretuja hasta dejar los títulos ilegibles es peor que una
+ * que se arrastra.
+ *
+ * **Dónde está arrastrada [desplazamiento] no lo guarda esta función**, y ese es todo el
+ * punto: cada paso dibuja su propia fila, así que al cambiar de paso la fila se construye de
+ * nuevo y con un estado propio volvería al principio sola. Se veía feo justamente cuando más
+ * molesta — arrastrada hasta el final para tocar el último paso, el toque devolvía la fila al
+ * inicio y dejaba de verse lo que se acababa de elegir. El estado vive en
+ * `NavegacionPrincipal`, que es lo único que sigue vivo mientras la receta está abierta; es
+ * la misma lección del título, y aparece por lo mismo: **lo que es igual en las cinco
+ * pantallas vive donde las cinco se juntan**.
+ *
+ * El valor por defecto es para las vistas previas, que dibujan una pantalla suelta.
  */
 @Composable
 fun FilaDePasos(
     pasoActual: PasoDeReceta,
     alElegirPaso: (PasoDeReceta) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    desplazamiento: ScrollState = rememberScrollState()
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface)
-            .horizontalScroll(rememberScrollState())
+            .horizontalScroll(desplazamiento)
             .padding(horizontal = Medidas.medio, vertical = Medidas.chico),
         horizontalArrangement = Arrangement.spacedBy(Medidas.chico),
         verticalAlignment = Alignment.CenterVertically

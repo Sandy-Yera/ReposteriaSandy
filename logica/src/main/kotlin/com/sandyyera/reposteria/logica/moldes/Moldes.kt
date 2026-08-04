@@ -109,3 +109,58 @@ private fun dividir(nuevo: Double, original: Double, que: String): Double {
     require(original > 0) { "El $que del molde original es cero: revisa sus medidas" }
     return nuevo / original
 }
+
+/**
+ * Las medidas del molde tal como se tomaron, en una línea.
+ *
+ * Existe porque hasta ahora las pantallas solo mostraban el **área y el volumen**, que son
+ * números calculados: sirven para comparar dos moldes, pero no responden la pregunta con la
+ * que uno se para frente al mueble — *¿cuál era el de 20 por 30?*. Un molde se reconoce por
+ * lo que se le mide con la regla, no por sus 600 cm².
+ *
+ * Devuelve `null` si falta alguna medida, en vez de lanzar como hacen `areaCm2` y
+ * `volumenCm3`: esto es para mostrar, y un molde a medio guardar no puede voltear una
+ * pantalla. Por lo mismo **no calcula nada**; solo lee lo que hay.
+ *
+ * La altura va al final y separada por una coma, no multiplicando: "20 × 30 cm, 6 de alto"
+ * se lee bien, y "20 × 30 × 6" invita a pensar que los tres son lo mismo cuando la altura es
+ * la que decide si la masa cabe.
+ */
+fun medidasEnTexto(dimensiones: DimensionesMolde, formatear: (Double) -> String): String? {
+    val base = when (dimensiones.tipoForma) {
+        TipoFormaMolde.RECTANGULO -> {
+            val largo = dimensiones.largoCm ?: return null
+            val ancho = dimensiones.anchoCm ?: return null
+            "${formatear(largo)} × ${formatear(ancho)} cm"
+        }
+
+        // Se escriben los dos lados aunque sean el mismo: "20 cm" a secas no dice si es el
+        // lado o el diámetro, y esta línea existe justamente para reconocer el molde.
+        TipoFormaMolde.CUADRADO -> {
+            val lado = dimensiones.ladoCm ?: return null
+            "${formatear(lado)} × ${formatear(lado)} cm"
+        }
+
+        TipoFormaMolde.CIRCULO -> {
+            val diametro = dimensiones.diametroCm ?: return null
+            "${formatear(diametro)} cm de diámetro"
+        }
+
+        TipoFormaMolde.TRIANGULO -> {
+            val base = dimensiones.baseTrianguloCm ?: return null
+            val altura = dimensiones.alturaTrianguloCm ?: return null
+            "base ${formatear(base)} cm, ${formatear(altura)} cm de punta a base"
+        }
+
+        // Acá no hay largo ni ancho que mostrar: es una forma irregular y su volumen se midió
+        // llenándola con agua. Decir el volumen es lo único honesto que se puede decir.
+        TipoFormaMolde.EXOTICO -> {
+            val volumen = dimensiones.volumenExoticoCm3 ?: return null
+            "${formatear(volumen)} cm³ medidos con agua"
+        }
+
+        null -> return null
+    }
+    val alto = dimensiones.alturaMoldeCm ?: return base
+    return "$base, ${formatear(alto)} de alto"
+}

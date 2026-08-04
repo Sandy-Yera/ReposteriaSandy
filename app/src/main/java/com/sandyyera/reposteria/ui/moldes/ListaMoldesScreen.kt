@@ -50,6 +50,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sandyyera.reposteria.data.db.entidades.Molde
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.logica.moldes.DimensionesMolde
+import com.sandyyera.reposteria.logica.moldes.medidasEnTexto
 import com.sandyyera.reposteria.logica.moldes.TipoFormaMolde
 import com.sandyyera.reposteria.logica.validaciones.CampoDeMolde
 import com.sandyyera.reposteria.ui.componentes.BarraBusqueda
@@ -269,10 +270,19 @@ private fun TarjetaMolde(
     }
 }
 
-/** La línea de abajo de cada tarjeta: forma, alto, área y volumen. */
+/**
+ * La línea de abajo de cada tarjeta: forma, **medidas tomadas**, área y volumen.
+ *
+ * Las medidas tomadas se agregaron después de que faltaran: la tarjeta decía "Rectángulo · 6
+ * cm de alto · 600 cm² · 3.600 cm³", y con eso no se sabe cuál molde es. Frente al mueble uno
+ * busca el de 20 por 30, no el de 600 cm²; el área y el volumen sirven para otra cosa —
+ * comparar dos moldes entre sí— y por eso se quedan, detrás.
+ *
+ * El alto ya viene dentro de `medidasEnTexto`, así que no se repite acá.
+ */
 private fun resumenDeMedidas(dimensiones: DimensionesMolde): String {
     val forma = dimensiones.tipoForma?.let { nombreDeLaForma(it) } ?: "Sin forma"
-    val alto = dimensiones.alturaMoldeCm?.let { "${formatearNumero(it)} cm de alto" }
+    val tomadas = medidasEnTexto(dimensiones, ::formatearNumero)
     // El área y el volumen se calculan, y calcular exige que las medidas estén completas.
     // Un molde a medio guardar no debería existir, pero si existiera la lista tiene que
     // dibujarse igual en vez de cerrar la app.
@@ -281,7 +291,7 @@ private fun resumenDeMedidas(dimensiones: DimensionesMolde): String {
             "${formatearNumero(dimensiones.volumenCm3)} cm³"
     }.getOrNull()
 
-    return listOfNotNull(forma, alto, calculadas).joinToString(" · ")
+    return listOfNotNull(forma, tomadas, calculadas).joinToString(" · ")
 }
 
 /**

@@ -959,6 +959,13 @@ edición obligaría a borrar y reescribir el mismo número solo para callar un a
 
 **5. Recetas que usan otras recetas.** Ver 8.11, que es donde vive el diseño completo.
 
+**Lo que es igual en los cinco pasos se guarda donde los cinco se juntan.** Salió dos veces
+seguidas y conviene tenerlo escrito: el título de la receta parpadeaba porque cada paso lo
+observaba por su cuenta, y la fila de pasos volvía al inicio en cada toque porque cada paso
+tenía su propio desplazamiento. Los dos son lo mismo — estado compartido guardado por
+pantalla, que se pierde al cambiar de pantalla — y los dos se arreglan igual: vive en
+`NavegacionPrincipal`, que es lo único que sigue existiendo mientras la receta está abierta.
+
 **6. Lo que ya se está usando se marca y no se toca.** Salió de probar el paso del molde: al
 abrir la lista para cambiarlo no había forma de saber en cuál se estaba. El molde en uso se
 muestra con fondo propio, con su etiqueta al lado, y **no responde al toque** — elegirlo no

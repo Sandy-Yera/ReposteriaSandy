@@ -171,4 +171,87 @@ class MoldesTest {
         val vuelta = factorEscala(grande, chico, ModoReescalado.CAPACIDAD)
         assertEquals(1.0, ida * vuelta, 0.001)
     }
+
+    // --- Las medidas en texto (para reconocer el molde) ---
+
+    private val comoNumero: (Double) -> String = { n ->
+        if (n == n.toLong().toDouble()) n.toLong().toString() else n.toString()
+    }
+
+    @Test
+    fun `un rectangulo se lee por sus dos lados y su alto`() {
+        // La pregunta que esto contesta es "¿cuál era el de 20 por 30?", que ni el área ni el
+        // volumen responden.
+        assertEquals(
+            "30 × 20 cm, 6 de alto",
+            medidasEnTexto(rectangulo(30.0, 20.0, 6.0), comoNumero)
+        )
+    }
+
+    @Test
+    fun `un cuadrado escribe sus dos lados aunque sean el mismo`() {
+        // "20 cm" a secas no dice si es el lado o el diámetro.
+        assertEquals("20 × 20 cm, 6 de alto", medidasEnTexto(cuadrado(20.0, 6.0), comoNumero))
+    }
+
+    @Test
+    fun `un circulo dice diametro y no un lado`() {
+        assertEquals(
+            "24 cm de diámetro, 6 de alto",
+            medidasEnTexto(circulo(24.0, 6.0), comoNumero)
+        )
+    }
+
+    @Test
+    fun `un triangulo distingue su altura de la del molde`() {
+        // Las dos alturas del triángulo son justo lo que se confunde (ver CampoDeMolde).
+        val triangulo = DimensionesMolde(
+            tipoForma = TipoFormaMolde.TRIANGULO,
+            baseTrianguloCm = 20.0,
+            alturaTrianguloCm = 15.0,
+            alturaMoldeCm = 6.0
+        )
+
+        assertEquals(
+            "base 20 cm, 15 cm de punta a base, 6 de alto",
+            medidasEnTexto(triangulo, comoNumero)
+        )
+    }
+
+    @Test
+    fun `un molde exotico dice su volumen, porque no tiene largo ni ancho`() {
+        val exotico = DimensionesMolde(
+            tipoForma = TipoFormaMolde.EXOTICO,
+            volumenExoticoCm3 = 1200.0,
+            alturaMoldeCm = 7.0
+        )
+
+        assertEquals("1200 cm³ medidos con agua, 7 de alto", medidasEnTexto(exotico, comoNumero))
+    }
+
+    @Test
+    fun `sin las medidas devuelve null en vez de reventar`() {
+        // A diferencia de `areaCm2`, esto es para mostrar: un molde a medio guardar no puede
+        // voltear una pantalla.
+        assertEquals(null, medidasEnTexto(DimensionesMolde(), comoNumero))
+        assertEquals(
+            null,
+            medidasEnTexto(DimensionesMolde(tipoForma = TipoFormaMolde.CIRCULO), comoNumero)
+        )
+    }
+
+    @Test
+    fun `sin altura muestra igual lo que se midio`() {
+        // La altura es opcional en la práctica hasta que alguien la anota; esconder el resto
+        // por eso sería tapar lo único que hay.
+        assertEquals(
+            "30 × 20 cm",
+            medidasEnTexto(
+                DimensionesMolde(
+                    tipoForma = TipoFormaMolde.RECTANGULO, largoCm = 30.0, anchoCm = 20.0
+                ),
+                comoNumero
+            )
+        )
+    }
 }

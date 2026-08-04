@@ -36,6 +36,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.foundation.ScrollState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -81,6 +82,7 @@ data class AccionesMoldeDeReceta(
 @Composable
 fun PasoMoldeScreen(
     tituloReceta: String,
+    desplazamientoDePasos: ScrollState,
     modelo: MoldeDeRecetaViewModel,
     pasoActual: PasoDeReceta,
     alElegirPaso: (PasoDeReceta) -> Unit,
@@ -109,7 +111,15 @@ fun PasoMoldeScreen(
         )
     }
 
-    PasoMolde(tituloReceta, estado, dialogo, acciones, pasoActual, modifier)
+    PasoMolde(
+        tituloReceta = tituloReceta,
+        estado = estado,
+        dialogo = dialogo,
+        acciones = acciones,
+        pasoActual = pasoActual,
+        modifier = modifier,
+        desplazamientoDePasos = desplazamientoDePasos
+    )
 }
 
 /**
@@ -133,7 +143,8 @@ fun PasoMolde(
     dialogo: DialogoMoldeDeReceta,
     acciones: AccionesMoldeDeReceta,
     pasoActual: PasoDeReceta = PasoDeReceta.MOLDE,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    desplazamientoDePasos: ScrollState = rememberScrollState()
 ) {
     val anfitrionDeMensajes = remember { SnackbarHostState() }
 
@@ -177,7 +188,11 @@ fun PasoMolde(
                         navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
                     )
                 )
-                FilaDePasos(pasoActual = pasoActual, alElegirPaso = acciones.irAlPaso)
+                FilaDePasos(
+                    pasoActual = pasoActual,
+                    alElegirPaso = acciones.irAlPaso,
+                    desplazamiento = desplazamientoDePasos
+                )
             }
         },
         snackbarHost = { SnackbarHost(anfitrionDeMensajes) }
@@ -262,7 +277,13 @@ private fun TarjetaDelMolde(
                     ?: if (estado.usaMolde) "Molde de prueba" else SIN_MOLDE,
                 style = MaterialTheme.typography.headlineMedium
             )
+            // Las medidas tomadas van primero y más grandes que el área y el volumen: son
+            // las que identifican el molde. Los números calculados quedan debajo, para
+            // comparar.
             estado.medidasDelMolde?.let {
+                Text(text = it, style = MaterialTheme.typography.bodyMedium)
+            }
+            estado.areaYVolumen?.let {
                 Text(text = it, style = MaterialTheme.typography.bodySmall)
             }
             if (estado.usaMolde) {

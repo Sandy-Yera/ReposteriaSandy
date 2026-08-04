@@ -30,6 +30,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.PaddingValues
 import com.sandyyera.reposteria.logica.validaciones.ORDEN_DE_LOS_BLOQUES
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -63,6 +65,7 @@ data class AccionesDuracion(
 @Composable
 fun PasoDuracionScreen(
     tituloReceta: String,
+    desplazamientoDePasos: ScrollState,
     modelo: DuracionViewModel,
     pasoActual: PasoDeReceta,
     alElegirPaso: (PasoDeReceta) -> Unit,
@@ -83,7 +86,14 @@ fun PasoDuracionScreen(
         )
     }
 
-    PasoDuracion(tituloReceta, estado, acciones, pasoActual, modifier)
+    PasoDuracion(
+        tituloReceta = tituloReceta,
+        estado = estado,
+        acciones = acciones,
+        pasoActual = pasoActual,
+        modifier = modifier,
+        desplazamientoDePasos = desplazamientoDePasos
+    )
 }
 
 /**
@@ -107,7 +117,8 @@ fun PasoDuracion(
     estado: EstadoDuracion,
     acciones: AccionesDuracion,
     pasoActual: PasoDeReceta = PasoDeReceta.DURACION,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    desplazamientoDePasos: ScrollState = rememberScrollState()
 ) {
     val anfitrionDeMensajes = remember { SnackbarHostState() }
 
@@ -159,7 +170,11 @@ fun PasoDuracion(
                         navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
                     )
                 )
-                FilaDePasos(pasoActual = pasoActual, alElegirPaso = acciones.irAlPaso)
+                FilaDePasos(
+                    pasoActual = pasoActual,
+                    alElegirPaso = acciones.irAlPaso,
+                    desplazamiento = desplazamientoDePasos
+                )
             }
         },
         snackbarHost = { SnackbarHost(anfitrionDeMensajes) }

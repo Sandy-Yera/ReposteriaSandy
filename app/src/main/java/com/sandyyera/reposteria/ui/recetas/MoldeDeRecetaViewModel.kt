@@ -14,6 +14,7 @@ import com.sandyyera.reposteria.logica.formato.formatearMientrasSeEscribe
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.logica.moldes.DimensionesMolde
 import com.sandyyera.reposteria.logica.moldes.ModoReescalado
+import com.sandyyera.reposteria.logica.moldes.medidasEnTexto
 import com.sandyyera.reposteria.logica.moldes.TipoFormaMolde
 import com.sandyyera.reposteria.logica.validaciones.CampoDeMolde
 import com.sandyyera.reposteria.logica.validaciones.camposDe
@@ -113,12 +114,27 @@ data class EstadoMoldeDeReceta(
     val mensaje: String? = null,
     val cargando: Boolean = true
 ) {
-    /** El área y el volumen del molde actual, ya formateados, o `null` si no usa molde. */
+    /**
+     * Las medidas del molde **tal como se tomaron**: 30 × 20 cm, 6 de alto.
+     *
+     * Es lo primero que hay que ver y hasta ahora no estaba: la tarjeta mostraba el área y el
+     * volumen, que son números calculados y sirven para comparar dos moldes, pero no
+     * responden la pregunta con la que uno se para frente al mueble — *¿cuál era el de 20 por
+     * 30?*.
+     *
+     * **Consulta `usaMolde` y no solo si hay dimensiones**, igual que [areaYVolumen]:
+     * `quitarMolde` **conserva las medidas a propósito**, por si fue un error y se vuelve
+     * atrás, así que la fila sigue teniéndolas. Sin esa condición, una receta que acababa de
+     * dejar de usar molde seguía mostrando sus centímetros debajo de "No utiliza molde".
+     */
     val medidasDelMolde: String?
-        get() = dimensiones?.let { d ->
+        get() = dimensiones?.takeIf { usaMolde }?.let { medidasEnTexto(it, ::formatearNumero) }
+
+    /** El área y el volumen calculados, que sirven para comparar un molde con otro. */
+    val areaYVolumen: String?
+        get() = dimensiones?.takeIf { usaMolde }?.let { d ->
             runCatching {
-                "${formatearNumero(d.areaCm2)} cm² · ${formatearNumero(d.volumenCm3)} cm³" +
-                    (d.alturaMoldeCm?.let { " · ${formatearNumero(it)} cm de alto" } ?: "")
+                "${formatearNumero(d.areaCm2)} cm² · ${formatearNumero(d.volumenCm3)} cm³"
             }.getOrNull()
         }
 

@@ -14,6 +14,7 @@ import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -112,9 +113,16 @@ fun NavegacionPrincipal(
         )
         val tituloReceta by tituloModelo.titulo.collectAsStateWithLifecycle()
 
+        // Dónde está arrastrada la fila de pasos, **también una sola para los cinco**. Cada
+        // paso dibuja su propia fila, así que con un estado por pantalla la fila volvía al
+        // principio en cada toque: arrastrada hasta el final para llegar al último paso, el
+        // toque la devolvía al inicio y se dejaba de ver justo lo recién elegido.
+        val desplazamientoDePasos = rememberScrollState()
+
         when (pasoActual) {
             PasoDeReceta.CANTIDADES -> PasoCantidadesScreen(
                 tituloReceta = tituloReceta,
+                desplazamientoDePasos = desplazamientoDePasos,
                 modelo = viewModel(
                     // La clave hace que cada receta tenga su propio ViewModel: sin ella,
                     // abrir una segunda receta reutilizaría el de la primera y mostraría los
@@ -134,6 +142,7 @@ fun NavegacionPrincipal(
 
             PasoDeReceta.MOLDE -> PasoMoldeScreen(
                 tituloReceta = tituloReceta,
+                desplazamientoDePasos = desplazamientoDePasos,
                 modelo = viewModel(
                     key = "molde-$idAbierta",
                     factory = MoldeDeRecetaViewModel.fabrica(
@@ -150,6 +159,7 @@ fun NavegacionPrincipal(
 
             PasoDeReceta.RENDIMIENTO -> PasoRendimientoScreen(
                 tituloReceta = tituloReceta,
+                desplazamientoDePasos = desplazamientoDePasos,
                 modelo = viewModel(
                     key = "rendimiento-$idAbierta",
                     factory = RendimientoViewModel.fabrica(
@@ -165,6 +175,7 @@ fun NavegacionPrincipal(
 
             PasoDeReceta.DURACION -> PasoDuracionScreen(
                 tituloReceta = tituloReceta,
+                desplazamientoDePasos = desplazamientoDePasos,
                 modelo = viewModel(
                     key = "duracion-$idAbierta",
                     factory = DuracionViewModel.fabrica(idAbierta, contenedor.recetas)
@@ -177,6 +188,7 @@ fun NavegacionPrincipal(
 
             PasoDeReceta.GASTOS -> PasoGastosScreen(
                 tituloReceta = tituloReceta,
+                desplazamientoDePasos = desplazamientoDePasos,
                 modelo = viewModel(
                     key = "gastos-$idAbierta",
                     factory = GastosViewModel.fabrica(idAbierta, contenedor.recetas)
