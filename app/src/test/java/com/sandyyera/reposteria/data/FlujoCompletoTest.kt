@@ -181,6 +181,8 @@ class FlujoCompletoTest {
             )
 
             // Sin referencia elegida se usa el peor caso: la promo regalada, a 200 el trozo.
+            // Acá no hay resto — 8 trozos entre promos de 4 entra dos veces justas — así que
+            // el número es el mismo que daría multiplicando.
             var datos = recetas.obtenerDatosCalculo(listOf(receta)).getValue(receta)
             assertEquals(200.0, precioEfectivoPorTrozo(datos), 0.001)
 
@@ -189,17 +191,21 @@ class FlujoCompletoTest {
             datos = recetas.obtenerDatosCalculo(listOf(receta)).getValue(receta)
             assertTrue("Sigue sin referencia elegida", !datos.tieneReferenciaElegida)
 
-            // La de 3 por 3.600 sí: 1.200 el trozo.
+            // La de 3 por 3.600 sí. **Y acá se ve el resto de 8.6.1**: la receta rinde 8, así
+            // que esa promo entra dos veces (7.200) y sobran 2 trozos, que se venden sueltos a
+            // 1.500 cada uno. Son 10.200 por el producto, no los 9.600 de multiplicar 1.200
+            // por ocho — esos 9.600 daban por vendida a precio de promoción una torta entera
+            // que no se puede vender así.
             assertNull(recetas.elegirPrecioDeReferencia(receta, promoBuena))
             datos = recetas.obtenerDatosCalculo(listOf(receta)).getValue(receta)
-            assertEquals(1200.0, precioEfectivoPorTrozo(datos), 0.001)
-            assertEquals(9600.0, ingresoBruto(datos), 0.001)          // 1.200 × 8
-            assertEquals(6900.0, gananciaFinal(datos), 0.001)         // 9.600 − 2.700
+            assertEquals(10200.0, ingresoBruto(datos), 0.001)         // 3.600×2 + 1.500×2
+            assertEquals(1275.0, precioEfectivoPorTrozo(datos), 0.001) // 10.200 / 8
+            assertEquals(7500.0, gananciaFinal(datos), 0.001)         // 10.200 − 2.700
 
             // Y el sueldo sale de esa misma referencia, no de otro precio.
             val sueldo = calcularSueldo(datos, gananciaEmpleado = 2000.0)
-            assertEquals(9600.0, sueldo.ingresoBruto, 0.001)
-            assertEquals(7600.0, sueldo.yoMeLlevo, 0.001)
+            assertEquals(10200.0, sueldo.ingresoBruto, 0.001)
+            assertEquals(8200.0, sueldo.yoMeLlevo, 0.001)
 
             // Cambiar de referencia mueve todo lo automático de una vez.
             assertNull(recetas.elegirPrecioDeReferencia(receta, porTrozo))

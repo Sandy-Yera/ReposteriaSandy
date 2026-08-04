@@ -398,8 +398,11 @@ class RendimientoViewModelTest {
         // Se vio en el celular: bajar los trozos con una promo que no cabe deja la
         // advertencia, y borrar la promo desde el otro paso no la sacaba — el aviso quedaba
         // acusando de algo que ya no existía hasta que alguien tocara el campo.
-        recetas.crearPrecio(recetaId, ModoPrecio.TROZO, "3", "3.000")
+        // Los trozos van **primero**: una receta nace con `trozos = 1`, y ahí una promo de 3
+        // no cabe — el mismo tope del último trozo que esta prueba viene a ejercitar la
+        // habría rechazado al crearla, dejando la prueba sin promo que borrar.
         recetas.guardarRendimiento(recetaId, "3", "1.000")
+        recetas.crearPrecio(recetaId, ModoPrecio.TROZO, "3", "3.000")
         advanceUntilIdle()
 
         modelo.cambiarTrozos("2")
