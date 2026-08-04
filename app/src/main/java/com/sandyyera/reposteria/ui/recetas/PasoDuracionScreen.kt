@@ -10,8 +10,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Card
@@ -28,6 +26,10 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.PaddingValues
+import com.sandyyera.reposteria.logica.validaciones.ORDEN_DE_LOS_BLOQUES
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -112,6 +114,18 @@ fun PasoDuracion(
     // Sale de la receta, no vuelve al rendimiento: moverse entre pasos es la fila de arriba.
     BackHandler(onBack = acciones.cerrarReceta)
 
+    // Cambiar de paso o salir de la receta desmonta esta pantalla, y ahí el campo puede irse
+    // **sin** llegar a avisar que perdió el foco; sin esto, la duración recién escrita se
+    // perdía en silencio.
+    //
+    // Va **a nivel de pantalla y no dentro de cada tarjeta**, que es donde estaba: con la
+    // lista perezosa, una tarjeta que sale de la vista al desplazarse también se desmonta, y
+    // ahí el guardado se dispararía por desplazar. Acá se dispara una sola vez, al irse de
+    // verdad, que es lo que siempre quiso decir.
+    DisposableEffect(Unit) {
+        onDispose { ORDEN_DE_LOS_BLOQUES.forEach { acciones.guardarBloque(it) } }
+    }
+
     LaunchedEffect(estado.mensaje) {
         val texto = estado.mensaje ?: return@LaunchedEffect
         try {
@@ -150,43 +164,56 @@ fun PasoDuracion(
         },
         snackbarHost = { SnackbarHost(anfitrionDeMensajes) }
     ) { interior ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .padding(interior)
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = Medidas.grande)
-                .padding(top = Medidas.medio, bottom = Medidas.grande),
+                .fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = Medidas.grande,
+                end = Medidas.grande,
+                top = Medidas.medio,
+                bottom = Medidas.grande
+            ),
             verticalArrangement = Arrangement.spacedBy(Medidas.medio)
         ) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer
-                )
-            ) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                ) {
+                    Text(
+                        text = AVISO_DURACIONES_ESTIMADAS,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(Medidas.medio)
+                    )
+                }
+            }
+
+            item {
                 Text(
-                    text = AVISO_DURACIONES_ESTIMADAS,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(Medidas.medio)
+                    text = if (estado.todoVacio) {
+                        "Este paso es opcional: puedes dejarlo en blanco y seguir."
+                    } else {
+                        "Deja en blanco lo que no sepas."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
-            Text(
-                text = if (estado.todoVacio) {
-                    "Este paso es opcional: puedes dejarlo en blanco y seguir."
-                } else {
-                    "Deja en blanco lo que no sepas."
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            estado.bloques.forEach { bloque ->
-                BloqueDeDuracionCard(bloque, acciones)
+            // **Los bloques no se dibujan hasta que llegaron los guardados.** Antes se
+            // dibujaban tres vacíos y después se rellenaban, así que un bloque guardado como
+            // "no apto" componía su campo y sus cuatro chips para tirarlos al instante
+            // siguiente. Ese trabajo desperdiciado, justo en el primer fotograma, era el
+            // tirón que se sentía al entrar al paso.
+            if (!estado.cargando) {
+                items(estado.bloques, key = { it.tipo }) { bloque ->
+                    BloqueDeDuracionCard(bloque, acciones)
+                }
             }
-
         }
     }
 }
@@ -235,14 +262,6 @@ private fun BloqueDeDuracionCard(
             }
 
             if (bloque.apto) {
-                // Cambiar de paso o salir de la receta desmonta esta pantalla, y ahí el
-                // campo puede irse **sin** llegar a avisar que perdió el foco. Sin esto, la
-                // duración recién escrita se perdía en silencio — que es exactamente lo que
-                // el guardado automático vino a evitar.
-                DisposableEffect(bloque.tipo) {
-                    onDispose { acciones.guardarBloque(bloque.tipo) }
-                }
-
                 CampoNumerico(
                     valor = bloque.cantidad,
                     alCambiar = { acciones.cambiarCantidad(bloque.tipo, it) },

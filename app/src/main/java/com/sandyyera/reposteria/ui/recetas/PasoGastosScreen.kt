@@ -166,8 +166,13 @@ fun PasoGastos(
                             )
                         }
                     },
+                    // Los mismos tres colores que los otros cuatro pasos: la barra no puede
+                    // cambiar de color al moverse entre pasos, o el cambio se lee como un
+                    // salto de la pantalla.
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        titleContentColor = MaterialTheme.colorScheme.onPrimary,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
                     )
                 )
                 FilaDePasos(pasoActual = pasoActual, alElegirPaso = acciones.irAlPaso)

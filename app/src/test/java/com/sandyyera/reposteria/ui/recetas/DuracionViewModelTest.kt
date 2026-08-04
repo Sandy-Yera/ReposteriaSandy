@@ -250,6 +250,28 @@ class DuracionViewModelTest {
     }
 
     @Test
+    fun `mientras carga no dice que este todo vacio con datos guardados`() = runTest(despachador) {
+        // La pantalla no dibuja los bloques hasta que `cargando` se apaga, y eso es lo que
+        // saca el tirón al entrar al paso: antes dibujaba tres bloques vacíos y aptos, y al
+        // llegar los guardados tenía que rehacerlos —hasta tirar el campo y los cuatro chips
+        // de uno que estuviera marcado "no apto"—. Lo que se cuida acá es que ese estado
+        // intermedio exista y sea distinguible.
+        recetaId = (recetas.crear("Torta") as ResultadoCrearReceta.Creada).recetaId
+        recetas.guardarDuracion(recetaId, TipoDuracion.AMBIENTE, apto = true, "3", UnidadDuracion.DIAS)
+
+        val modelo = DuracionViewModel(recetaId, recetas)
+        backgroundScope.launch(despachador) { modelo.estado.collect { } }
+
+        assertTrue("Recién creado todavía no leyó nada", modelo.estado.value.cargando)
+
+        advanceUntilIdle()
+
+        val estado = modelo.estado.value
+        assertFalse(estado.cargando)
+        assertEquals("3", estado.bloques.first { it.tipo == TipoDuracion.AMBIENTE }.cantidad)
+    }
+
+    @Test
     fun `guardar no anuncia el exito`() = probar { modelo ->
         // Sin botón que apretar, un "se guardó" cada vez que se sale de un campo es ruido, y
         // encima aparecería justo mientras se pasa al bloque siguiente.
