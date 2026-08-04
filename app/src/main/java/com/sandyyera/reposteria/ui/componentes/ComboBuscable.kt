@@ -51,7 +51,8 @@ fun <T> ComboBuscable(
     alElegir: (T) -> Unit,
     modifier: Modifier = Modifier,
     marcador: String = "Buscar",
-    alCrear: ((String) -> Unit)? = null
+    alCrear: ((String) -> Unit)? = null,
+    motivoNoDisponible: (T) -> String? = { null }
 ) {
     val coincidencias = filtrarPor(opciones, busqueda) { textoDe(it) }
     val escrito = busqueda.trim()
@@ -69,9 +70,14 @@ fun <T> ComboBuscable(
             verticalArrangement = Arrangement.spacedBy(Medidas.minimo)
         ) {
             items(coincidencias) { opcion ->
+                // Una opción que no se puede elegir **se muestra igual, con su motivo**, en
+                // vez de desaparecer de la lista: buscar "harina" y no encontrarla parece
+                // que la app la perdió, mientras que verla con "Ya está en esta sección"
+                // se explica solo y dice dónde mirar.
                 FilaDeOpcion(
                     texto = textoDe(opcion),
-                    alTocar = { alElegir(opcion) }
+                    alTocar = { alElegir(opcion) },
+                    motivoNoDisponible = motivoNoDisponible(opcion)
                 )
             }
 
@@ -100,20 +106,29 @@ fun <T> ComboBuscable(
     }
 }
 
-/** Una fila tocable de la lista, con su alto mínimo de 48dp para no fallarle. */
+/**
+ * Una fila tocable de la lista, con su alto mínimo de 48dp para no fallarle.
+ *
+ * Con [motivoNoDisponible] la fila **deja de responder al toque y dice por qué**, en vez de
+ * quedar simplemente apagada: un gris sin explicación invita a tocarlo y a preguntarse qué
+ * pasa. Es el mismo criterio de `FichaDePaso` — lo que no lleva a ninguna parte no se toca —
+ * con la parte que allá no hacía falta, porque el paso actual se explica solo.
+ */
 @Composable
 private fun FilaDeOpcion(
     texto: String,
     alTocar: () -> Unit,
     modifier: Modifier = Modifier,
-    icono: Boolean = false
+    icono: Boolean = false,
+    motivoNoDisponible: String? = null
 ) {
+    val disponible = motivoNoDisponible == null
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(Medidas.chico))
             .background(MaterialTheme.colorScheme.surfaceContainer)
-            .clickable(onClick = alTocar)
+            .clickable(enabled = disponible, onClick = alTocar)
             .heightIn(min = Medidas.objetivoTactil)
             .padding(horizontal = Medidas.medio),
         verticalAlignment = Alignment.CenterVertically,
@@ -129,9 +144,19 @@ private fun FilaDeOpcion(
         Text(
             text = texto,
             style = MaterialTheme.typography.bodyMedium,
-            color = if (icono) MaterialTheme.colorScheme.primary
-            else MaterialTheme.colorScheme.onSurface
+            color = when {
+                icono -> MaterialTheme.colorScheme.primary
+                !disponible -> MaterialTheme.colorScheme.onSurfaceVariant
+                else -> MaterialTheme.colorScheme.onSurface
+            }
         )
+        motivoNoDisponible?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 

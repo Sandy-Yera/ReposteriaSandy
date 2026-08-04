@@ -217,6 +217,27 @@ interface RecetaDao {
     )
     suspend fun sumaGramosIngredientes(recetaId: Long): Double
 
+    /**
+     * Los ingredientes de **una sección**, para comprobar si uno ya está puesto.
+     *
+     * Es más chica que [obtenerTodosLosIngredientes] a propósito y no un filtro sobre
+     * aquella: el mismo ingrediente en dos secciones distintas es correcto y corriente
+     * —almendra en el bizcocho y almendra en la decoración—, así que la pregunta que hay
+     * que hacerle a la base es siempre por sección.
+     */
+    @Query("SELECT * FROM receta_ingredientes WHERE seccionId = :seccionId ORDER BY orden")
+    suspend fun obtenerIngredientesDeSeccion(seccionId: Long): List<RecetaIngrediente>
+
+    /**
+     * Cómo se llama un ingrediente, solo para poder nombrarlo en un aviso.
+     *
+     * Vive acá y no se pide prestado el `IngredienteRepositorio` porque este DAO ya conoce
+     * la tabla `ingredientes` —el cálculo del costo la cruza— y sumar un repositorio entero
+     * como dependencia por un nombre abriría un camino de ida y vuelta entre los dos.
+     */
+    @Query("SELECT nombre FROM ingredientes WHERE id = :ingredienteId")
+    suspend fun nombreDeIngrediente(ingredienteId: Long): String?
+
     @Insert
     suspend fun insertarIngrediente(item: RecetaIngrediente): Long
 

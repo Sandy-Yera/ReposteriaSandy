@@ -97,6 +97,69 @@ class MoldeDeRecetaViewModelTest {
     private suspend fun pesoSinRevisar(): Boolean =
         recetas.obtenerRendimiento(recetaId)?.pesoReescaladoSinRevisar ?: false
 
+    // --- Cuál es el molde en uso ---
+
+    @Test
+    fun `el molde que la receta usa se marca y no se puede elegir`() = probar { modelo ->
+        // Lo pidió Sandy al probar quitar y poner molde: al abrir la lista no había forma de
+        // saber en cuál estaba. Elegirlo tampoco haría nada, así que además no se toca — el
+        // mismo criterio de la ficha del paso actual.
+        moldeDao.sembrar(Molde(nombre = "Redondo 20", dimensiones = cuadrado(20.0, 6.0)))
+        moldeDao.sembrar(Molde(nombre = "Redondo 24", dimensiones = cuadrado(24.0, 6.0)))
+        advanceUntilIdle()
+        modelo.abrirElegirMolde()
+        advanceUntilIdle()
+        val elVeinte = cuadro(modelo).candidatos.first { it.nombre == "Redondo 20" }
+        modelo.elegirMoldeGuardado(elVeinte)
+        modelo.confirmarMolde()
+        advanceUntilIdle()
+
+        modelo.abrirElegirMolde()
+        advanceUntilIdle()
+
+        val abierto = cuadro(modelo)
+        assertEquals(elVeinte.id, abierto.moldeActualId)
+        assertNotNull("El que usa se marca", abierto.motivoNoDisponible(elVeinte))
+        assertNull(
+            "Y los demás siguen disponibles",
+            abierto.motivoNoDisponible(abierto.candidatos.first { it.nombre == "Redondo 24" })
+        )
+    }
+
+    @Test
+    fun `sin molde no hay ninguno marcado`() = probar { modelo ->
+        moldeDao.sembrar(Molde(nombre = "Redondo 20", dimensiones = cuadrado(20.0, 6.0)))
+        advanceUntilIdle()
+
+        modelo.abrirElegirMolde()
+        advanceUntilIdle()
+
+        val abierto = cuadro(modelo)
+        assertNull(abierto.moldeActualId)
+        assertNull(abierto.motivoNoDisponible(abierto.candidatos.single()))
+    }
+
+    @Test
+    fun `un molde medido a mano no marca ninguno del catalogo`() = probar { modelo ->
+        // En modo prueba la receta no queda enlazada: no hay catálogo al cual apuntar, y
+        // marcar uno "parecido" diría algo que no es cierto.
+        moldeDao.sembrar(Molde(nombre = "Redondo 20", dimensiones = cuadrado(20.0, 6.0)))
+        advanceUntilIdle()
+        modelo.abrirElegirMolde()
+        advanceUntilIdle()
+        modelo.cambiarOrigenDelMolde(OrigenDelMolde.PRUEBA)
+        modelo.elegirFormaDePrueba(TipoFormaMolde.CUADRADO)
+        modelo.cambiarMedidaDePrueba(CampoDeMolde.LADO, "20")
+        modelo.cambiarMedidaDePrueba(CampoDeMolde.ALTURA_MOLDE, "6")
+        modelo.confirmarMolde()
+        advanceUntilIdle()
+
+        modelo.abrirElegirMolde()
+        advanceUntilIdle()
+
+        assertNull(cuadro(modelo).moldeActualId)
+    }
+
     // --- Definir el molde por primera vez ---
 
     @Test

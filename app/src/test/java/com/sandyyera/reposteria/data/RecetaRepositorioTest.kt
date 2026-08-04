@@ -105,6 +105,57 @@ class RecetaRepositorioTest {
         assertEquals(TipoEvento.ELIMINACION, historial.eventos.last().tipo)
     }
 
+    // --- Ingredientes repetidos dentro de una sección ---
+
+    @Test
+    fun `el mismo ingrediente no entra dos veces en la misma seccion`() = runBlocking {
+        // Se vio en el celular: la misma sección aceptaba "Harina" dos veces. Dos filas del
+        // mismo ingrediente no son un dato — son una cantidad partida en dos que se suma
+        // bien y se lee mal, así que el costo cuadra mientras la lista miente.
+        val id = crearReceta()
+        val seccion = repositorio.obtenerSecciones(id).single().id
+        val harina = ingrediente("Harina", 1.0)
+        repositorio.agregarIngrediente(seccion, harina, 500.0)
+
+        val segundoIntento = repositorio.agregarIngrediente(seccion, harina, 200.0)
+
+        assertTrue(segundoIntento is Resultado.NoSePudo)
+        assertEquals(1, repositorio.obtenerIngredientes(id).size)
+        assertEquals(500.0, repositorio.obtenerIngredientes(id).single().cantidadG, 0.001)
+    }
+
+    @Test
+    fun `el aviso nombra el ingrediente y la cantidad que ya tiene`() = runBlocking {
+        // Sin esos dos datos el aviso obliga a salir a mirar cuál era y cuánto llevaba.
+        val id = crearReceta()
+        val seccion = repositorio.obtenerSecciones(id).single().id
+        val harina = ingrediente("Harina", 1.0)
+        repositorio.agregarIngrediente(seccion, harina, 500.0)
+
+        val motivo = (repositorio.agregarIngrediente(seccion, harina, 200.0)
+            as Resultado.NoSePudo).motivo
+
+        assertTrue("Nombra el ingrediente", motivo.contains("Harina"))
+        assertTrue("Y dice cuánto lleva", motivo.contains("500"))
+    }
+
+    @Test
+    fun `en dos secciones distintas si se puede repetir`() = runBlocking {
+        // Almendra en el bizcocho y almendra en la decoración es correcto y corriente. Por
+        // eso la comprobación es por sección y nunca por receta.
+        val id = crearReceta()
+        val primera = repositorio.obtenerSecciones(id).single().id
+        repositorio.agregarSeccion(id, "Decoración", "Bizcocho")
+        val decoracion = repositorio.obtenerSecciones(id).first { it.nombreSeccion == "Decoración" }
+        val almendra = ingrediente("Almendra", 8.0)
+        repositorio.agregarIngrediente(primera, almendra, 100.0)
+
+        val enLaOtra = repositorio.agregarIngrediente(decoracion.id, almendra, 30.0)
+
+        assertTrue(enLaOtra is Resultado.Listo)
+        assertEquals(2, repositorio.obtenerIngredientes(id).size)
+    }
+
     // --- El costo (8.2 y decisión #3) ---
 
     @Test

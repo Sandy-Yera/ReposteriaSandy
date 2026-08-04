@@ -36,7 +36,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.sandyyera.reposteria.data.db.entidades.Receta
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.ui.componentes.CampoNumerico
 import com.sandyyera.reposteria.ui.theme.Medidas
@@ -59,6 +58,7 @@ data class AccionesRendimiento(
 /** El paso de rendimiento conectado a su ViewModel. */
 @Composable
 fun PasoRendimientoScreen(
+    tituloReceta: String,
     modelo: RendimientoViewModel,
     pasoActual: PasoDeReceta,
     alElegirPaso: (PasoDeReceta) -> Unit,
@@ -83,7 +83,7 @@ fun PasoRendimientoScreen(
         )
     }
 
-    PasoRendimiento(estado, dialogo, acciones, pasoActual, modifier)
+    PasoRendimiento(tituloReceta, estado, dialogo, acciones, pasoActual, modifier)
 }
 
 /**
@@ -107,6 +107,7 @@ fun PasoRendimientoScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PasoRendimiento(
+    tituloReceta: String,
     estado: EstadoRendimiento,
     dialogo: DialogoRendimiento,
     acciones: AccionesRendimiento,
@@ -141,7 +142,7 @@ fun PasoRendimiento(
         topBar = {
             Column {
                 TopAppBar(
-                    title = { Text(estado.receta?.titulo.orEmpty()) },
+                    title = { Text(tituloReceta) },
                     navigationIcon = {
                         IconButton(onClick = acciones.cerrarReceta) {
                             Icon(
@@ -331,7 +332,6 @@ private fun CuadroDeReescaladoPorPeso(
 // --- Vistas previas ---
 
 private fun estadoDeEjemplo(usaMolde: Boolean) = EstadoRendimiento(
-    receta = Receta(id = 1, titulo = "Torta de manjar"),
     usaMolde = usaMolde,
     trozos = "8",
     pesoFinal = "1.200",
@@ -343,6 +343,7 @@ private fun estadoDeEjemplo(usaMolde: Boolean) = EstadoRendimiento(
 private fun VistaPreviaSinMolde() {
     ReposteriaTheme {
         PasoRendimiento(
+            "Torta de manjar",
             estadoDeEjemplo(usaMolde = false),
             DialogoRendimiento.Ninguno,
             AccionesRendimiento()
@@ -355,6 +356,7 @@ private fun VistaPreviaSinMolde() {
 private fun VistaPreviaPesoSinRevisar() {
     ReposteriaTheme {
         PasoRendimiento(
+            "Torta de manjar",
             estadoDeEjemplo(usaMolde = true).copy(pesoSinRevisar = true),
             DialogoRendimiento.Ninguno,
             AccionesRendimiento()
@@ -367,6 +369,7 @@ private fun VistaPreviaPesoSinRevisar() {
 private fun VistaPreviaReescalar() {
     ReposteriaTheme {
         PasoRendimiento(
+            "Torta de manjar",
             estadoDeEjemplo(usaMolde = false),
             DialogoRendimiento.ReescalarPorPeso(pesoNuevo = "1.500"),
             AccionesRendimiento()

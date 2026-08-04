@@ -756,6 +756,18 @@ Un `RecetaViewModel` con estado compartido entre los pasos del wizard (`wizard/`
 
 ### 8.2 Paso 1 — Cantidades y precios
 
+**Un ingrediente va una sola vez por sección, y puede repetirse entre secciones.** Almendra
+en el bizcocho y almendra en la decoración son dos cosas distintas y las dos se costean; dos
+"harina" dentro de la misma sección no son un dato, son una cantidad partida en dos. Eso
+**se suma bien y se lee mal**: el costo total cuadra mientras la lista miente, así que el
+error no aparece por ninguna parte hasta que alguien lee la receta para cocinarla.
+
+La regla se aplica en dos capas, como el resto: la pantalla **no ofrece** el que ya está
+puesto —marcado y sin poder tocarse, con el motivo al lado— y el repositorio lo rechaza igual
+si llega, porque él es el que decide de verdad. **No hay índice único en la base**, por lo
+mismo que las secciones repetidas: ya existen filas repetidas guardadas de antes, y un índice
+obligaría a decidir cuál cantidad se conserva dentro de una migración.
+
 Costo total = suma de `cantidad × valorPorGramo` de todos los ingredientes de todas las secciones, siempre con el precio **actual** del ingrediente (decisión #3). Es una suma, así que la hace la base de datos en una sola consulta en vez de recorrer sección por sección e ingrediente por ingrediente desde Kotlin:
 
 ```kotlin
@@ -946,6 +958,29 @@ vive en memoria se pierde justo antes de servir. Se apaga cuando el campo **reci
 edición obligaría a borrar y reescribir el mismo número solo para callar un aviso.
 
 **5. Recetas que usan otras recetas.** Ver 8.11, que es donde vive el diseño completo.
+
+**6. Lo que ya se está usando se marca y no se toca.** Salió de probar el paso del molde: al
+abrir la lista para cambiarlo no había forma de saber en cuál se estaba. El molde en uso se
+muestra con fondo propio, con su etiqueta al lado, y **no responde al toque** — elegirlo no
+cambiaría nada, y un toque que no hace nada deja dudando. Es la misma regla que ya seguía la
+ficha del paso actual, ahora escrita para que no haya que redescubrirla en cada lista.
+
+Vale igual para el ingrediente que ya está en una sección (8.2): se ve, dice por qué no se
+puede, y no se toca. **La opción no desaparece de la lista**: buscar "harina" y no
+encontrarla parece que la app la perdió, mientras que verla con su motivo se explica sola y
+dice dónde mirar.
+
+**El título de la receta se observa una vez, no una por paso.** Los cuatro pasos dibujan el
+mismo encabezado, y cada uno lo sacaba de su propio estado — cuatro observaciones de la misma
+fila. Como un `StateFlow` empieza por su valor inicial mientras la base contesta, cada
+observación nueva tiene su instante en blanco, y eso se veía como un parpadeo del nombre al
+cambiar de paso, una vez por paso. Se observa desde `NavegacionPrincipal`, que es lo único
+que vive mientras la receta está abierta, y baja como dato a las cuatro pantallas.
+
+Es un caso particular de algo más general que conviene tener a mano: **la regla "lo que se
+muestra se observa" no dice cuántas veces**. Observar lo mismo desde varios lados cuesta una
+consulta por lado y, sobre todo, un primer instante vacío por lado. Lo que se muestra igual
+en varias pantallas se observa donde esas pantallas se juntan.
 
 **Lo que costó el guardado automático, y hay que respetar.** Guardar solo convierte la
 pantalla en dos fuentes de verdad a la vez —lo que está escrito y lo que está guardado— y de

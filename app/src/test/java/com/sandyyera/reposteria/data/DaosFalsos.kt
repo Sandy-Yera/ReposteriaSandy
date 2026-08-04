@@ -398,6 +398,15 @@ class RecetaDaoFalso(
     override suspend fun sumaGramosIngredientes(recetaId: Long): Double =
         itemsDe(recetaId).sumOf { it.cantidadG }
 
+    override suspend fun obtenerIngredientesDeSeccion(seccionId: Long): List<RecetaIngrediente> =
+        items.filter { it.seccionId == seccionId }.sortedBy { it.orden }
+
+    // Cruza contra el catálogo que use la prueba, igual que el JOIN del costo: si devolviera
+    // un nombre inventado, el aviso de "ya está en esta sección" pasaría la prueba diciendo
+    // cualquier cosa.
+    override suspend fun nombreDeIngrediente(ingredienteId: Long): String? =
+        catalogo.obtener(ingredienteId)?.nombre
+
     override suspend fun insertarIngrediente(item: RecetaIngrediente): Long {
         val id = nuevoId()
         items += item.copy(id = id)

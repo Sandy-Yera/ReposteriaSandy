@@ -356,17 +356,6 @@ class RendimientoViewModelTest {
         }
 
     @Test
-    fun `el titulo llega solo cuando lo renombran desde cantidades`() = probar { modelo ->
-        // Los cuatro pasos muestran el mismo título y se renombra desde el primero.
-        assertEquals("Torta de manjar", modelo.estado.value.receta?.titulo)
-
-        recetas.renombrar(recetaId, "Torta de manjar y nuez")
-        advanceUntilIdle()
-
-        assertEquals("Torta de manjar y nuez", modelo.estado.value.receta?.titulo)
-    }
-
-    @Test
     fun `reescalar por peso multiplica los ingredientes`() = probar { modelo ->
         modelo.cambiarTrozos("1")
         modelo.cambiarPesoFinal("1000")

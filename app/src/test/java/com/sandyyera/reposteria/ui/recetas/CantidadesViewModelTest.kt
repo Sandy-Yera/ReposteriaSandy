@@ -115,6 +115,137 @@ class CantidadesViewModelTest {
         assertFalse(estado.sinIngredientes)
     }
 
+    // --- El mismo ingrediente dos veces en la misma sección ---
+
+    private suspend fun ponerIngrediente(
+        modelo: CantidadesViewModel,
+        ingrediente: Ingrediente,
+        seccion: Long,
+        gramos: String
+    ) {
+        modelo.abrirAgregarIngrediente(seccion)
+        modelo.elegirIngrediente(ingrediente)
+        modelo.cambiarCantidadEscrita(gramos)
+        modelo.guardarIngrediente()
+    }
+
+    @Test
+    fun `el cuadro no ofrece un ingrediente que ya esta en la seccion`() = probar { modelo ->
+        // Se vio en el celular: la misma sección aceptaba "Harina" dos veces. Lo primero es
+        // no ofrecerlo, por lo mismo que `titulosDisponibles`: lo que se ofrece y lo que se
+        // acepta no pueden discrepar.
+        sembrar("Harina", 1.2)
+        sembrar("Manjar", 4.8)
+        advanceUntilIdle()
+        val harina = modelo.estado.value.catalogo.first { it.nombre == "Harina" }
+        val manjar = modelo.estado.value.catalogo.first { it.nombre == "Manjar" }
+        val seccion = modelo.estado.value.secciones.single().seccion.id
+        ponerIngrediente(modelo, harina, seccion, "500")
+        advanceUntilIdle()
+
+        modelo.abrirAgregarIngrediente(seccion)
+        advanceUntilIdle()
+
+        val cuadro = modelo.dialogo.value as DialogoCantidades.PonerIngrediente
+        assertNotNull("La harina ya está puesta", cuadro.motivoNoDisponible(harina))
+        assertNull("El manjar todavía no", cuadro.motivoNoDisponible(manjar))
+    }
+
+    @Test
+    fun `y si igual se intenta, el repositorio lo rechaza sin cerrar el cuadro`() =
+        probar { modelo ->
+            // La segunda red: que la pantalla no ofrezca no basta, porque quien decide de
+            // verdad es el repositorio. El cuadro **queda abierto** con el motivo adentro, y
+            // no se cierra dejando un aviso en la franja de abajo que el teclado tapa (8.2).
+            sembrar("Harina", 1.2)
+            advanceUntilIdle()
+            val harina = modelo.estado.value.catalogo.single()
+            val seccion = modelo.estado.value.secciones.single().seccion.id
+            ponerIngrediente(modelo, harina, seccion, "500")
+            advanceUntilIdle()
+
+            ponerIngrediente(modelo, harina, seccion, "200")
+            advanceUntilIdle()
+
+            val cuadro = modelo.dialogo.value as DialogoCantidades.PonerIngrediente
+            assertNotNull("El motivo se ve dentro del cuadro", cuadro.rechazo)
+            assertTrue(cuadro.rechazo!!.contains("Harina"))
+            assertEquals(1, modelo.estado.value.secciones.single().lineas.size)
+            assertEquals(600.0, modelo.estado.value.costoTotal, 0.001)
+        }
+
+    @Test
+    fun `al cambiar el ingrediente elegido el rechazo se va`() = probar { modelo ->
+        // El rechazo era sobre el anterior: dejarlo puesto acusaría al que se acaba de elegir.
+        sembrar("Harina", 1.2)
+        sembrar("Manjar", 4.8)
+        advanceUntilIdle()
+        val harina = modelo.estado.value.catalogo.first { it.nombre == "Harina" }
+        val manjar = modelo.estado.value.catalogo.first { it.nombre == "Manjar" }
+        val seccion = modelo.estado.value.secciones.single().seccion.id
+        ponerIngrediente(modelo, harina, seccion, "500")
+        advanceUntilIdle()
+        ponerIngrediente(modelo, harina, seccion, "200")
+        advanceUntilIdle()
+
+        modelo.elegirIngrediente(manjar)
+
+        assertNull((modelo.dialogo.value as DialogoCantidades.PonerIngrediente).rechazo)
+    }
+
+    @Test
+    fun `cambiarle los gramos a una fila que ya existe sigue funcionando`() = probar { modelo ->
+        // El caso que la comprobación no puede romper: editar una línea es elegir el mismo
+        // ingrediente que ya está, y ahí no hay nada repetido.
+        sembrar("Harina", 1.2)
+        advanceUntilIdle()
+        val harina = modelo.estado.value.catalogo.single()
+        val seccion = modelo.estado.value.secciones.single().seccion.id
+        ponerIngrediente(modelo, harina, seccion, "500")
+        advanceUntilIdle()
+
+        modelo.abrirCambiarCantidad(modelo.estado.value.secciones.single().lineas.single())
+        advanceUntilIdle()
+        val cuadro = modelo.dialogo.value as DialogoCantidades.PonerIngrediente
+        assertNull("Editando, el propio ingrediente sigue disponible", cuadro.motivoNoDisponible(harina))
+        modelo.cambiarCantidadEscrita("750")
+        modelo.guardarIngrediente()
+        advanceUntilIdle()
+
+        assertEquals(750.0, modelo.estado.value.secciones.single().lineas.single().item.cantidadG, 0.001)
+        assertEquals(1, modelo.estado.value.secciones.single().lineas.size)
+    }
+
+    @Test
+    fun `el mismo ingrediente en otra seccion si se puede`() = probar { modelo ->
+        // Almendra en el bizcocho y almendra en la decoración es correcto y corriente.
+        sembrar("Almendra", 8.0)
+        advanceUntilIdle()
+        val almendra = modelo.estado.value.catalogo.single()
+        val primera = modelo.estado.value.secciones.single().seccion.id
+        ponerIngrediente(modelo, almendra, primera, "100")
+        advanceUntilIdle()
+        modelo.abrirAgregarSeccion()
+        modelo.cambiarNombreDeSeccion("Decoración")
+        modelo.cambiarNombreDeLaPrimera("Bizcocho")
+        modelo.guardarSeccion()
+        advanceUntilIdle()
+        val decoracion = modelo.estado.value.secciones
+            .first { it.seccion.nombreSeccion == "Decoración" }.seccion.id
+
+        modelo.abrirAgregarIngrediente(decoracion)
+        advanceUntilIdle()
+        val cuadro = modelo.dialogo.value as DialogoCantidades.PonerIngrediente
+        assertNull("En esta sección todavía no está", cuadro.motivoNoDisponible(almendra))
+
+        modelo.elegirIngrediente(almendra)
+        modelo.cambiarCantidadEscrita("30")
+        modelo.guardarIngrediente()
+        advanceUntilIdle()
+
+        assertEquals(2, modelo.estado.value.secciones.sumOf { it.lineas.size })
+    }
+
     @Test
     fun `el costo mostrado es el mismo que suman las lineas`() = probar { modelo ->
         // Son dos caminos distintos hacia el mismo número -- la consulta de la base y la

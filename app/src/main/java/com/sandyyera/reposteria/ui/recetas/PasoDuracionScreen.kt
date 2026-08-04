@@ -37,7 +37,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.sandyyera.reposteria.data.db.entidades.Receta
 import com.sandyyera.reposteria.logica.duracion.AVISO_DURACIONES_ESTIMADAS
 import com.sandyyera.reposteria.logica.duracion.TipoDuracion
 import com.sandyyera.reposteria.logica.duracion.UnidadDuracion
@@ -61,6 +60,7 @@ data class AccionesDuracion(
 /** El paso de duración conectado a su ViewModel. */
 @Composable
 fun PasoDuracionScreen(
+    tituloReceta: String,
     modelo: DuracionViewModel,
     pasoActual: PasoDeReceta,
     alElegirPaso: (PasoDeReceta) -> Unit,
@@ -81,7 +81,7 @@ fun PasoDuracionScreen(
         )
     }
 
-    PasoDuracion(estado, acciones, pasoActual, modifier)
+    PasoDuracion(tituloReceta, estado, acciones, pasoActual, modifier)
 }
 
 /**
@@ -101,6 +101,7 @@ fun PasoDuracionScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PasoDuracion(
+    tituloReceta: String,
     estado: EstadoDuracion,
     acciones: AccionesDuracion,
     pasoActual: PasoDeReceta = PasoDeReceta.DURACION,
@@ -129,7 +130,7 @@ fun PasoDuracion(
         topBar = {
             Column {
                 TopAppBar(
-                    title = { Text(estado.receta?.titulo.orEmpty()) },
+                    title = { Text(tituloReceta) },
                     navigationIcon = {
                         IconButton(onClick = acciones.cerrarReceta) {
                             Icon(
@@ -270,7 +271,6 @@ private fun BloqueDeDuracionCard(
 // --- Vistas previas ---
 
 private fun estadoDeEjemplo(vacio: Boolean) = EstadoDuracion(
-    receta = Receta(id = 1, titulo = "Torta de manjar"),
     bloques = listOf(
         BloqueDeDuracion(TipoDuracion.AMBIENTE, cantidad = if (vacio) "" else "2"),
         BloqueDeDuracion(
@@ -287,7 +287,7 @@ private fun estadoDeEjemplo(vacio: Boolean) = EstadoDuracion(
 @Composable
 private fun VistaPreviaDuracionVacia() {
     ReposteriaTheme {
-        PasoDuracion(estadoDeEjemplo(vacio = true), AccionesDuracion())
+        PasoDuracion("Torta de manjar", estadoDeEjemplo(vacio = true), AccionesDuracion())
     }
 }
 
@@ -295,6 +295,6 @@ private fun VistaPreviaDuracionVacia() {
 @Composable
 private fun VistaPreviaDuracionConDatos() {
     ReposteriaTheme {
-        PasoDuracion(estadoDeEjemplo(vacio = false), AccionesDuracion())
+        PasoDuracion("Torta de manjar", estadoDeEjemplo(vacio = false), AccionesDuracion())
     }
 }

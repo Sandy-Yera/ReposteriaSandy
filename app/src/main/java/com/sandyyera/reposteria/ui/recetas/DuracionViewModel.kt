@@ -5,7 +5,6 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import com.sandyyera.reposteria.data.db.entidades.Receta
 import com.sandyyera.reposteria.data.repositorio.RecetaRepositorio
 import com.sandyyera.reposteria.data.repositorio.Resultado
 import com.sandyyera.reposteria.logica.duracion.TipoDuracion
@@ -54,7 +53,6 @@ data class BloqueDeDuracion(
 
 /** Lo que el paso de duración necesita para dibujarse. */
 data class EstadoDuracion(
-    val receta: Receta? = null,
     val bloques: List<BloqueDeDuracion> = ORDEN_DE_LOS_BLOQUES.map { BloqueDeDuracion(it) },
     val mensaje: String? = null,
     val cargando: Boolean = true
@@ -92,15 +90,14 @@ class DuracionViewModel(
     private val bloques = MutableStateFlow(ORDEN_DE_LOS_BLOQUES.map { BloqueDeDuracion(it) })
     private val mensaje = MutableStateFlow<String?>(null)
 
+    // El título de la receta **ya no sale de acá**: lo observa `TituloDeRecetaViewModel`, uno
+    // solo para los cuatro pasos. Observarlo también acá era una de las cuatro primeras
+    // veces que hacían parpadear el encabezado al cambiar de paso.
     val estado: StateFlow<EstadoDuracion> = combine(
         bloques,
-        mensaje,
-        // El título **se observa** y no se lee una vez: se renombra desde el paso de
-        // cantidades (8.4.1, #3) y este encabezado tiene que enterarse solo.
-        recetas.observarReceta(recetaId)
-    ) { losBloques, mensajeActual, laReceta ->
+        mensaje
+    ) { losBloques, mensajeActual ->
         EstadoDuracion(
-            receta = laReceta,
             bloques = losBloques,
             mensaje = mensajeActual,
             cargando = false

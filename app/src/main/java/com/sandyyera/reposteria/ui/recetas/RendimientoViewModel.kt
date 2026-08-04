@@ -5,7 +5,6 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import com.sandyyera.reposteria.data.db.entidades.Receta
 import com.sandyyera.reposteria.data.repositorio.RecetaRepositorio
 import com.sandyyera.reposteria.data.repositorio.Resultado
 import com.sandyyera.reposteria.logica.formato.formatearMientrasSeEscribe
@@ -53,7 +52,6 @@ sealed interface DialogoRendimiento {
 
 /** Lo que el paso de rendimiento necesita para dibujarse. */
 data class EstadoRendimiento(
-    val receta: Receta? = null,
     val usaMolde: Boolean = false,
     val trozos: String = "1",
     val pesoFinal: String = "",
@@ -189,16 +187,14 @@ class RendimientoViewModel(
      * volvía a escribir el peso viejo encima del recalculado.
      */
     val estado: StateFlow<EstadoRendimiento> = combine(
-        recetas.observarReceta(recetaId),
         recetas.observarRendimiento(recetaId),
         // El costo **se observa**: lo mueven los ingredientes, que se cargan en otro paso.
         // El mapa no trae entrada para las recetas sin ingredientes, y ahí 0 es correcto.
         recetas.observarCostos(),
         combine(trozos, pesoFinal) { t, p -> t to p },
         combine(rechazo, mensaje) { r, m -> r to m }
-    ) { receta, rendimiento, costos, escrito, avisos ->
+    ) { rendimiento, costos, escrito, avisos ->
         EstadoRendimiento(
-            receta = receta,
             usaMolde = rendimiento?.usaMolde ?: false,
             trozos = escrito.first,
             pesoFinal = escrito.second,

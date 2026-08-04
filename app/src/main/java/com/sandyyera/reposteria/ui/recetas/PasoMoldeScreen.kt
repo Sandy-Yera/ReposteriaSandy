@@ -1,6 +1,7 @@
 package com.sandyyera.reposteria.ui.recetas
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -38,12 +40,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sandyyera.reposteria.data.db.entidades.Molde
-import com.sandyyera.reposteria.data.db.entidades.Receta
 import com.sandyyera.reposteria.logica.moldes.MAX_DIFERENCIA_ALTURA_CM
 import com.sandyyera.reposteria.logica.moldes.ModoReescalado
 import com.sandyyera.reposteria.logica.moldes.TipoFormaMolde
@@ -76,6 +80,7 @@ data class AccionesMoldeDeReceta(
 /** El paso del molde conectado a su ViewModel. */
 @Composable
 fun PasoMoldeScreen(
+    tituloReceta: String,
     modelo: MoldeDeRecetaViewModel,
     pasoActual: PasoDeReceta,
     alElegirPaso: (PasoDeReceta) -> Unit,
@@ -104,7 +109,7 @@ fun PasoMoldeScreen(
         )
     }
 
-    PasoMolde(estado, dialogo, acciones, pasoActual, modifier)
+    PasoMolde(tituloReceta, estado, dialogo, acciones, pasoActual, modifier)
 }
 
 /**
@@ -123,6 +128,7 @@ fun PasoMoldeScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PasoMolde(
+    tituloReceta: String,
     estado: EstadoMoldeDeReceta,
     dialogo: DialogoMoldeDeReceta,
     acciones: AccionesMoldeDeReceta,
@@ -156,7 +162,7 @@ fun PasoMolde(
         topBar = {
             Column {
                 TopAppBar(
-                    title = { Text(estado.receta?.titulo.orEmpty()) },
+                    title = { Text(tituloReceta) },
                     navigationIcon = {
                         IconButton(onClick = acciones.cerrarReceta) {
                             Icon(
@@ -358,6 +364,7 @@ private fun CuadroDeMolde(
                                 FilaDeMolde(
                                     molde = molde,
                                     elegido = estado.elegido?.id == molde.id,
+                                    motivoNoDisponible = estado.motivoNoDisponible(molde),
                                     alElegir = { acciones.elegirMoldeGuardado(molde) }
                                 )
                             }
@@ -420,21 +427,56 @@ private fun CuadroDeMolde(
     )
 }
 
+/**
+ * Un molde del catálogo dentro del cuadro de elegir.
+ *
+ * Hay dos marcas distintas y no son lo mismo: [elegido] es el que se acaba de tocar en este
+ * cuadro —lo que va a pasar si se confirma— y [motivoNoDisponible] marca el que la receta ya
+ * está usando, que **no se puede tocar** porque llevaría al mismo lugar. Confundirlos dejaría
+ * el molde actual pintado como si fuera la elección nueva.
+ *
+ * El que está en uso se distingue **por fondo y por su etiqueta**, no por el grosor de la
+ * letra: es lo mismo que aprendió `FichaDePaso` — en un celular al sol, negrita contra normal
+ * no se distingue de un vistazo y el color sí.
+ */
 @Composable
-private fun FilaDeMolde(molde: Molde, elegido: Boolean, alElegir: () -> Unit) {
+private fun FilaDeMolde(
+    molde: Molde,
+    elegido: Boolean,
+    motivoNoDisponible: String?,
+    alElegir: () -> Unit
+) {
+    val enUso = motivoNoDisponible != null
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = Medidas.objetivoTactil)
-            .clickable(onClick = alElegir)
-            .padding(Medidas.chico)
+            .clip(RoundedCornerShape(Medidas.chico))
+            .background(
+                if (enUso) MaterialTheme.colorScheme.surfaceContainerHighest
+                else Color.Transparent
+            )
+            .clickable(enabled = !enUso, onClick = alElegir)
+            .padding(Medidas.chico),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Medidas.chico)
     ) {
         Text(
             text = molde.nombre,
             style = MaterialTheme.typography.bodyMedium,
-            color = if (elegido) MaterialTheme.colorScheme.primary
-            else MaterialTheme.colorScheme.onSurface
+            color = when {
+                enUso -> MaterialTheme.colorScheme.onSurfaceVariant
+                elegido -> MaterialTheme.colorScheme.primary
+                else -> MaterialTheme.colorScheme.onSurface
+            }
         )
+        motivoNoDisponible?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 
@@ -471,7 +513,6 @@ private fun SelectorDeModo(modo: ModoReescalado, alElegir: (ModoReescalado) -> U
 // --- Vistas previas ---
 
 private fun estadoDeEjemplo(usaMolde: Boolean) = EstadoMoldeDeReceta(
-    receta = Receta(id = 1, titulo = "Torta de manjar"),
     usaMolde = usaMolde,
     tienePesoFinal = true,
     cargando = false
@@ -482,6 +523,7 @@ private fun estadoDeEjemplo(usaMolde: Boolean) = EstadoMoldeDeReceta(
 private fun VistaPreviaSinMolde() {
     ReposteriaTheme {
         PasoMolde(
+            "Torta de manjar",
             estadoDeEjemplo(usaMolde = false),
             DialogoMoldeDeReceta.Ninguno,
             AccionesMoldeDeReceta()
@@ -494,6 +536,7 @@ private fun VistaPreviaSinMolde() {
 private fun VistaPreviaElegirMolde() {
     ReposteriaTheme {
         PasoMolde(
+            "Torta de manjar",
             estadoDeEjemplo(usaMolde = true),
             DialogoMoldeDeReceta.Elegir(esReescalado = true),
             AccionesMoldeDeReceta()

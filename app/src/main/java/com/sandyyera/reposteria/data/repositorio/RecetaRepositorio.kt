@@ -305,19 +305,64 @@ class RecetaRepositorio(
     suspend fun obtenerIngredientes(recetaId: Long): List<RecetaIngrediente> =
         dao.obtenerTodosLosIngredientes(recetaId)
 
+    /**
+     * Los ingredientes que ya están puestos en una sección.
+     *
+     * La pantalla la usa para no ofrecer dos veces el mismo (8.2). Es por sección y no por
+     * receta: el mismo ingrediente en dos secciones distintas es correcto.
+     */
+    suspend fun obtenerIngredientesDeSeccion(seccionId: Long): List<RecetaIngrediente> =
+        dao.obtenerIngredientesDeSeccion(seccionId)
+
+    /**
+     * Pone un ingrediente en una sección de la receta.
+     *
+     * **Rechaza el que ya esté en esa misma sección.** Dos filas del mismo ingrediente no son
+     * un dato: son una cantidad partida en dos que se lee mal y se suma bien, así que el
+     * costo cuadra mientras la lista miente. Lo correcto es cambiarle los gramos a la fila
+     * que ya está, y el aviso lleva a eso.
+     *
+     * **En dos secciones distintas sí se puede**, y es corriente —almendra en el bizcocho y
+     * almendra en la decoración—, así que la comprobación es por sección y nunca por receta.
+     *
+     * Esto ya estaba anotado como agujero conocido en `Firma.kt`: sin comprobación ni índice
+     * único, la firma de una receta copiada aplastaba las dos filas en una y hacía
+     * desaparecer una cantidad en silencio.
+     *
+     * **No hay índice único en la base que lo respalde**, por lo mismo que las secciones
+     * repetidas: pueden existir filas repetidas guardadas de antes —de hecho existen— y un
+     * índice obligaría a resolverlas dentro de una migración, que es el peor lugar para
+     * decidir qué cantidad se conserva. La regla vive acá, y lo de antes se sigue pudiendo
+     * ver y corregir a mano.
+     */
     suspend fun agregarIngrediente(
         seccionId: Long,
         ingredienteId: Long,
         cantidadG: Double,
         orden: Int = 0
-    ): Long = dao.insertarIngrediente(
-        RecetaIngrediente(
-            seccionId = seccionId,
-            ingredienteId = ingredienteId,
-            cantidadG = cantidadG,
-            orden = orden
+    ): Resultado {
+        val yaEsta = dao.obtenerIngredientesDeSeccion(seccionId)
+            .firstOrNull { it.ingredienteId == ingredienteId }
+        if (yaEsta != null) {
+            // El nombre se lee de la base y no se recibe: quien llama tiene el ingrediente
+            // elegido a mano, pero pedirlo dejaría que el aviso dijera un nombre y la fila
+            // guardada fuera otra.
+            val nombre = dao.nombreDeIngrediente(ingredienteId) ?: "Ese ingrediente"
+            return Resultado.NoSePudo(
+                "$nombre ya está en esta sección, con ${formatearNumero(yaEsta.cantidadG)} g. " +
+                    "Toca esa fila para cambiarle la cantidad."
+            )
+        }
+        dao.insertarIngrediente(
+            RecetaIngrediente(
+                seccionId = seccionId,
+                ingredienteId = ingredienteId,
+                cantidadG = cantidadG,
+                orden = orden
+            )
         )
-    )
+        return Resultado.Listo
+    }
 
     suspend fun cambiarCantidad(itemId: Long, cantidadG: Double) =
         dao.actualizarCantidad(itemId, cantidadG)

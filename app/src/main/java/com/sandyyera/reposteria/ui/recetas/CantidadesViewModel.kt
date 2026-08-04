@@ -84,11 +84,32 @@ sealed interface DialogoCantidades {
         val elegido: Ingrediente? = null,
         val cantidad: String = "",
         val tocado: Boolean = false,
-        val guardando: Boolean = false
+        val guardando: Boolean = false,
+        /** Lo que contestó el repositorio al intentar guardar. Va junto al campo (8.2). */
+        val rechazo: String? = null,
+        /**
+         * Qué ingredientes ya están puestos en esta sección. Lo rellena el `combine`.
+         *
+         * Con esto el cuadro **no ofrece** uno que ya está, en vez de dejar elegirlo y
+         * rechazarlo al confirmar. Es la misma regla que `titulosDisponibles`: lo que se
+         * ofrece y lo que se acepta no pueden discrepar. El repositorio comprueba igual,
+         * porque él es el que decide de verdad.
+         */
+        val yaEnLaSeccion: Set<Long> = emptySet()
     ) : DialogoCantidades {
 
         val errorCantidad: String?
             get() = errorEnCantidadEnGramosTexto(cantidad).takeIf { tocado }
+
+        /**
+         * Por qué no se puede elegir este ingrediente, o `null` si se puede.
+         *
+         * **Al editar una fila no aplica**: ahí el ingrediente elegido es justamente el que ya
+         * está, y marcarlo como ocupado impediría cambiarle los gramos.
+         */
+        fun motivoNoDisponible(ingrediente: Ingrediente): String? =
+            if (editando == null && ingrediente.id in yaEnLaSeccion) "Ya está en esta sección"
+            else null
 
         val puedeGuardar: Boolean
             get() = elegido != null &&
@@ -285,8 +306,27 @@ class CantidadesViewModel(
 
     // --- Ingredientes de la receta ---
 
+    /**
+     * Abre el cuadro de agregar un ingrediente a una sección.
+     *
+     * Lee de una vez qué hay puesto en esa sección, por lo mismo que `abrirElegirMolde` lee
+     * el rendimiento: mientras el cuadro está abierto esa lista no cambia —agregar uno lo
+     * cierra— así que observarla solo agregaría una fuente que reemite justo mientras se
+     * escribe en un campo de texto, que es lo que 12.2.1 pide evitar.
+     */
     fun abrirAgregarIngrediente(seccionId: Long) {
         _dialogo.value = DialogoCantidades.PonerIngrediente(seccionId = seccionId)
+        viewModelScope.launch {
+            val puestos = recetas.obtenerIngredientesDeSeccion(seccionId)
+                .map { it.ingredienteId }
+                .toSet()
+            enDialogoIngrediente {
+                // Se comprueba la sección porque entre abrir y responder la consulta pudo
+                // abrirse otro cuadro, y marcar como ocupados los de la sección equivocada
+                // escondería ingredientes que sí se pueden poner.
+                if (it.seccionId == seccionId) it.copy(yaEnLaSeccion = puestos) else it
+            }
+        }
     }
 
     fun abrirCambiarCantidad(linea: LineaDeIngrediente) {
@@ -303,8 +343,9 @@ class CantidadesViewModel(
 
     fun buscarIngrediente(texto: String) = enDialogoIngrediente { it.copy(busqueda = texto) }
 
+    // El rechazo era sobre el ingrediente anterior: elegir otro lo deja sin sentido.
     fun elegirIngrediente(ingrediente: Ingrediente) =
-        enDialogoIngrediente { it.copy(elegido = ingrediente) }
+        enDialogoIngrediente { it.copy(elegido = ingrediente, rechazo = null) }
 
     fun cambiarCantidadEscrita(texto: String) = enDialogoIngrediente {
         it.copy(cantidad = formatearMientrasSeEscribe(texto), tocado = true)
@@ -348,15 +389,22 @@ class CantidadesViewModel(
         viewModelScope.launch {
             val enEdicion = actual.editando
             if (enEdicion == null) {
-                recetas.agregarIngrediente(
+                when (val r = recetas.agregarIngrediente(
                     seccionId = actual.seccionId,
                     ingredienteId = elegido.id,
                     cantidadG = gramos
-                )
+                )) {
+                    is Resultado.Listo -> _dialogo.value = DialogoCantidades.Ninguno
+                    // El rechazo se queda **dentro del cuadro**, como el de las secciones: es
+                    // sobre el ingrediente que se acaba de elegir, y con el teclado abierto un
+                    // aviso en la franja de abajo no se ve (8.2).
+                    is Resultado.NoSePudo -> _dialogo.value =
+                        actual.copy(guardando = false, rechazo = r.motivo)
+                }
             } else {
                 recetas.cambiarCantidad(enEdicion.id, gramos)
+                _dialogo.value = DialogoCantidades.Ninguno
             }
-            _dialogo.value = DialogoCantidades.Ninguno
         }
     }
 

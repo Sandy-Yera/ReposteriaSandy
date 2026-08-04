@@ -90,6 +90,7 @@ data class AccionesCantidades(
 /** El paso de cantidades conectado a su ViewModel. */
 @Composable
 fun PasoCantidadesScreen(
+    tituloReceta: String,
     modelo: CantidadesViewModel,
     pasoActual: PasoDeReceta,
     alElegirPaso: (PasoDeReceta) -> Unit,
@@ -131,6 +132,7 @@ fun PasoCantidadesScreen(
     }
 
     PasoCantidades(
+        tituloReceta = tituloReceta,
         estado = estado,
         dialogo = dialogo,
         acciones = acciones,
@@ -157,6 +159,7 @@ fun PasoCantidadesScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PasoCantidades(
+    tituloReceta: String,
     estado: EstadoCantidades,
     dialogo: DialogoCantidades,
     acciones: AccionesCantidades,
@@ -192,7 +195,7 @@ fun PasoCantidades(
                             // medía el texto y había que apuntarle justo — al lado, donde
                             // parece que sigue el título, no pasaba nada. En el nombre de
                             // una sección ya funcionaba así porque el `weight(1f)` va antes.
-                            text = estado.receta?.titulo.orEmpty(),
+                            text = tituloReceta,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(min = Medidas.objetivoTactil)
@@ -551,7 +554,8 @@ private fun DialogoPonerIngrediente(
                         alBuscar = acciones.buscarIngrediente,
                         alElegir = acciones.elegirIngrediente,
                         marcador = "Buscar ingrediente",
-                        alCrear = acciones.crearIngredienteRapido
+                        alCrear = acciones.crearIngredienteRapido,
+                        motivoNoDisponible = estado::motivoNoDisponible
                     )
                 } else {
                     Text(text = elegido.nombre, style = MaterialTheme.typography.titleMedium)
@@ -566,6 +570,17 @@ private fun DialogoPonerIngrediente(
                         etiqueta = "Cuántos gramos lleva",
                         error = estado.errorCantidad,
                         accionDelTeclado = ImeAction.Done
+                    )
+                }
+
+                // El rechazo del repositorio, dentro del cuadro y no en la franja de abajo:
+                // con el teclado abierto esa franja queda tapada y el cuadro parece no
+                // haber hecho nada (8.2).
+                estado.rechazo?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error
                     )
                 }
             }
@@ -688,7 +703,7 @@ private val recetaConDosSecciones = recetaSimple.copy(
 @Composable
 private fun CantidadesSimple() {
     ReposteriaTheme {
-        PasoCantidades(recetaSimple, DialogoCantidades.Ninguno, AccionesCantidades())
+        PasoCantidades("Torta de manjar", recetaSimple, DialogoCantidades.Ninguno, AccionesCantidades())
     }
 }
 
@@ -696,7 +711,7 @@ private fun CantidadesSimple() {
 @Composable
 private fun CantidadesDosSecciones() {
     ReposteriaTheme {
-        PasoCantidades(recetaConDosSecciones, DialogoCantidades.Ninguno, AccionesCantidades())
+        PasoCantidades("Torta de manjar", recetaConDosSecciones, DialogoCantidades.Ninguno, AccionesCantidades())
     }
 }
 
@@ -704,7 +719,7 @@ private fun CantidadesDosSecciones() {
 @Composable
 private fun CantidadesOscuro() {
     ReposteriaTheme(oscuro = true) {
-        PasoCantidades(recetaConDosSecciones, DialogoCantidades.Ninguno, AccionesCantidades())
+        PasoCantidades("Torta de manjar", recetaConDosSecciones, DialogoCantidades.Ninguno, AccionesCantidades())
     }
 }
 
@@ -713,6 +728,7 @@ private fun CantidadesOscuro() {
 private fun CantidadesVacia() {
     ReposteriaTheme {
         PasoCantidades(
+            "Torta de manjar",
             recetaSimple.copy(
                 secciones = listOf(seccion(1, "General")),
                 costoTotal = 0.0
@@ -728,6 +744,7 @@ private fun CantidadesVacia() {
 private fun CantidadesBautizando() {
     ReposteriaTheme {
         PasoCantidades(
+            "Torta de manjar",
             recetaSimple,
             DialogoCantidades.Seccion(nombre = "", nombreDeLaPrimera = "Torta de manjar"),
             AccionesCantidades()

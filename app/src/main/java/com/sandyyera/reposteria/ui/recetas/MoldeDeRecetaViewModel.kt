@@ -6,7 +6,6 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.sandyyera.reposteria.data.db.entidades.Molde
-import com.sandyyera.reposteria.data.db.entidades.Receta
 import com.sandyyera.reposteria.data.repositorio.MoldeRepositorio
 import com.sandyyera.reposteria.data.repositorio.RecetaRepositorio
 import com.sandyyera.reposteria.data.repositorio.Resultado
@@ -65,8 +64,21 @@ sealed interface DialogoMoldeDeReceta {
         val guardando: Boolean = false,
         val rechazo: String? = null,
         /** El catálogo ya filtrado por el buscador. Lo rellena el `combine`, no se escribe. */
-        val candidatos: List<Molde> = emptyList()
+        val candidatos: List<Molde> = emptyList(),
+        /**
+         * El molde que la receta usa **ahora**, si es uno del catálogo.
+         *
+         * Se muestra marcado y no se puede tocar: elegirlo no cambiaría nada, y un toque que
+         * no hace nada deja dudando —el mismo criterio que la ficha del paso actual—. Además
+         * es la respuesta a "¿en cuál estoy?", que al cambiar de molde no se ve por ningún
+         * lado. En modo prueba es `null`: ahí la receta no está enlazada a ninguno.
+         */
+        val moldeActualId: Long? = null
     ) : DialogoMoldeDeReceta {
+
+        /** Por qué no se puede elegir este molde, o `null` si se puede. */
+        fun motivoNoDisponible(molde: Molde): String? =
+            if (molde.id == moldeActualId) "En uso" else null
 
         /** Las medidas que hay que pedir, si se está midiendo a mano. */
         val campos: List<CampoDeMolde>
@@ -93,7 +105,6 @@ sealed interface DialogoMoldeDeReceta {
 
 /** Lo que el paso del molde necesita para dibujarse. */
 data class EstadoMoldeDeReceta(
-    val receta: Receta? = null,
     val usaMolde: Boolean = false,
     val dimensiones: DimensionesMolde? = null,
     val moldeEnlazado: Molde? = null,
@@ -179,13 +190,11 @@ class MoldeDeRecetaViewModel(
      * "Quitar el molde" todavía apagado, porque este lado seguía creyendo que no había peso.
      */
     val estado: StateFlow<EstadoMoldeDeReceta> = combine(
-        recetas.observarReceta(recetaId),
         recetas.observarRendimiento(recetaId),
         mensaje,
         moldes.observarTodos()
-    ) { receta, rendimiento, mensajeActual, catalogo ->
+    ) { rendimiento, mensajeActual, catalogo ->
         EstadoMoldeDeReceta(
-            receta = receta,
             usaMolde = rendimiento?.usaMolde ?: false,
             dimensiones = rendimiento?.dimensiones,
             moldeEnlazado = rendimiento?.moldeOrigenId
@@ -209,7 +218,11 @@ class MoldeDeRecetaViewModel(
         viewModelScope.launch {
             val actual = recetas.obtenerRendimiento(recetaId)
             _dialogo.value = DialogoMoldeDeReceta.Elegir(
-                esReescalado = actual?.usaMolde == true && actual.dimensiones != null
+                esReescalado = actual?.usaMolde == true && actual.dimensiones != null,
+                // Sale de la misma lectura que ya se hacía para saber si es reescalado. No
+                // se observa porque el molde de la receta no puede cambiar mientras este
+                // cuadro está abierto: cambiarlo es justamente lo que lo cierra.
+                moldeActualId = actual?.moldeOrigenId
             )
         }
     }

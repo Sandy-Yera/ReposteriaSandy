@@ -23,6 +23,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.sandyyera.reposteria.AppContainer
 import com.sandyyera.reposteria.ui.ingredientes.IngredientesViewModel
@@ -39,6 +40,7 @@ import com.sandyyera.reposteria.ui.recetas.PasoDuracionScreen
 import com.sandyyera.reposteria.ui.recetas.PasoMoldeScreen
 import com.sandyyera.reposteria.ui.recetas.PasoRendimientoScreen
 import com.sandyyera.reposteria.ui.recetas.RendimientoViewModel
+import com.sandyyera.reposteria.ui.recetas.TituloDeRecetaViewModel
 import com.sandyyera.reposteria.ui.recetas.RecetasViewModel
 import com.sandyyera.reposteria.ui.theme.Medidas
 import kotlinx.coroutines.launch
@@ -97,8 +99,20 @@ fun NavegacionPrincipal(
         val cerrarReceta: () -> Unit = remember { { recetaAbierta = null } }
         val elegirPaso: (PasoDeReceta) -> Unit = remember { { pasoActual = it } }
 
+        // El título se observa **una sola vez para los cuatro pasos**, y desde acá porque
+        // este es el único punto que vive mientras la receta está abierta. Antes lo sacaba
+        // cada paso de su propio estado: cuatro observaciones de la misma fila, y cada una
+        // con su primer instante en blanco — eso era el parpadeo del encabezado al cambiar
+        // de sección, y por eso pasaba una sola vez por paso.
+        val tituloModelo: TituloDeRecetaViewModel = viewModel(
+            key = "titulo-$idAbierta",
+            factory = TituloDeRecetaViewModel.fabrica(idAbierta, contenedor.recetas)
+        )
+        val tituloReceta by tituloModelo.titulo.collectAsStateWithLifecycle()
+
         when (pasoActual) {
             PasoDeReceta.CANTIDADES -> PasoCantidadesScreen(
+                tituloReceta = tituloReceta,
                 modelo = viewModel(
                     // La clave hace que cada receta tenga su propio ViewModel: sin ella,
                     // abrir una segunda receta reutilizaría el de la primera y mostraría los
@@ -117,6 +131,7 @@ fun NavegacionPrincipal(
             )
 
             PasoDeReceta.MOLDE -> PasoMoldeScreen(
+                tituloReceta = tituloReceta,
                 modelo = viewModel(
                     key = "molde-$idAbierta",
                     factory = MoldeDeRecetaViewModel.fabrica(
@@ -132,6 +147,7 @@ fun NavegacionPrincipal(
             )
 
             PasoDeReceta.RENDIMIENTO -> PasoRendimientoScreen(
+                tituloReceta = tituloReceta,
                 modelo = viewModel(
                     key = "rendimiento-$idAbierta",
                     factory = RendimientoViewModel.fabrica(
@@ -146,6 +162,7 @@ fun NavegacionPrincipal(
             )
 
             PasoDeReceta.DURACION -> PasoDuracionScreen(
+                tituloReceta = tituloReceta,
                 modelo = viewModel(
                     key = "duracion-$idAbierta",
                     factory = DuracionViewModel.fabrica(idAbierta, contenedor.recetas)
