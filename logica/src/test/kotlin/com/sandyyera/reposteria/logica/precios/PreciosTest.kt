@@ -2,6 +2,7 @@ package com.sandyyera.reposteria.logica.precios
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -69,10 +70,28 @@ class PreciosTest {
 
     @Test
     fun `promocion de dos productos completos`() {
-        // "si llevas 2 productos, te lo dejo a x"
+        // "si llevas 2 productos, te lo dejo a x".
+        //
+        // **Esta prueba cambió de respuesta al arreglar el resto (8.6.1)**, y el cambio es el
+        // arreglo: antes daba 1.000 por trozo, que es 16.000 repartido entre los 16 trozos de
+        // los DOS productos. Pero estas cifras miden **un** producto, y una promoción de dos
+        // no se aplica vendiendo uno. Lo que se cobra por ese uno es su precio individual.
+        val d = receta(
+            costoTotal = 3000.0,
+            trozos = 8,
+            porProducto(9000.0),                  // el precio del producto suelto
+            porProducto(16000.0, cantidad = 2)
+        )
+
+        assertEquals(9000.0, ingresoBruto(d), 0.001)
+        assertEquals(1125.0, precioEfectivoPorTrozo(d), 0.001)   // 9.000 / 8
+    }
+
+    @Test
+    fun `y sin el precio del producto suelto se marca en vez de inventar`() {
         val d = receta(costoTotal = 3000.0, trozos = 8, porProducto(16000.0, cantidad = 2))
-        // 2 productos = 16 trozos, así que cada trozo sale 1.000
-        assertEquals(1000.0, precioEfectivoPorTrozo(d), 0.001)
+
+        assertTrue(repartoDeUnProducto(d).faltaElPrecioSuelto)
     }
 
     // --- Decisión #4: siempre gana el precio de MENOR ganancia ---
@@ -86,7 +105,16 @@ class PreciosTest {
             porTrozo(1500.0, cantidad = 2),   // 750 por trozo
             porTrozo(2000.0, cantidad = 4)    // 500 por trozo <- el peor caso
         )
-        assertEquals(500.0, precioEfectivoPorTrozo(d), 0.001)
+
+        // Sigue eligiendo la de 4, que es la que menos deja.
+        assertEquals(4, precioDeReferencia(d).cantidad)
+
+        // **Lo que cambió es cuánto vale eso de verdad** (8.6.1): en 6 trozos, esa promo de 4
+        // entra UNA vez y sobran 2, que se venden a 1.000 cada uno. Son 2.000 + 2.000 = 4.000
+        // por el producto, o sea 666,67 por trozo — y no los 500 de antes, que salían de
+        // suponer que los seis se vendían a precio de promoción.
+        assertEquals(4000.0, ingresoBruto(d), 0.001)
+        assertEquals(666.67, precioEfectivoPorTrozo(d), 0.01)
     }
 
     @Test
@@ -299,5 +327,140 @@ class PreciosTest {
     fun `un precio que no cubre ningun trozo lanza excepcion en vez de dividir por cero`() {
         val d = receta(costoTotal = 1000.0, trozos = 4, porTrozo(500.0, cantidad = 0))
         precioEfectivoPorTrozo(d)
+    }
+
+    // --- El resto de una promoción que no divide exacto (8.6.1) ---
+
+    @Test
+    fun `una promo de 2 en una receta de 3 no vende los tres a precio de promo`() {
+        // El error que se vio en el celular: la app decía 4.500 -1.500 por trozo, por tres-
+        // cuando esa promoción solo existe si se llevan dos. El tercero se vende suelto.
+        val d = DatosCalculoReceta(
+            recetaId = 1, titulo = "Torta", costoTotal = 900.0, trozos = 3,
+            precios = listOf(
+                PrecioVigente(ModoPrecio.TROZO, 1, 2000.0),
+                PrecioVigente(ModoPrecio.TROZO, 2, 3000.0, esReferencia = true)
+            )
+        )
+
+        val reparto = repartoDeUnProducto(d)
+
+        assertEquals("Una promo entera", 1, reparto.cuantasVecesEntra)
+        assertEquals("Y un trozo suelto", 1, reparto.sueltos)
+        assertTrue(reparto.huboResto)
+        // 3.000 de la promo + 2.000 del suelto = 5.000. NO 4.500.
+        assertEquals(5000.0, reparto.total, 0.001)
+        assertEquals(5000.0, ingresoBruto(d), 0.001)
+    }
+
+    @Test
+    fun `cuando divide exacto no sobra nada y no hay nada que avisar`() {
+        val d = DatosCalculoReceta(
+            recetaId = 1, titulo = "Torta", costoTotal = 1200.0, trozos = 4,
+            precios = listOf(
+                PrecioVigente(ModoPrecio.TROZO, 1, 2000.0),
+                PrecioVigente(ModoPrecio.TROZO, 2, 3000.0, esReferencia = true)
+            )
+        )
+
+        val reparto = repartoDeUnProducto(d)
+
+        assertEquals(2, reparto.cuantasVecesEntra)
+        assertEquals(0, reparto.sueltos)
+        assertFalse(reparto.huboResto)
+        assertEquals(6000.0, reparto.total, 0.001)
+    }
+
+    @Test
+    fun `el precio base por trozo se comporta igual que antes`() {
+        // Con la promo de cantidad 1, cada trozo es una "promo" y no sobra nada: la cuenta
+        // vieja y la nueva tienen que dar lo mismo, o esto rompería todo lo que ya andaba.
+        val d = DatosCalculoReceta(
+            recetaId = 1, titulo = "Torta", costoTotal = 1400.0, trozos = 6,
+            precios = listOf(PrecioVigente(ModoPrecio.TROZO, 1, 500.0, esReferencia = true))
+        )
+
+        assertEquals(3000.0, ingresoBruto(d), 0.001)
+        assertEquals(500.0, precioEfectivoPorTrozo(d), 0.001)
+        assertEquals(3, trozoGanador(d).numero)
+    }
+
+    @Test
+    fun `sin precio individual no se inventa lo que sobra, se marca`() {
+        // Es la red de la decisión de Sandy: si falta el base, la app avisa en vez de mostrar
+        // un número que da de menos sin decirlo.
+        val d = DatosCalculoReceta(
+            recetaId = 1, titulo = "Torta", costoTotal = 900.0, trozos = 3,
+            precios = listOf(PrecioVigente(ModoPrecio.TROZO, 2, 3000.0, esReferencia = true))
+        )
+
+        val reparto = repartoDeUnProducto(d)
+
+        assertTrue(reparto.faltaElPrecioSuelto)
+        assertEquals("Solo cuenta la promoción que sí cabe", 3000.0, reparto.total, 0.001)
+    }
+
+    @Test
+    fun `una promo de dos productos completos no se aplica al vender uno`() {
+        // El mismo razonamiento un piso más arriba: `ingresoBruto` mide UN producto, y una
+        // promo de dos no existe todavía a esa altura.
+        val d = DatosCalculoReceta(
+            recetaId = 1, titulo = "Torta", costoTotal = 1400.0, trozos = 6,
+            precios = listOf(
+                PrecioVigente(ModoPrecio.PRODUCTO, 1, 9000.0),
+                PrecioVigente(ModoPrecio.PRODUCTO, 2, 16000.0, esReferencia = true)
+            )
+        )
+
+        val reparto = repartoDeUnProducto(d)
+
+        assertEquals("La promo de 2 no entra en 1", 0, reparto.cuantasVecesEntra)
+        assertEquals(1, reparto.sueltos)
+        assertEquals("Se vende al precio del producto entero", 9000.0, reparto.total, 0.001)
+    }
+
+    @Test
+    fun `un precio del producto completo sigue dando lo mismo que antes`() {
+        val d = DatosCalculoReceta(
+            recetaId = 1, titulo = "Torta", costoTotal = 1400.0, trozos = 6,
+            precios = listOf(PrecioVigente(ModoPrecio.PRODUCTO, 1, 9000.0, esReferencia = true))
+        )
+
+        assertEquals(9000.0, ingresoBruto(d), 0.001)
+        assertEquals(1500.0, precioEfectivoPorTrozo(d), 0.001)
+    }
+
+    @Test
+    fun `repartir sirve para cualquier total, que es lo que necesita la simulacion`() {
+        // Dos productos de 3 trozos son 6 trozos, y ahí la promo de 2 SÍ entra tres veces:
+        // la duda de "¿y si vendo más de uno?" se resuelve repartiendo el total, no
+        // multiplicando el resultado de un producto.
+        val promo = PrecioVigente(ModoPrecio.TROZO, 2, 3000.0)
+        val suelto = PrecioVigente(ModoPrecio.TROZO, 1, 2000.0)
+
+        val dosProductos = repartir(aVender = 6, promocion = promo, precioIndividual = suelto)
+
+        assertEquals(3, dosProductos.cuantasVecesEntra)
+        assertEquals(0, dosProductos.sueltos)
+        assertEquals(9000.0, dosProductos.total, 0.001)
+        // Y no es lo mismo que multiplicar por dos lo de un producto (5.000 x 2 = 10.000).
+        assertNotEquals(10000.0, dosProductos.total, 0.001)
+    }
+
+    @Test
+    fun `los dos precios base se reconocen por su cantidad`() {
+        val d = DatosCalculoReceta(
+            recetaId = 1, titulo = "Torta", costoTotal = 900.0, trozos = 3,
+            precios = listOf(
+                PrecioVigente(ModoPrecio.TROZO, 1, 2000.0),
+                PrecioVigente(ModoPrecio.PRODUCTO, 1, 5500.0),
+                PrecioVigente(ModoPrecio.TROZO, 2, 3000.0)
+            )
+        )
+
+        assertEquals(2000.0, precioBasePorTrozo(d)!!.precioTotal, 0.001)
+        assertEquals(5500.0, precioBaseDelProducto(d)!!.precioTotal, 0.001)
+        assertTrue(esPrecioBase(precioBasePorTrozo(d)!!))
+        assertFalse(esPrecioBase(PrecioVigente(ModoPrecio.TROZO, 2, 3000.0)))
     }
 }

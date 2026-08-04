@@ -276,6 +276,77 @@ class GastosViewModelTest {
         assertEquals(segunLaLogica.cantidad, segunLaPantalla.precio.cantidad)
     }
 
+    // --- El resto de una promoción que no divide exacto (8.6.1) ---
+
+    @Test
+    fun `una promo que deja un trozo suelto lo dice y lo cobra al precio individual`() =
+        probar { modelo ->
+            // La receta rinde 6. Con una promo de 4 sobran 2, que no se venden a precio de
+            // promoción: se venden sueltos. Antes la app multiplicaba y mostraba de menos.
+            ponerPrecio(modelo, cantidad = "1", total = "1.000")
+            ponerPrecio(modelo, cantidad = "4", total = "2.000")
+            val promo = modelo.estado.value.filas.first { it.precio.cantidad == 4 }
+            modelo.elegirReferencia(promo.precio)
+            advanceUntilIdle()
+
+            val estado = modelo.estado.value
+            assertEquals(2, estado.reparto!!.sueltos)
+            assertNotNull("Se avisa mientras se aplica la regla", estado.avisoDelResto)
+            assertTrue(estado.avisoDelResto!!.contains("2 trozos sueltos"))
+            // 2.000 de la promo + 2 x 1.000 de los sueltos.
+            assertEquals(4000.0, estado.ingresoDelProducto!!, 0.001)
+        }
+
+    @Test
+    fun `sin resto no hay nada que avisar`() = probar { modelo ->
+        ponerPrecio(modelo, cantidad = "1", total = "1.000")
+        ponerPrecio(modelo, cantidad = "3", total = "2.400")
+        modelo.elegirReferencia(modelo.estado.value.filas.first { it.precio.cantidad == 3 }.precio)
+        advanceUntilIdle()
+
+        // 6 trozos entre promos de 3: entra dos veces justas.
+        assertEquals(0, modelo.estado.value.reparto!!.sueltos)
+        assertNull(modelo.estado.value.avisoDelResto)
+        assertEquals(4800.0, modelo.estado.value.ingresoDelProducto!!, 0.001)
+    }
+
+    @Test
+    fun `si falta el precio individual lo dice en vez de mostrar un total corto`() =
+        probar { modelo ->
+            ponerPrecio(modelo, cantidad = "4", total = "2.000")
+
+            val estado = modelo.estado.value
+            assertTrue(estado.reparto!!.faltaElPrecioSuelto)
+            assertTrue(estado.avisoDelResto!!.contains("precio individual"))
+        }
+
+    @Test
+    fun `la pantalla pide los dos precios base y sabe cuales faltan`() = probar { modelo ->
+        assertEquals(
+            listOf(ModoPrecio.TROZO, ModoPrecio.PRODUCTO),
+            modelo.estado.value.basesQueFaltan
+        )
+
+        ponerPrecio(modelo, cantidad = "1", total = "1.000")
+
+        assertEquals(listOf(ModoPrecio.PRODUCTO), modelo.estado.value.basesQueFaltan)
+
+        ponerPrecio(modelo, cantidad = "1", total = "5.500", modo = ModoPrecio.PRODUCTO)
+
+        assertTrue(modelo.estado.value.basesQueFaltan.isEmpty())
+    }
+
+    @Test
+    fun `las promociones se distinguen de los precios base`() = probar { modelo ->
+        // La pantalla las dibuja en dos listas: los base sostienen a las promociones.
+        ponerPrecio(modelo, cantidad = "1", total = "1.000")
+        ponerPrecio(modelo, cantidad = "2", total = "1.800")
+
+        val filas = modelo.estado.value.filas
+        assertTrue(filas.first { it.precio.cantidad == 1 }.esBase)
+        assertFalse(filas.first { it.precio.cantidad == 2 }.esBase)
+    }
+
     // --- Editar y borrar ---
 
     @Test

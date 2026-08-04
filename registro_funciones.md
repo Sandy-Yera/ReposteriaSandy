@@ -328,10 +328,15 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Qué hace: el texto que se muestra al intentar poner como referencia un precio que pierde plata.
 - Cómo funciona: constante con el texto `"Esta promoción genera pérdidas"`. Es constante y no un texto suelto por lo mismo que `MENSAJE_ALTURA_RIESGOSA`: la pantalla muestra exactamente el mismo mensaje que produce la validación, sin copiarlo a mano.
 
+### precioBasePorTrozo, precioBaseDelProducto, esPrecioBase, RepartoDeVenta, repartir, repartoDeUnProducto y AVISO_TROZO_SUELTO ✅ IMPLEMENTADAS
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/precios/Precios.kt
+- Qué hacen: el reparto real de una venta entre una promoción y lo que sobra (8.6.1).
+- Cómo funcionan: los dos precios **base** son las filas de `cantidad = 1`, una por modo; no son tabla ni columna nueva porque "el precio de un trozo" ya es eso. Existen como concepto porque **sostienen a las promociones**: una promo de 2 en una receta de 3 deja un trozo suelto, y ese suelto tiene que venderse a algo. `repartir(aVender, promocion, precioIndividual)` mete tantas promociones como quepan y cobra el resto al individual; `repartoDeUnProducto` lo aplica a **un** producto —los trozos de la receta si la promo es por trozo, un producto si es por producto—. Salió de un error visto en el celular: con 3 trozos y "2 por $3.000" la app mostraba $4.500, que es la promo dividida por trozo y multiplicada por tres, cuando lo real son $3.000 + el trozo suelto. `faltaElPrecioSuelto` marca el único caso incalculable —sobró algo y no hay base—, y ahí el total cuenta solo las promociones para que la pantalla avise en vez de mostrar un número corto sin decirlo. **`repartir` está separado a propósito**: el total que se reparte cambia según quién pregunte (la simulación reparte lo que se vende en un día, no multiplica lo de un producto), pero la regla es la misma. Lleva la misma guarda que tenía `precioPorTrozoDe` contra `cantidad = 0`, que al escribirlo se había perdido y la recuperó una prueba que ya existía.
+
 ### precioEfectivoPorTrozo ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/precios/Precios.kt
 - Qué hace: el precio por trozo que alimenta todos los campos automáticos de la app.
-- Cómo funciona: recibe el snapshot, devuelve `Double`. Es `precioPorTrozoDe` aplicado al resultado de `precioDeReferencia`, así que hereda su excepción cuando no hay precios.
+- Cómo funciona: recibe el snapshot, devuelve `Double`. **Sale del reparto real** (`repartoDeUnProducto`) repartido entre los trozos, y no del precio de la promoción dividido — que era lo que mentía: con 3 trozos y una promo de 2, dividir da 1.500 por trozo como si los tres se vendieran así. Con resto es una mezcla de los dos precios, y todo lo que cuelga de esto (trozo ganador, ganancia, sueldos, simulación) queda cuadrado sin tocarlo. Hereda la excepción de `precioDeReferencia` cuando no hay precios.
 
 ### trozoGanador ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/precios/Precios.kt

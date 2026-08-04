@@ -1114,6 +1114,39 @@ Devolver el motivo o `null` —y no lanzar excepción— es el mismo formato de 
 
 Todas las cifras se recalculan sobre el snapshot que ya está en memoria (6.4): son divisiones y restas sobre datos ya cargados, sin volver a consultar la base. Tocar otra promo y ver todo actualizado no tiene demora perceptible.
 
+#### 8.6.1 Los dos precios base, y el resto de una promoción
+
+Una receta tiene **dos precios base**: el de un trozo suelto y el del producto entero. No son
+una tabla aparte — son las filas de `cantidad = 1`, una por modo — pero sí un concepto propio,
+porque **son los que sostienen a las promociones**.
+
+El motivo salió probando: una receta que rinde 3 trozos, con una promoción de "2 por $3.000",
+mostraba un ingreso de $4.500. Sale de dividir la promo por trozo (1.500) y multiplicar por
+tres. Pero **esa promoción solo existe cuando se llevan dos**; el tercero se vende suelto, a su
+propio precio. Los $4.500 no eran un error visible sino una cifra creíble y falsa, que es la
+peor clase.
+
+**La regla:** entran tantas promociones como quepan, y lo que sobra se vende al precio base.
+Con 3 trozos y una promo de 2: una promoción más un trozo suelto.
+
+**Y se avisa mientras se aplica**, no en un manual: *"Quedó 1 trozo suelto. Se usó el valor
+individual."* El aviso va pegado a las cifras que corrige, porque es la explicación de por qué
+ese número no es lo que daría multiplicar.
+
+**Si falta el precio base**, la app lo dice en vez de inventarlo: el total cuenta solo las
+promociones y la pantalla avisa que falta. Es la red de la decisión — obligar los dos base, y
+si por datos viejos falta alguno, avisar antes que calcular mal.
+
+**Vender más de uno no contradice esto, y ahí estaba la duda.** Estas cifras miden **un**
+producto: con 3 trozos y promos de 2 siempre va a sobrar uno. Vendiendo dos productos son 6
+trozos y la promo entra tres veces justas, sin resto — pero eso no se calcula multiplicando lo
+de un producto por dos (daría 10.000 en vez de 9.000). Se calcula **repartiendo el total que se
+vende**, y por eso `repartir` está separado de `repartoDeUnProducto`: la simulación (8.7) lo
+usa sobre su propio total.
+
+**En modo producto es lo mismo un piso más arriba:** una promoción de dos productos completos
+no se aplica al vender uno, así que ese uno se cobra a su precio base.
+
 ### 8.7 Paso 6 — Ganancias simuladas
 
 ```kotlin

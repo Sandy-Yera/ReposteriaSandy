@@ -14,6 +14,13 @@ import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.logica.precios.DatosCalculoReceta
 import com.sandyyera.reposteria.logica.precios.ModoPrecio
 import com.sandyyera.reposteria.logica.precios.TrozoGanador
+import com.sandyyera.reposteria.logica.precios.AVISO_TROZO_SUELTO
+import com.sandyyera.reposteria.logica.precios.PrecioVigente
+import com.sandyyera.reposteria.logica.precios.RepartoDeVenta
+import com.sandyyera.reposteria.logica.precios.esPrecioBase
+import com.sandyyera.reposteria.logica.precios.precioBaseDelProducto
+import com.sandyyera.reposteria.logica.precios.precioBasePorTrozo
+import com.sandyyera.reposteria.logica.precios.repartoDeUnProducto
 import com.sandyyera.reposteria.logica.precios.costoPorTrozo
 import com.sandyyera.reposteria.logica.precios.gananciaFinal
 import com.sandyyera.reposteria.logica.precios.gananciaPorTrozo
@@ -98,7 +105,9 @@ data class FilaDePrecio(
     val trozosQueCubre: Int,
     val precioPorTrozo: Double,
     val gananciaPorTrozo: Double,
-    val esReferencia: Boolean
+    val esReferencia: Boolean,
+    /** Si es uno de los dos precios base (cantidad 1) y no una promoción. */
+    val esBase: Boolean = false
 ) {
     /**
      * Si vender a este precio deja pérdida.
@@ -167,6 +176,49 @@ data class EstadoGastos(
      * de un ingrediente en otra pantalla. Por eso esto se **muestra** en vez de prevenirse.
      */
     val laReferenciaPierdePlata: Boolean get() = (gananciaDeCadaTrozo ?: 0.0) < 0
+
+    // --- Los dos precios base y el resto de las promociones (8.6.1) ---
+
+    /** El precio de un trozo suelto, si ya está puesto. */
+    val baseDelTrozo: PrecioVigente? get() = datos?.let { precioBasePorTrozo(it) }
+
+    /** El precio del producto entero, si ya está puesto. */
+    val baseDelProducto: PrecioVigente? get() = datos?.let { precioBaseDelProducto(it) }
+
+    /**
+     * Cuáles de los dos precios base faltan por definir.
+     *
+     * Los dos son la base sobre la que se apoya todo lo demás: sin el del trozo, una
+     * promoción que deja un trozo suelto no tiene con qué venderlo; sin el del producto, una
+     * promoción de varios productos tampoco. La pantalla los pide primero por eso.
+     */
+    val basesQueFaltan: List<ModoPrecio>
+        get() = buildList {
+            if (datos != null && baseDelTrozo == null) add(ModoPrecio.TROZO)
+            if (datos != null && baseDelProducto == null) add(ModoPrecio.PRODUCTO)
+        }
+
+    /** Cómo se reparte de verdad la venta de un producto al precio de referencia. */
+    val reparto: RepartoDeVenta? get() = datos?.takeIf { it.tienePrecio }?.let { repartoDeUnProducto(it) }
+
+    /**
+     * El aviso de que la promoción no dividió exacto, o `null` si dividió.
+     *
+     * Es lo que pidió Sandy: que se avise **mientras se aplica la regla**, no en un manual.
+     * Si además falta el precio individual, lo dice en vez de mostrar un total que da de
+     * menos sin explicar por qué.
+     */
+    val avisoDelResto: String?
+        get() {
+            val r = reparto ?: return null
+            if (!r.huboResto) return null
+            val cuantos = if (r.sueltos == 1) "Quedó 1 trozo suelto" else "Quedaron ${r.sueltos} trozos sueltos"
+            return if (r.faltaElPrecioSuelto) {
+                "$cuantos y todavía no tienen precio individual: lo de abajo cuenta solo la promoción."
+            } else {
+                "$cuantos. $AVISO_TROZO_SUELTO."
+            }
+        }
 }
 
 /**
@@ -234,7 +286,8 @@ class GastosViewModel(
                 trozosQueCubre = trozosCubiertosPor(vigente, datos),
                 precioPorTrozo = precioPorTrozoDe(vigente, datos),
                 gananciaPorTrozo = gananciaPorTrozoDe(vigente, datos),
-                esReferencia = fila.id == idDeLaQueManda
+                esReferencia = fila.id == idDeLaQueManda,
+                esBase = esPrecioBase(vigente)
             )
         }
     }

@@ -126,9 +126,17 @@ fun precioDeMenorGanancia(d: DatosCalculoReceta): PrecioVigente =
 fun precioDeReferencia(d: DatosCalculoReceta): PrecioVigente =
     d.precios.firstOrNull { it.esReferencia } ?: precioDeMenorGanancia(d)
 
-/** El precio por trozo que alimenta todas las cifras automáticas de la app. */
+/**
+ * El precio por trozo que alimenta todas las cifras automáticas de la app.
+ *
+ * **Sale del reparto real y no del precio de la promoción dividido**, que es lo que hacía y
+ * era lo que mentía: con 3 trozos y una promo de 2, dividir da 1.500 por trozo como si los
+ * tres se vendieran así. Acá es lo que entra de verdad por el producto, repartido entre sus
+ * trozos, así que con resto es una mezcla de los dos precios — y todo lo que cuelga de esto
+ * (trozo ganador, ganancia, sueldos, simulación) queda cuadrado sin tocarlo.
+ */
 fun precioEfectivoPorTrozo(d: DatosCalculoReceta): Double =
-    precioPorTrozoDe(precioDeReferencia(d), d)
+    repartirEntreTrozos(repartoDeUnProducto(d).total, d.trozos)
 
 /** Lo que se muestra al intentar poner como referencia un precio que pierde plata. */
 const val MENSAJE_PROMOCION_CON_PERDIDAS = "Esta promoción genera pérdidas"
@@ -151,8 +159,106 @@ const val MENSAJE_PROMOCION_CON_PERDIDAS = "Esta promoción genera pérdidas"
 fun errorAlElegirReferencia(precio: PrecioVigente, d: DatosCalculoReceta): String? =
     if (gananciaPorTrozoDe(precio, d) < 0) MENSAJE_PROMOCION_CON_PERDIDAS else null
 
+/**
+ * Los dos precios **base** de una receta: uno por trozo suelto y uno por el producto entero.
+ *
+ * Son las filas de `cantidad = 1`, una por modo. No son una tabla aparte ni una columna
+ * nueva: "el precio de un trozo" ya es exactamente eso, un precio de un trozo.
+ *
+ * Existen como concepto propio porque **son los que sostienen a las promociones**. Una promo
+ * de 2 trozos en una receta que rinde 3 deja uno suelto, y ese suelto tiene que venderse a
+ * algo; sin un precio individual, lo que se muestre de esa venta es inventado (8.6.1).
+ */
+fun precioBasePorTrozo(d: DatosCalculoReceta): PrecioVigente? =
+    d.precios.firstOrNull { it.modo == ModoPrecio.TROZO && it.cantidad == 1 }
+
+fun precioBaseDelProducto(d: DatosCalculoReceta): PrecioVigente? =
+    d.precios.firstOrNull { it.modo == ModoPrecio.PRODUCTO && it.cantidad == 1 }
+
+/** Si un precio es uno de los dos base, y no una promoción. */
+fun esPrecioBase(precio: PrecioVigente): Boolean = precio.cantidad == 1
+
+/** Lo que se muestra cuando una promoción no divide exacto y sobra un trozo (8.6.1). */
+const val AVISO_TROZO_SUELTO = "Se usó el valor individual"
+
+/**
+ * Cómo se reparte de verdad una venta entre una promoción y lo que sobra.
+ *
+ * [cuantasVecesEntra] es cuántas veces cabe la promoción completa, y [sueltos] lo que queda
+ * fuera, que se vende al precio base. [total] ya es la suma de las dos cosas.
+ *
+ * [faltaElPrecioSuelto] marca el único caso que no se puede calcular: sobró algo y no hay
+ * precio individual con el que venderlo. Ahí [total] cuenta **solo las promociones**, y la
+ * pantalla tiene que decir que falta en vez de mostrar un número que da menos de lo real.
+ */
+data class RepartoDeVenta(
+    val cuantasVecesEntra: Int,
+    val sueltos: Int,
+    val total: Double,
+    val faltaElPrecioSuelto: Boolean
+) {
+    /** Si hubo resto, que es cuando corresponde avisar. */
+    val huboResto: Boolean get() = sueltos > 0
+}
+
+/**
+ * Lo que entra **de verdad** al vender un producto completo al precio de referencia (8.6.1).
+ *
+ * Corrige un error que se veía en el celular y no en las cuentas: con una receta de 3 trozos
+ * y una promoción de "2 por $3.000", la app decía que entraban $4.500 — el precio por trozo
+ * multiplicado por tres. Pero esa promoción **solo existe cuando se llevan dos**; el tercero
+ * se vende suelto, a su propio precio. Los $4.500 eran una cifra creíble y falsa, que es la
+ * peor clase.
+ *
+ * La regla es la misma para los dos modos, cambiando qué se cuenta: una promoción por trozos
+ * se reparte sobre los trozos que rinde la receta, y una por productos completos sobre **un**
+ * producto, que es lo que este número mide. De ahí sale, sin pedirlo, la respuesta a la duda
+ * de qué pasa al vender varios: no se toca acá, se resuelve donde se cuentan varios — la
+ * simulación reparte sobre el total que se venda, no multiplica esto (8.7).
+ */
+fun repartoDeUnProducto(d: DatosCalculoReceta): RepartoDeVenta {
+    val referencia = precioDeReferencia(d)
+    // En modo trozo se reparten los trozos de la receta; en modo producto, un producto.
+    val aVender = if (referencia.modo == ModoPrecio.TROZO) d.trozos else 1
+    val suelto = if (referencia.modo == ModoPrecio.TROZO) {
+        precioBasePorTrozo(d)
+    } else {
+        precioBaseDelProducto(d)
+    }
+    return repartir(aVender, referencia, suelto)
+}
+
+/**
+ * El reparto en crudo, para que la simulación pueda usarlo sobre otro total (8.7).
+ *
+ * Está separado de [repartoDeUnProducto] porque el número que se reparte cambia según quién
+ * pregunte, pero la regla no: tantas promociones como quepan, el resto al precio individual.
+ */
+fun repartir(
+    aVender: Int,
+    promocion: PrecioVigente,
+    precioIndividual: PrecioVigente?
+): RepartoDeVenta {
+    require(aVender >= 0) { "No se puede repartir una venta negativa (llegó $aVender)" }
+    // La misma red que tenía `precioPorTrozoDe`, que acá se había perdido: con cantidad 0 la
+    // división entera lanza `ArithmeticException`, que no explica nada. Lo pilló la prueba
+    // que existía justamente para eso.
+    require(promocion.cantidad > 0) {
+        "Un precio debe cubrir al menos un trozo (llegó ${promocion.cantidad})"
+    }
+    val veces = aVender / promocion.cantidad
+    val sueltos = aVender % promocion.cantidad
+    val porLosSueltos = precioIndividual?.let { it.precioTotal * sueltos } ?: 0.0
+    return RepartoDeVenta(
+        cuantasVecesEntra = veces,
+        sueltos = sueltos,
+        total = veces * promocion.precioTotal + porLosSueltos,
+        faltaElPrecioSuelto = sueltos > 0 && precioIndividual == null
+    )
+}
+
 /** Lo que entra al vender el producto completo, sin descontar nada. */
-fun ingresoBruto(d: DatosCalculoReceta): Double = precioEfectivoPorTrozo(d) * d.trozos
+fun ingresoBruto(d: DatosCalculoReceta): Double = repartoDeUnProducto(d).total
 
 /** Ganancia por trozo al precio vigente. Puede ser negativa. */
 fun gananciaPorTrozo(d: DatosCalculoReceta): Double =

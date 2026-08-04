@@ -210,21 +210,37 @@ fun PasoGastos(
                 item { AvisoVendeAPerdida() }
             }
 
+            estado.avisoDelResto?.let { aviso ->
+                item { AvisoDelResto(aviso) }
+            }
+
             item { TarjetaDeCifras(estado) }
 
             item {
                 Text(
-                    text = "Precios y promociones",
+                    text = "Precios base",
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.padding(top = Medidas.chico)
                 )
             }
 
-            if (!estado.tienePrecio) {
-                item { SinPreciosTodavia() }
+            if (estado.basesQueFaltan.isNotEmpty()) {
+                item { FaltanLosBase(estado.basesQueFaltan) }
             }
 
-            items(estado.filas, key = { it.precio.id }) { fila ->
+            items(estado.filas.filter { it.esBase }, key = { it.precio.id }) { fila ->
+                FilaDeUnPrecio(fila, acciones)
+            }
+
+            item {
+                Text(
+                    text = "Promociones",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(top = Medidas.chico)
+                )
+            }
+
+            items(estado.filas.filterNot { it.esBase }, key = { it.precio.id }) { fila ->
                 FilaDeUnPrecio(fila, acciones)
             }
 
@@ -237,7 +253,11 @@ fun PasoGastos(
                 ) {
                     Icon(Icons.Default.Add, contentDescription = null)
                     Text(
-                        text = if (estado.tienePrecio) "Agregar una promoción" else "Poner el precio",
+                        text = if (estado.basesQueFaltan.isEmpty()) {
+                            "Agregar una promoción"
+                        } else {
+                            "Poner un precio"
+                        },
                         modifier = Modifier.padding(start = Medidas.chico)
                     )
                 }
@@ -398,11 +418,48 @@ private fun Cifra(nombre: String, valor: Double?, destacada: Boolean = false) {
     }
 }
 
+/**
+ * El aviso de que la promoción no dividió exacto (8.6.1).
+ *
+ * Va **pegado a las cifras que corrige** y no al pie ni en la franja de abajo: es la
+ * explicación de por qué el número de abajo no es lo que uno esperaría al multiplicar. Leído
+ * en otro lado, no explicaría nada.
+ *
+ * No va en el color de error: no está mal, es cómo se vende de verdad.
+ */
 @Composable
-private fun SinPreciosTodavia() {
+private fun AvisoDelResto(aviso: String) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+            contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+        ),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(
+            text = aviso,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(Medidas.medio)
+        )
+    }
+}
+
+/**
+ * Cuáles de los dos precios base faltan.
+ *
+ * Se piden los dos porque **son sobre lo que se apoya todo lo demás**: sin el del trozo, una
+ * promoción que deja uno suelto no tiene con qué venderlo, y ahí la app tendría que inventar
+ * o callarse. Se dice cuáles faltan y no un "faltan precios" genérico, porque puede faltar
+ * uno solo.
+ */
+@Composable
+private fun FaltanLosBase(faltan: List<ModoPrecio>) {
+    val cuales = faltan.joinToString(" y ") {
+        if (it == ModoPrecio.TROZO) "el de un trozo suelto" else "el del producto entero"
+    }
     Text(
-        text = "Todavía no le pusiste precio. El primero es el precio suelto de un trozo o " +
-            "del producto completo; las promociones se agregan después.",
+        text = "Falta $cuales. Los dos sostienen a las promociones: si una deja algo suelto, " +
+            "se vende a estos precios.",
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(vertical = Medidas.chico)
