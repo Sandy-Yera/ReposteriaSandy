@@ -226,6 +226,10 @@ class CantidadesViewModelTest {
         ponerIngrediente(modelo, almendra, primera, "100")
         advanceUntilIdle()
         modelo.abrirAgregarSeccion()
+        // El cuadro se abre dentro de una corrutina: va a preguntar qué nombre proponer para
+        // la sección que hasta ahora era invisible. Sin dejarla correr, lo que se escriba
+        // después cae en un cuadro que todavía no existe y se pierde.
+        advanceUntilIdle()
         modelo.cambiarNombreDeSeccion("Decoración")
         modelo.cambiarNombreDeLaPrimera("Bizcocho")
         modelo.guardarSeccion()
