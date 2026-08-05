@@ -20,6 +20,7 @@ import com.sandyyera.reposteria.logica.moldes.factorEscala
 import com.sandyyera.reposteria.logica.precios.DatosCalculoReceta
 import com.sandyyera.reposteria.logica.precios.ModoPrecio
 import com.sandyyera.reposteria.logica.busqueda.sonElMismoTexto
+import com.sandyyera.reposteria.logica.precios.basesQueFaltanEn
 import com.sandyyera.reposteria.logica.precios.errorAlElegirReferencia
 import com.sandyyera.reposteria.logica.validaciones.NOMBRE_SECCION_POR_DEFECTO
 import com.sandyyera.reposteria.logica.validaciones.descripcionDePromocion
@@ -807,7 +808,9 @@ class RecetaRepositorio(
         etiqueta: String = ""
     ): Resultado {
         val trozos = dao.obtenerRendimiento(recetaId)?.trozos ?: 1
-        revisarPrecio(precioTotalTexto, cantidadTexto, modo, trozos, etiqueta).let { errores ->
+        val yaGuardados = dao.obtenerPrecios(recetaId).map { it.aVigente() }
+        val faltan = basesQueFaltanEn(yaGuardados)
+        revisarPrecio(precioTotalTexto, cantidadTexto, modo, trozos, etiqueta, faltan).let { errores ->
             if (!errores.sirve) {
                 return Resultado.NoSePudo(
                     errores.precioTotal ?: errores.cantidad ?: errores.etiqueta.orEmpty()
@@ -817,6 +820,19 @@ class RecetaRepositorio(
         val cantidad = textoANumero(cantidadTexto)?.toInt() ?: return Resultado.NoSePudo(
             "Escribe cuántos lleva"
         )
+        // Un segundo precio base del mismo modo no es un dato, es el mismo dato escrito dos
+        // veces: `precioBasePorTrozo` se queda con el primero que encuentra y el otro queda
+        // guardado sin alimentar nada. Se vio venir en el celular, donde dos filas base se
+        // dibujaban idénticas y solo se distinguían por el monto.
+        if (cantidad == 1 && yaGuardados.any { it.modo == modo && it.cantidad == 1 }) {
+            return Resultado.NoSePudo(
+                if (modo == ModoPrecio.TROZO) {
+                    "Ya tienes el precio de un trozo: cámbialo en vez de agregar otro"
+                } else {
+                    "Ya tienes el precio del producto entero: cámbialo en vez de agregar otro"
+                }
+            )
+        }
         val total = textoANumero(precioTotalTexto) ?: return Resultado.NoSePudo(
             "Escribe a cuánto lo vendes"
         )

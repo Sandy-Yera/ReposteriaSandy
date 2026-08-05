@@ -40,4 +40,25 @@ class PasoDeRecetaTest {
         // enum: el primero de la lista y el primero que se muestra tienen que ser el mismo.
         assertEquals(PasoDeReceta.CANTIDADES, PasoDeReceta.entries.first())
     }
+
+    @Test
+    fun `los cuatro pasos que dependen entre si van seguidos`() {
+        // Lo pidió Sandy: duración enclavada entre rendimiento y gastos obligaba a saltarla
+        // cada vez que se recorría la cadena de las cifras. Es el único paso que no alimenta
+        // ninguna cuenta, así que sale del medio y los otros cuatro quedan en su orden de
+        // dependencia: el molde decide el rendimiento, el rendimiento los gastos, y los
+        // gastos la simulación.
+        assertEquals(
+            listOf(
+                PasoDeReceta.MOLDE,
+                PasoDeReceta.RENDIMIENTO,
+                PasoDeReceta.GASTOS,
+                PasoDeReceta.SIMULACION
+            ),
+            PasoDeReceta.entries.filterNot {
+                it == PasoDeReceta.CANTIDADES || it == PasoDeReceta.DURACION
+            }
+        )
+        assertEquals("Y duración queda segunda", PasoDeReceta.DURACION, PasoDeReceta.entries[1])
+    }
 }

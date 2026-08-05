@@ -70,10 +70,24 @@ fun errorEnPesoFinalTexto(texto: String, usaMolde: Boolean): String? {
 fun promocionesQueNoCabenEn(trozos: Int, precios: List<PrecioVigente>): List<PrecioVigente> =
     precios.filter { it.modo == ModoPrecio.TROZO && it.cantidad > trozos }
 
+/**
+ * Cuántos trozos —o cuántos productos completos— cubre un precio, escrito para leerse.
+ *
+ * **Mira el modo, y esa es toda la razón de que exista.** Antes se decía "trozo" pase lo que
+ * pase, así que un precio del producto entero aparecía como "1 trozo": en una receta de 5
+ * trozos, la lista mostraba dos filas idénticas —"1 trozo" a $6.000 y "1 trozo" a $40.000— y
+ * la segunda parecía un error de tipeo en vez de otra cosa. Es la clase de confusión que se
+ * paga vendiendo una torta al precio de una porción.
+ */
+fun nombreDeLaCantidad(modo: ModoPrecio, cantidad: Int): String {
+    val cosa = if (modo == ModoPrecio.TROZO) "trozo" else "producto"
+    return "$cantidad $cosa${if (cantidad == 1) "" else "s"}"
+}
+
 /** Cómo se llama una promoción en un aviso: su etiqueta, o su forma si no tiene. */
 fun descripcionDePromocion(precio: PrecioVigente): String =
     precio.etiqueta?.takeIf { it.isNotBlank() }
-        ?: "${precio.cantidad} ${if (precio.cantidad == 1) "trozo" else "trozos"}"
+        ?: nombreDeLaCantidad(precio.modo, precio.cantidad)
 
 /**
  * Los problemas del formulario de rendimiento, uno por campo.

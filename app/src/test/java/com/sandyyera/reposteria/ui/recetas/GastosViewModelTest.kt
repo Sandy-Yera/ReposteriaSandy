@@ -4,6 +4,7 @@ import com.sandyyera.reposteria.data.HistorialDaoFalso
 import com.sandyyera.reposteria.data.IngredienteDaoFalso
 import com.sandyyera.reposteria.data.RecetaDaoFalso
 import com.sandyyera.reposteria.data.db.entidades.Ingrediente
+import com.sandyyera.reposteria.data.db.entidades.RecetaPrecio
 import com.sandyyera.reposteria.data.repositorio.HistorialRepositorio
 import com.sandyyera.reposteria.data.repositorio.RecetaRepositorio
 import com.sandyyera.reposteria.data.repositorio.ResultadoCrearReceta
@@ -98,6 +99,27 @@ class GastosViewModelTest {
         advanceUntilIdle()
     }
 
+    /**
+     * Deja puestos los dos precios base, que desde 8.6.1 **toda promoción necesita debajo**.
+     *
+     * El del producto entero se pasa siempre por encima del del trozo multiplicado (acá la
+     * receta rinde 6, así que 500 por trozo son 3.000 el producto y la base va en 3.600). Es a
+     * propósito: sin ese cuidado, el precio recién agregado pasaría a ser el de menor ganancia
+     * y se convertiría en la referencia por defecto, cambiando justo lo que la prueba mide.
+     */
+    private suspend fun TestScope.ponerLasBases(
+        modelo: GastosViewModel,
+        porTrozo: String = "500",
+        porProducto: String = "3.600"
+    ) {
+        ponerPrecio(modelo, cantidad = "1", total = porTrozo)
+        ponerPrecio(modelo, cantidad = "1", total = porProducto, modo = ModoPrecio.PRODUCTO)
+    }
+
+    /** Las filas que son promociones, o sea todo lo que no es uno de los dos base. */
+    private fun promociones(modelo: GastosViewModel) =
+        modelo.estado.value.filas.filterNot { it.esBase }
+
     // --- Estado inicial ---
 
     @Test
@@ -132,8 +154,9 @@ class GastosViewModelTest {
     @Test
     fun `con la promo de dos por mil quinientos el trozo ganador pasa a 2`() = probar { modelo ->
         // El precio por trozo sube de 500 a 750, así que el costo se cubre antes.
+        ponerLasBases(modelo)
         ponerPrecio(modelo, cantidad = "2", total = "1.500", etiqueta = "2x1.500")
-        modelo.elegirReferencia(modelo.estado.value.filas.single().precio)
+        modelo.elegirReferencia(promociones(modelo).single().precio)
         advanceUntilIdle()
 
         val ganador = modelo.estado.value.elTrozoGanador!!
@@ -157,7 +180,7 @@ class GastosViewModelTest {
 
     @Test
     fun `agregar una promo que deja mas no cambia las cifras hasta elegirla`() = probar { modelo ->
-        ponerPrecio(modelo, cantidad = "1", total = "500")
+        ponerLasBases(modelo)
         val conSoloElBase = modelo.estado.value.gananciaDelProducto
 
         ponerPrecio(modelo, cantidad = "2", total = "1.500", etiqueta = "2x1.500")
@@ -169,7 +192,7 @@ class GastosViewModelTest {
 
     @Test
     fun `y elegirla cambia las cifras en el momento`() = probar { modelo ->
-        ponerPrecio(modelo, cantidad = "1", total = "500")
+        ponerLasBases(modelo)
         ponerPrecio(modelo, cantidad = "2", total = "1.500", etiqueta = "2x1.500")
         val laPromo = modelo.estado.value.filas.first { it.comoSeLlama == "2x1.500" }
 
@@ -184,11 +207,15 @@ class GastosViewModelTest {
 
     @Test
     fun `una promo que pierde plata no se puede elegir como referencia`() = probar { modelo ->
-        ponerPrecio(modelo, cantidad = "1", total = "500")
+        ponerLasBases(modelo)
         ponerPrecio(modelo, cantidad = "6", total = "600", etiqueta = "Liquidación")
         // Hay que elegir la buena primero: sin nadie elegido manda la de MENOR ganancia, que
-        // es precisamente la mala (ver la prueba de abajo).
-        modelo.elegirReferencia(modelo.estado.value.filas.first { it.precio.cantidad == 1 }.precio)
+        // es precisamente la mala (ver la prueba de abajo). Se pide el base **por trozo** y no
+        // "el primero con cantidad 1": desde 8.6.1 hay dos filas con cantidad 1.
+        modelo.elegirReferencia(
+            modelo.estado.value.filas
+                .first { it.precio.cantidad == 1 && it.precio.modo == ModoPrecio.TROZO }.precio
+        )
         advanceUntilIdle()
         val laMala = modelo.estado.value.filas.first { it.comoSeLlama == "Liquidación" }
         assertTrue("Esta pierde plata", laMala.pierdePlata)
@@ -214,7 +241,7 @@ class GastosViewModelTest {
             // No se arregla prohibiendo: al mismo estado se llega sin tocar los precios, con
             // que suba un ingrediente. Lo que corresponde es **decirlo**, y eso es
             // `laReferenciaPierdePlata`.
-            ponerPrecio(modelo, cantidad = "1", total = "500")
+            ponerLasBases(modelo)
             ponerPrecio(modelo, cantidad = "6", total = "600", etiqueta = "Liquidación")
 
             val estado = modelo.estado.value
@@ -229,9 +256,10 @@ class GastosViewModelTest {
     @Test
     fun `pero igual se guarda y se ve, con su ganancia en negativo`() = probar { modelo ->
         // Esa es justamente la información que hace falta para descartarla (8.6).
+        ponerLasBases(modelo)
         ponerPrecio(modelo, cantidad = "6", total = "600", etiqueta = "Liquidación")
 
-        val fila = modelo.estado.value.filas.single()
+        val fila = promociones(modelo).single()
         assertTrue(fila.pierdePlata)
         assertTrue(fila.gananciaPorTrozo < 0)
     }
@@ -240,7 +268,7 @@ class GastosViewModelTest {
     fun `la fila marcada es la que de verdad manda, no la que tiene la columna`() =
         probar { modelo ->
             // Sin nadie elegido, la marcada tiene que ser la de menor ganancia y no ninguna.
-            ponerPrecio(modelo, cantidad = "1", total = "500")
+            ponerLasBases(modelo)
             ponerPrecio(modelo, cantidad = "2", total = "1.500")
 
             val marcadas = modelo.estado.value.filas.filter { it.esReferencia }
@@ -253,10 +281,11 @@ class GastosViewModelTest {
         // `PrecioVigente` no lleva id y es un `data class`: comparadas por valor, dos promos
         // iguales -un "2 por 1.500" cargado dos veces, error corriente- son la misma. Por eso
         // la referencia se resuelve por id.
+        ponerLasBases(modelo)
         ponerPrecio(modelo, cantidad = "2", total = "1.500")
         ponerPrecio(modelo, cantidad = "2", total = "1.500")
 
-        assertEquals(2, modelo.estado.value.filas.size)
+        assertEquals("Las dos se guardan", 2, promociones(modelo).size)
         assertEquals(1, modelo.estado.value.filas.count { it.esReferencia })
     }
 
@@ -264,7 +293,7 @@ class GastosViewModelTest {
     fun `la fila marcada coincide con lo que dice la logica pura`() = probar { modelo ->
         // Las dos reglas viven separadas por obligación —`precioDeReferencia` no puede
         // devolver un id— así que hay que comprobar que no se separen de verdad.
-        ponerPrecio(modelo, cantidad = "1", total = "500")
+        ponerLasBases(modelo)
         ponerPrecio(modelo, cantidad = "2", total = "1.500")
         ponerPrecio(modelo, cantidad = "3", total = "2.400")
 
@@ -283,7 +312,7 @@ class GastosViewModelTest {
         probar { modelo ->
             // La receta rinde 6. Con una promo de 4 sobran 2, que no se venden a precio de
             // promoción: se venden sueltos. Antes la app multiplicaba y mostraba de menos.
-            ponerPrecio(modelo, cantidad = "1", total = "1.000")
+            ponerLasBases(modelo, porTrozo = "1.000", porProducto = "7.200")
             ponerPrecio(modelo, cantidad = "4", total = "2.000")
             val promo = modelo.estado.value.filas.first { it.precio.cantidad == 4 }
             modelo.elegirReferencia(promo.precio)
@@ -299,7 +328,7 @@ class GastosViewModelTest {
 
     @Test
     fun `sin resto no hay nada que avisar`() = probar { modelo ->
-        ponerPrecio(modelo, cantidad = "1", total = "1.000")
+        ponerLasBases(modelo, porTrozo = "1.000", porProducto = "7.200")
         ponerPrecio(modelo, cantidad = "3", total = "2.400")
         modelo.elegirReferencia(modelo.estado.value.filas.first { it.precio.cantidad == 3 }.precio)
         advanceUntilIdle()
@@ -313,7 +342,18 @@ class GastosViewModelTest {
     @Test
     fun `si falta el precio individual lo dice en vez de mostrar un total corto`() =
         probar { modelo ->
-            ponerPrecio(modelo, cantidad = "4", total = "2.000")
+            // **La promo se inserta por el DAO y no por el repositorio, a propósito.** Desde
+            // que las bases son obligatorias, este estado ya no se puede *crear* — pero sí
+            // existe: son las recetas que Sandy guardó antes de la regla, con promociones y sin
+            // precio individual. La pantalla tiene que seguir sabiendo explicarlas, así que la
+            // prueba las arma como están en la base y no como se armarían hoy.
+            recetaDao.insertarPrecio(
+                RecetaPrecio(
+                    recetaId = recetaId, modo = ModoPrecio.TROZO,
+                    cantidad = 4, precioTotal = 2000.0
+                )
+            )
+            advanceUntilIdle()
 
             val estado = modelo.estado.value
             assertTrue(estado.reparto!!.faltaElPrecioSuelto)
@@ -337,9 +377,83 @@ class GastosViewModelTest {
     }
 
     @Test
+    fun `sin las bases el cuadro no deja escribir una promocion`() = probar { modelo ->
+        // Lo pidió Sandy: la app la dejaba empezar por "2 trozos por $20.000" sin haber dicho
+        // nunca cuánto vale un trozo.
+        modelo.abrirPrecioNuevo()
+        modelo.cambiarCantidad("2")
+        modelo.cambiarPrecioTotal("1.500")
+
+        val cuadro = formulario(modelo)
+        assertFalse(cuadro.puedeGuardar)
+        assertNotNull(cuadro.errorCantidad)
+        assertTrue("Y el cuadro lo dice al abrirse", cuadro.estaPoniendoUnaBase)
+    }
+
+    @Test
+    fun `el cuadro se abre en la base que falta, no siempre en trozos`() = probar { modelo ->
+        ponerPrecio(modelo, cantidad = "1", total = "500")   // ya está la del trozo
+
+        modelo.abrirPrecioNuevo()
+
+        assertEquals(ModoPrecio.PRODUCTO, formulario(modelo).modo)
+        assertEquals("1", formulario(modelo).cantidad)
+    }
+
+    @Test
+    fun `puestas las dos bases, el cuadro vuelve a abrirse en trozos y acepta promociones`() =
+        probar { modelo ->
+            ponerLasBases(modelo)
+
+            modelo.abrirPrecioNuevo()
+            modelo.cambiarCantidad("2")
+            modelo.cambiarPrecioTotal("1.500")
+
+            val cuadro = formulario(modelo)
+            assertEquals(ModoPrecio.TROZO, cuadro.modo)
+            assertFalse(cuadro.estaPoniendoUnaBase)
+            assertTrue(cuadro.puedeGuardar)
+        }
+
+    @Test
+    fun `corregir una promocion ya guardada no queda bloqueado por la regla`() = probar { modelo ->
+        // La regla es para el orden en que se arma una receta, no una traba para arreglar lo
+        // que ya está: una promo guardada antes de la regla tiene que poder corregirse.
+        recetaDao.insertarPrecio(
+            RecetaPrecio(
+                recetaId = recetaId, modo = ModoPrecio.TROZO, cantidad = 2, precioTotal = 1500.0
+            )
+        )
+        advanceUntilIdle()
+        val laVieja = modelo.estado.value.filas.single().precio
+
+        modelo.abrirEditarPrecio(laVieja)
+        modelo.cambiarPrecioTotal("1.800")
+
+        val cuadro = formulario(modelo)
+        assertFalse("Editando, la regla no aplica", cuadro.estaPoniendoUnaBase)
+        assertNull(cuadro.errorCantidad)
+        assertTrue(cuadro.puedeGuardar)
+    }
+
+    @Test
+    fun `un precio del producto entero no se llama trozo en la lista`() = probar { modelo ->
+        // Se vio en el celular: dos filas base dibujadas como "1 trozo", una a $6.000 y otra a
+        // $40.000. La segunda parecía un error de tipeo en vez de ser el producto completo.
+        ponerLasBases(modelo)
+
+        val filas = modelo.estado.value.filas
+        assertEquals("1 trozo", filas.first { it.precio.modo == ModoPrecio.TROZO }.comoSeLlama)
+        assertEquals(
+            "1 producto",
+            filas.first { it.precio.modo == ModoPrecio.PRODUCTO }.comoSeLlama
+        )
+    }
+
+    @Test
     fun `las promociones se distinguen de los precios base`() = probar { modelo ->
         // La pantalla las dibuja en dos listas: los base sostienen a las promociones.
-        ponerPrecio(modelo, cantidad = "1", total = "1.000")
+        ponerLasBases(modelo, porTrozo = "1.000", porProducto = "7.200")
         ponerPrecio(modelo, cantidad = "2", total = "1.800")
 
         val filas = modelo.estado.value.filas
@@ -351,7 +465,7 @@ class GastosViewModelTest {
 
     @Test
     fun `editar un precio no le quita la referencia`() = probar { modelo ->
-        ponerPrecio(modelo, cantidad = "1", total = "500")
+        ponerLasBases(modelo)
         ponerPrecio(modelo, cantidad = "2", total = "1.500")
         val laPromo = modelo.estado.value.filas.first { it.precio.cantidad == 2 }
         modelo.elegirReferencia(laPromo.precio)
@@ -383,18 +497,22 @@ class GastosViewModelTest {
 
     @Test
     fun `borrar el precio que mandaba deja mandando al que queda`() = probar { modelo ->
-        ponerPrecio(modelo, cantidad = "1", total = "500")
+        ponerLasBases(modelo)
         ponerPrecio(modelo, cantidad = "2", total = "1.500")
-        val elBase = modelo.estado.value.filas.first { it.precio.cantidad == 1 }
+        val laPromo = promociones(modelo).single()
+        modelo.elegirReferencia(laPromo.precio)
+        advanceUntilIdle()
+        assertEquals("Manda la promo: 750 x 6", 4500.0, modelo.estado.value.ingresoDelProducto!!, 0.001)
 
-        modelo.pedirBorrado(elBase)
+        modelo.pedirBorrado(laPromo)
         modelo.confirmarBorrado()
         advanceUntilIdle()
 
         val filas = modelo.estado.value.filas
-        assertEquals(1, filas.size)
-        assertTrue("El que queda pasa a mandar", filas.single().esReferencia)
-        assertEquals(4500.0, modelo.estado.value.ingresoDelProducto!!, 0.001)
+        assertEquals("Quedan los dos base", 2, filas.size)
+        assertEquals("Y vuelve a mandar el de menor ganancia", 1, filas.count { it.esReferencia })
+        // El de 500 por trozo es el que menos deja, así que el producto vuelve a 3.000.
+        assertEquals(3000.0, modelo.estado.value.ingresoDelProducto!!, 0.001)
     }
 
     @Test
@@ -437,6 +555,7 @@ class GastosViewModelTest {
     @Test
     fun `en modo producto ese tope no aplica`() = probar { modelo ->
         // Vender 8 productos completos es posible por más que cada uno rinda 6.
+        ponerLasBases(modelo)
         modelo.abrirPrecioNuevo()
         modelo.elegirModo(ModoPrecio.PRODUCTO)
         modelo.cambiarCantidad("8")
@@ -457,11 +576,15 @@ class GastosViewModelTest {
     @Test
     fun `el rechazo del repositorio queda dentro del cuadro`() = probar { modelo ->
         // Con el teclado abierto, la franja de abajo no se ve (8.2).
+        // Las bases van primero para que el cuadro no rechace la promo por su cuenta: lo que
+        // se está probando es el rechazo que llega **del repositorio**.
+        ponerLasBases(modelo)
         modelo.abrirPrecioNuevo()
-        modelo.cambiarCantidad("1")
         modelo.cambiarPrecioTotal("500")
         // Se le cambia los trozos por debajo para que el repositorio rechace lo que la
-        // pantalla creía válido: es el caso que obliga a tener las dos comprobaciones.
+        // pantalla creía válido: el cuadro guarda los trozos de cuando se abrió (6), así que
+        // sigue creyendo que una promo de 4 cabe. Es el caso que obliga a tener las dos
+        // comprobaciones.
         recetas.guardarRendimiento(recetaId, "1", "1.000")
         advanceUntilIdle()
         modelo.cambiarCantidad("4")

@@ -743,10 +743,23 @@ Es una **pantalla completa** y no un `AlertDialog`: tiene dos partes (la cuenta 
 
 ### 8.1 Flujo general
 
-**Los siete pasos, en orden:** Cantidades (8.2), Molde (8.3), Rendimiento (8.3), Duración
-(8.4), Gastos y Ganancias (8.5), Ganancias simuladas (8.7) y Pasos (8.8). Eran seis hasta que
+**Los siete pasos, en orden:** Cantidades (8.2), Duración (8.4), Molde (8.3), Rendimiento
+(8.3), Gastos y Ganancias (8.5), Ganancias simuladas (8.7) y Pasos (8.8). Eran seis hasta que
 el molde se separó de rendimiento (8.4.1, #2); están enumerados acá porque la numeración de
 los títulos de abajo ya se había desfasado una vez y nadie la miraba de conjunto.
+
+**Duración va segunda y no en medio de las cifras**, y el motivo es el que la distingue de
+todas las demás: **es el único paso que no alimenta ninguna cuenta**. Cuánto dura un producto
+no entra en el costo, ni en el precio, ni en la proyección. Los otros cuatro sí forman una
+cadena —el molde decide el rendimiento, el rendimiento los gastos, los gastos la simulación—,
+y tener duración enclavada en medio obligaba a saltarla cada vez que se recorría esa cadena,
+que es lo que Sandy reportó como "molesta". Puesta al principio queda junto a cantidades, que
+es lo otro que se anota mirando la receta en vez de la calculadora.
+
+*Nota sobre la numeración: los títulos de las secciones de abajo conservan su "Paso N"
+original y ya no coinciden con el orden de la fila. Se dejan así a propósito — renumerarlos
+rompería todas las referencias cruzadas del documento y del código, que citan "8.5" y "8.7"
+por su número de sección, no por su posición.*
 
 Se recorren con la **fila de pasos** que va bajo el título (8.4.1, #1), en cualquier orden y
 sin botón de "Siguiente"; la X sale de la receta desde cualquiera de ellos. Cada paso
@@ -1133,9 +1146,31 @@ Con 3 trozos y una promo de 2: una promoción más un trozo suelto.
 individual."* El aviso va pegado a las cifras que corrige, porque es la explicación de por qué
 ese número no es lo que daría multiplicar.
 
+**Los dos base son obligatorios y van primero: no se puede guardar una promoción sin ellos.**
+Lo pidió Sandy después de probar, y tenía razón — la app la dejaba empezar por "2 trozos por
+$20.000" sin haber dicho nunca cuánto vale un trozo, y esa promoción no tiene con qué cobrar
+el suelto que ella misma genera. Una promoción **es una regla que se apoya en los base**, así
+que pedirlos antes no es orden por orden.
+
+Dónde vive la regla:
+
+- `basesQueFaltanEn(precios)` en `logica/precios` es **la única definición** de "falta una
+  base". La consultan los dos lados que tienen que estar de acuerdo: la pantalla, para pedirlos
+  y para no dejar teclear una cantidad mayor que 1, y `crearPrecio`, que es el que decide.
+  Escrita dos veces serían dos reglas que se separan, y la pantalla habilitaría un botón que el
+  repositorio rechaza.
+- El cuadro de precio nuevo **se abre en la base que falta** en vez de siempre en trozos, y lo
+  dice antes de que se teclee un 2 y se choque con un aviso.
+- **Editar un precio ya guardado no queda bloqueado.** La regla es para el orden en que se arma
+  una receta, no una traba para corregir: una promo guardada antes de esto tiene que poder
+  arreglarse.
+- **Tampoco se puede tener dos veces la misma base.** `precioBasePorTrozo` se queda con la
+  primera que encuentra, así que la segunda quedaría guardada sin alimentar nada — y en la
+  lista las dos se dibujan casi iguales.
+
 **Si falta el precio base**, la app lo dice en vez de inventarlo: el total cuenta solo las
-promociones y la pantalla avisa que falta. Es la red de la decisión — obligar los dos base, y
-si por datos viejos falta alguno, avisar antes que calcular mal.
+promociones y la pantalla avisa que falta. Ese estado ya no se puede *crear*, pero sí **existe**
+—son las recetas guardadas antes de la regla—, así que la explicación se queda.
 
 **Vender más de uno no contradice esto, y ahí estaba la duda.** Estas cifras miden **un**
 producto: con 3 trozos y promos de 2 siempre va a sobrar uno. Vendiendo dos productos son 6
@@ -1146,6 +1181,18 @@ usa sobre su propio total.
 
 **En modo producto es lo mismo un piso más arriba:** una promoción de dos productos completos
 no se aplica al vender uno, así que ese uno se cobra a su precio base.
+
+#### 8.6.2 Cómo se nombra un precio, y por qué importa
+
+`descripcionDePromocion` **mira el modo**. Antes decía "trozo" pasara lo que pasara, y en el
+celular eso se veía así: una receta de 5 trozos con el trozo a $6.000 y el producto entero a
+$40.000 mostraba dos filas base tituladas **"1 trozo"**, una encima de la otra, distinguibles
+solo por el monto. La segunda parecía un error de tipeo.
+
+No es un detalle de redacción: es la confusión que hace vender una torta entera al precio de
+una porción. El nombre sale de `nombreDeLaCantidad(modo, cantidad)`, que resuelve además el
+singular ("1 producto" / "2 productos"), y la etiqueta escrita a mano sigue mandando sobre las
+dos cosas.
 
 ### 8.7 Paso 6 — Ganancias simuladas
 
@@ -1185,6 +1232,38 @@ calculado.
 **El costo sí se multiplica y no se reparte.** Producir dos tortas cuesta el doble que producir
 una, sin promociones que valgan. Esa asimetría es real y conviene tenerla presente al leer las
 cifras.
+
+#### 8.7.1 La cifra tiene que poder comprobarse
+
+Sandy reportó que "la cantidad que entra es incorrecta" en la simulación. **No lo era**, y ese
+es justamente el problema: era correcta y no había forma de verificarlo. Sus números en el
+celular, con la receta "Mil hojas":
+
+| | |
+|---|---|
+| Rinde | 5 trozos, cuesta $12.167,45 |
+| Precios base | $6.000 el trozo · $40.000 el producto |
+| Referencia | promoción de 2 trozos a $20.000 |
+| Gastos dice | **$46.000** por producto (2 promos + 1 suelto) |
+| Simulación de 6 productos | **$300.000**, no $276.000 |
+
+Los $24.000 de diferencia son los **seis trozos sueltos** —uno por producto— que, juntos, arman
+tres promociones más. Las dos cifras están bien y contestan preguntas distintas: una es "qué
+pasa si vendo esta torta sola", la otra "qué pasa si vendo seis". Pero vistas en dos pantallas
+sin nada que las una, la segunda parece un error de la app.
+
+**La regla que deja esto:** una cifra que sale de una regla de negocio tiene que mostrar de qué
+está hecha. No basta con que sea correcta. Concretamente, la simulación dice ahora dos cosas
+bajo el "Entra":
+
+1. **De qué se compone**, siempre: *"En la semana vendes 30 trozos: «2 trozos» entra 15 veces."*
+2. **Por qué no es multiplicar**, solo cuando difiere: *"Juntando lo que sobra de cada producto
+   se arman 3 promociones más, así que entra más que multiplicar lo de una sola."*
+
+Lo segundo se dice **en promociones y no en pesos** a propósito: "se arman 3 promociones más" se
+comprueba contando; "entran $24.000 más" hay que creerlo. `promocionesQueSeGananAlJuntar` es la
+que calcula esa diferencia, y `ingresoSiSeMultiplicaraElProducto` existe **solo para
+contrastar** — no alimenta ninguna cifra.
 
 `diasPorSemana` / `unidadesPorDia` quedan visibles y editables, y guardan solos como el resto
 de los pasos (8.4.1). Cualquier cambio recalcula todo en el momento — es aritmética sobre datos
@@ -1708,7 +1787,13 @@ Las creaciones y eliminaciones siempre generan evento. Para ediciones, solo esto
 
 ### 12.1 Navegación
 
-`ModalNavigationDrawer` para el menú de 3 líneas, con **4 secciones** al terminar: Ingredientes / Recetas / Moldes / Empleados. Se abre/cierra con el mismo botón, patrón estándar de Compose — no hay que construirlo a mano como en Tkinter.
+`ModalNavigationDrawer` para el menú de 3 líneas, con **4 secciones** al terminar: Ingredientes / Moldes / Recetas / Empleados. Se abre/cierra con el mismo botón, patrón estándar de Compose — no hay que construirlo a mano como en Tkinter.
+
+**El orden es el de lo que hay que tener antes, no el de lo que más se usa.** Una receta no se
+puede costear sin ingredientes cargados, y no se le puede poner molde sin moldes en el
+catálogo; recetas va después de las dos porque depende de las dos. Recetas es lo que más se
+abre, y aun así no va primero: el menú se lee una vez para entender la app y se usa mil veces
+sin leerlo, así que conviene que enseñe la dependencia.
 
 Las secciones viven en un `enum Seccion` y **solo se agregan cuando existe su pantalla**. Nada de dejarlas puestas en gris a la espera: una opción deshabilitada se toca igual y parece que la app se rompió.
 
@@ -1808,6 +1893,49 @@ De ahí la regla para los pasteles que se agreguen: **pueden pintar un fondo; ni
 - **Espaciado en múltiplos de 8dp** (4dp para ajustes finos), para que todo quede alineado sin decidirlo pantalla por pantalla.
 - **El dinero siempre pasa por `formatearNumero`** (6.1) y nunca se concatena a mano.
 - **Las cifras negativas se muestran en el color de eliminación**, no en el color de texto normal: una ganancia negativa tiene que saltar a la vista (8.5).
+
+### 12.7 Configuración (pendiente — Fase 13)
+
+Una **rueda de configuración en la barra superior del menú principal**, y no opciones sueltas
+repartidas por las pantallas. Lo pidió Sandy anticipándose: hoy hay dos cosas que configurar y
+más adelante habrá otras, y sin un lugar donde ponerlas cada una termina en la pantalla que la
+necesitaba, que es como se llega a tener el respaldo en un sitio y el tema en otro.
+
+Lo que va adentro cuando se implemente:
+
+1. **Google Drive** — cuenta conectada, respaldo manual, cuándo fue el último (13).
+2. **Modo de pantalla** — tres opciones: *Modo claro* / *Modo oscuro* / *Predeterminado por el
+   sistema*, y **la app arranca siempre en el predeterminado**. No es lo mismo que "arranca en
+   claro": seguir al sistema significa que si el teléfono se pone oscuro de noche, la app
+   también, sin que nadie lo toque. Elegir claro u oscuro a mano es fijarlo contra eso.
+
+La elección se guarda en `DataStore` y **no en la base de datos**: es una preferencia del
+teléfono, no un dato del negocio, y no tiene por qué viajar en el respaldo a Drive — restaurar
+un respaldo no debería cambiarle el tema a nadie. `ReposteriaTheme` ya recibe si va en oscuro
+como parámetro (hoy con `isSystemInDarkTheme()` por defecto), así que el cambio es de dónde sale
+ese booleano y no de cómo funciona el tema.
+
+### 12.8 Exportar una receta a PDF (pendiente — Fase 13)
+
+Sandy quiso **copiar** las cifras de gastos y ganancias para usarlas fuera y no pudo. Copiar
+texto de una pantalla de Compose resuelve el síntoma y no el problema: lo que hace falta es
+sacar la información completa de la app, no un número suelto.
+
+**Dos alcances, y la diferencia es real:**
+
+- **La receta entera** — todas sus secciones, con ingredientes, cantidades, molde, rendimiento,
+  duración y las cifras de gastos.
+- **Una sección** — solo lo que esa sección tiene.
+
+Lo que Sandy pidió expresamente que **no** se pierda: el PDF de gastos y ganancias tiene que
+llevar también **los campos con los que ella interactúa** —los precios cargados, cuál es la
+referencia, los días y unidades de la simulación— y no solo los resultados. Un PDF con puras
+cifras finales no sirve para explicarle a nadie de dónde salieron, que es justamente para lo
+que se imprime.
+
+Va a Fase 13 y no antes por una razón de orden: **imprimir congela un formato**. Mientras las
+pantallas todavía cambian —los precios base acaban de cambiar en esta ronda— el PDF habría que
+rehacerlo cada vez.
 
 ---
 
@@ -2111,8 +2239,8 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 
 ### Fase 13 — Navegación general y pulido de UI
 
-- **Construyes:** drawer de navegación con las 4 secciones, buscador global, ajustes de Compose para verse bien en distintos tamaños de celular.
-- **Hecho cuando:** la app completa se usa cómodamente en tu celular real, sin elementos cortados ni ilegibles.
+- **Construyes:** drawer de navegación con las 4 secciones, buscador global, ajustes de Compose para verse bien en distintos tamaños de celular, la **pantalla de configuración** (12.7) y la **exportación a PDF** (12.8).
+- **Hecho cuando:** la app completa se usa cómodamente en tu celular real, sin elementos cortados ni ilegibles; la rueda de configuración cambia el tema y la app arranca siguiendo al sistema; y una receta y una sección se pueden bajar en PDF con sus campos, no solo con sus resultados.
 
 ### Fase 14 — Sincronización real con Google Drive
 

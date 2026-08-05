@@ -58,9 +58,14 @@ import kotlinx.coroutines.launch
  * impresión de que algo se rompió.
  */
 enum class Seccion(val titulo: String, val icono: ImageVector) {
+    /**
+     * El orden es el de **lo que hay que tener antes**, no el de lo que más se usa: una receta
+     * no se puede costear sin ingredientes cargados, y no se le puede poner molde sin moldes en
+     * el catálogo. Recetas queda al final por ser la que depende de las otras dos.
+     */
     INGREDIENTES("Ingredientes", Icons.Default.ShoppingCart),
-    RECETAS("Recetas", Icons.Default.Favorite),
-    MOLDES("Moldes", Icons.Default.Star)
+    MOLDES("Moldes", Icons.Default.Star),
+    RECETAS("Recetas", Icons.Default.Favorite)
 }
 
 /**

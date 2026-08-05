@@ -196,18 +196,75 @@ class RecetaRepositorioTest {
     @Test
     fun `no se puede crear una promo de mas trozos de los que rinde`() = runBlocking {
         val id = recetaConCosto()   // rinde 6
+        ponerLasBases(id)
 
         val r = repositorio.crearPrecio(id, ModoPrecio.TROZO, "8", "4.000")
+
+        assertTrue(r is Resultado.NoSePudo)
+        assertTrue(repositorio.observarPrecios(id).first().none { it.cantidad == 8 })
+    }
+
+    // --- Los dos precios base van primero (8.6.1) ---
+
+    /** Deja puestos los dos precios base, que es lo que toda promoción necesita debajo. */
+    private suspend fun ponerLasBases(id: Long) {
+        repositorio.crearPrecio(id, ModoPrecio.TROZO, "1", "500")
+        repositorio.crearPrecio(id, ModoPrecio.PRODUCTO, "1", "3.000")
+    }
+
+    @Test
+    fun `sin los precios base no se puede guardar una promocion`() = runBlocking {
+        // Lo pidió Sandy: la app la dejaba empezar por "2 trozos por $20.000" sin haber dicho
+        // nunca cuánto vale un trozo, y esa promoción no tiene con qué cobrar el suelto.
+        val id = recetaConCosto()
+
+        val r = repositorio.crearPrecio(id, ModoPrecio.TROZO, "2", "900")
 
         assertTrue(r is Resultado.NoSePudo)
         assertTrue(repositorio.observarPrecios(id).first().isEmpty())
     }
 
     @Test
+    fun `la comprobacion vive en el repositorio y no solo en la pantalla`() = runBlocking {
+        // Con solo el del trozo puesto, la promoción todavía no pasa: falta el del producto.
+        val id = recetaConCosto()
+        repositorio.crearPrecio(id, ModoPrecio.TROZO, "1", "500")
+
+        assertTrue(repositorio.crearPrecio(id, ModoPrecio.TROZO, "2", "900") is Resultado.NoSePudo)
+
+        repositorio.crearPrecio(id, ModoPrecio.PRODUCTO, "1", "3.000")
+        assertTrue(repositorio.crearPrecio(id, ModoPrecio.TROZO, "2", "900") is Resultado.Listo)
+    }
+
+    @Test
+    fun `no se puede tener dos veces el mismo precio base`() = runBlocking {
+        // `precioBasePorTrozo` se queda con el primero que encuentra, así que el segundo
+        // quedaría guardado sin alimentar nada — y en la lista los dos se ven casi iguales.
+        val id = recetaConCosto()
+        repositorio.crearPrecio(id, ModoPrecio.TROZO, "1", "500")
+
+        val r = repositorio.crearPrecio(id, ModoPrecio.TROZO, "1", "700")
+
+        assertTrue(r is Resultado.NoSePudo)
+        assertEquals(1, repositorio.observarPrecios(id).first().size)
+    }
+
+    @Test
+    fun `los dos base son de modos distintos y no chocan entre si`() = runBlocking {
+        val id = recetaConCosto()
+        repositorio.crearPrecio(id, ModoPrecio.TROZO, "1", "500")
+
+        val r = repositorio.crearPrecio(id, ModoPrecio.PRODUCTO, "1", "3.000")
+
+        assertTrue(r is Resultado.Listo)
+        assertEquals(2, repositorio.observarPrecios(id).first().size)
+    }
+
+    @Test
     fun `editar un precio conserva cual es la referencia`() = runBlocking {
         // Escribir la fila entera sin este cuidado apagaría la referencia en silencio.
         val id = recetaConCosto()
-        repositorio.crearPrecio(id, ModoPrecio.TROZO, "1", "500")
+        ponerLasBases(id)
         repositorio.crearPrecio(id, ModoPrecio.TROZO, "2", "1.500")
         val laPromo = repositorio.observarPrecios(id).first().first { it.cantidad == 2 }
         repositorio.elegirPrecioDeReferencia(id, laPromo.id)
@@ -238,12 +295,13 @@ class RecetaRepositorioTest {
     @Test
     fun `borrar un precio lo nombra en el historial antes de que desaparezca`() = runBlocking {
         val id = recetaConCosto()
+        ponerLasBases(id)
         repositorio.crearPrecio(id, ModoPrecio.TROZO, "2", "1.500", etiqueta = "Promo sábado")
-        val elPrecio = repositorio.observarPrecios(id).first().single()
+        val elPrecio = repositorio.observarPrecios(id).first().first { it.cantidad == 2 }
 
         repositorio.eliminarPrecio(elPrecio.id)
 
-        assertTrue(repositorio.observarPrecios(id).first().isEmpty())
+        assertTrue(repositorio.observarPrecios(id).first().none { it.cantidad == 2 })
         val evento = historial.eventos.last()
         assertEquals(TipoEvento.ELIMINACION, evento.tipo)
         assertTrue("Lo nombra", evento.descripcion.contains("Promo sábado"))

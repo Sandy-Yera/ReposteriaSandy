@@ -280,6 +280,27 @@ private fun TarjetaDeLaProyeccion(estado: EstadoSimulacion) {
             Cifra("Cuesta hacerlo", r.costoSemanal)
             Cifra("Te queda", r.gananciaSemanal, destacada = true)
 
+            // **De qué está hecho el "Entra".** Va pegado a la cifra, no al pie: es lo que
+            // permite comprobarla. Sandy reportó que el número parecía incorrecto, y el
+            // problema no era el número sino que no había con qué contrastarlo — la pantalla
+            // de gastos decía cuánto entra por un producto y ésta daba otra cosa, sin nada
+            // que explicara la diferencia.
+            estado.deQueSeCompone?.let { linea ->
+                Text(
+                    text = linea,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = Medidas.minimo)
+                )
+            }
+            estado.porQueNoEsMultiplicar?.let { linea ->
+                Text(
+                    text = linea,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
             HorizontalDivider(Modifier.padding(vertical = Medidas.chico))
 
             Text("En un mes", style = MaterialTheme.typography.titleMedium)

@@ -99,6 +99,7 @@ class SimulacionViewModelTest {
             // Receta de 3 trozos, promo de 2. Mirando un producto siempre sobra uno; en la
             // semana, 2 productos son 6 trozos y la promo entra tres veces justas.
             recetas.crearPrecio(recetaId, ModoPrecio.TROZO, "1", "2.000")
+            recetas.crearPrecio(recetaId, ModoPrecio.PRODUCTO, "1", "5.000")
             recetas.crearPrecio(recetaId, ModoPrecio.TROZO, "2", "3.000")
             val promo = recetas.observarPrecios(recetaId).first().first { it.cantidad == 2 }
             recetas.elegirPrecioDeReferencia(recetaId, promo.id)
@@ -119,6 +120,7 @@ class SimulacionViewModelTest {
     @Test
     fun `si el total de la semana tampoco divide, se avisa del resto`() = probar { modelo ->
         recetas.crearPrecio(recetaId, ModoPrecio.TROZO, "1", "2.000")
+        recetas.crearPrecio(recetaId, ModoPrecio.PRODUCTO, "1", "5.000")
         recetas.crearPrecio(recetaId, ModoPrecio.TROZO, "2", "3.000")
         val promo = recetas.observarPrecios(recetaId).first().first { it.cantidad == 2 }
         recetas.elegirPrecioDeReferencia(recetaId, promo.id)
@@ -134,6 +136,62 @@ class SimulacionViewModelTest {
         assertNotNull(estado.avisoDelResto)
         assertTrue(estado.avisoDelResto!!.contains("1 suelto"))
         assertEquals(5000.0, estado.resultado!!.ingresoSemanal, 0.001)
+    }
+
+    // --- De dónde sale el "Entra" (lo que Sandy no podía comprobar) ---
+
+    @Test
+    fun `la pantalla dice de que se compone el ingreso de la semana`() = probar { modelo ->
+        recetas.crearPrecio(recetaId, ModoPrecio.TROZO, "1", "2.000")
+        recetas.crearPrecio(recetaId, ModoPrecio.PRODUCTO, "1", "5.000")
+        recetas.crearPrecio(recetaId, ModoPrecio.TROZO, "2", "3.000")
+        val promo = recetas.observarPrecios(recetaId).first().first { it.cantidad == 2 }
+        recetas.elegirPrecioDeReferencia(recetaId, promo.id)
+        advanceUntilIdle()
+
+        modelo.cambiarDias("1")
+        modelo.cambiarUnidades("2")
+        advanceUntilIdle()
+
+        // Sin esta línea el número de abajo es correcto y aun así imposible de verificar.
+        val linea = modelo.estado.value.deQueSeCompone!!
+        assertTrue("Dice cuánto se vende", linea.contains("6 trozos"))
+        assertTrue("Y cuántas veces entra la promoción", linea.contains("3 veces"))
+    }
+
+    @Test
+    fun `explica por que la semana no es multiplicar un producto`() = probar { modelo ->
+        // Este es el aviso que faltaba cuando Sandy comparó las dos pantallas y no le cuadró.
+        // 3 trozos con promo de 2: un producto deja siempre un suelto; dos productos son 6
+        // trozos y la promo entra tres veces, o sea una más que las dos de uno por uno.
+        recetas.crearPrecio(recetaId, ModoPrecio.TROZO, "1", "2.000")
+        recetas.crearPrecio(recetaId, ModoPrecio.PRODUCTO, "1", "5.000")
+        recetas.crearPrecio(recetaId, ModoPrecio.TROZO, "2", "3.000")
+        val promo = recetas.observarPrecios(recetaId).first().first { it.cantidad == 2 }
+        recetas.elegirPrecioDeReferencia(recetaId, promo.id)
+        advanceUntilIdle()
+
+        modelo.cambiarDias("1")
+        modelo.cambiarUnidades("2")
+        advanceUntilIdle()
+
+        val aviso = modelo.estado.value.porQueNoEsMultiplicar!!
+        assertTrue(aviso.contains("1 promoción más"))
+    }
+
+    @Test
+    fun `cuando la cuenta simple da lo mismo, no se explica nada`() = probar { modelo ->
+        // Sin promoción no hay resto que juntar, así que la semana **sí** es el producto
+        // multiplicado y decir algo sería ruido.
+        recetas.crearPrecio(recetaId, ModoPrecio.TROZO, "1", "2.000")
+        advanceUntilIdle()
+
+        modelo.cambiarDias("3")
+        modelo.cambiarUnidades("2")
+        advanceUntilIdle()
+
+        assertNull(modelo.estado.value.porQueNoEsMultiplicar)
+        assertNotNull("Pero de qué se compone se dice igual", modelo.estado.value.deQueSeCompone)
     }
 
     // --- Las cifras ---

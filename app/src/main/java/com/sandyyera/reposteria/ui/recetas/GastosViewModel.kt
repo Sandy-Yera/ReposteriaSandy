@@ -15,11 +15,9 @@ import com.sandyyera.reposteria.logica.precios.DatosCalculoReceta
 import com.sandyyera.reposteria.logica.precios.ModoPrecio
 import com.sandyyera.reposteria.logica.precios.TrozoGanador
 import com.sandyyera.reposteria.logica.precios.AVISO_TROZO_SUELTO
-import com.sandyyera.reposteria.logica.precios.PrecioVigente
 import com.sandyyera.reposteria.logica.precios.RepartoDeVenta
+import com.sandyyera.reposteria.logica.precios.basesQueFaltanEn
 import com.sandyyera.reposteria.logica.precios.esPrecioBase
-import com.sandyyera.reposteria.logica.precios.precioBaseDelProducto
-import com.sandyyera.reposteria.logica.precios.precioBasePorTrozo
 import com.sandyyera.reposteria.logica.precios.repartoDeUnProducto
 import com.sandyyera.reposteria.logica.precios.costoPorTrozo
 import com.sandyyera.reposteria.logica.precios.gananciaFinal
@@ -63,6 +61,16 @@ sealed interface DialogoGastos {
         val precioTotal: String = "",
         val etiqueta: String = "",
         val trozosDeLaReceta: Int = 1,
+        /**
+         * Los precios base que la receta todavía no tiene, y que **impiden armar promociones**
+         * (8.6.1). Entra al estado por lo mismo que [trozosDeLaReceta]: es una condición de
+         * afuera de la que depende un aviso que tiene que aparecer **mientras se escribe**.
+         *
+         * Va vacía al **editar** un precio que ya existe, y eso es deliberado: la regla es para
+         * el orden en que se arma una receta, no una traba para corregir lo que ya está
+         * guardado. Bloquear la edición dejaría una promo mal escrita sin forma de arreglarse.
+         */
+        val basesQueFaltan: List<ModoPrecio> = emptyList(),
         val tocado: Boolean = false,
         val guardando: Boolean = false,
         /** Lo que contestó el repositorio. Va dentro del cuadro, nunca abajo (8.2). */
@@ -70,7 +78,15 @@ sealed interface DialogoGastos {
     ) : DialogoGastos {
 
         private val errores get() =
-            revisarPrecio(precioTotal, cantidad, modo, trozosDeLaReceta, etiqueta)
+            revisarPrecio(precioTotal, cantidad, modo, trozosDeLaReceta, etiqueta, basesQueFaltan)
+
+        /**
+         * Si este formulario está poniendo uno de los dos precios base obligatorios.
+         *
+         * Lo usa la pantalla para explicar por qué la cantidad está fija en 1 en vez de dejar
+         * que se descubra tecleando un 2 y chocando con un aviso.
+         */
+        val estaPoniendoUnaBase: Boolean get() = basesQueFaltan.isNotEmpty()
 
         val errorPrecioTotal: String? get() = rechazo ?: errores.precioTotal.takeIf { tocado }
         val errorCantidad: String? get() = errores.cantidad.takeIf { tocado }
@@ -179,24 +195,26 @@ data class EstadoGastos(
 
     // --- Los dos precios base y el resto de las promociones (8.6.1) ---
 
-    /** El precio de un trozo suelto, si ya está puesto. */
-    val baseDelTrozo: PrecioVigente? get() = datos?.let { precioBasePorTrozo(it) }
-
-    /** El precio del producto entero, si ya está puesto. */
-    val baseDelProducto: PrecioVigente? get() = datos?.let { precioBaseDelProducto(it) }
+    // `baseDelTrozo` y `baseDelProducto` vivían acá y se fueron al pasar `basesQueFaltan` a
+    // delegar en `basesQueFaltanEn`: nadie los leía ya. Se eliminan en vez de dejarlos por si
+    // acaso, que es la regla de siempre — una rama que nadie recorre es una rama que nadie
+    // prueba. Las dos funciones de `logica/` siguen ahí para quien las necesite de verdad.
 
     /**
      * Cuáles de los dos precios base faltan por definir.
      *
      * Los dos son la base sobre la que se apoya todo lo demás: sin el del trozo, una
      * promoción que deja un trozo suelto no tiene con qué venderlo; sin el del producto, una
-     * promoción de varios productos tampoco. La pantalla los pide primero por eso.
+     * promoción de varios productos tampoco. La pantalla los pide primero por eso, y desde el
+     * arreglo que pidió Sandy **no deja escribir una promoción hasta tenerlos**.
+     *
+     * Delega en `basesQueFaltanEn` en vez de repetir la condición: el repositorio aplica la
+     * misma regla al guardar, y escritas por separado la pantalla terminaría habilitando el
+     * botón para algo que allá se rechaza. Mientras no hayan llegado los datos devuelve la
+     * lista vacía, para no pedir precios de una receta que todavía no se leyó.
      */
     val basesQueFaltan: List<ModoPrecio>
-        get() = buildList {
-            if (datos != null && baseDelTrozo == null) add(ModoPrecio.TROZO)
-            if (datos != null && baseDelProducto == null) add(ModoPrecio.PRODUCTO)
-        }
+        get() = datos?.let { basesQueFaltanEn(it.precios) }.orEmpty()
 
     /** Cómo se reparte de verdad la venta de un producto al precio de referencia. */
     val reparto: RepartoDeVenta? get() = datos?.takeIf { it.tienePrecio }?.let { repartoDeUnProducto(it) }
@@ -316,11 +334,15 @@ class GastosViewModel(
     // --- El cuadro del precio ---
 
     fun abrirPrecioNuevo() {
+        val faltan = estado.value.basesQueFaltan
         _dialogo.value = DialogoGastos.Formulario(
             trozosDeLaReceta = estado.value.trozos,
-            // El primero de una receta es el precio suelto, que es lo que casi siempre se
-            // carga; las promociones vienen después y ahí sí se cambia la cantidad.
-            modo = ModoPrecio.TROZO,
+            basesQueFaltan = faltan,
+            // **El cuadro se abre en la base que falta**, no siempre en trozos. Mientras falte
+            // alguna, es lo único que se puede guardar, así que empezar en el modo equivocado
+            // obligaría a cambiarlo a mano para descubrir después que la cantidad tampoco se
+            // puede mover. Puestas las dos, arranca en trozos, que es lo que más se carga.
+            modo = faltan.firstOrNull() ?: ModoPrecio.TROZO,
             cantidad = "1"
         )
     }
@@ -335,6 +357,9 @@ class GastosViewModel(
             precioTotal = formatearNumero(precio.precioTotal),
             etiqueta = precio.etiqueta.orEmpty(),
             trozosDeLaReceta = estado.value.trozos,
+            // Vacía a propósito: ver `basesQueFaltan` en el formulario. Corregir un precio ya
+            // guardado no puede quedar bloqueado por el orden en que se armó la receta.
+            basesQueFaltan = emptyList(),
             tocado = true
         )
     }

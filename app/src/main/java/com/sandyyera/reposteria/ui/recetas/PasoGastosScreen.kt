@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -34,6 +35,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -202,16 +204,17 @@ fun PasoGastos(
             contentPadding = PaddingValues(Medidas.medio),
             verticalArrangement = Arrangement.spacedBy(Medidas.chico)
         ) {
-            if (!estado.tieneIngredientes) {
+            // **Los avisos esperan a que lleguen los datos.** Mientras `cargando` es `true` el
+            // estado todavía es el inicial, donde `tieneIngredientes` es `false` porque nadie
+            // contestó — no porque la receta esté vacía. Sin esta condición, entrar al paso
+            // encendía el aviso rojo de "no tiene ingredientes" durante un fotograma y lo
+            // apagaba: un parpadeo rojo al abrir cada receta, avisando de algo que no pasaba.
+            if (!estado.cargando && !estado.tieneIngredientes) {
                 item { AvisoSinIngredientes(acciones.irAlPaso) }
             }
 
             if (estado.laReferenciaPierdePlata) {
                 item { AvisoVendeAPerdida() }
-            }
-
-            estado.avisoDelResto?.let { aviso ->
-                item { AvisoDelResto(aviso) }
             }
 
             item { TarjetaDeCifras(estado) }
@@ -358,6 +361,16 @@ private fun TarjetaDeCifras(estado: EstadoGastos) {
             Cifra("Ganas por cada trozo", estado.gananciaDeCadaTrozo)
             Cifra("Ganas por el producto", estado.gananciaDelProducto, destacada = true)
 
+            // El aviso del resto va **acá adentro y pegado a las cifras**, no como tarjeta
+            // suelta arriba de todo. Estaba arriba y Sandy no lo veía: en un celular queda
+            // fuera de la pantalla apenas se desplaza un poco, así que parecía no existir.
+            // Es la explicación de por qué el "Entra" de aquí arriba no es lo que uno
+            // obtendría multiplicando, y leído lejos de esos números no explica nada.
+            estado.avisoDelResto?.let { aviso ->
+                HorizontalDivider(Modifier.padding(vertical = Medidas.chico))
+                AvisoDelResto(aviso)
+            }
+
             val ganador = estado.elTrozoGanador
             if (ganador != null) {
                 HorizontalDivider(Modifier.padding(vertical = Medidas.chico))
@@ -421,25 +434,32 @@ private fun Cifra(nombre: String, valor: Double?, destacada: Boolean = false) {
 /**
  * El aviso de que la promoción no dividió exacto (8.6.1).
  *
- * Va **pegado a las cifras que corrige** y no al pie ni en la franja de abajo: es la
- * explicación de por qué el número de abajo no es lo que uno esperaría al multiplicar. Leído
- * en otro lado, no explicaría nada.
+ * Va **dentro de la tarjeta de cifras y justo encima del trozo ganador**, no como tarjeta
+ * suelta arriba de todo. Ahí estaba y Sandy reportó que no lo veía: en un celular quedaba
+ * fuera de la pantalla apenas se desplazaba, así que parecía no salir nunca. Es la explicación
+ * de por qué "Entra al vender el producto" no da lo que uno obtiene multiplicando, y leído
+ * lejos de ese número no explica nada.
  *
- * No va en el color de error: no está mal, es cómo se vende de verdad.
+ * Es una **banda teñida y no otra `Card`**: una tarjeta dentro de otra se lee como un bloque
+ * aparte, que es justo lo contrario de lo que hace falta acá.
+ *
+ * **No va en el color de error**: no está mal, es cómo se vende de verdad. Va en el contenedor
+ * terciario, siguiendo 12.6 al pie — el pastel pinta el fondo y el texto va en su color de
+ * encima. Se intentó antes con `tertiary` como color de letra sobre la tarjeta y **`contraste.py`
+ * lo rechazó**: daba 3,97:1 en modo claro, bajo el 4,5 que pide un texto normal.
  */
 @Composable
 private fun AvisoDelResto(aviso: String) {
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-            contentColor = MaterialTheme.colorScheme.onTertiaryContainer
-        ),
+    Surface(
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+        shape = RoundedCornerShape(Medidas.chico),
         modifier = Modifier.fillMaxWidth()
     ) {
         Text(
             text = aviso,
             style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(Medidas.medio)
+            modifier = Modifier.padding(Medidas.chico)
         )
     }
 }
@@ -562,6 +582,19 @@ private fun CuadroDePrecio(estado: DialogoGastos.Formulario, acciones: AccionesG
                     text = "¿Qué es lo que vendes a este precio?",
                     style = MaterialTheme.typography.bodyMedium
                 )
+
+                // Se dice **antes** de que teclee un 2 y choque con el aviso: la regla no es
+                // obvia, y descubrirla contra un error que aparece bajo un campo es peor que
+                // leerla al abrir el cuadro.
+                if (estado.estaPoniendoUnaBase) {
+                    Text(
+                        text = "Primero los dos precios base, uno por trozo y uno por el " +
+                            "producto entero. Las promociones vienen después: cuando una deja " +
+                            "algo suelto, se cobra a estos.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(Medidas.chico)) {
                     FilterChip(
                         selected = estado.modo == ModoPrecio.TROZO,

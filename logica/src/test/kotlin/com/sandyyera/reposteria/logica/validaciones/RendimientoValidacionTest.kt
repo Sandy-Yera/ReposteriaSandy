@@ -159,4 +159,28 @@ class RendimientoValidacionTest {
         assertEquals("1 trozo", descripcionDePromocion(promoPorTrozo(1)))
         assertEquals("2 trozos", descripcionDePromocion(promoPorTrozo(2, "   ")))
     }
+
+    @Test
+    fun `un precio del producto entero no se llama trozo`() {
+        // Se vio en el celular: la lista mostraba "1 trozo · $6.000" y "1 trozo · $40.000",
+        // dos filas idénticas donde la segunda parecía un error de tipeo. Vender una torta al
+        // precio de una porción es exactamente lo que esa confusión provoca.
+        val producto = PrecioVigente(ModoPrecio.PRODUCTO, 1, 40000.0)
+        assertEquals("1 producto", descripcionDePromocion(producto))
+        assertEquals("2 productos", descripcionDePromocion(producto.copy(cantidad = 2)))
+    }
+
+    @Test
+    fun `la etiqueta escrita a mano sigue mandando en los dos modos`() {
+        val producto = PrecioVigente(ModoPrecio.PRODUCTO, 2, 70000.0, "combo de dos tortas")
+        assertEquals("combo de dos tortas", descripcionDePromocion(producto))
+    }
+
+    @Test
+    fun `nombreDeLaCantidad resuelve el singular en los dos modos`() {
+        assertEquals("1 trozo", nombreDeLaCantidad(ModoPrecio.TROZO, 1))
+        assertEquals("5 trozos", nombreDeLaCantidad(ModoPrecio.TROZO, 5))
+        assertEquals("1 producto", nombreDeLaCantidad(ModoPrecio.PRODUCTO, 1))
+        assertEquals("5 productos", nombreDeLaCantidad(ModoPrecio.PRODUCTO, 5))
+    }
 }

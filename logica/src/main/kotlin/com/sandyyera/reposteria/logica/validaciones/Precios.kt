@@ -39,12 +39,17 @@ fun errorEnPrecioTotalTexto(texto: String): String? =
  * productos completos es perfectamente posible por más que cada uno rinda 2, y confundir las
  * dos cosas fue justamente lo que hizo falta separar.
  *
+ * [basesQueFaltan] son los precios base que la receta todavía no tiene, y **bloquean cualquier
+ * cantidad mayor que 1**: una promoción se apoya en ellos (ver [faltanLasBases]). Llega vacía
+ * por defecto para que quien solo esté revisando la forma del número no tenga que saber de esto.
+ *
  * Se pide entero: media promoción no existe.
  */
 fun errorEnCantidadDePrecio(
     texto: String,
     modo: ModoPrecio,
-    trozosDeLaReceta: Int
+    trozosDeLaReceta: Int,
+    basesQueFaltan: List<ModoPrecio> = emptyList()
 ): String? {
     if (texto.isBlank()) return "Escribe cuántos lleva"
     val numero = textoANumero(texto) ?: return "Escribe un número válido"
@@ -57,8 +62,28 @@ fun errorEnCantidadDePrecio(
         // El tope de la receta va al final: es el más específico y el que más explica.
         modo == ModoPrecio.TROZO && numero > trozosDeLaReceta ->
             "Esta receta rinde $trozosDeLaReceta trozos: la promoción no cabe"
+        numero > 1 && basesQueFaltan.isNotEmpty() -> faltanLasBases(basesQueFaltan)
         else -> null
     }
+}
+
+/**
+ * El aviso de que todavía no se pueden armar promociones (8.6.1).
+ *
+ * Se piden **los dos** precios base antes que cualquier promoción, y no es orden por orden:
+ * una promoción es una regla que se apoya en ellos. "2 trozos por $20.000" en una receta de 5
+ * deja un trozo suelto, y ese suelto se cobra al precio individual — sin él, lo que la app
+ * muestre de esa venta está incompleto y no tiene cómo decirlo salvo con una advertencia. Lo
+ * mismo del lado del producto entero.
+ *
+ * Es privada porque el único que decide cuándo mostrarlo es [errorEnCantidadDePrecio]: el
+ * aviso pertenece al campo de la cantidad, que es lo que hay que bajar a 1 para seguir.
+ */
+private fun faltanLasBases(basesQueFaltan: List<ModoPrecio>): String {
+    val cuales = basesQueFaltan.joinToString(" y ") {
+        if (it == ModoPrecio.TROZO) "de un trozo" else "del producto entero"
+    }
+    return "Primero pon el precio $cuales: las promociones se apoyan en ellos"
 }
 
 /**
@@ -100,9 +125,10 @@ fun revisarPrecio(
     cantidadTexto: String,
     modo: ModoPrecio,
     trozosDeLaReceta: Int,
-    etiqueta: String = ""
+    etiqueta: String = "",
+    basesQueFaltan: List<ModoPrecio> = emptyList()
 ): ErroresPrecio = ErroresPrecio(
     precioTotal = errorEnPrecioTotalTexto(precioTotalTexto),
-    cantidad = errorEnCantidadDePrecio(cantidadTexto, modo, trozosDeLaReceta),
+    cantidad = errorEnCantidadDePrecio(cantidadTexto, modo, trozosDeLaReceta, basesQueFaltan),
     etiqueta = errorEnEtiquetaDePrecio(etiqueta)
 )

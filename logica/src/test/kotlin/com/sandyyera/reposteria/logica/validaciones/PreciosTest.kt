@@ -119,6 +119,59 @@ class PreciosTest {
         assertEquals(errorEnNombreEscrito(largo), errorEnEtiquetaDePrecio(largo))
     }
 
+    // --- Los precios base van primero (8.6.1) ---
+
+    @Test
+    fun `sin los precios base no se puede armar una promocion`() {
+        // Lo pidió Sandy: la app la dejaba empezar por "2 trozos por $20.000" sin haber dicho
+        // nunca cuánto vale un trozo, y esa promoción no tiene con qué cobrar el suelto.
+        val error = errorEnCantidadDePrecio(
+            "2", ModoPrecio.TROZO, trozosDeLaReceta = 8,
+            basesQueFaltan = listOf(ModoPrecio.TROZO, ModoPrecio.PRODUCTO)
+        )
+        assertNotNull(error)
+        assertTrue("Nombra los dos que faltan", error!!.contains("un trozo"))
+        assertTrue(error.contains("producto entero"))
+    }
+
+    @Test
+    fun `el precio base en si mismo nunca se bloquea`() {
+        // Si la cantidad 1 se rechazara por faltar la cantidad 1, no habría por dónde empezar.
+        assertNull(
+            errorEnCantidadDePrecio(
+                "1", ModoPrecio.TROZO, trozosDeLaReceta = 8,
+                basesQueFaltan = listOf(ModoPrecio.TROZO, ModoPrecio.PRODUCTO)
+            )
+        )
+    }
+
+    @Test
+    fun `con las dos bases puestas las promociones vuelven a pasar`() {
+        assertNull(errorEnCantidadDePrecio("2", ModoPrecio.TROZO, 8, basesQueFaltan = emptyList()))
+    }
+
+    @Test
+    fun `el aviso nombra solo la base que falta`() {
+        val error = errorEnCantidadDePrecio(
+            "3", ModoPrecio.PRODUCTO, trozosDeLaReceta = 8,
+            basesQueFaltan = listOf(ModoPrecio.PRODUCTO)
+        )
+        assertNotNull(error)
+        assertFalse("No se nombra el del trozo, que ya está", error!!.contains("un trozo"))
+        assertTrue(error.contains("producto entero"))
+    }
+
+    @Test
+    fun `el tope de la receta gana al aviso de las bases`() {
+        // Los dos son ciertos a la vez, y el que hay que decir es el más específico: una promo
+        // de 9 trozos no cabe en una receta de 8 aunque después se pongan todos los precios.
+        val error = errorEnCantidadDePrecio(
+            "9", ModoPrecio.TROZO, trozosDeLaReceta = 8,
+            basesQueFaltan = listOf(ModoPrecio.TROZO)
+        )
+        assertEquals("Esta receta rinde 8 trozos: la promoción no cabe", error)
+    }
+
     // --- El formulario completo ---
 
     @Test

@@ -178,6 +178,24 @@ fun precioBaseDelProducto(d: DatosCalculoReceta): PrecioVigente? =
 /** Si un precio es uno de los dos base, y no una promoción. */
 fun esPrecioBase(precio: PrecioVigente): Boolean = precio.cantidad == 1
 
+/**
+ * Cuáles de los dos precios base todavía no están puestos.
+ *
+ * **Es la única definición de "falta una base" de la app**, y por eso recibe la lista de
+ * precios y no el snapshot: la usan los dos lados que tienen que estar de acuerdo — la
+ * pantalla, para pedirlos y para no dejar escribir una promoción antes de tiempo, y el
+ * repositorio, que es el que decide de verdad al guardar. Escrita dos veces serían dos reglas
+ * que se separan en cuanto una cambie, y la pantalla habilitaría un botón que el repositorio
+ * rechaza.
+ *
+ * El orden importa: primero el del trozo, que es por donde se empieza, y el cuadro de precio
+ * nuevo se abre justo en el primero que devuelva esta lista.
+ */
+fun basesQueFaltanEn(precios: List<PrecioVigente>): List<ModoPrecio> = buildList {
+    if (precios.none { it.modo == ModoPrecio.TROZO && it.cantidad == 1 }) add(ModoPrecio.TROZO)
+    if (precios.none { it.modo == ModoPrecio.PRODUCTO && it.cantidad == 1 }) add(ModoPrecio.PRODUCTO)
+}
+
 /** Lo que se muestra cuando una promoción no divide exacto y sobra un trozo (8.6.1). */
 const val AVISO_TROZO_SUELTO = "Se usó el valor individual"
 

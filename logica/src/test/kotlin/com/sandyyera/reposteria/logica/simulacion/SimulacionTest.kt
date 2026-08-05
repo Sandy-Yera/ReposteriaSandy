@@ -3,6 +3,7 @@ package com.sandyyera.reposteria.logica.simulacion
 import com.sandyyera.reposteria.logica.precios.DatosCalculoReceta
 import com.sandyyera.reposteria.logica.precios.ModoPrecio
 import com.sandyyera.reposteria.logica.precios.PrecioVigente
+import com.sandyyera.reposteria.logica.precios.ingresoBruto
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -131,6 +132,65 @@ class SimulacionTest {
         // 8 productos x 2 trozos x 2.500 = 40.000, el ejemplo de la arquitectura.
         assertEquals(40000.0, r.ingresoSemanal, 0.001)
         assertEquals(40000.0 * SEMANAS_POR_MES, r.ingresoMensual, 0.001)
+    }
+
+    // --- El caso de las Mil hojas: por qué la semana no es el producto multiplicado ---
+
+    /**
+     * Los números tal como los tenía Sandy en el celular cuando reportó que "la cantidad que
+     * entra es incorrecta". No lo era, pero no había forma de comprobarlo desde la pantalla.
+     */
+    private fun milHojas() = DatosCalculoReceta(
+        recetaId = 1, titulo = "Mil hojas", costoTotal = 12167.45, trozos = 5,
+        precios = listOf(
+            PrecioVigente(ModoPrecio.TROZO, 1, 6000.0),
+            PrecioVigente(ModoPrecio.PRODUCTO, 1, 40000.0),
+            PrecioVigente(ModoPrecio.TROZO, 2, 20000.0, esReferencia = true)
+        )
+    )
+
+    @Test
+    fun `la semana da mas que el producto multiplicado, y la diferencia son los sueltos`() {
+        val d = milHojas()
+
+        // Un producto: 5 trozos = 2 promos + 1 suelto = 40.000 + 6.000.
+        assertEquals(46000.0, ingresoBruto(d), 0.001)
+        // Seis productos: 30 trozos, la promo entra 15 veces justas.
+        assertEquals(300000.0, simulacionDeVenta(d, dias = 3, unidades = 2).ingresoSemanal, 0.001)
+        assertEquals(276000.0, ingresoSiSeMultiplicaraElProducto(d, 3, 2), 0.001)
+    }
+
+    @Test
+    fun `la diferencia se dice en promociones, que es lo que se puede comprobar mirando`() {
+        // 24.000 de diferencia no se comprueban; "tres promociones más" sí: son los seis
+        // trozos sueltos (uno por producto) armando tres pares.
+        assertEquals(3, promocionesQueSeGananAlJuntar(milHojas(), dias = 3, unidades = 2))
+    }
+
+    @Test
+    fun `cuando la promo divide exacto no hay nada que explicar`() {
+        // 4 trozos con promo de 2: ningún producto deja suelto, así que juntar no gana nada y
+        // las dos cuentas coinciden. Es cuando la pantalla no debe decir nada.
+        val d = receta(
+            trozos = 4,
+            PrecioVigente(ModoPrecio.TROZO, 1, 2000.0),
+            PrecioVigente(ModoPrecio.TROZO, 2, 3000.0, esReferencia = true)
+        )
+
+        assertEquals(0, promocionesQueSeGananAlJuntar(d, dias = 5, unidades = 3))
+        assertEquals(
+            ingresoSiSeMultiplicaraElProducto(d, 5, 3),
+            simulacionDeVenta(d, 5, 3).ingresoSemanal,
+            0.001
+        )
+    }
+
+    @Test
+    fun `sin vender nada no se gana ninguna promocion al juntar`() {
+        // Con 0 productos, `repartoDeUnProducto` sí tiene respuesta pero multiplicarla por 0
+        // no significa nada. Tiene que dar 0 y no un número negativo.
+        val d = milHojas()
+        assertEquals(0, promocionesQueSeGananAlJuntar(d, dias = 4, unidades = 0))
     }
 
     @Test

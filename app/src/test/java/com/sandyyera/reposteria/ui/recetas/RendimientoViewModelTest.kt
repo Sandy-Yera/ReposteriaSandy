@@ -401,7 +401,11 @@ class RendimientoViewModelTest {
         // Los trozos van **primero**: una receta nace con `trozos = 1`, y ahí una promo de 3
         // no cabe — el mismo tope del último trozo que esta prueba viene a ejercitar la
         // habría rechazado al crearla, dejando la prueba sin promo que borrar.
+        // Y las dos bases van **antes que la promoción**: desde 8.6.1 una promo no se puede
+        // guardar sin ellas debajo, así que sin esto no habría promo que romper.
         recetas.guardarRendimiento(recetaId, "3", "1.000")
+        recetas.crearPrecio(recetaId, ModoPrecio.TROZO, "1", "1.200")
+        recetas.crearPrecio(recetaId, ModoPrecio.PRODUCTO, "1", "3.500")
         recetas.crearPrecio(recetaId, ModoPrecio.TROZO, "3", "3.000")
         advanceUntilIdle()
 
@@ -409,7 +413,7 @@ class RendimientoViewModelTest {
         advanceUntilIdle()
         assertNotNull("La promo de 3 no cabe en 2 trozos", modelo.estado.value.errorTrozos)
 
-        val laPromo = recetas.observarPrecios(recetaId).first().single()
+        val laPromo = recetas.observarPrecios(recetaId).first().first { it.cantidad == 3 }
         recetas.eliminarPrecio(laPromo.id)
         advanceUntilIdle()
 

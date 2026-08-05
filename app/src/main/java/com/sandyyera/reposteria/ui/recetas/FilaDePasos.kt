@@ -38,19 +38,30 @@ enum class PasoDeReceta(val titulo: String) {
     CANTIDADES("Cantidades"),
 
     /**
+     * Duración (8.4). Va **segundo, y no en medio del camino de las cifras**.
+     *
+     * Es el único paso que no alimenta ninguna cuenta: cuánto dura un producto no entra en
+     * ningún costo, ningún precio ni ninguna proyección. Los otros cuatro sí forman una
+     * cadena —molde → rendimiento → gastos → simulación—, y tenerlo enclavado entre
+     * rendimiento y gastos obligaba a saltarlo cada vez que se recorría esa cadena. Puesto
+     * acá queda pegado a cantidades, que es lo otro que se anota mirando la receta y no la
+     * calculadora, y los cuatro que sí dependen entre sí quedan seguidos.
+     */
+    DURACION("Duración"),
+
+    /**
      * El molde va **antes** que rendimiento y no después, porque decide lo de allá: con
      * molde el peso final es opcional y sin molde es obligatorio (8.3). Preguntando el peso
      * primero habría que cambiar la respuesta después.
      */
     MOLDE("Molde"),
     RENDIMIENTO("Rendimiento"),
-    DURACION("Duración"),
 
     /**
-     * Gastos y ganancias (8.5). Va **después** de rendimiento y duración porque necesita las
-     * dos cosas que aquellos definen: el costo sale de los ingredientes y todo se reparte
-     * entre los trozos. Preguntando el precio antes, cada cifra que se muestre acá es una
-     * cuenta hecha contra datos que todavía no existen.
+     * Gastos y ganancias (8.5). Va **después** de rendimiento porque necesita las dos cosas
+     * que aquel define junto con cantidades: el costo sale de los ingredientes y todo se
+     * reparte entre los trozos. Preguntando el precio antes, cada cifra que se muestre acá es
+     * una cuenta hecha contra datos que todavía no existen.
      */
     GASTOS("Gastos y ganancias"),
 

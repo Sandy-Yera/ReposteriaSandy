@@ -3,10 +3,12 @@ package com.sandyyera.reposteria.logica.simulacion
 import com.sandyyera.reposteria.logica.precios.DatosCalculoReceta
 import com.sandyyera.reposteria.logica.precios.ModoPrecio
 import com.sandyyera.reposteria.logica.precios.RepartoDeVenta
+import com.sandyyera.reposteria.logica.precios.ingresoBruto
 import com.sandyyera.reposteria.logica.precios.precioBaseDelProducto
 import com.sandyyera.reposteria.logica.precios.precioBasePorTrozo
 import com.sandyyera.reposteria.logica.precios.precioDeReferencia
 import com.sandyyera.reposteria.logica.precios.repartir
+import com.sandyyera.reposteria.logica.precios.repartoDeUnProducto
 
 /** Semanas por mes: 52 ÷ 12. Se usa para pasar cualquier cifra semanal a mensual. */
 const val SEMANAS_POR_MES = 4.33
@@ -80,6 +82,37 @@ fun repartoSemanal(d: DatosCalculoReceta, dias: Int, unidades: Int): RepartoDeVe
         precioBaseDelProducto(d)
     }
     return repartir(loQueSeVendeEnLaSemana(d, dias, unidades), referencia, suelto)
+}
+
+/**
+ * Lo que daría multiplicar el ingreso de **un** producto por los de la semana.
+ *
+ * No es lo que la app usa: existe para poder **contrastarla**, y nació de un caso real que Sandy
+ * encontró probando. Una receta de 5 trozos con promo de 2 y trozo suelto a $6.000 deja $46.000
+ * por producto (2 promos + 1 suelto); seis productos parecen $276.000, pero la semana son 30
+ * trozos y la promo entra 15 veces justas: $300.000. Los $24.000 de diferencia son los seis
+ * sueltos que, juntos, arman tres promociones más.
+ *
+ * Las dos cifras están bien y responden preguntas distintas — una es "qué pasa si vendo esta
+ * torta sola", la otra "qué pasa si vendo seis". El problema es verlas en dos pantallas sin nada
+ * que las una: ahí la segunda parece un error de la app. Por eso la comparación se calcula y se
+ * explica en vez de esconderse.
+ */
+fun ingresoSiSeMultiplicaraElProducto(d: DatosCalculoReceta, dias: Int, unidades: Int): Double =
+    ingresoBruto(d) * dias * unidades
+
+/**
+ * Cuántas promociones más se arman al juntar los sueltos de cada producto, o 0 si ninguna.
+ *
+ * Es la diferencia entre las dos cuentas de arriba, dicha en promociones en vez de en pesos:
+ * "se arman 3 promociones más" se comprueba mirando la torta, y "entran $24.000 más" no.
+ */
+fun promocionesQueSeGananAlJuntar(d: DatosCalculoReceta, dias: Int, unidades: Int): Int {
+    val productos = dias * unidades
+    if (productos <= 0) return 0
+    val enLaSemana = repartoSemanal(d, dias, unidades).cuantasVecesEntra
+    val unoPorUno = repartoDeUnProducto(d).cuantasVecesEntra * productos
+    return (enLaSemana - unoPorUno).coerceAtLeast(0)
 }
 
 /**
