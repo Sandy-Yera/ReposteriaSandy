@@ -753,6 +753,36 @@ de depuración y no la app. Esa tarea **no existía** hasta que se le puso firma
 (hasta entonces Gradle solo ofrecía `uninstallRelease`, que es lo que despista al buscarla);
 ver la nota de la Fase 15, porque esa firma es provisoria.
 
+#### Lo medido, para no volver a discutirlo de memoria
+
+En un Samsung SM-A546E, medianas de cinco arranques en frío:
+
+| Compilación | Mediana |
+|---|---|
+| Depuración | **1.092 ms** |
+| Release (sin depuración) | **344 ms** |
+
+**Tres veces.** El pegón que se sentía al abrir era la compilación de depuración, no la app: sin
+optimizar, con las herramientas de inspección de Compose adentro, y recién instalada, o sea
+todavía sin compilar de antemano por el sistema. Los 344 ms de release están por debajo del
+umbral en que se percibe espera.
+
+Esto **cierra la pregunta del arranque y no la de moverse por la app**, que son dos cosas
+distintas y tenían causas distintas: aquella era la fuga de ViewModel de la regla 3 de más
+arriba, que crecía con el uso y no se ve en un arranque.
+
+Dos advertencias sobre este número, para que la próxima medición sea limpia:
+
+- **La app instalada tiene que ser la de después del cambio que se quiere medir.** La primera
+  vez que se corrió esto, el APK de depuración del celular era anterior a los arreglos de esta
+  sección, así que la comparación mezclaba dos variables: el tipo de compilación **y** el código.
+  La conclusión aguanta igual —la diferencia entre compilaciones es de ese orden— pero para
+  atribuirla a una sola cosa hay que reinstalar antes de medir.
+- **Después de medir hay que volver a depuración** (`./gradlew :app:installDebug`).
+  `herramientas/respaldo_bd.sh` usa `run-as`, que solo funciona con una app depurable, así que
+  con release instalada el respaldo falla. Los datos no se pierden al cambiar de una a otra:
+  mismo `applicationId` y misma llave, así que Android lo trata como actualización.
+
 ---
 
 ## 7. Módulo Ingredientes

@@ -80,6 +80,10 @@ echo
 # palabra que usó Sandy ("se quedó pegado").
 if [ "$mediana" -lt 500 ]; then
     echo "Va bien. Debajo de medio segundo no se percibe espera."
+    echo
+    echo "Si esto fue con la compilación de release, acuérdate de volver a la de siempre:"
+    echo "    ./gradlew :app:installDebug"
+    echo "El respaldo (respaldo_bd.sh) usa run-as y necesita la app depurable."
 elif [ "$mediana" -lt 1000 ]; then
     echo "Aceptable, pero se nota. Vale la pena comparar contra una compilación"
     echo "sin depuración: ./gradlew :app:installRelease"
