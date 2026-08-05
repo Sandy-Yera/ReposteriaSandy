@@ -575,6 +575,13 @@ Se transforma el texto en `onValueChange` y no con un `VisualTransformation`. Es
 - Precio/promoción (`RecetaPrecio`): `precioTotal > 0` y `cantidad >= 1` siempre — sin esto, un precio en $0 o una promo con `cantidad = 0` produce división por cero en `trozoGanador` (8.5).
 - Precio/promoción en modo trozo: además, `cantidad <= trozos` de la receta — es el **"tope del último trozo"**: no tiene sentido una promo de "3 trozos por $1.500" en una receta que rinde 2. En modo producto no aplica tope (sí puedes vender 2, 3 o 10 productos completos).
 - Al bajar `trozos` en el paso Rendimiento: si alguna promo en modo trozo quedaría con `cantidad > trozos`, se avisa antes de guardar y se pide ajustar o eliminar esa promo — misma lógica de "avisar antes de romper algo" que el borrado de ingredientes (7.1).
+- **Texto de un paso (8.8):** hasta `LARGO_MAXIMO_PASO` (1.000) caracteres, y **el vacío se
+  acepta**. No es un descuido ni una regla más blanda: un paso en blanco no es un error que
+  corregir sino **un paso que se borró**, exactamente como un bloque de duración vacío
+  (`elBloqueDiceAlgo`). Exigir texto obligaría a llenar el campo antes de poder deshacerse
+  de él. El tope es propio y no el de los nombres: un paso es un párrafo y un nombre son 60
+  caracteres; compartirlos habría obligado a subir el de los nombres, o sea a dejar pasar un
+  nombre de sección de 300 caracteres que no cabe en ninguna pantalla.
 - `unidadesPorDia`: `>= 0`. Se permite 0 a propósito: en la simulación múltiple (10.3) significa "esta receta no se vende", que es el caso que ya estaba previsto ("si no está asignado, queda en 0").
 - Sueldo empleado: `gananciaEmpleado` entre `0` y `gananciaTotal` de la receta (el tope real es "no bajar de `costoTotal` para mí" — matemáticamente equivalente, ver nota en 10.1).
 - `diasPorSemana` en `RecetaSimulacionVenta`, `EmpleadoRecetaSueldo` y `EmpleadoSimulacionMultiple`: entre `1` y `7` siempre — una semana no tiene más de 7 días.
@@ -1444,6 +1451,26 @@ se van la sección **y sus pasos**.
 
 **"Paso previo"** (opcional, `"No necesita"` por defecto) sigue igual, arriba de todo: es lo
 que hay que tener hecho *antes* de empezar, no un paso de la preparación.
+
+#### 8.8.1 De la lista plana a los bloques que se ven
+
+Los pasos se **guardan planos** —una fila por paso, con su orden y el id de su sección— y se
+**ven en bloques** con encabezado. Esa traducción la hace `bloquesDePasos` y tiene cuatro
+reglas que se equivocan solas si se escriben entre medio del dibujo:
+
+1. **Un bloque por tanda seguida del mismo título.** Una sección puede volver más adelante:
+   "Crema" al principio y "Crema" al final son dos momentos de la preparación, no un error.
+2. **Dos generales pegados se juntan** (`seJuntanLosBloques`) — son el mismo bloque partido
+   en dos. Pero **un general anidado no se junta con uno normal** aunque los dos tengan el
+   título en `null`: esa es justamente la distinción que esta sección pide conservar.
+3. **La numeración es corrida**, 1, 2, 3… a lo largo de toda la receta. Reiniciarla en cada
+   bloque daría tres "paso 1" y haría imposible decir "me quedé en el 7".
+4. **El encabezado del General no se dibuja si es el único bloque**, porque repite el título
+   de la receta. Una sección sola sí lleva el suyo: alguien la nombró a propósito.
+
+Un paso cuya sección ya no existe se dibuja **como General** en vez de desaparecer. No
+debería pasar —borrar una sección se lleva sus pasos— pero una fila puede quedar suelta, y
+hacer desaparecer texto que alguien escribió es peor que mostrarlo sin su encabezado.
 
 ### 8.9 Vista final y lista de recetas
 
@@ -2344,7 +2371,8 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 - **Va junto y no en dos fases** porque los pasos con título son la mitad de lo que se copia:
   hacer primero las recetas anidadas obligaría a copiar pasos que todavía no tienen dónde ir.
 - **Necesita migración de base** (5.5.1): dos columnas en `receta_secciones` y dos en
-  `receta_pasos`. Será la versión 4.
+  `receta_pasos`. **Será la versión 5, no la 4**: la 4 se la llevó el corte de los moldes
+  (9.4), que llegó antes. Es justo el número que se copia mal al escribir la migración.
 - **Ya está construida y probada la lógica pura**, en `logica/partes/` (36 pruebas):
   - `FirmaDeReceta`, `textoDeFirma` y `firmaDesdeTexto` — la foto que va en `firmaDelOrigen`,
     con su escapado y su descarte silencioso de una firma ilegible.
@@ -2354,6 +2382,12 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
   - `sePuedeUsarComoParte` — el tope de un nivel de 8.11.6.
   - `AtajoDePaso`, `atajoAntesDelCursor` y `reemplazarAtajo` — los `:titulo:` e
     `:ingredientes:` de 8.8.
+  - `bloquesDePasos` — la traducción de la lista plana guardada a los bloques con
+    encabezado que se dibujan (8.8), con sus cuatro reglas: una tanda por título seguido,
+    los generales pegados que se juntan, la numeración corrida y el encabezado que no se
+    dibuja cuando el General es el único bloque.
+  - `errorEnTextoDePaso` y `elPasoDiceAlgo` — las reglas del texto de un paso, con su
+    propio tope (`LARGO_MAXIMO_PASO`), separado del de los nombres.
   Se hizo primero **porque es lo único de esta fase que se puede verificar sin el celular**:
   son funciones puras y corren con `./gradlew :logica:test`. Lo que queda —la migración, las
   consultas y las pantallas— se apoya encima y solo se comprueba compilando.
