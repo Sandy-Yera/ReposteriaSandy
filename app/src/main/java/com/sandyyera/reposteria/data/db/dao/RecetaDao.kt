@@ -76,6 +76,34 @@ interface RecetaDao {
     suspend fun costoTotalReceta(recetaId: Long): Double
 
     /**
+     * El costo de **una** receta, avisando cuando cambie. Es [costoTotalReceta] como `Flow`.
+     *
+     * Existe por rendimiento y la diferencia es grande: [observarCostos] recorre y agrupa
+     * **todas** las recetas de la base, y estaba siendo usada para mirar una sola —tanto en
+     * `observarDatosCalculo` como, indirectamente, en el paso de cantidades—. Con la receta
+     * abierta hay dos pantallas suscritas, así que cada tecla que cambiaba un ingrediente
+     * disparaba dos recorridos completos de la base para leer un número de una receta.
+     *
+     * El `WHERE` va antes del agrupamiento, así que esta consulta toca solo las filas de esa
+     * receta y se apoya en el índice de `receta_secciones(recetaId)`. Room vigila las mismas
+     * tres tablas, así que sigue avisando igual de bien.
+     *
+     * **No lleva `GROUP BY` y por eso no tiene la trampa de la otra:** `SUM` sobre cero filas
+     * devuelve una fila con `NULL`, que el `COALESCE` convierte en 0. Una receta sin
+     * ingredientes contesta 0 en vez de no aparecer.
+     */
+    @Query(
+        """
+        SELECT COALESCE(SUM(ri.cantidadG * i.valorPorGramo), 0)
+        FROM receta_ingredientes ri
+        JOIN receta_secciones rs ON rs.id = ri.seccionId
+        JOIN ingredientes i      ON i.id  = ri.ingredienteId
+        WHERE rs.recetaId = :recetaId
+        """
+    )
+    fun observarCostoDeReceta(recetaId: Long): Flow<Double>
+
+    /**
      * Lo mismo pero para varias recetas de una vez, para la simulación múltiple.
      *
      * Ojo: una receta sin ingredientes **no aparece** en el resultado, porque no tiene

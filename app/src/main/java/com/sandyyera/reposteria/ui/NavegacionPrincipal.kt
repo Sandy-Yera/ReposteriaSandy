@@ -34,6 +34,7 @@ import com.sandyyera.reposteria.ui.moldes.MoldesViewModel
 import com.sandyyera.reposteria.ui.recetas.CantidadesViewModel
 import com.sandyyera.reposteria.ui.recetas.GastosViewModel
 import com.sandyyera.reposteria.ui.recetas.ListaRecetasScreen
+import com.sandyyera.reposteria.ui.recetas.ModelosDeLaReceta
 import com.sandyyera.reposteria.ui.recetas.DuracionViewModel
 import com.sandyyera.reposteria.ui.recetas.MoldeDeRecetaViewModel
 import com.sandyyera.reposteria.ui.recetas.PasoCantidadesScreen
@@ -100,13 +101,31 @@ fun NavegacionPrincipal(
     // botón de atrás cierran la receta desde cualquier paso, y moverse entre pasos es la
     // fila de arriba. Antes la X de rendimiento devolvía a cantidades, así que el mismo
     // ícono significaba una cosa en el primer paso y otra en el segundo.
+
+    // Dónde viven los ViewModel de la receta abierta, para poder soltarlos al cerrarla.
+    // Sin esto quedaban vivos hasta cerrar la app, y con ellos sus observadores de la base:
+    // ver `ModelosDeLaReceta`. Es la causa de que la app se fuera poniendo lenta con el uso.
+    val modelosDeReceta: ModelosDeLaReceta = viewModel()
+
     val idAbierta = recetaAbierta
     if (idAbierta != null) {
         // Las dos van en `remember` y no sueltas: sin eso se crean de nuevo en cada
         // redibujado, y como cada pantalla arma su `Acciones*` con `remember(...)` sobre
         // ellas, ese `remember` no serviría de nada y la pantalla entera se recompondría
         // por cada tecla que se escribe en un campo.
-        val cerrarReceta: () -> Unit = remember { { recetaAbierta = null } }
+        //
+        // `cerrarReceta` además **suelta los ViewModel de esa receta**. Va acá y no en un
+        // `DisposableEffect` porque cerrar es un acto y no un efecto de dejar de dibujarse:
+        // con un efecto, girar el teléfono también los soltaría, que es justo lo que este
+        // arreglo evita.
+        val cerrarReceta: () -> Unit = remember(idAbierta) {
+            {
+                recetaAbierta = null
+                // Volver al primer paso no se hace acá: ya lo hace `alAbrirReceta`, y la
+                // decisión vive en un solo lugar.
+                modelosDeReceta.cerrar(idAbierta)
+            }
+        }
         val elegirPaso: (PasoDeReceta) -> Unit = remember { { pasoActual = it } }
 
         // El título se observa **una sola vez para los cuatro pasos**, y desde acá porque
@@ -115,7 +134,7 @@ fun NavegacionPrincipal(
         // con su primer instante en blanco — eso era el parpadeo del encabezado al cambiar
         // de sección, y por eso pasaba una sola vez por paso.
         val tituloModelo: TituloDeRecetaViewModel = viewModel(
-            key = "titulo-$idAbierta",
+            viewModelStoreOwner = modelosDeReceta.de(idAbierta),
             factory = TituloDeRecetaViewModel.fabrica(idAbierta, contenedor.recetas)
         )
         val tituloReceta by tituloModelo.titulo.collectAsStateWithLifecycle()
@@ -131,10 +150,7 @@ fun NavegacionPrincipal(
                 tituloReceta = tituloReceta,
                 desplazamientoDePasos = desplazamientoDePasos,
                 modelo = viewModel(
-                    // La clave hace que cada receta tenga su propio ViewModel: sin ella,
-                    // abrir una segunda receta reutilizaría el de la primera y mostraría los
-                    // ingredientes equivocados.
-                    key = "cantidades-$idAbierta",
+                    viewModelStoreOwner = modelosDeReceta.de(idAbierta),
                     factory = CantidadesViewModel.fabrica(
                         recetaId = idAbierta,
                         recetas = contenedor.recetas,
@@ -151,7 +167,7 @@ fun NavegacionPrincipal(
                 tituloReceta = tituloReceta,
                 desplazamientoDePasos = desplazamientoDePasos,
                 modelo = viewModel(
-                    key = "molde-$idAbierta",
+                    viewModelStoreOwner = modelosDeReceta.de(idAbierta),
                     factory = MoldeDeRecetaViewModel.fabrica(
                         recetaId = idAbierta,
                         recetas = contenedor.recetas,
@@ -168,7 +184,7 @@ fun NavegacionPrincipal(
                 tituloReceta = tituloReceta,
                 desplazamientoDePasos = desplazamientoDePasos,
                 modelo = viewModel(
-                    key = "rendimiento-$idAbierta",
+                    viewModelStoreOwner = modelosDeReceta.de(idAbierta),
                     factory = RendimientoViewModel.fabrica(
                         recetaId = idAbierta,
                         recetas = contenedor.recetas
@@ -184,7 +200,7 @@ fun NavegacionPrincipal(
                 tituloReceta = tituloReceta,
                 desplazamientoDePasos = desplazamientoDePasos,
                 modelo = viewModel(
-                    key = "duracion-$idAbierta",
+                    viewModelStoreOwner = modelosDeReceta.de(idAbierta),
                     factory = DuracionViewModel.fabrica(idAbierta, contenedor.recetas)
                 ),
                 pasoActual = pasoActual,
@@ -197,7 +213,7 @@ fun NavegacionPrincipal(
                 tituloReceta = tituloReceta,
                 desplazamientoDePasos = desplazamientoDePasos,
                 modelo = viewModel(
-                    key = "gastos-$idAbierta",
+                    viewModelStoreOwner = modelosDeReceta.de(idAbierta),
                     factory = GastosViewModel.fabrica(idAbierta, contenedor.recetas)
                 ),
                 pasoActual = pasoActual,
@@ -210,7 +226,7 @@ fun NavegacionPrincipal(
                 tituloReceta = tituloReceta,
                 desplazamientoDePasos = desplazamientoDePasos,
                 modelo = viewModel(
-                    key = "simulacion-$idAbierta",
+                    viewModelStoreOwner = modelosDeReceta.de(idAbierta),
                     factory = SimulacionViewModel.fabrica(idAbierta, contenedor.recetas)
                 ),
                 pasoActual = pasoActual,

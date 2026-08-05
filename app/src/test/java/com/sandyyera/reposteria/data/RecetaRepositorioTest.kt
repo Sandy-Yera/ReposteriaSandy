@@ -341,6 +341,45 @@ class RecetaRepositorioTest {
         assertEquals(0.0, repositorio.costoTotal(crearReceta()), 0.001)
     }
 
+    // --- El costo de UNA receta observado (rendimiento) ---
+
+    @Test
+    fun `observarCosto da lo mismo que costoTotal`() = runBlocking {
+        // Son la misma consulta, una de una vez y la otra colgada de un `Flow`. Si se
+        // separaran, la pantalla mostraría un costo y los cálculos usarían otro.
+        val id = crearReceta()
+        val seccion = repositorio.obtenerSecciones(id).single().id
+        repositorio.agregarIngrediente(seccion, ingrediente("Harina", 1.2), 500.0)
+
+        assertEquals(repositorio.costoTotal(id), repositorio.observarCosto(id).first(), 0.001)
+    }
+
+    @Test
+    fun `observarCosto contesta cero para una receta sin ingredientes`() = runBlocking {
+        // **Es la diferencia con `observarCostos`**, y es la razón de que exista: el mapa de
+        // aquella no trae entrada para una receta sin ingredientes, porque su `GROUP BY` no
+        // le da fila. Esta no agrupa, así que contesta 0 y quien la lea no tiene que
+        // acordarse de rellenar el hueco.
+        assertEquals(0.0, repositorio.observarCosto(crearReceta()).first(), 0.001)
+    }
+
+    @Test
+    fun `observarCosto avisa cuando cambia el precio de un ingrediente de otra pantalla`() =
+        runBlocking {
+            // Es lo que tenía que seguir funcionando al dejar de mirar el costo de todas las
+            // recetas para leer el de una: quien mueve el costo es el catálogo, en otro paso.
+            val id = crearReceta()
+            val harina = ingrediente("Harina", 1.2)
+            repositorio.agregarIngrediente(
+                repositorio.obtenerSecciones(id).single().id, harina, 500.0
+            )
+            assertEquals(600.0, repositorio.observarCosto(id).first(), 0.001)
+
+            catalogo.actualizar(catalogo.obtener(harina)!!.copy(valorPorGramo = 2.0))
+
+            assertEquals(1000.0, repositorio.observarCosto(id).first(), 0.001)
+        }
+
     @Test
     fun `subir el precio del ingrediente sube el costo de la receta`() = runBlocking {
         // Decisión #3: nunca hay precios congelados dentro de la receta.

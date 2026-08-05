@@ -674,6 +674,69 @@ Hay cuatro niveles, y cada uno cubre lo que el anterior no puede. Los tres prime
 
 **Al escribir una función nueva, la pregunta es en qué nivel se prueba.** Si la respuesta es "en ninguno de los dos primeros", casi siempre significa que hay lógica pura mezclada con acceso a datos y conviene separarla — la misma regla de 6.5, mirada desde las pruebas.
 
+### 6.7 Rendimiento: lo que se observa cuesta, y hay que saber cuánto
+
+Sandy reportó dos cosas distintas: **un pegón de uno o dos segundos al abrir la app**, y que
+**moviéndose por ella se sentía un poco lenta y después se normalizaba**. Son dos causas
+separadas y conviene no confundirlas, porque una es del código y la otra del tipo de compilación.
+
+#### Las tres reglas que salieron de ahí
+
+**1. Observar una receta no puede costar mirar todas.** `observarDatosCalculo(recetaId)` usaba
+`observarCostos()`, que recorre y agrupa **la base completa**, para después quedarse con una sola
+entrada del mapa. Con la receta abierta hay dos pantallas suscritas a ese snapshot —gastos y
+simulación—, así que mover un gramo disparaba dos recorridos de toda la base para leer un número
+de una receta. La regla: *si la pantalla mira una receta, la consulta filtra por esa receta.*
+`observarCosto(recetaId)` es la versión que corresponde, y `observarCostos()` queda para la
+lista, que sí las necesita todas.
+
+**2. Nada `suspend` dentro de la transformación de un `combine`.** El paso de cantidades tenía
+`costoTotal = recetas.costoTotal(recetaId)` **adentro** del `combine`: una consulta más, en
+serie, en **cada** emisión de cualquiera de los otros cuatro flujos. Un `combine` transforma
+datos que ya llegaron; si hace falta un dato más, es un flujo más, y ahí Room decide solo cuándo
+recalcularlo. Se nota como "escribo y la pantalla va un pasito atrás".
+
+**3. Lo que se observa tiene que poder soltarse.** Es la más importante y la que explica la
+lentitud creciente. `viewModel()` sin dueño propio guarda en el de la **Activity**, así que los
+seis pasos de cada receta —más el del título— quedaban vivos hasta cerrar la app. Y no dormidos:
+cuatro de ellos observan la base con un `viewModelScope.launch { … .collect { } }`, que **no se
+detiene** al dejar de mirarse, a diferencia del `WhileSubscribed(5s)` de los estados. Room avisa
+a todos los observadores registrados, así que guardar un precio terminaba re-ejecutando esa
+consulta una vez por cada receta abierta en la sesión. Por eso *se movía bien al principio*.
+
+La solución es `ModelosDeLaReceta` (`ui/recetas/`): un ViewModel de la Activity que guarda un
+`ViewModelStore` **por receta abierta** y lo vacía al cerrarla. Es un ViewModel y no un
+`remember` a propósito — así sobrevive a girar el teléfono, y aun así se puede vaciar a mano,
+cosa que el store de la Activity no permite (su `clear()` se lleva todo).
+
+**La regla general:** *un observador de la base tiene que tener un dueño que lo suelte.* Al
+agregar un `collect` permanente en un ViewModel, la pregunta es quién lo va a cerrar.
+
+#### El arranque, y qué parte no es del código
+
+Lo que sí era del código: `AppContainer` construía Room **en el constructor**, y como
+`MainActivity.onCreate` pide el contenedor, eso pasaba en el hilo principal antes del primer
+cuadro — cargar la clase generada, cinco DAO y los adaptadores de quince entidades. Ahora la base
+es perezosa y `ReposteriaApp.onCreate` la abre desde un hilo de fondo (`precalentar`), en
+paralelo con el primer dibujado en vez de antes de él.
+
+Lo que **no** es del código, y hay que decirlo con todas sus letras: **la app que Sandy prueba es
+una compilación de depuración**. Eso significa sin optimizar, con las herramientas de inspección
+de Compose adentro (`debugImplementation`), y —lo que más pesa— **recién instalada, o sea sin
+compilar de antemano**: Android traduce el código a medida que se ejecuta y solo después lo
+compila en segundo plano. De ahí el patrón exacto que ella describe: pegón al principio, un poco
+lento al recorrer, y **luego normal**. No se arregla optimizando el código; se mide y se compara.
+
+**Cómo medirlo en vez de estimarlo** (el mismo principio que `contraste.py`):
+
+```bash
+adb shell am start -W -n com.sandyyera.reposteria/.ui.MainActivity   # TotalTime en ms
+./gradlew :app:installRelease                                       # la misma app sin depuración
+```
+
+Si la versión de release arranca notoriamente más rápido, lo que se estaba midiendo era la
+compilación de depuración y no la app.
+
 ---
 
 ## 7. Módulo Ingredientes

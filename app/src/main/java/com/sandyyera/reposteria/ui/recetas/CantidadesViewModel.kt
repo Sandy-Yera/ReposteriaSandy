@@ -273,9 +273,12 @@ class CantidadesViewModel(
         recetas.observarReceta(recetaId),
         recetas.observarSecciones(recetaId),
         recetas.observarIngredientes(recetaId),
-        ingredientes.observarTodos(),
+        // El catálogo y el costo van juntos en un `combine` de a dos porque `combine` llega
+        // hasta cinco flujos y acá hacen falta seis. No cambia cuándo emite nada.
+        combine(ingredientes.observarTodos(), recetas.observarCosto(recetaId)) { c, k -> c to k },
         mensaje
-    ) { receta, secciones, items, catalogo, mensajeActual ->
+    ) { receta, secciones, items, catalogoYCosto, mensajeActual ->
+        val (catalogo, costoDeLaReceta) = catalogoYCosto
         val porId = catalogo.associateBy { it.id }
 
         EstadoCantidades(
@@ -293,7 +296,14 @@ class CantidadesViewModel(
                         }
                 )
             },
-            costoTotal = recetas.costoTotal(recetaId),
+            // **Observado y no consultado acá adentro.** Antes era `recetas.costoTotal(...)`,
+            // una consulta `suspend` **dentro de la transformación**: cada emisión de
+            // cualquiera de los otros flujos —una tecla, un ingrediente, un renombre— se
+            // quedaba esperando un viaje más a SQLite antes de poder dibujar. Sigue viniendo
+            // de la base y no de sumar las líneas en memoria, que era el punto (una segunda
+            // verdad sobre el mismo número), pero ahora Room lo recalcula solo cuando cambia
+            // alguna de las tres tablas de las que depende.
+            costoTotal = costoDeLaReceta,
             catalogo = catalogo,
             mensaje = mensajeActual,
             cargando = false

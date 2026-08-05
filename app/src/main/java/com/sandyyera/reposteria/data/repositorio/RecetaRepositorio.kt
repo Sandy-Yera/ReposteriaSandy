@@ -411,6 +411,18 @@ class RecetaRepositorio(
     fun observarCostos(): Flow<Map<Long, Double>> =
         dao.observarCostos().map { filas -> filas.associate { it.recetaId to it.costo } }
 
+    /**
+     * El costo de **una** receta, avisando cuando cambie.
+     *
+     * **Es la que hay que usar con una receta abierta**; `observarCostos` es para la lista,
+     * que las necesita todas. Mirar una sola con aquella significa recorrer y agrupar la base
+     * entera para leer un número, y con la receta abierta hay dos pantallas suscritas.
+     *
+     * A diferencia del mapa de `observarCostos`, esta **sí contesta 0** para una receta sin
+     * ingredientes en vez de no traerla: no hay `GROUP BY` que le niegue la fila.
+     */
+    fun observarCosto(recetaId: Long): Flow<Double> = dao.observarCostoDeReceta(recetaId)
+
     // --- Molde de la receta ---
 
     /** El rendimiento de una receta: molde, peso final y trozos. */
@@ -768,19 +780,20 @@ class RecetaRepositorio(
     fun observarDatosCalculo(recetaId: Long): Flow<DatosCalculoReceta?> = combine(
         dao.observarReceta(recetaId),
         dao.observarRendimiento(recetaId),
-        // **La del repositorio y no la del DAO**: aquella devuelve las filas de la consulta
-        // y esta el mapa ya armado. Pedirle el mapa a la del DAO es indexar una lista por el
-        // id de la receta, que además compila hasta que los tipos no dan.
-        observarCostos(),
+        // **El costo de esta receta y no el de todas.** Antes acá iba `observarCostos()`, que
+        // recorre y agrupa la base completa, para después quedarse con una sola entrada del
+        // mapa. Con la receta abierta hay dos pantallas suscritas a este snapshot —gastos y
+        // simulación—, así que cambiar un gramo disparaba dos recorridos de toda la base.
+        // `observarCosto` filtra por receta y además contesta 0 cuando no tiene ingredientes,
+        // en vez de no traer fila, así que se fue con ella la trampa del `GROUP BY`.
+        observarCosto(recetaId),
         dao.observarPrecios(recetaId)
-    ) { receta, rendimiento, costos, precios ->
+    ) { receta, rendimiento, costo, precios ->
         receta?.let {
             DatosCalculoReceta(
                 recetaId = it.id,
                 titulo = it.titulo,
-                // El mapa no trae entrada para las recetas sin ingredientes: el `GROUP BY` no
-                // les da fila, y ahí 0 es el costo correcto.
-                costoTotal = costos[recetaId] ?: 0.0,
+                costoTotal = costo,
                 trozos = rendimiento?.trozos ?: 1,
                 precios = precios.map { precio -> precio.aVigente() }
             )

@@ -347,6 +347,21 @@ class RecetaDaoFalso(
         combine(recetas, cambios, catalogo.observarTodos()) { lista, _, _ -> lista }
             .map { lista -> costoDeVariasRecetas(lista.map { it.id }) }
 
+    /**
+     * El costo de una sola receta, colgado de **las mismas tres fuentes** que el de todas.
+     *
+     * Cuelga de `recetas` también, aunque filtre por id: si esa receta se borra, quien esté
+     * mirando su costo tiene que enterarse.
+     *
+     * **Contesta 0 para una receta sin ingredientes en vez de omitirla**, igual que la
+     * consulta real: esa no lleva `GROUP BY`, así que `SUM` sobre cero filas da una fila con
+     * `NULL` que el `COALESCE` convierte en 0. Es justo la diferencia con `observarCostos`, y
+     * el falso tiene que reproducirla o la prueba no vería el día que se confundan.
+     */
+    override fun observarCostoDeReceta(recetaId: Long): Flow<Double> =
+        combine(recetas, cambios, catalogo.observarTodos()) { _, _, _ -> Unit }
+            .map { costoTotalReceta(recetaId) }
+
     // --- Consultas que cruzan tablas ---
 
     override suspend fun obtenerRecetasQueUsan(ingredienteId: Long): List<Receta> {
