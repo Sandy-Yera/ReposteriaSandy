@@ -11,6 +11,7 @@ import com.sandyyera.reposteria.data.repositorio.MoldeRepositorio
 import com.sandyyera.reposteria.data.repositorio.RecetaRepositorio
 import com.sandyyera.reposteria.data.repositorio.ResultadoCrearReceta
 import com.sandyyera.reposteria.logica.moldes.DimensionesMolde
+import com.sandyyera.reposteria.logica.moldes.FormaDelCorte
 import com.sandyyera.reposteria.logica.moldes.ModoReescalado
 import com.sandyyera.reposteria.logica.moldes.TipoFormaMolde
 import com.sandyyera.reposteria.logica.validaciones.CampoDeMolde
@@ -67,6 +68,12 @@ class MoldeDeRecetaViewModelTest {
     fun dejarTodoComoEstaba() {
         Dispatchers.resetMain()
     }
+
+    /** Un molde del catálogo con su corte ya contestado, como quedaría al guardarlo allá. */
+    private fun exotico() = DimensionesMolde(
+        tipoForma = TipoFormaMolde.EXOTICO, volumenExoticoCm3 = 2000.0, alturaMoldeCm = 8.0,
+        formaDelCorte = FormaDelCorte.CUNAS
+    )
 
     private fun cuadrado(lado: Double, alto: Double) = DimensionesMolde(
         tipoForma = TipoFormaMolde.CUADRADO, ladoCm = lado, alturaMoldeCm = alto
@@ -458,5 +465,118 @@ class MoldeDeRecetaViewModelTest {
         assertFalse(modelo.estado.value.usaMolde)
         // Las medidas se quedan por si fue un error y hay que volver atrás (5.2).
         assertNotNull(recetas.obtenerRendimiento(recetaId)!!.dimensiones)
+    }
+
+    // --- Cómo se corta un molde medido dentro de la receta (9.4) ---
+
+    /** Deja el cuadro en modo prueba con una forma elegida. */
+    private suspend fun TestScope.medirAMano(
+        modelo: MoldeDeRecetaViewModel,
+        forma: TipoFormaMolde
+    ) {
+        modelo.abrirElegirMolde()
+        advanceUntilIdle()
+        modelo.cambiarOrigenDelMolde(OrigenDelMolde.PRUEBA)
+        modelo.elegirFormaDePrueba(forma)
+    }
+
+    @Test
+    fun `un exotico medido a mano pregunta como se corta`() = probar { modelo ->
+        // Es lo que faltaba: el catálogo lo preguntaba y este camino no, así que un molde
+        // exótico medido dentro de la receta perdía el corte y nunca podía decir de qué porte
+        // quedaba el trozo.
+        medirAMano(modelo, TipoFormaMolde.EXOTICO)
+
+        assertTrue(cuadro(modelo).hayQuePreguntarElCorte)
+        assertNull("Y no se supone ninguno", cuadro(modelo).corteEfectivo)
+    }
+
+    @Test
+    fun `en las formas obvias no se pregunta`() = probar { modelo ->
+        // Preguntarlo siempre sería pedir que confirmen algo que nadie discute.
+        medirAMano(modelo, TipoFormaMolde.CUADRADO)
+
+        assertFalse(cuadro(modelo).hayQuePreguntarElCorte)
+        assertEquals(FormaDelCorte.CUADRICULA, cuadro(modelo).corteEfectivo)
+    }
+
+    @Test
+    fun `eligiendo del catalogo no se pregunta, porque viene con el molde`() = probar { modelo ->
+        // Volver a preguntarlo dejaría dos respuestas para el mismo molde.
+        moldeDao.sembrar(Molde(nombre = "Rosca", dimensiones = exotico()))
+        advanceUntilIdle()
+        modelo.abrirElegirMolde()
+        advanceUntilIdle()
+
+        assertFalse(cuadro(modelo).hayQuePreguntarElCorte)
+    }
+
+    @Test
+    fun `el corte contestado a mano queda guardado en la receta`() = probar { modelo ->
+        medirAMano(modelo, TipoFormaMolde.EXOTICO)
+        modelo.cambiarMedidaDePrueba(CampoDeMolde.VOLUMEN_EXOTICO, "2.000")
+        modelo.cambiarMedidaDePrueba(CampoDeMolde.ALTURA_MOLDE, "8")
+        modelo.elegirCorte(FormaDelCorte.CUNAS)
+
+        modelo.confirmarMolde()
+        advanceUntilIdle()
+
+        val guardado = recetas.obtenerRendimiento(recetaId)!!.dimensiones!!
+        assertEquals(FormaDelCorte.CUNAS, guardado.formaDelCorte)
+        // Y se ve en la pantalla, que es donde se comprueba que quedó.
+        assertNotNull(modelo.estado.value.comoSeCorta)
+    }
+
+    @Test
+    fun `el corte no toca el volumen del molde exotico`() = probar { modelo ->
+        // Es la garantía de 9.4: el volumen de un exótico se midió con agua, y si el corte
+        // llegara a entrar en esa cuenta las cantidades de la receta se irían al tacho.
+        medirAMano(modelo, TipoFormaMolde.EXOTICO)
+        modelo.cambiarMedidaDePrueba(CampoDeMolde.VOLUMEN_EXOTICO, "2.000")
+        modelo.cambiarMedidaDePrueba(CampoDeMolde.ALTURA_MOLDE, "8")
+        modelo.elegirCorte(FormaDelCorte.CUNAS)
+        modelo.confirmarMolde()
+        advanceUntilIdle()
+
+        val guardado = recetas.obtenerRendimiento(recetaId)!!.dimensiones!!
+        assertEquals(2000.0, guardado.volumenCm3, 0.001)
+    }
+
+    @Test
+    fun `un triangulo en cuadricula pide las medidas del corte`() = probar { modelo ->
+        // Un rectángulo ya tiene sus lados; un triángulo no, así que hay que preguntarlos.
+        medirAMano(modelo, TipoFormaMolde.TRIANGULO)
+        modelo.elegirCorte(FormaDelCorte.CUADRICULA)
+
+        assertTrue(cuadro(modelo).pideMedidasDeCorte)
+    }
+
+    @Test
+    fun `con un solo lado del corte escrito no se puede guardar`() = probar { modelo ->
+        // Con un lado solo no se mide nada, y guardarlo dejaría un dato a medias.
+        medirAMano(modelo, TipoFormaMolde.TRIANGULO)
+        modelo.cambiarMedidaDePrueba(CampoDeMolde.BASE_TRIANGULO, "20")
+        modelo.cambiarMedidaDePrueba(CampoDeMolde.ALTURA_TRIANGULO, "15")
+        modelo.cambiarMedidaDePrueba(CampoDeMolde.ALTURA_MOLDE, "6")
+        modelo.elegirCorte(FormaDelCorte.CUADRICULA)
+        modelo.cambiarLargoDeCorte("5")
+
+        val abierto = cuadro(modelo)
+        assertNotNull("Falta el otro lado", abierto.errorCorte)
+        assertFalse(abierto.puedeGuardar)
+    }
+
+    @Test
+    fun `no anotar las medidas del corte es una respuesta valida`() = probar { modelo ->
+        // Son opcionales: la app se limita a no mostrar el tamaño del trozo.
+        medirAMano(modelo, TipoFormaMolde.TRIANGULO)
+        modelo.cambiarMedidaDePrueba(CampoDeMolde.BASE_TRIANGULO, "20")
+        modelo.cambiarMedidaDePrueba(CampoDeMolde.ALTURA_TRIANGULO, "15")
+        modelo.cambiarMedidaDePrueba(CampoDeMolde.ALTURA_MOLDE, "6")
+        modelo.elegirCorte(FormaDelCorte.CUADRICULA)
+
+        val abierto = cuadro(modelo)
+        assertNull(abierto.errorCorte)
+        assertTrue(abierto.puedeGuardar)
     }
 }

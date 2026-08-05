@@ -1774,7 +1774,37 @@ lo mismo que dice esta sección: describir un corte no puede cambiar un área.
 
 **Dónde se ve:** el tamaño de cada trozo aparece en Rendimiento, pegado al peso de cada trozo.
 Son la misma pregunta partida en dos — aquel dice cuánto pesa lo que se entrega y este de qué
-porte es — y los dos salen de los mismos trozos.
+porte es — y los dos salen de los mismos trozos. **Cómo se corta**, en palabras, aparece en el
+paso del Molde: es del molde y se contesta al definirlo, mientras que el tamaño necesita saber
+cuántos trozos son. Sin esa línea, quien contestó "en cuñas" al medir un molde exótico no tenía
+dónde comprobar que había quedado anotado.
+
+#### 9.4.1 Los dos caminos que definen un molde tienen que preguntar lo mismo
+
+Un molde se define por **dos caminos** (9.3): el catálogo, y el "modo prueba" de una receta.
+Al implementar el corte solo se conectó el primero, y el segundo quedó perdiéndolo entero —
+Sandy lo encontró midiendo un molde exótico dentro de una receta: la app no preguntaba nada y
+después no había forma de saber de qué porte quedaba el trozo, que es justo el caso para el que
+se inventó todo esto (un exótico es uno de los dos que **hay** que preguntar).
+
+Lo que evita que vuelva a pasar:
+
+- **`conElCorte(dimensiones, corte, largo, ancho)`** es el único lugar que le pega el corte a
+  unas medidas escritas, y lo usan los dos caminos. Sigue **fuera de `dimensionesDesde` y con un
+  `copy`**, a propósito: así queda a la vista que el corte no participa del área ni del volumen.
+- **`corteEfectivoDe(dimensiones)`** es la única forma de leer el corte de un molde ya guardado
+  — el anotado, o el que sugiere la forma. La regla ya existía escondida dentro de
+  `medidaDelTrozo`; se le puso nombre al aparecer un segundo lector, porque dos copias de una
+  regla se separan.
+- **Eligiendo del catálogo no se vuelve a preguntar.** El corte viene con el molde, y
+  preguntarlo otra vez dejaría dos respuestas para el mismo molde.
+- Los textos de la pregunta son **los mismos en los dos cuadros**: es la misma pregunta, y
+  contestarla en dos lugares no puede sentirse distinto.
+
+**La regla general que deja:** *cuando algo se puede definir por dos caminos, lo que se pregunta
+y lo que se guarda tiene que salir de una función compartida.* Es la misma lección que ya habían
+dejado `camposDe` (que la pantalla y la validación no puedan discrepar sobre qué medidas se
+piden) y `basesQueFaltanEn` (6.7 y 8.6.1).
 
 ## 10. Módulo Empleados
 

@@ -50,6 +50,25 @@ fun corteSugerido(forma: TipoFormaMolde?): FormaDelCorte? = when (forma) {
     TipoFormaMolde.TRIANGULO, TipoFormaMolde.EXOTICO, null -> null
 }
 
+/**
+ * Con qué corte se va a trabajar de verdad: el que quedó anotado, o el que sugiere la forma.
+ *
+ * **Es la única forma correcta de leer el corte de un molde guardado**, y por eso existe en vez
+ * de mirar `dimensiones.formaDelCorte` a secas. Esa columna llegó en la versión 4, así que
+ * **todos los moldes guardados antes la tienen en `null`**; leerla sin la sugerencia diría que
+ * un molde rectangular de toda la vida no se sabe cortar, cuando sí se sabe.
+ *
+ * La regla ya existía **escondida dentro de [medidaDelTrozo]**, que hace ese mismo `?:` con lo
+ * que recibe. Sacarla acá y ponerle nombre fue necesario al aparecer un segundo lector —el paso
+ * del molde, que ahora muestra en palabras cómo se corta—: dejarla escondida habría significado
+ * escribir el `?:` otra vez, y dos copias de una regla se separan.
+ *
+ * Sigue devolviendo `null` donde de verdad no se sabe: un triángulo o un molde exótico que
+ * nadie contestó. Ahí no hay nada que suponer.
+ */
+fun corteEfectivoDe(dimensiones: DimensionesMolde): FormaDelCorte? =
+    dimensiones.formaDelCorte ?: corteSugerido(dimensiones.tipoForma)
+
 /** Los grados que tiene una vuelta completa. Para repartir un molde redondo en porciones. */
 const val GRADOS_DE_UNA_VUELTA = 360
 

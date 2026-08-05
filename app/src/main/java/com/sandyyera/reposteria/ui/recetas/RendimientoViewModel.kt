@@ -10,6 +10,7 @@ import com.sandyyera.reposteria.data.repositorio.Resultado
 import com.sandyyera.reposteria.logica.formato.formatearMientrasSeEscribe
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.logica.moldes.DimensionesMolde
+import com.sandyyera.reposteria.logica.moldes.corteEfectivoDe
 import com.sandyyera.reposteria.logica.moldes.medidaDelTrozo
 import com.sandyyera.reposteria.logica.rendimiento.AVISO_PESO_REESCALADO
 import com.sandyyera.reposteria.logica.rendimiento.PESO_NO_ESPECIFICADO
@@ -118,12 +119,18 @@ data class EstadoRendimiento(
      * Es `null` muchas veces y está bien: sin molde no hay nada que medir, un molde con forma
      * de persona no se corta, y de un triángulo sin medidas anotadas no se puede afirmar
      * nada. **Mejor no decir nada que decir un número inventado.**
+     *
+     * El corte se pide con `corteEfectivoDe` y no pasando `d.formaDelCorte` a secas. **No es
+     * un arreglo**: `medidaDelTrozo` ya aplicaba esa misma sugerencia por dentro, así que un
+     * molde anterior a la versión 4 —cuando llegó la columna— siempre respondió bien. Es que
+     * la regla dejó de estar escondida al necesitarla también el paso del molde, y decirla en
+     * voz alta acá deja a los dos lugares leyendo la misma función.
      */
     val medidaDeCadaTrozo: String?
         get() {
             val d = dimensionesDelMolde ?: return null
             val cuantos = trozos.toIntOrNull()?.takeIf { it >= 1 } ?: return null
-            return medidaDelTrozo(d, d.formaDelCorte, cuantos, ::formatearNumero)
+            return medidaDelTrozo(d, corteEfectivoDe(d), cuantos, ::formatearNumero)
         }
 
     /** Cuánto pesa cada trozo, o "No especificado" si no hay peso anotado (8.3). */

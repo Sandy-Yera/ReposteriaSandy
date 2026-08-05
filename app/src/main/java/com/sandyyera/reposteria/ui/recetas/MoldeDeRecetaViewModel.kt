@@ -18,7 +18,13 @@ import com.sandyyera.reposteria.logica.moldes.medidasEnTexto
 import com.sandyyera.reposteria.logica.moldes.TipoFormaMolde
 import com.sandyyera.reposteria.logica.validaciones.CampoDeMolde
 import com.sandyyera.reposteria.logica.validaciones.camposDe
+import com.sandyyera.reposteria.logica.moldes.FormaDelCorte
+import com.sandyyera.reposteria.logica.moldes.corteEfectivoDe
+import com.sandyyera.reposteria.logica.moldes.corteSugerido
+import com.sandyyera.reposteria.logica.moldes.nombreDelCorte
+import com.sandyyera.reposteria.logica.validaciones.conElCorte
 import com.sandyyera.reposteria.logica.validaciones.dimensionesDesde
+import com.sandyyera.reposteria.logica.validaciones.errorEnMedidasDeCorte
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -74,7 +80,13 @@ sealed interface DialogoMoldeDeReceta {
          * es la respuesta a "¿en cuál estoy?", que al cambiar de molde no se ve por ningún
          * lado. En modo prueba es `null`: ahí la receta no está enlazada a ninguno.
          */
-        val moldeActualId: Long? = null
+        val moldeActualId: Long? = null,
+
+        // --- Cómo se corta (9.4), solo en modo prueba ---
+        /** `null` = el que corresponda a la forma. Solo hay que elegirlo en dos formas. */
+        val corte: FormaDelCorte? = null,
+        val largoDeCorte: String = "",
+        val anchoDeCorte: String = ""
     ) : DialogoMoldeDeReceta {
 
         /** Por qué no se puede elegir este molde, o `null` si se puede. */
@@ -86,11 +98,53 @@ sealed interface DialogoMoldeDeReceta {
             get() = if (origen == OrigenDelMolde.PRUEBA) forma?.let { camposDe(it) }.orEmpty()
             else emptyList()
 
-        /** Las dimensiones que van a quedar, o `null` si todavía falta algo. */
+        /**
+         * El corte que se va a guardar: el elegido, o el que sugiere la forma.
+         *
+         * Mismas tres propiedades que el formulario del catálogo, y **no es duplicación
+         * evitable**: son dos cuadros distintos con dos estados distintos. Lo que sí es único
+         * es la regla, que vive en `corteSugerido` y la consultan los dos.
+         */
+        val corteEfectivo: FormaDelCorte? get() = corte ?: corteSugerido(forma)
+
+        /**
+         * Si hay que **preguntar** cómo se corta. Solo midiendo a mano: eligiendo del catálogo,
+         * el corte viene con el molde y volver a preguntarlo sería pedir que confirmen algo ya
+         * contestado —y peor, dejaría dos respuestas para el mismo molde.
+         */
+        val hayQuePreguntarElCorte: Boolean
+            get() = origen == OrigenDelMolde.PRUEBA && forma != null && corteSugerido(forma) == null
+
+        /**
+         * Si hacen falta las dos medidas del corte escritas a mano.
+         *
+         * Solo cuando se corta en cuadrícula **y la forma no da los lados**: un rectángulo ya
+         * los tiene, un triángulo no.
+         */
+        val pideMedidasDeCorte: Boolean
+            get() = origen == OrigenDelMolde.PRUEBA &&
+                corteEfectivo == FormaDelCorte.CUADRICULA &&
+                forma != TipoFormaMolde.RECTANGULO &&
+                forma != TipoFormaMolde.CUADRADO
+
+        /** Lo que esté mal en las medidas del corte, que son opcionales. */
+        val errorCorte: String? get() = errorEnMedidasDeCorte(largoDeCorte, anchoDeCorte)
+
+        /**
+         * Las dimensiones que van a quedar, o `null` si todavía falta algo.
+         *
+         * **En modo prueba el corte se pega acá**, con `conElCorte`, que es la misma función
+         * que usa el catálogo. Antes no se pegaba en ninguna parte y ese era el agujero: medir
+         * un molde dentro de la receta perdía el corte entero, así que un molde exótico medido
+         * así nunca podía decir de qué porte quedaba el trozo. Eligiendo del catálogo no hace
+         * falta, porque las dimensiones del molde ya lo traen.
+         */
         val dimensiones: DimensionesMolde?
             get() = when (origen) {
                 OrigenDelMolde.GUARDADO -> elegido?.dimensiones
                 OrigenDelMolde.PRUEBA -> dimensionesDesde(forma, medidas)
+                    ?.takeIf { errorCorte == null }
+                    ?.let { conElCorte(it, corteEfectivo, largoDeCorte, anchoDeCorte) }
             }
 
         /** A qué molde del catálogo queda enlazada la receta. `null` en modo prueba. */
@@ -137,6 +191,20 @@ data class EstadoMoldeDeReceta(
                 "${formatearNumero(d.areaCm2)} cm² · ${formatearNumero(d.volumenCm3)} cm³"
             }.getOrNull()
         }
+
+    /**
+     * Cómo se corta este molde, en palabras (9.4).
+     *
+     * Va acá y no solo en rendimiento porque son dos preguntas distintas: allá se muestra **de
+     * qué tamaño** queda cada trozo, que necesita saber cuántos son; acá **cómo se parte**, que
+     * es del molde y se contesta al definirlo. Sin esto, alguien que contestó "en cuñas" al
+     * medir un molde exótico no tenía dónde comprobar que quedó anotado.
+     *
+     * Sale de `corteEfectivoDe`, así que un molde guardado antes de la versión 4 también
+     * contesta si su forma lo permite.
+     */
+    val comoSeCorta: String?
+        get() = dimensiones?.takeIf { usaMolde }?.let { corteEfectivoDe(it) }?.let { nombreDelCorte(it) }
 
     /**
      * Si la receta está recibiendo correcciones del catálogo.
@@ -260,6 +328,18 @@ class MoldeDeRecetaViewModel(
             medidas = it.medidas + (campo to formatearMientrasSeEscribe(texto)),
             rechazo = null
         )
+    }
+
+    // --- Cómo se corta (9.4). Solo aplican midiendo a mano; del catálogo viene con el molde ---
+
+    fun elegirCorte(corte: FormaDelCorte) = enElegir { it.copy(corte = corte, rechazo = null) }
+
+    fun cambiarLargoDeCorte(texto: String) = enElegir {
+        it.copy(largoDeCorte = formatearMientrasSeEscribe(texto), rechazo = null)
+    }
+
+    fun cambiarAnchoDeCorte(texto: String) = enElegir {
+        it.copy(anchoDeCorte = formatearMientrasSeEscribe(texto), rechazo = null)
     }
 
     fun elegirModoDeReescalado(modo: ModoReescalado) = enElegir {

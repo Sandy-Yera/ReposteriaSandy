@@ -55,6 +55,8 @@ import com.sandyyera.reposteria.logica.moldes.TipoFormaMolde
 import com.sandyyera.reposteria.logica.rendimiento.SIN_MOLDE
 import com.sandyyera.reposteria.logica.validaciones.CampoDeMolde
 import com.sandyyera.reposteria.ui.componentes.BarraBusqueda
+import com.sandyyera.reposteria.logica.moldes.FormaDelCorte
+import com.sandyyera.reposteria.logica.moldes.nombreDelCorte
 import com.sandyyera.reposteria.ui.componentes.CampoNumerico
 import com.sandyyera.reposteria.ui.moldes.nombreDeLaForma
 import com.sandyyera.reposteria.ui.theme.Medidas
@@ -68,6 +70,9 @@ data class AccionesMoldeDeReceta(
     val elegirMoldeGuardado: (Molde) -> Unit = {},
     val elegirFormaDePrueba: (TipoFormaMolde) -> Unit = {},
     val cambiarMedidaDePrueba: (CampoDeMolde, String) -> Unit = { _, _ -> },
+    val elegirCorte: (FormaDelCorte) -> Unit = {},
+    val cambiarLargoDeCorte: (String) -> Unit = {},
+    val cambiarAnchoDeCorte: (String) -> Unit = {},
     val elegirModoDeReescalado: (ModoReescalado) -> Unit = {},
     val confirmarMolde: () -> Unit = {},
     val pedirQuitarMolde: () -> Unit = {},
@@ -100,6 +105,9 @@ fun PasoMoldeScreen(
             elegirMoldeGuardado = modelo::elegirMoldeGuardado,
             elegirFormaDePrueba = modelo::elegirFormaDePrueba,
             cambiarMedidaDePrueba = modelo::cambiarMedidaDePrueba,
+            elegirCorte = modelo::elegirCorte,
+            cambiarLargoDeCorte = modelo::cambiarLargoDeCorte,
+            cambiarAnchoDeCorte = modelo::cambiarAnchoDeCorte,
             elegirModoDeReescalado = modelo::elegirModoDeReescalado,
             confirmarMolde = modelo::confirmarMolde,
             pedirQuitarMolde = modelo::pedirQuitarMolde,
@@ -286,6 +294,16 @@ private fun TarjetaDelMolde(
             estado.areaYVolumen?.let {
                 Text(text = it, style = MaterialTheme.typography.bodySmall)
             }
+            // Cómo se corta va acá y el **tamaño** del trozo en rendimiento: son dos preguntas
+            // distintas y la de allá necesita saber cuántos trozos son. Sin esta línea, quien
+            // contestó "en cuñas" al medir un molde exótico no tenía dónde comprobar que quedó.
+            estado.comoSeCorta?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             if (estado.usaMolde) {
                 Text(
                     // La diferencia invisible entre los dos orígenes: dos recetas con las
@@ -419,6 +437,60 @@ private fun CuadroDeMolde(
                                 } else {
                                     ImeAction.Next
                                 }
+                            )
+                        }
+
+                        // --- Cómo se corta (9.4) ---
+                        //
+                        // Faltaba, y por eso medir un molde acá perdía el corte entero: un
+                        // exótico medido en la receta nunca podía decir de qué porte quedaba
+                        // el trozo. Eligiendo del catálogo no se pregunta, porque el corte
+                        // viene con el molde.
+                        //
+                        // Los mismos textos que el catálogo a propósito: es la misma pregunta
+                        // y contestarla en dos lugares no puede sentirse distinto.
+                        if (estado.hayQuePreguntarElCorte) {
+                            Text(
+                                text = "¿Cómo se corta?",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = "Es solo para saber de qué tamaño queda cada trozo. No " +
+                                    "cambia el volumen ni las cantidades de la receta.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(Medidas.chico)
+                            ) {
+                                FormaDelCorte.entries.forEach { corte ->
+                                    FilterChip(
+                                        selected = estado.corteEfectivo == corte,
+                                        onClick = { acciones.elegirCorte(corte) },
+                                        label = { Text(nombreDelCorte(corte)) }
+                                    )
+                                }
+                            }
+                        }
+
+                        if (estado.pideMedidasDeCorte) {
+                            Text(
+                                text = "De qué tamaño es la parte que se corta, si la sabes:",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            CampoNumerico(
+                                valor = estado.largoDeCorte,
+                                alCambiar = acciones.cambiarLargoDeCorte,
+                                etiqueta = "Largo para cortar (cm)",
+                                error = estado.errorCorte,
+                                accionDelTeclado = ImeAction.Next
+                            )
+                            CampoNumerico(
+                                valor = estado.anchoDeCorte,
+                                alCambiar = acciones.cambiarAnchoDeCorte,
+                                etiqueta = "Ancho para cortar (cm)",
+                                accionDelTeclado = ImeAction.Done
                             )
                         }
                     }

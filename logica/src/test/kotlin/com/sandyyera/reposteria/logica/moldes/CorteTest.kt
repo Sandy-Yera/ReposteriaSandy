@@ -24,6 +24,54 @@ class CorteTest {
         alturaMoldeCm = alto
     )
 
+    // --- El corte que vale: el anotado, o el que sugiere la forma ---
+
+    @Test
+    fun `un molde guardado antes de la version 4 igual sabe como se corta`() {
+        // La columna llegó en la versión 4, así que **todos** los moldes anteriores la tienen
+        // en null. `medidaDelTrozo` ya lo resolvía por dentro; lo que fija esta prueba es que
+        // la regla, ahora que tiene nombre propio y otros lectores, siga contestando igual.
+        val viejo = rectangulo(8.0, 6.0, 10.0)   // formaDelCorte queda en null
+
+        assertNull("Así está guardado", viejo.formaDelCorte)
+        assertEquals(FormaDelCorte.CUADRICULA, corteEfectivoDe(viejo))
+    }
+
+    @Test
+    fun `lo anotado a mano le gana a la sugerencia`() {
+        // Cortar un molde rectangular en cuñas es raro pero se puede, y si alguien lo dijo,
+        // eso es lo que manda.
+        val enCunas = rectangulo(8.0, 6.0, 10.0).copy(formaDelCorte = FormaDelCorte.CUNAS)
+
+        assertEquals(FormaDelCorte.CUNAS, corteEfectivoDe(enCunas))
+    }
+
+    @Test
+    fun `donde de verdad no se sabe, sigue sin saberse`() {
+        // Un exótico que nadie contestó no tiene nada que suponer: inventarle un corte sería
+        // exactamente lo que 9.4 viene a evitar.
+        val exotico = DimensionesMolde(
+            tipoForma = TipoFormaMolde.EXOTICO, volumenExoticoCm3 = 2000.0, alturaMoldeCm = 8.0
+        )
+
+        assertNull(corteEfectivoDe(exotico))
+    }
+
+    @Test
+    fun `un exotico contestado sí sabe cortarse`() {
+        val rosca = DimensionesMolde(
+            tipoForma = TipoFormaMolde.EXOTICO, volumenExoticoCm3 = 2000.0, alturaMoldeCm = 8.0,
+            formaDelCorte = FormaDelCorte.CUNAS
+        )
+
+        assertEquals(FormaDelCorte.CUNAS, corteEfectivoDe(rosca))
+        // Y con eso ya se puede decir el tamaño del trozo, que era lo que faltaba: 360 / 8.
+        assertEquals(
+            "porciones de 45°",
+            medidaDelTrozo(rosca, corteEfectivoDe(rosca), trozos = 8, comoNumero)
+        )
+    }
+
     // --- Lo que se puede deducir de la forma ---
 
     @Test

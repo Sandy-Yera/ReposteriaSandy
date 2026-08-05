@@ -1,6 +1,7 @@
 package com.sandyyera.reposteria.logica.validaciones
 
 import com.sandyyera.reposteria.logica.moldes.DimensionesMolde
+import com.sandyyera.reposteria.logica.moldes.FormaDelCorte
 import com.sandyyera.reposteria.logica.moldes.TipoFormaMolde
 
 /**
@@ -106,6 +107,30 @@ fun errorEnMedidasDeCorte(largoTexto: String, anchoTexto: String): String? {
     if (largoVacio || anchoVacio) return "Escribe los dos lados, o ninguno"
     return errorEnMedidaDeMoldeTexto(largoTexto) ?: errorEnMedidaDeMoldeTexto(anchoTexto)
 }
+
+/**
+ * Le pega el corte a unas dimensiones ya armadas (9.4).
+ *
+ * **Va aparte de [dimensionesDesde] y con un `copy`, a propósito**: así queda a la vista que el
+ * corte **no participa** del área ni del volumen, que son los que mueven el reescalado. Si se
+ * calculara adentro, nada impediría que mañana alguien lo hiciera entrar en una fórmula y se
+ * llevara por delante las cantidades de todas las recetas enlazadas.
+ *
+ * Existe como función y no escrita en cada lado porque **son dos los caminos que definen un
+ * molde** (9.3): el catálogo y el "modo prueba" de una receta. Escrita dos veces, el día que
+ * cambie una el otro camino guarda distinto — y ese fue exactamente el hueco por el que el
+ * corte se perdía al medir un molde dentro de una receta.
+ */
+fun conElCorte(
+    dimensiones: DimensionesMolde,
+    corte: FormaDelCorte?,
+    largoDeCorteTexto: String,
+    anchoDeCorteTexto: String
+): DimensionesMolde = dimensiones.copy(
+    formaDelCorte = corte,
+    largoDeCorteCm = textoANumero(largoDeCorteTexto),
+    anchoDeCorteCm = textoANumero(anchoDeCorteTexto)
+)
 
 /**
  * Revisa de una vez el formulario completo de un molde, mientras se escribe.

@@ -1,5 +1,6 @@
 package com.sandyyera.reposteria.logica.validaciones
 
+import com.sandyyera.reposteria.logica.moldes.FormaDelCorte
 import com.sandyyera.reposteria.logica.moldes.TipoFormaMolde
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -326,5 +327,54 @@ class MoldesValidacionTest {
 
         assertFalse(errores.sirve)
         assertNotNull(errores.corte)
+    }
+
+    // --- Pegarle el corte a unas medidas ya armadas (9.4) ---
+
+    @Test
+    fun `conElCorte no toca el area ni el volumen`() {
+        // Es la garantía que hace seguro todo esto: el corte se pega **encima** de unas
+        // dimensiones ya calculadas, así que no hay forma de que entre en el reescalado y se
+        // lleve por delante las cantidades de las recetas enlazadas.
+        val medidas = mapOf(
+            CampoDeMolde.LARGO to "30", CampoDeMolde.ANCHO to "20",
+            CampoDeMolde.ALTURA_MOLDE to "6"
+        )
+        val sinCorte = dimensionesDesde(TipoFormaMolde.RECTANGULO, medidas)!!
+
+        val conCorte = conElCorte(sinCorte, FormaDelCorte.CUNAS, "5", "4")
+
+        assertEquals(sinCorte.areaCm2, conCorte.areaCm2, 0.001)
+        assertEquals(sinCorte.volumenCm3, conCorte.volumenCm3, 0.001)
+        assertEquals(FormaDelCorte.CUNAS, conCorte.formaDelCorte)
+        assertEquals(5.0, conCorte.largoDeCorteCm!!, 0.001)
+        assertEquals(4.0, conCorte.anchoDeCorteCm!!, 0.001)
+    }
+
+    @Test
+    fun `conElCorte deja en null las medidas que no se escribieron`() {
+        // No anotarlas es una respuesta válida: la app se limita a no mostrar el tamaño.
+        val medidas = mapOf(
+            CampoDeMolde.VOLUMEN_EXOTICO to "2.000", CampoDeMolde.ALTURA_MOLDE to "8"
+        )
+        val base = dimensionesDesde(TipoFormaMolde.EXOTICO, medidas)!!
+
+        val conCorte = conElCorte(base, FormaDelCorte.CUNAS, "", "")
+
+        assertEquals(FormaDelCorte.CUNAS, conCorte.formaDelCorte)
+        assertNull(conCorte.largoDeCorteCm)
+        assertNull(conCorte.anchoDeCorteCm)
+    }
+
+    @Test
+    fun `conElCorte acepta que no haya corte elegido`() {
+        // Un triángulo o un exótico que nadie contestó: se guarda sin corte, y ahí la app no
+        // dice nada en vez de inventar.
+        val base = dimensionesDesde(
+            TipoFormaMolde.CUADRADO,
+            mapOf(CampoDeMolde.LADO to "20", CampoDeMolde.ALTURA_MOLDE to "5")
+        )!!
+
+        assertNull(conElCorte(base, null, "", "").formaDelCorte)
     }
 }

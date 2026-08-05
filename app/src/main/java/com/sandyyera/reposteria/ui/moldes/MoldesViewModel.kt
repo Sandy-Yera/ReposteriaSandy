@@ -81,7 +81,14 @@ sealed interface DialogoMolde {
         /** Las medidas que hay que pedir ahora mismo. Vacía mientras no haya forma elegida. */
         val campos: List<CampoDeMolde> get() = forma?.let { camposDe(it) } ?: emptyList()
 
-        /** El corte que se va a guardar: el elegido, o el que sugiere la forma. */
+        /**
+         * El corte que se va a guardar: el elegido, o el que sugiere la forma.
+         *
+         * Es la misma regla que `corteEfectivoDe` aplica sobre un molde **ya guardado**; acá
+         * no se puede llamar a aquella porque todavía no hay `DimensionesMolde` que pasarle
+         * —se está escribiendo—, así que lo único compartido posible es `corteSugerido`, que
+         * es donde vive la decisión de verdad. Hay una prueba que compara las dos respuestas.
+         */
         val corteEfectivo: FormaDelCorte? get() = corte ?: corteSugerido(forma)
 
         /**
