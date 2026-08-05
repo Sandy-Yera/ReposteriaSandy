@@ -411,7 +411,15 @@ private fun FormularioMolde(
 
                 if (estado.pideMedidasDeCorte) {
                     Text(
-                        text = "De qué tamaño es la parte que se corta, si la sabes:",
+                        // Dos textos porque son dos cosas distintas: en un triángulo sin esto
+                        // la app no puede decir nada, y en un rectángulo es la manera de
+                        // mandar sobre la suposición del lado más largo.
+                        text = if (estado.laFormaYaDaLosLados) {
+                            "Se corta el lado más largo. Si cortas el otro, escribe los dos " +
+                                "lados acá en el orden que los cortas:"
+                        } else {
+                            "De qué tamaño es la parte que se corta, si la sabes:"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

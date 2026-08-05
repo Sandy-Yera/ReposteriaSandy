@@ -1799,6 +1799,32 @@ si no se escriben, la app **no dice nada** en vez de inventar un número. Van en
 (`largoDeCorteCm`, `anchoDeCorteCm`) y no reusando los del molde, para que quede en el código
 lo mismo que dice esta sección: describir un corte no puede cambiar un área.
 
+#### 9.4.2 Cortar el lado largo es una suposición, no una regla
+
+Lo preguntó Sandy con un molde de 8 × 4: *"¿eligió 8 porque es más grande? ¿y si yo quisiera que
+fuera el 4?"*. La respuesta era que **no se podía** — y lo peor no era que la app supusiera, sino
+que **reordenaba también lo que se escribía a mano**: anotar `4` y `8` como medidas de corte daba
+lo mismo que anotar `8` y `4`, porque el orden se rehacía por tamaño justo antes de calcular.
+
+Cómo queda, y el orden importa:
+
+1. **Anotados a mano, se respetan tal cual, incluido cuál va primero.** El primero es el que se
+   parte y el segundo el que se conserva. Es su molde y su torta: si dice que corta el 4, se
+   corta el 4.
+2. **Deducidos de la forma, se parte el más largo.** Sigue siendo la suposición razonable para
+   quien no dice nada — cortar el corto deja tiras.
+
+**La regla que deja: una instrucción explícita no se corrige en silencio.** Suponer está bien
+mientras nadie haya dicho lo contrario; pisar lo que alguien escribió, no — y encima sin avisar,
+que es lo que hacía imposible descubrirlo salvo comparando números.
+
+De ahí sale también que los dos campos se ofrezcan **en cualquier forma que se corte en
+cuadrícula** y no solo donde hacen falta. En el triángulo y el exótico son la única manera de
+saber el tamaño; en el rectángulo y el cuadrado son opcionales, pero tienen que estar igual,
+porque son el único lugar donde se puede mandar sobre la suposición. El texto de ayuda cambia
+según el caso — "de qué tamaño es la parte que se corta" contra "se corta el lado más largo; si
+cortas el otro, escríbelos acá" — porque son dos cosas distintas pidiendo los mismos dos números.
+
 **Dónde se ve:** el tamaño de cada trozo aparece en Rendimiento, pegado al peso de cada trozo.
 Son la misma pregunta partida en dos — aquel dice cuánto pesa lo que se entrega y este de qué
 porte es — y los dos salen de los mismos trozos. **Cómo se corta**, en palabras, aparece en el

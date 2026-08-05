@@ -116,16 +116,28 @@ sealed interface DialogoMoldeDeReceta {
             get() = origen == OrigenDelMolde.PRUEBA && forma != null && corteSugerido(forma) == null
 
         /**
-         * Si hacen falta las dos medidas del corte escritas a mano.
+         * Si se ofrecen las dos medidas del corte escritas a mano.
          *
-         * Solo cuando se corta en cuadrícula **y la forma no da los lados**: un rectángulo ya
-         * los tiene, un triángulo no.
+         * **En cualquier forma que se corte en cuadrícula**, y no solo donde hacen falta. En el
+         * triángulo y el exótico son la única manera de saber el tamaño del trozo; en el
+         * rectángulo y el cuadrado son opcionales, pero tienen que estar igual: son la forma de
+         * mandar sobre la suposición del lado más largo (ver [laFormaYaDaLosLados]).
          */
         val pideMedidasDeCorte: Boolean
             get() = origen == OrigenDelMolde.PRUEBA &&
-                corteEfectivo == FormaDelCorte.CUADRICULA &&
-                forma != TipoFormaMolde.RECTANGULO &&
-                forma != TipoFormaMolde.CUADRADO
+                corteEfectivo == FormaDelCorte.CUADRICULA && forma != null
+
+        /**
+         * Si esta forma **ya da** los lados por su cuenta, o sea si anotarlos es opcional.
+         *
+         * Cambia solo el texto de ayuda, y ese texto es toda la diferencia: en un triángulo,
+         * sin anotarlos la app no puede decir nada; en un rectángulo son la forma de **mandar
+         * sobre la suposición** — se corta el lado más largo salvo que alguien diga otra cosa,
+         * y ese "otra cosa" se escribe acá. Lo preguntó Sandy con un molde de 8 × 4: quería
+         * cortar el 4 y no tenía cómo decirlo.
+         */
+        val laFormaYaDaLosLados: Boolean
+            get() = forma == TipoFormaMolde.RECTANGULO || forma == TipoFormaMolde.CUADRADO
 
         /** Lo que esté mal en las medidas del corte, que son opcionales. */
         val errorCorte: String? get() = errorEnMedidasDeCorte(largoDeCorte, anchoDeCorte)

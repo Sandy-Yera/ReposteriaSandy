@@ -118,26 +118,36 @@ fun medidaDelTrozo(
 }
 
 /**
- * Los dos lados con los que se corta en cuadrícula, largo primero.
+ * Los dos lados con los que se corta en cuadrícula: **el que se parte primero, el que se
+ * conserva después**.
  *
- * El rectángulo y el cuadrado los traen de su propia forma. Las otras tres los traen **solo si
- * alguien los anotó a mano**, que es para lo que existen `largoDeCorteCm` y `anchoDeCorteCm`:
- * de un triángulo o de un molde exótico no hay forma de deducirlos.
+ * Hay dos caminos y el orden entre ellos importa:
+ *
+ * 1. **Anotados a mano** (`largoDeCorteCm` y `anchoDeCorteCm`): se respetan **tal cual, incluido
+ *    cuál va primero**. Eso es lo que arregla la pregunta de Sandy — un molde de 8 × 4 se
+ *    cortaba siempre por el 8 "porque es el más grande", y escribiendo `4` y `8` a mano tampoco
+ *    servía porque acá se reordenaban igual. Es su molde y su torta: si dice que corta el 4, se
+ *    corta el 4. **Una instrucción explícita no se corrige en silencio.**
+ * 2. **Deducidos de la forma**, cuando nadie anotó nada: ahí sí se parte el lado más largo, que
+ *    es la suposición razonable — cortar el corto deja tiras. Pero es una suposición, no una
+ *    regla, y por eso el camino 1 existe y le gana.
+ *
+ * El triángulo y el molde exótico **solo** tienen el camino 1: de ellos no hay forma de deducir
+ * los lados, y sin anotarlos no se puede afirmar nada.
  */
 private fun ladosParaCortar(d: DimensionesMolde): Pair<Double, Double>? {
-    val largo = d.largoDeCorteCm ?: when (d.tipoForma) {
-        TipoFormaMolde.RECTANGULO -> d.largoCm
-        TipoFormaMolde.CUADRADO -> d.ladoCm
-        else -> null
-    } ?: return null
-    val ancho = d.anchoDeCorteCm ?: when (d.tipoForma) {
-        TipoFormaMolde.RECTANGULO -> d.anchoCm
-        TipoFormaMolde.CUADRADO -> d.ladoCm
-        else -> null
-    } ?: return null
-    // Se corta el lado largo, sea cual sea de los dos: cortar el corto deja tiras que nadie
-    // sirve así.
-    return if (largo >= ancho) largo to ancho else ancho to largo
+    // `errorEnMedidasDeCorte` exige que estén las dos o ninguna, así que basta con mirar una;
+    // se comprueban las dos igual, porque una fila vieja podría tener solo una.
+    val anotadoLargo = d.largoDeCorteCm
+    val anotadoAncho = d.anchoDeCorteCm
+    if (anotadoLargo != null && anotadoAncho != null) return anotadoLargo to anotadoAncho
+
+    val (uno, otro) = when (d.tipoForma) {
+        TipoFormaMolde.RECTANGULO -> (d.largoCm ?: return null) to (d.anchoCm ?: return null)
+        TipoFormaMolde.CUADRADO -> (d.ladoCm ?: return null).let { it to it }
+        else -> return null
+    }
+    return if (uno >= otro) uno to otro else otro to uno
 }
 
 /** Cómo se lee cada corte en la pantalla. */

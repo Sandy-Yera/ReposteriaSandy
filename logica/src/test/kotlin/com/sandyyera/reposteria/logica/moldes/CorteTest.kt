@@ -83,6 +83,53 @@ class CorteTest {
         )
     }
 
+    // --- Quién manda sobre cuál lado se corta ---
+
+    @Test
+    fun `lo anotado a mano manda sobre la suposicion del lado largo`() {
+        // La pregunta de Sandy con un molde de 8 × 4: "¿eligió 8 porque es más grande? ¿y si
+        // yo quisiera que fuera el 4?". Antes no había forma de decirlo — escribir 4 y 8 a
+        // mano tampoco servía, porque acá se reordenaban igual y volvía a cortar el 8.
+        // **Una instrucción explícita no se corrige en silencio.**
+        val cortandoElCorto = rectangulo(8.0, 4.0, 10.0).copy(
+            formaDelCorte = FormaDelCorte.CUADRICULA,
+            largoDeCorteCm = 4.0,
+            anchoDeCorteCm = 8.0
+        )
+
+        assertEquals(
+            "2 × 8 cm, 10 de alto",
+            medidaDelTrozo(cortandoElCorto, FormaDelCorte.CUADRICULA, 2, comoNumero)
+        )
+    }
+
+    @Test
+    fun `sin anotar nada se sigue cortando el largo, que es la suposicion razonable`() {
+        // El otro lado de lo mismo: la suposición se queda como estaba para quien no dice nada.
+        val sinDecirNada = rectangulo(8.0, 4.0, 10.0)
+
+        assertEquals(
+            "4 × 4 cm, 10 de alto",
+            medidaDelTrozo(sinDecirNada, FormaDelCorte.CUADRICULA, 2, comoNumero)
+        )
+    }
+
+    @Test
+    fun `anotar los lados en el mismo orden que la forma no cambia nada`() {
+        // Escribir 8 y 4 sobre un molde de 8 × 4 tiene que dar lo mismo que no escribir nada:
+        // si diera distinto, confirmar la suposición la rompería.
+        val confirmando = rectangulo(8.0, 4.0, 10.0).copy(
+            formaDelCorte = FormaDelCorte.CUADRICULA,
+            largoDeCorteCm = 8.0,
+            anchoDeCorteCm = 4.0
+        )
+
+        assertEquals(
+            medidaDelTrozo(rectangulo(8.0, 4.0, 10.0), FormaDelCorte.CUADRICULA, 2, comoNumero),
+            medidaDelTrozo(confirmando, FormaDelCorte.CUADRICULA, 2, comoNumero)
+        )
+    }
+
     @Test
     fun `se corta el lado largo aunque venga escrito segundo`() {
         // Cortar el corto deja tiras que no sirven, y cuál de los dos campos es el mayor

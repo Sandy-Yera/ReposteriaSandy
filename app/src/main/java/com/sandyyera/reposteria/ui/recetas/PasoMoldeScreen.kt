@@ -475,7 +475,13 @@ private fun CuadroDeMolde(
 
                         if (estado.pideMedidasDeCorte) {
                             Text(
-                                text = "De qué tamaño es la parte que se corta, si la sabes:",
+                                // Los mismos dos textos que el catálogo: es la misma pregunta.
+                                text = if (estado.laFormaYaDaLosLados) {
+                                    "Se corta el lado más largo. Si cortas el otro, escribe " +
+                                        "los dos lados acá en el orden que los cortas:"
+                                } else {
+                                    "De qué tamaño es la parte que se corta, si la sabes:"
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
