@@ -30,6 +30,16 @@ import org.junit.runner.RunWith
  * `MigrationTestHelper` lee los esquemas de `app/schemas/`, que por eso van versionados y
  * se declaran como assets de esta carpeta en `build.gradle.kts`. **Cada versión nueva de
  * la base necesita su archivo ahí y su prueba acá.**
+ *
+ * **El orden en que se corre importa, y equivocarse cuesta una corrida entera:**
+ *
+ *     ./gradlew :app:assembleDebug          # Room escribe app/schemas/N.json al compilar
+ *     ./gradlew :app:connectedAndroidTest   # recién ahora existe para empaquetarlo
+ *
+ * Al revés falla con `Cannot find the schema file in the assets folder`, que suena a que el
+ * archivo se perdió y en realidad significa que todavía no se generó: los assets del APK de
+ * pruebas se juntan **antes** de que KSP escriba el esquema nuevo, así que en la misma
+ * invocación no llega. Pasó de verdad al subir a la versión 5.
  */
 @RunWith(AndroidJUnit4::class)
 class MigracionTest {

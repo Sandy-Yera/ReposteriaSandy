@@ -673,6 +673,19 @@ Hay cuatro niveles, y cada uno cubre lo que el anterior no puede. Los tres prime
 | **Recorrido completo** | `./gradlew :app:test` (`FlujoCompletoTest`) | Que los tres repositorios **sigan estando de acuerdo entre sí** después de cada cambio | Lo mismo que el nivel anterior: sigue siendo una base falsa |
 | **En el celular** | `./gradlew :app:connectedAndroidTest` e `installDebug` | Las migraciones sobre SQLite de verdad, que las consultas devuelvan lo que se espera, y que la pantalla se vea y se toque bien | — |
 
+**Al subir la versión de la base, el orden de los comandos importa:**
+
+```bash
+./gradlew :app:assembleDebug          # Room escribe app/schemas/N.json al compilar
+git add app/schemas                   # ese archivo se versiona: es el registro de la migración
+./gradlew :app:connectedAndroidTest   # recién ahora existe para empaquetarlo como asset
+```
+
+Al revés falla con `Cannot find the schema file in the assets folder`, que suena a archivo
+perdido y significa "todavía no se generó": los assets del APK de pruebas se juntan **antes** de
+que KSP escriba el esquema nuevo, así que en una sola invocación no llega. Pasó de verdad al
+subir a la versión 5, y `probar_todo.sh` lo recuerda al terminar.
+
 **Por qué el nivel del recorrido completo existe aparte.** Los errores que llegaron al celular no fueron de una pieza sola: fueron de dos que dejaron de estar de acuerdo. La lista de recetas mostrando el costo de antes de borrar un ingrediente es exactamente eso, y ninguna prueba de `RecetaRepositorio` sola podía verlo, porque el ingrediente lo borra **otro** repositorio. `FlujoCompletoTest` recorre una tarde entera de uso —cargar ingredientes, armar una receta con secciones, medir un molde, ponerle precio, corregir cosas, borrar otras— y después de cada paso comprueba que **todos los caminos hacia el mismo número sigan dando lo mismo**: `costoTotal`, `observarCostos`, `costosDe` y el `DatosCalculoReceta`. Cada uno lo usa una parte distinta de la app; si se separan, la misma receta muestra cifras distintas según desde dónde se la mire.
 
 **El nivel 2 usa el repositorio de verdad sobre DAO falsos**, no un repositorio falso. Probar contra una imitación del repositorio dejaría sin probar justamente la parte que se escribió.

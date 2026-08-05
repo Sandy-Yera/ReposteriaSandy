@@ -65,9 +65,16 @@ echo
 echo "Falta lo que necesita el celular conectado:"
 echo
 echo "    herramientas/respaldo_bd.sh bajar        # el respaldo, primero"
+echo "    ./gradlew :app:assembleDebug             # ANTES: escribe app/schemas/N.json"
+echo "    git add app/schemas && git commit         # y ese archivo se versiona"
 echo "    ./gradlew :app:connectedAndroidTest      # la prueba de migración"
 echo "    ./gradlew :app:installDebug              # instalar"
+echo
 echo "    herramientas/medir_arranque.sh           # si se siente lenta al abrir"
+echo
+echo "El orden importa: connectedAndroidTest lee los esquemas como assets, y Room los"
+echo "escribe recién al compilar. Corriéndolo antes falla con 'Cannot find the schema"
+echo "file in the assets folder', que no dice que falte compilar."
 echo
 echo "Los informes quedan en logica/build/reports/tests/test/index.html"
 echo "y app/build/reports/tests/testDebugUnitTest/index.html"
