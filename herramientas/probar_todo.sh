@@ -67,6 +67,7 @@ echo
 echo "    herramientas/respaldo_bd.sh bajar        # el respaldo, primero"
 echo "    ./gradlew :app:connectedAndroidTest      # la prueba de migración"
 echo "    ./gradlew :app:installDebug              # instalar"
+echo "    herramientas/medir_arranque.sh           # si se siente lenta al abrir"
 echo
 echo "Los informes quedan en logica/build/reports/tests/test/index.html"
 echo "y app/build/reports/tests/testDebugUnitTest/index.html"

@@ -730,12 +730,28 @@ lento al recorrer, y **luego normal**. No se arregla optimizando el código; se 
 **Cómo medirlo en vez de estimarlo** (el mismo principio que `contraste.py`):
 
 ```bash
-adb shell am start -W -n com.sandyyera.reposteria/.ui.MainActivity   # TotalTime en ms
-./gradlew :app:installRelease                                       # la misma app sin depuración
+herramientas/medir_arranque.sh        # 5 arranques en frío, y su mediana
 ```
 
-Si la versión de release arranca notoriamente más rápido, lo que se estaba midiendo era la
-compilación de depuración y no la app.
+**El detalle que arruina la medición si se hace a mano:** `adb shell am start -W` a secas mide
+lo que haya, y si el proceso sigue vivo contesta `LaunchState: WARM` con un número bajísimo
+—121 ms la primera vez que se probó acá— que es *volver* a una app que nunca se cerró. El pegón
+que se siente es el arranque **frío**, y para que lo sea hay que matar el proceso antes de cada
+intento (`am force-stop`). Eso, más repetirlo porque un solo número no distingue "lento" de
+"justo pasó algo en el teléfono", es lo que hace el script. **Si `LaunchState` no dice `COLD`,
+el número no sirve.**
+
+La otra mitad de la respuesta es comparar contra una compilación sin depuración:
+
+```bash
+./gradlew :app:installRelease && herramientas/medir_arranque.sh
+./gradlew :app:installDebug                      # y volver a la de siempre
+```
+
+Si la de release arranca notoriamente más rápido, lo que se estaba midiendo era la compilación
+de depuración y no la app. Esa tarea **no existía** hasta que se le puso firma a `release`
+(hasta entonces Gradle solo ofrecía `uninstallRelease`, que es lo que despista al buscarla);
+ver la nota de la Fase 15, porque esa firma es provisoria.
 
 ---
 
@@ -2314,6 +2330,17 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 
 - **Construyes:** nada nuevo — checklist completo contra tu especificación original, prueba de estrés (recetas grandes), revisión de formatos numéricos, manejo de errores en cada formulario, y la generación de un **APK de release firmado** (`./gradlew assembleRelease` con tu keystore).
 - **Hecho cuando:** instalas el APK directo en tu celular (sin Android Studio conectado), usas la app de principio a fin — ingredientes, moldes, receta completa con sus 7 pasos, sueldos de empleados, historial de cambios — y todo respalda solo en Drive. Este es el ejecutable final.
+
+**Dos cosas de esta fase que ya están anotadas en `app/build.gradle.kts` y no se pueden olvidar:**
+
+1. **La firma de release es provisoria.** Hoy apunta a la llave de depuración, que se puso para
+   que `:app:installRelease` existiera y se pudiera medir el arranque (6.7). Esa llave es
+   pública y la misma para todo el mundo. Antes de repartir el APK —por WhatsApp o por donde
+   sea— hay que crear una propia y apuntar ahí; `.gitignore` ya ignora `*.jks`, `*.keystore` y
+   `keystore.properties`, así que la llave **nunca** entra al repositorio.
+2. **`isMinifyEnabled` está en `false`.** Activarlo achica el APK y lo acelera, pero puede
+   romper cosas que solo se ven en el celular, así que se activa acá y se prueba la app entera
+   con él puesto, no antes.
 
 ---
 

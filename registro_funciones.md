@@ -1078,6 +1078,11 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Qué hace: corre de una vez todo lo que se puede comprobar sin celular.
 - Cómo funciona: cuatro pasos en orden de rapidez —`revisar_kotlin.py`, `contraste.py`, `:logica:test`, `:app:test`— y **se detiene en el primero que falle**. Tiene una sola aclaración especial, `recordar_esquema`, para el único fallo esperable que no es un error: al subir la versión de la base, `app/schemas/N.json` lo escribe Room al compilar, así que hasta el primer `./gradlew :app:assembleDebug` no existe. No se le hace excepción a la revisión —es la que se asegura de que ese archivo quede versionado— pero sí se dice qué hacer: seguir veinte minutos de pruebas cuando ya hay un archivo con una llave sin cerrar no aporta nada. Al terminar recuerda lo que sí necesita el celular (`connectedAndroidTest` e `installDebug`) y que el respaldo va antes. No reemplaza a ninguno: es el orden, para no tener que acordarse de los cuatro.
 
+### medir_arranque.sh ✅ IMPLEMENTADO
+- Ubicación: herramientas/medir_arranque.sh
+- Qué hace: mide cuánto tarda la app en abrirse **en frío**, varias veces, y da la mediana.
+- Cómo funciona: por cada intento hace `am force-stop` y **después** `am start -W`, lee `TotalTime` y `LaunchState`, y descarta los que no salieron `COLD`. Existe por una medición que salió mal y que conviene no repetir: `adb shell am start -W` a secas, con la app recién usada, contestó `LaunchState: WARM` y 121 ms — estaba midiendo *volver* a una app que nunca se cerró, no abrirla. El pegón que se siente es el arranque frío. Repite cinco veces por defecto porque un solo número no distingue "lento" de "justo pasó algo en el teléfono", y reporta la **mediana** y no el promedio, que un intento malo desvía. Comprueba antes que haya `adb`, celular conectado y la app instalada, cada uno con su mensaje. Al final orienta según el resultado, y pasado el segundo manda a comparar contra `:app:installRelease`, que es la otra mitad de la explicación (6.7).
+
 ### respaldo_bd.sh (bajar, subir, listar) ✅ IMPLEMENTADO
 - Ubicación: herramientas/respaldo_bd.sh
 - Qué hace: baja el archivo de la base del celular al computador y lo devuelve, para no perder los datos de prueba al reinstalar la app.

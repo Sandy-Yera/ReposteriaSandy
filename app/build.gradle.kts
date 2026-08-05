@@ -29,6 +29,22 @@ android {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+
+            // ⚠️ FIRMA PROVISORIA — hay que cambiarla en la Fase 15, antes de repartir el APK.
+            //
+            // Existe porque `:app:installRelease` **no existía**: sin firma, Gradle ni siquiera
+            // crea esa tarea (deja solo `uninstallRelease`, que es lo que confundió al buscarla).
+            // Y esa tarea hace falta para medir: comparar el arranque con y sin depuración es la
+            // mitad de la respuesta a "por qué se siente lenta" (6.7), porque la app de
+            // depuración va sin optimizar y sin compilar de antemano.
+            //
+            // Firmar con la llave de depuración sirve para instalar en el propio celular y para
+            // nada más: Google Play la rechaza, que es la buena noticia — el error aparece al
+            // publicar y no después. Lo que sí puede pasar es repartir por WhatsApp un APK
+            // firmado con una llave que es pública y la misma para todo el mundo. Antes de
+            // repartirlo hay que crear una llave propia (`.jks`, ya ignorado por `.gitignore`,
+            // y `keystore.properties` también) y apuntar esto ahí.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 
