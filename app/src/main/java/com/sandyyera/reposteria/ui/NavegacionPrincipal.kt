@@ -43,8 +43,10 @@ import com.sandyyera.reposteria.ui.recetas.PasoDuracionScreen
 import com.sandyyera.reposteria.ui.recetas.PasoGastosScreen
 import com.sandyyera.reposteria.ui.recetas.PasoMoldeScreen
 import com.sandyyera.reposteria.ui.recetas.PasoRendimientoScreen
+import com.sandyyera.reposteria.ui.recetas.PasoPasosScreen
 import com.sandyyera.reposteria.ui.recetas.PasoSimulacionScreen
 import com.sandyyera.reposteria.ui.recetas.RendimientoViewModel
+import com.sandyyera.reposteria.ui.recetas.PasosViewModel
 import com.sandyyera.reposteria.ui.recetas.SimulacionViewModel
 import com.sandyyera.reposteria.ui.recetas.TituloDeRecetaViewModel
 import com.sandyyera.reposteria.ui.recetas.RecetasViewModel
@@ -228,6 +230,19 @@ fun NavegacionPrincipal(
                 modelo = viewModel(
                     viewModelStoreOwner = modelosDeReceta.de(idAbierta),
                     factory = SimulacionViewModel.fabrica(idAbierta, contenedor.recetas)
+                ),
+                pasoActual = pasoActual,
+                alElegirPaso = elegirPaso,
+                alCerrarReceta = cerrarReceta,
+                modifier = modifier
+            )
+
+            PasoDeReceta.PASOS -> PasoPasosScreen(
+                tituloReceta = tituloReceta,
+                desplazamientoDePasos = desplazamientoDePasos,
+                modelo = viewModel(
+                    viewModelStoreOwner = modelosDeReceta.de(idAbierta),
+                    factory = PasosViewModel.fabrica(idAbierta, contenedor.recetas)
                 ),
                 pasoActual = pasoActual,
                 alElegirPaso = elegirPaso,

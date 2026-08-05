@@ -428,8 +428,10 @@ La salida más simple, sin duplicar el `data class`: declarar **todos** los camp
 
 ### 5.5.1 Lo que agrega "recetas que usan recetas" (8.11)
 
-Todavía **sin implementar**. Queda escrito acá para que la migración se piense entera y de
-una vez, en vez de a pedazos.
+**Implementado en la versión 5 de la base** (`MIGRACION_4_5`). Quedó escrito acá antes de
+hacerlo para que la migración se pensara entera y de una vez, en vez de a pedazos — y sirvió:
+las cuatro columnas entraron juntas aunque 8.11 todavía no esté construido, así que esa mitad
+no va a necesitar otra migración.
 
 **`RecetaSeccion` gana dos columnas:**
 
@@ -860,7 +862,10 @@ Es una **pantalla completa** y no un `AlertDialog`: tiene dos partes (la cuenta 
 ### 8.1 Flujo general
 
 **Los siete pasos, en orden:** Cantidades (8.2), Duración (8.4), Molde (8.3), Rendimiento
-(8.3), Gastos y Ganancias (8.5), Ganancias simuladas (8.7) y Pasos (8.8). Eran seis hasta que
+(8.3), Gastos y Ganancias (8.5), Ganancias simuladas (8.7) y Pasos (8.8). **Pasos va al final
+y no junto a Duración**, aunque tampoco alimente ninguna cifra: es lo más largo de escribir de
+toda la receta y se hace una vez, cuando ya está todo lo demás decidido. Duración se anota de
+paso mirando el producto; los pasos se sientan a escribirse. Eran seis hasta que
 el molde se separó de rendimiento (8.4.1, #2); están enumerados acá porque la numeración de
 los títulos de abajo ya se había desfasado una vez y nadie la miraba de conjunto.
 
@@ -1390,6 +1395,8 @@ hacer es *mover* los números y mirar qué pasa, así que tenerlos a mano import
 resultado primero.
 
 ### 8.8 Paso 7 — Pasos
+
+*Construido: la mitad de los títulos (este apartado). Falta la de traer recetas (8.11).*
 
 Los pasos no son una lista plana: van **agrupados bajo títulos**, y los títulos son las
 secciones de la receta más "General".

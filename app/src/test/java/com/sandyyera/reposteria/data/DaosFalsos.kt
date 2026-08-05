@@ -12,6 +12,7 @@ import com.sandyyera.reposteria.data.db.entidades.Molde
 import com.sandyyera.reposteria.data.db.entidades.Receta
 import com.sandyyera.reposteria.data.db.entidades.RecetaDuracion
 import com.sandyyera.reposteria.data.db.entidades.RecetaIngrediente
+import com.sandyyera.reposteria.data.db.entidades.RecetaPaso
 import com.sandyyera.reposteria.data.db.entidades.RecetaPrecio
 import com.sandyyera.reposteria.data.db.entidades.RecetaRendimiento
 import com.sandyyera.reposteria.data.db.entidades.RecetaSeccion
@@ -200,6 +201,7 @@ class RecetaDaoFalso(
     private val precios = mutableListOf<RecetaPrecio>()
     private val simulaciones = mutableListOf<RecetaSimulacionVenta>()
     private val duraciones = mutableListOf<RecetaDuracion>()
+    private val pasos = mutableListOf<RecetaPaso>()
 
     private var siguienteId = 1L
     private fun nuevoId() = siguienteId++
@@ -399,6 +401,11 @@ class RecetaDaoFalso(
 
     override suspend fun eliminarSeccion(seccionId: Long) {
         items.removeAll { it.seccionId == seccionId }   // cascada
+        // **SET_NULL y no cascada**, imitando la clave foránea de `receta_pasos`: borrar una
+        // sección deja sus pasos como General en vez de llevárselos. El texto lo escribió
+        // alguien. Sin esto acá, una prueba podría afirmar que los pasos sobreviven sin que
+        // nada lo hiciera.
+        pasos.replaceAll { if (it.tituloSeccionId == seccionId) it.copy(tituloSeccionId = null) else it }
         secciones.removeAll { it.id == seccionId }
         cambio()
     }
@@ -553,6 +560,54 @@ class RecetaDaoFalso(
         // quien reaccione lea la fila vieja.
         cambio()
     }
+
+    // --- Pasos (8.8) ---
+
+    private fun pasosDe(recetaId: Long) =
+        pasos.filter { it.recetaId == recetaId }.sortedWith(compareBy({ it.orden }, { it.id }))
+
+    override fun observarPasos(recetaId: Long): Flow<List<RecetaPaso>> =
+        cambios.map { pasosDe(recetaId) }
+
+    override suspend fun obtenerPasos(recetaId: Long): List<RecetaPaso> = pasosDe(recetaId)
+
+    override suspend fun obtenerPaso(pasoId: Long): RecetaPaso? =
+        pasos.firstOrNull { it.id == pasoId }
+
+    override suspend fun insertarPaso(paso: RecetaPaso): Long {
+        val id = nuevoId()
+        pasos += paso.copy(id = id)
+        cambio()
+        return id
+    }
+
+    override suspend fun actualizarPaso(paso: RecetaPaso) {
+        val posicion = pasos.indexOfFirst { it.id == paso.id }
+        if (posicion >= 0) pasos[posicion] = paso
+        cambio()
+    }
+
+    // El parámetro se llama distinto que el campo a propósito: con los dos como `pasos`, el
+    // cuerpo lee el parámetro y funciona, pero basta mover una línea para que deje de hacerlo
+    // en silencio.
+    override suspend fun actualizarPasos(losQueCambian: List<RecetaPaso>) {
+        losQueCambian.forEach { actualizarPaso(it) }
+    }
+
+    override suspend fun eliminarPaso(pasoId: Long) {
+        pasos.removeAll { it.id == pasoId }
+        cambio()
+    }
+
+    /**
+     * El mayor `orden`, o `null` si no hay pasos.
+     *
+     * **`maxOfOrNull` y no `maxOf`**, y el `null` importa: con `0` no se distinguiría "no hay
+     * pasos" de "hay uno en la posición 0", y quien lo llama suma 1 — el primer paso quedaría
+     * en 1 en vez de 0. Es la misma trampa que tiene la consulta real, que devuelve `NULL`.
+     */
+    override suspend fun ultimoOrdenDePaso(recetaId: Long): Int? =
+        pasos.filter { it.recetaId == recetaId }.maxOfOrNull { it.orden }
 
     // --- Lo que todavía no hace falta ---
 

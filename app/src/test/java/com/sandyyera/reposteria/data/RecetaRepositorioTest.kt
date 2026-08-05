@@ -836,4 +836,132 @@ class RecetaRepositorioTest {
             0.001
         )
     }
+
+    // --- Pasos (8.8) ---
+
+    @Test
+    fun `los pasos nuevos se ponen al final aunque haya huecos`() = runBlocking {
+        // El orden sale de MAX+1 y no de contar: contar da mal apenas se borra uno del medio,
+        // y ahí dos pasos nuevos seguidos se pisarían.
+        val id = crearReceta()
+        val uno = repositorio.agregarPaso(id)
+        val dos = repositorio.agregarPaso(id)
+        repositorio.eliminarPaso(uno)
+
+        val tres = repositorio.agregarPaso(id)
+
+        assertEquals(listOf(dos, tres), repositorio.observarPasos(id).first().map { it.id })
+    }
+
+    @Test
+    fun `un paso que queda en blanco se borra en vez de guardarse vacio`() = runBlocking {
+        // Vaciar el campo es cómo se dice "este paso ya no va". Es la misma decisión que
+        // `guardarDuracion`, y sin ella una fila vacía correría la numeración de abajo.
+        val id = crearReceta()
+        val paso = repositorio.agregarPaso(id)
+        repositorio.guardarTextoDePaso(paso, "Algo")
+
+        repositorio.guardarTextoDePaso(paso, "   ")
+
+        assertTrue(repositorio.observarPasos(id).first().isEmpty())
+    }
+
+    @Test
+    fun `un paso demasiado largo se rechaza sin tocar lo guardado`() = runBlocking {
+        val id = crearReceta()
+        val paso = repositorio.agregarPaso(id)
+        repositorio.guardarTextoDePaso(paso, "Lo que servía")
+
+        val r = repositorio.guardarTextoDePaso(paso, "a".repeat(1001))
+
+        assertTrue(r is Resultado.NoSePudo)
+        assertEquals("Lo que servía", repositorio.observarPasos(id).first().single().contenido)
+    }
+
+    @Test
+    fun `una seccion no se puede usar como titulo dos veces`() = runBlocking {
+        // Dos bloques "Crema" no dicen en cuál va cada cosa (8.8). Solo el General se repite.
+        val id = crearReceta()
+        repositorio.agregarSeccion(id, "Crema")
+        val crema = repositorio.obtenerSecciones(id).first { it.nombreSeccion == "Crema" }
+        val uno = repositorio.agregarPaso(id)
+        val dos = repositorio.agregarPaso(id)
+        assertTrue(repositorio.cambiarTituloDePaso(uno, crema.id) is Resultado.Listo)
+
+        val r = repositorio.cambiarTituloDePaso(dos, crema.id)
+
+        assertTrue(r is Resultado.NoSePudo)
+        assertNull(repositorio.observarPasos(id).first().first { it.id == dos }.tituloSeccionId)
+    }
+
+    @Test
+    fun `el General si se puede repetir`() = runBlocking {
+        val id = crearReceta()
+        val uno = repositorio.agregarPaso(id)
+        val dos = repositorio.agregarPaso(id)
+
+        assertTrue(repositorio.cambiarTituloDePaso(uno, null) is Resultado.Listo)
+        assertTrue(repositorio.cambiarTituloDePaso(dos, null) is Resultado.Listo)
+    }
+
+    @Test
+    fun `ponerle un titulo propio a un paso deja de marcarlo como general anidado`() =
+        runBlocking {
+            // Son estados excluyentes: dejar el `true` puesto dibujaría con sangría un paso
+            // que ya no viene de otra receta.
+            val id = crearReceta()
+            repositorio.agregarSeccion(id, "Crema")
+            val crema = repositorio.obtenerSecciones(id).first { it.nombreSeccion == "Crema" }
+            val paso = repositorio.agregarPaso(id, esGeneralAnidado = true)
+
+            repositorio.cambiarTituloDePaso(paso, crema.id)
+
+            val guardado = repositorio.observarPasos(id).first().single()
+            assertEquals(crema.id, guardado.tituloSeccionId)
+            assertFalse(guardado.esGeneralAnidado)
+        }
+
+    @Test
+    fun `mover un paso funciona aunque los ordenes tengan huecos`() = runBlocking {
+        // Es el caso que rompía la primera versión: con `orden` en [0, 2], usar el índice como
+        // orden mandaba el último al principio en vez de una posición.
+        val id = crearReceta()
+        val uno = repositorio.agregarPaso(id)
+        val dos = repositorio.agregarPaso(id)
+        val tres = repositorio.agregarPaso(id)
+        repositorio.eliminarPaso(dos)
+
+        assertTrue(repositorio.moverPaso(tres, haciaArriba = true))
+
+        assertEquals(listOf(tres, uno), repositorio.observarPasos(id).first().map { it.id })
+    }
+
+    @Test
+    fun `el primero no se puede subir y el ultimo no se puede bajar`() = runBlocking {
+        val id = crearReceta()
+        val uno = repositorio.agregarPaso(id)
+        val dos = repositorio.agregarPaso(id)
+
+        assertFalse(repositorio.moverPaso(uno, haciaArriba = true))
+        assertFalse(repositorio.moverPaso(dos, haciaArriba = false))
+        assertEquals(listOf(uno, dos), repositorio.observarPasos(id).first().map { it.id })
+    }
+
+    @Test
+    fun `borrar una seccion deja sus pasos como General en vez de llevarselos`() = runBlocking {
+        // El texto lo escribió alguien: hacerlo desaparecer porque se reorganizó la receta
+        // sería perder trabajo sin avisar. Es la regla SET_NULL de la clave foránea.
+        val id = crearReceta()
+        repositorio.agregarSeccion(id, "Crema")
+        val crema = repositorio.obtenerSecciones(id).first { it.nombreSeccion == "Crema" }
+        val paso = repositorio.agregarPaso(id)
+        repositorio.guardarTextoDePaso(paso, "Batir la crema.")
+        repositorio.cambiarTituloDePaso(paso, crema.id)
+
+        repositorio.eliminarSeccion(id, crema.id)
+
+        val quedo = repositorio.observarPasos(id).first().single()
+        assertEquals("Batir la crema.", quedo.contenido)
+        assertNull(quedo.tituloSeccionId)
+    }
 }

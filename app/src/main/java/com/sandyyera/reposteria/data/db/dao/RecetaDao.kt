@@ -9,6 +9,7 @@ import androidx.room.Update
 import com.sandyyera.reposteria.data.db.entidades.Receta
 import com.sandyyera.reposteria.data.db.entidades.RecetaIngrediente
 import com.sandyyera.reposteria.data.db.entidades.RecetaDuracion
+import com.sandyyera.reposteria.data.db.entidades.RecetaPaso
 import com.sandyyera.reposteria.data.db.entidades.RecetaPrecio
 import com.sandyyera.reposteria.data.db.entidades.RecetaRendimiento
 import com.sandyyera.reposteria.data.db.entidades.RecetaSeccion
@@ -404,6 +405,58 @@ interface RecetaDao {
 
     @Update
     suspend fun actualizarSimulacionVenta(simulacion: RecetaSimulacionVenta)
+
+    // --- Pasos (8.8) ---
+
+    /**
+     * Los pasos de una receta, en su orden, avisando cuando cambien.
+     *
+     * `ORDER BY orden` y no por `id`: los pasos se reordenan, y el id solo dice cuál se creó
+     * antes. Con `id` un paso movido volvería a su lugar viejo al recargar la pantalla.
+     *
+     * El desempate por `id` es para las filas que compartan `orden`, cosa que no debería pasar
+     * pero deja el resultado **estable**: sin él, dos pasos empatados podrían salir en un orden
+     * distinto en cada consulta y la lista bailaría sola.
+     */
+    @Query("SELECT * FROM receta_pasos WHERE recetaId = :recetaId ORDER BY orden, id")
+    fun observarPasos(recetaId: Long): Flow<List<RecetaPaso>>
+
+    @Query("SELECT * FROM receta_pasos WHERE recetaId = :recetaId ORDER BY orden, id")
+    suspend fun obtenerPasos(recetaId: Long): List<RecetaPaso>
+
+    @Query("SELECT * FROM receta_pasos WHERE id = :pasoId")
+    suspend fun obtenerPaso(pasoId: Long): RecetaPaso?
+
+    @Insert
+    suspend fun insertarPaso(paso: RecetaPaso): Long
+
+    @Update
+    suspend fun actualizarPaso(paso: RecetaPaso)
+
+    @Query("DELETE FROM receta_pasos WHERE id = :pasoId")
+    suspend fun eliminarPaso(pasoId: Long)
+
+    /**
+     * El mayor `orden` que hay en la receta, o `null` si todavía no hay pasos.
+     *
+     * Sirve para poner uno nuevo al final sin traerse la lista entera. Devuelve `Int?` y no
+     * `Int` a propósito: con `0` no se distinguiría "no hay pasos" de "hay uno en la posición
+     * 0", y el primero tiene que empezar en 0 y el segundo en 1.
+     */
+    @Query("SELECT MAX(orden) FROM receta_pasos WHERE recetaId = :recetaId")
+    suspend fun ultimoOrdenDePaso(recetaId: Long): Int?
+
+    /**
+     * Reescribe varios pasos de una vez, para renumerarlos al mover uno.
+     *
+     * **Room envuelve solo los `@Update` de una colección en una transacción**, así que las n
+     * escrituras entran o no entran juntas. Es la razón de que la renumeración se haga con una
+     * sola llamada y no con un bucle desde el repositorio: allá `@Transaction` no significa
+     * nada —es una anotación de DAO— y un bucle a medias dejaría la lista con dos pasos en la
+     * misma posición.
+     */
+    @Update
+    suspend fun actualizarPasos(losQueCambian: List<RecetaPaso>)
 
     // --- Creación ---
 

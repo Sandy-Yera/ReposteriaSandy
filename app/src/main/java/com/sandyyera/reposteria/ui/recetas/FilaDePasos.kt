@@ -69,7 +69,15 @@ enum class PasoDeReceta(val titulo: String) {
      * Ganancias simuladas (8.7). Va **después** de gastos porque proyecta lo que aquel
      * calcula: sin precio de referencia no hay nada que multiplicar por los días.
      */
-    SIMULACION("Ganancias simuladas")
+    SIMULACION("Ganancias simuladas"),
+
+    /**
+     * Pasos (8.8). Va **al final y no junto a duración**, aunque tampoco alimente ninguna
+     * cifra: es lo más largo de escribir de toda la receta, y lo que se hace una vez cuando
+     * ya está todo lo demás decidido. Duración se anota de paso mirando el producto; los
+     * pasos se sientan a escribirse.
+     */
+    PASOS("Pasos")
 }
 
 /**

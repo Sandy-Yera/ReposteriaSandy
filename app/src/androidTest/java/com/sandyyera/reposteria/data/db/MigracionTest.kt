@@ -221,6 +221,62 @@ class MigracionTest {
      * es la que falla en el celular con "Room cannot verify the data integrity", y solo se
      * ve construyendo la base de verdad.
      */
+    /**
+     * La 4 → 5 conserva lo escrito y deja las columnas nuevas donde Room las espera (8.8, 8.11).
+     *
+     * **Es la migración más delicada hasta ahora** y por eso tiene prueba propia: agrega dos
+     * columnas **con clave foránea**, que SQLite solo acepta por `ALTER TABLE` si su valor por
+     * defecto es `NULL`, y dos índices que hay que crear a mano — `ALTER TABLE` no los crea, y
+     * Room compara el esquema entero al abrir, índices y claves foráneas incluidos. Si algo de
+     * eso no calza, `runMigrationsAndValidate` falla acá en vez de cerrar la app en el celular.
+     *
+     * Se comprueban **las dos mitades**: que el esquema valide (lo hace `runMigrationsAndValidate`
+     * con `validateDroppedTables = true`) y que las filas sigan ahí. Validar el esquema solo
+     * dejaría pasar un `DROP TABLE` seguido de un `CREATE TABLE`, que aprueba y borra todo.
+     */
+    @Test
+    fun migracion_4_a_5_conserva_los_pasos_y_las_secciones() {
+        ayudante.createDatabase(nombreDeLaBase, 4).use { base ->
+            base.execSQL(
+                "INSERT INTO recetas (id, titulo, pasoPrevio, creadoEn, actualizadoEn) " +
+                    "VALUES (1, 'Torta de manjar', 'No necesita', 1000, 1000)"
+            )
+            base.execSQL(
+                "INSERT INTO receta_secciones (id, recetaId, nombreSeccion, orden) " +
+                    "VALUES (10, 1, 'Bizcocho', 0)"
+            )
+            base.execSQL(
+                "INSERT INTO receta_pasos (id, recetaId, orden, contenido) " +
+                    "VALUES (100, 1, 0, 'Batir las claras a punto de nieve.')"
+            )
+        }
+
+        ayudante.runMigrationsAndValidate(
+            nombreDeLaBase, 5, true, AppDatabase.MIGRACION_4_5
+        ).use { base ->
+            // El texto del paso es lo que más importa: lo escribió alguien.
+            base.query(
+                "SELECT contenido, tituloSeccionId, esGeneralAnidado FROM receta_pasos WHERE id = 100"
+            ).use { fila ->
+                assertTrue(fila.moveToFirst())
+                assertEquals("Batir las claras a punto de nieve.", fila.getString(0))
+                // Los pasos que ya existían quedan en el General, que es lo correcto: nadie
+                // eligió un título para ellos porque no se podía.
+                assertTrue(fila.isNull(1))
+                assertEquals(0, fila.getInt(2))
+            }
+            // Y la sección conserva su nombre, sin origen porque no se copió de ninguna parte.
+            base.query(
+                "SELECT nombreSeccion, recetaOrigenId, firmaDelOrigen FROM receta_secciones WHERE id = 10"
+            ).use { fila ->
+                assertTrue(fila.moveToFirst())
+                assertEquals("Bizcocho", fila.getString(0))
+                assertTrue(fila.isNull(1))
+                assertTrue(fila.isNull(2))
+            }
+        }
+    }
+
     @Test
     fun despues_de_migrar_la_app_puede_abrir_la_base() {
         ayudante.createDatabase(nombreDeLaBase, 1).use { base ->
@@ -234,15 +290,17 @@ class MigracionTest {
         // nueva no calza con la anterior.
         ayudante
             .runMigrationsAndValidate(
-                nombreDeLaBase, 4, true,
-                AppDatabase.MIGRACION_1_2, AppDatabase.MIGRACION_2_3, AppDatabase.MIGRACION_3_4
+                nombreDeLaBase, 5, true,
+                AppDatabase.MIGRACION_1_2, AppDatabase.MIGRACION_2_3, AppDatabase.MIGRACION_3_4,
+                AppDatabase.MIGRACION_4_5
             )
             .close()
 
         val contexto = InstrumentationRegistry.getInstrumentation().targetContext
         val base = Room.databaseBuilder(contexto, AppDatabase::class.java, nombreDeLaBase)
             .addMigrations(
-                AppDatabase.MIGRACION_1_2, AppDatabase.MIGRACION_2_3, AppDatabase.MIGRACION_3_4
+                AppDatabase.MIGRACION_1_2, AppDatabase.MIGRACION_2_3, AppDatabase.MIGRACION_3_4,
+                AppDatabase.MIGRACION_4_5
             )
             .build()
 

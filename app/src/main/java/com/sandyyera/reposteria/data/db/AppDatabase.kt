@@ -56,7 +56,7 @@ import com.sandyyera.reposteria.data.db.entidades.RecetaSimulacionVenta
         EmpleadoSimulacionMultipleDetalle::class,
         EventoCambio::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 @TypeConverters(Convertidores::class)
@@ -103,7 +103,7 @@ abstract class AppDatabase : RoomDatabase() {
                 NOMBRE_ARCHIVO
             )
                 .addCallback(SembrarDatosIniciales)
-                .addMigrations(MIGRACION_1_2, MIGRACION_2_3, MIGRACION_3_4)
+                .addMigrations(MIGRACION_1_2, MIGRACION_2_3, MIGRACION_3_4, MIGRACION_4_5)
                 .build()
 
         /**
@@ -174,6 +174,56 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE receta_rendimiento ADD COLUMN molde_formaDelCorte TEXT")
                 db.execSQL("ALTER TABLE receta_rendimiento ADD COLUMN molde_largoDeCorteCm REAL")
                 db.execSQL("ALTER TABLE receta_rendimiento ADD COLUMN molde_anchoDeCorteCm REAL")
+            }
+        }
+
+        /**
+         * 4 → 5: los pasos saben bajo qué título van, y las secciones de dónde se copiaron
+         * (8.8 y 8.11).
+         *
+         * **Es la versión 5 y no la 4**, aunque el plan de la Fase 9 dijera 4: la 4 se la llevó
+         * el corte de los moldes, que llegó antes. Es justo el número que se copia mal.
+         *
+         * **Las dos columnas nuevas con `REFERENCES` son lo delicado de esta migración.** SQLite
+         * deja agregar una columna con clave foránea por `ALTER TABLE` **solo si su valor por
+         * defecto es `NULL`**, que es exactamente el caso de las dos: una sección propia no
+         * viene de ninguna receta, y un paso sin título es el General. Si alguna fuera `NOT
+         * NULL` habría que recrear la tabla entera.
+         *
+         * `esGeneralAnidado` sí es `NOT NULL` y por eso lleva `DEFAULT 0`, con el mismo cuidado
+         * de siempre: tiene que calzar con el `@ColumnInfo(defaultValue = "0")` de la entidad o
+         * Room no abre la base. Las dos claves foráneas van con `ON DELETE SET NULL`, también
+         * igual que en las entidades — Room compara el esquema entero al abrir, incluidas las
+         * claves foráneas y los índices, así que **los índices hay que crearlos acá a mano**:
+         * `ALTER TABLE` no los crea solo y su ausencia también hace fallar la validación.
+         *
+         * Los índices llevan el nombre con que Room los genera (`index_<tabla>_<columna>`); con
+         * otro nombre la comparación falla aunque el índice exista y cubra lo mismo.
+         */
+        val MIGRACION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE receta_secciones ADD COLUMN recetaOrigenId INTEGER " +
+                        "REFERENCES recetas(id) ON DELETE SET NULL"
+                )
+                db.execSQL("ALTER TABLE receta_secciones ADD COLUMN firmaDelOrigen TEXT")
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_receta_secciones_recetaOrigenId " +
+                        "ON receta_secciones(recetaOrigenId)"
+                )
+
+                db.execSQL(
+                    "ALTER TABLE receta_pasos ADD COLUMN tituloSeccionId INTEGER " +
+                        "REFERENCES receta_secciones(id) ON DELETE SET NULL"
+                )
+                db.execSQL(
+                    "ALTER TABLE receta_pasos ADD COLUMN esGeneralAnidado INTEGER " +
+                        "NOT NULL DEFAULT 0"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_receta_pasos_tituloSeccionId " +
+                        "ON receta_pasos(tituloSeccionId)"
+                )
             }
         }
 

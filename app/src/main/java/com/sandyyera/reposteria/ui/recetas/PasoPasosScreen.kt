@@ -1,0 +1,438 @@
+package com.sandyyera.reposteria.ui.recetas
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.sandyyera.reposteria.logica.partes.BloqueDePasos
+import com.sandyyera.reposteria.logica.partes.PasoNumerado
+import com.sandyyera.reposteria.logica.partes.PasoParaMostrar
+import com.sandyyera.reposteria.logica.partes.TITULO_GENERAL
+import com.sandyyera.reposteria.logica.partes.TituloDePaso
+import com.sandyyera.reposteria.ui.theme.Medidas
+import com.sandyyera.reposteria.ui.theme.ReposteriaTheme
+
+/** Todo lo que se puede pedir desde el paso "Pasos". */
+data class AccionesPasos(
+    val agregarPaso: () -> Unit = {},
+    val cambiarTexto: (Long, String) -> Unit = { _, _ -> },
+    val guardarPaso: (Long) -> Unit = {},
+    val guardarTodoLoPendiente: () -> Unit = {},
+    val abrirElegirTitulo: (Long) -> Unit = {},
+    val elegirTitulo: (TituloDePaso) -> Unit = {},
+    val moverPaso: (Long, Boolean) -> Unit = { _, _ -> },
+    val pedirBorrado: (PasoParaMostrar) -> Unit = {},
+    val confirmarBorrado: () -> Unit = {},
+    val cerrarDialogo: () -> Unit = {},
+    val mensajeMostrado: () -> Unit = {},
+    val irAlPaso: (PasoDeReceta) -> Unit = {},
+    val cerrarReceta: () -> Unit = {}
+)
+
+/** El paso "Pasos" conectado a su ViewModel. */
+@Composable
+fun PasoPasosScreen(
+    tituloReceta: String,
+    desplazamientoDePasos: ScrollState,
+    modelo: PasosViewModel,
+    pasoActual: PasoDeReceta,
+    alElegirPaso: (PasoDeReceta) -> Unit,
+    alCerrarReceta: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val estado by modelo.estado.collectAsStateWithLifecycle()
+    val dialogo by modelo.dialogo.collectAsStateWithLifecycle()
+
+    val acciones = remember(modelo, alElegirPaso, alCerrarReceta) {
+        AccionesPasos(
+            agregarPaso = modelo::agregarPaso,
+            cambiarTexto = modelo::cambiarTexto,
+            guardarPaso = modelo::guardarPaso,
+            guardarTodoLoPendiente = modelo::guardarTodoLoPendiente,
+            abrirElegirTitulo = modelo::abrirElegirTitulo,
+            elegirTitulo = modelo::elegirTitulo,
+            moverPaso = modelo::moverPaso,
+            pedirBorrado = modelo::pedirBorrado,
+            confirmarBorrado = modelo::confirmarBorrado,
+            cerrarDialogo = modelo::cerrarDialogo,
+            mensajeMostrado = modelo::mensajeMostrado,
+            irAlPaso = alElegirPaso,
+            cerrarReceta = alCerrarReceta
+        )
+    }
+
+    PasoPasos(
+        tituloReceta = tituloReceta,
+        estado = estado,
+        dialogo = dialogo,
+        acciones = acciones,
+        pasoActual = pasoActual,
+        modifier = modifier,
+        desplazamientoDePasos = desplazamientoDePasos
+    )
+}
+
+/**
+ * El paso "Pasos" de una receta (8.8).
+ *
+ * **Los pasos van agrupados bajo títulos**, no en una lista plana, y esa agrupación no se decide
+ * acá: viene armada de `bloquesDePasos` (8.8.1). La pantalla solo dibuja lo que le llega, que es
+ * lo que permite probar las cuatro reglas del agrupamiento sin celular.
+ *
+ * **Cada paso es un campo de texto abierto, no un cuadro que hay que abrir.** Escribir pasos es
+ * lo que más se hace en esta pantalla, y meter cada uno detrás de un diálogo convertiría
+ * escribir una receta de diez pasos en veinte toques de más.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PasoPasos(
+    tituloReceta: String,
+    estado: EstadoPasos,
+    dialogo: DialogoPasos,
+    acciones: AccionesPasos,
+    pasoActual: PasoDeReceta = PasoDeReceta.PASOS,
+    modifier: Modifier = Modifier,
+    desplazamientoDePasos: ScrollState = rememberScrollState()
+) {
+    val anfitrionDeMensajes = remember { SnackbarHostState() }
+
+    BackHandler(enabled = true) {
+        if (dialogo is DialogoPasos.Ninguno) acciones.cerrarReceta() else acciones.cerrarDialogo()
+    }
+
+    // Guardar al irse, **a nivel de pantalla y no de cada campo**: con una lista perezosa, un
+    // campo que sale de la vista al desplazarse también se desmonta, y ahí el guardado se
+    // dispararía por desplazar. Es la misma lección del paso de duración.
+    val guardarPendiente by rememberUpdatedState(acciones.guardarTodoLoPendiente)
+    DisposableEffect(Unit) {
+        onDispose { guardarPendiente() }
+    }
+
+    LaunchedEffect(estado.mensaje) {
+        val texto = estado.mensaje ?: return@LaunchedEffect
+        try {
+            anfitrionDeMensajes.showSnackbar(texto)
+        } finally {
+            acciones.mensajeMostrado()
+        }
+    }
+
+    Scaffold(
+        modifier = modifier,
+        topBar = {
+            Column {
+                TopAppBar(
+                    title = { Text(tituloReceta) },
+                    navigationIcon = {
+                        IconButton(onClick = acciones.cerrarReceta) {
+                            Icon(Icons.Default.Close, contentDescription = "Salir de la receta")
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        titleContentColor = MaterialTheme.colorScheme.onPrimary,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                )
+                FilaDePasos(
+                    pasoActual = pasoActual,
+                    alElegirPaso = acciones.irAlPaso,
+                    desplazamiento = desplazamientoDePasos
+                )
+            }
+        },
+        snackbarHost = { SnackbarHost(anfitrionDeMensajes) }
+    ) { relleno ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(relleno),
+            contentPadding = PaddingValues(Medidas.medio),
+            verticalArrangement = Arrangement.spacedBy(Medidas.chico)
+        ) {
+            if (!estado.cargando && estado.vacio) {
+                item { TodaviaSinPasos() }
+            }
+
+            estado.bloques.forEach { bloque ->
+                bloque.encabezado?.let { texto ->
+                    item(key = "titulo-${bloque.titulo}-${bloque.pasos.first().paso.id}") {
+                        EncabezadoDeBloque(texto, bloque.esGeneralAnidado)
+                    }
+                }
+                items(
+                    count = bloque.pasos.size,
+                    key = { i -> bloque.pasos[i].paso.id }
+                ) { i ->
+                    FilaDeUnPaso(
+                        numerado = bloque.pasos[i],
+                        conSangria = bloque.esGeneralAnidado,
+                        estado = estado,
+                        acciones = acciones
+                    )
+                }
+            }
+
+            item {
+                OutlinedButton(
+                    onClick = acciones.agregarPaso,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = Medidas.objetivoTactil)
+                        .padding(top = Medidas.chico)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null)
+                    Text("Agregar un paso", modifier = Modifier.padding(start = Medidas.chico))
+                }
+            }
+        }
+    }
+
+    when (dialogo) {
+        is DialogoPasos.Ninguno -> Unit
+        is DialogoPasos.ElegirTitulo -> CuadroDeTitulo(dialogo, acciones)
+        is DialogoPasos.ConfirmarBorrado -> ConfirmarBorrarPaso(dialogo, acciones)
+    }
+}
+
+/** Con la receta sin pasos se dice que es opcional, para que no parezca que falta llenarlo. */
+@Composable
+private fun TodaviaSinPasos() {
+    Text(
+        text = "Todavía no escribiste los pasos. Es opcional: hay recetas que se saben de " +
+            "memoria y no necesitan que nadie las anote.",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+}
+
+/**
+ * El encabezado de un bloque.
+ *
+ * El **general anidado** —los pasos que vinieron con una receta traída— se dibuja con sangría y
+ * más chico (8.8). Son cosas distintas: uno habla del bizcocho que se copió y el otro de la
+ * torta entera, y aplanarlos los volvería indistinguibles.
+ */
+@Composable
+private fun EncabezadoDeBloque(texto: String, esGeneralAnidado: Boolean) {
+    Text(
+        text = texto,
+        style = if (esGeneralAnidado) MaterialTheme.typography.bodyMedium
+        else MaterialTheme.typography.titleMedium,
+        fontWeight = if (esGeneralAnidado) null else FontWeight.Bold,
+        color = if (esGeneralAnidado) MaterialTheme.colorScheme.onSurfaceVariant
+        else MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier.padding(
+            top = Medidas.chico,
+            start = if (esGeneralAnidado) Medidas.medio else 0.dp
+        )
+    )
+}
+
+/**
+ * Una fila: su número, el campo de texto, y los botones de mover y quitar.
+ *
+ * **El número no se guarda**, sale de la posición (8.8.1): guardarlo obligaría a reescribir
+ * todos los de abajo cada vez que se agrega uno en medio, y bastaría una escritura perdida para
+ * dejar dos pasos con el mismo número.
+ *
+ * **Tocar el número abre el título.** Es la aplicación de "tocar la cosa hace lo principal"
+ * (8.4.1, #3) al único lugar donde cabía: el campo de texto ya está tomado por escribir.
+ */
+@Composable
+private fun FilaDeUnPaso(
+    numerado: PasoNumerado,
+    conSangria: Boolean,
+    estado: EstadoPasos,
+    acciones: AccionesPasos
+) {
+    val paso = numerado.paso
+    // El foco anterior tiene que sobrevivir a la recomposición, de ahí el `mutableStateOf`:
+    // `onFocusChanged` avisa de **cada** cambio, y lo que dispara el guardado es *perderlo*, no
+    // tenerlo. Con un `remember { false }` a secas el valor se reponía en cada redibujado y el
+    // guardado no se disparaba nunca.
+    var teniaFoco by remember { mutableStateOf(false) }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = if (conSangria) Medidas.medio else 0.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Text(
+            text = "${numerado.numero}.",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier
+                .heightIn(min = Medidas.objetivoTactil)
+                .clickable { acciones.abrirElegirTitulo(paso.id) }
+                .padding(top = Medidas.medio, end = Medidas.chico)
+        )
+        OutlinedTextField(
+            value = estado.textoDe(paso),
+            onValueChange = { acciones.cambiarTexto(paso.id, it) },
+            placeholder = { Text("Qué se hace en este paso") },
+            supportingText = estado.errorDe(paso)?.let { { Text(it) } },
+            isError = estado.errorDe(paso) != null,
+            keyboardOptions = KeyboardOptions(
+                capitalization = KeyboardCapitalization.Sentences
+            ),
+            modifier = Modifier
+                .weight(1f)
+                .onFocusChanged { foco ->
+                    if (teniaFoco && !foco.isFocused) acciones.guardarPaso(paso.id)
+                    teniaFoco = foco.isFocused
+                }
+        )
+        Column {
+            IconButton(onClick = { acciones.moverPaso(paso.id, true) }) {
+                Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Subir este paso")
+            }
+            IconButton(onClick = { acciones.moverPaso(paso.id, false) }) {
+                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Bajar este paso")
+            }
+            IconButton(onClick = { acciones.pedirBorrado(paso) }) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = "Quitar este paso",
+                    tint = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+    }
+}
+
+/** El menú de títulos. Lo ofrecido sale de `titulosDisponibles`, nunca de una lista propia. */
+@Composable
+private fun CuadroDeTitulo(estado: DialogoPasos.ElegirTitulo, acciones: AccionesPasos) {
+    AlertDialog(
+        onDismissRequest = acciones.cerrarDialogo,
+        title = { Text("¿De qué parte es este paso?") },
+        text = {
+            Column {
+                Text(
+                    text = "El General es para lo que no pertenece a ninguna parte, y se " +
+                        "puede repetir. Las partes de la receta, una sola vez cada una.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                estado.disponibles.forEach { titulo ->
+                    Text(
+                        text = titulo?.let { estado.nombrePorId[it] } ?: TITULO_GENERAL,
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = Medidas.objetivoTactil)
+                            .clickable { acciones.elegirTitulo(titulo) }
+                            .padding(vertical = Medidas.chico)
+                    )
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = acciones.cerrarDialogo) { Text("Cancelar") } }
+    )
+}
+
+@Composable
+private fun ConfirmarBorrarPaso(estado: DialogoPasos.ConfirmarBorrado, acciones: AccionesPasos) {
+    AlertDialog(
+        onDismissRequest = acciones.cerrarDialogo,
+        title = { Text("¿Quitar este paso?") },
+        // Se muestra lo que dice, porque es lo que se pierde y no se puede deshacer.
+        text = { Text("Se va lo que escribiste: «${estado.texto.take(120)}»") },
+        confirmButton = {
+            TextButton(onClick = acciones.confirmarBorrado) { Text("Quitar") }
+        },
+        dismissButton = { TextButton(onClick = acciones.cerrarDialogo) { Text("Cancelar") } }
+    )
+}
+
+// --- Vistas previas ---
+
+private fun pasoDeEjemplo(id: Long, texto: String, titulo: TituloDePaso, orden: Int) =
+    PasoParaMostrar(id = id, texto = texto, titulo = titulo, orden = orden)
+
+private fun estadoDeEjemplo() = EstadoPasos(
+    bloques = listOf(
+        BloqueDePasos(
+            titulo = 1L, encabezado = "Bizcocho", esGeneralAnidado = false,
+            pasos = listOf(
+                PasoNumerado(pasoDeEjemplo(1, "Batir las claras a punto de nieve.", 1L, 0), 1),
+                PasoNumerado(pasoDeEjemplo(2, "Incorporar la harina en tres tandas.", 1L, 1), 2)
+            )
+        ),
+        BloqueDePasos(
+            titulo = null, encabezado = TITULO_GENERAL, esGeneralAnidado = false,
+            pasos = listOf(PasoNumerado(pasoDeEjemplo(3, "Dejar enfriar.", null, 2), 3))
+        )
+    ),
+    cargando = false
+)
+
+@Preview(showBackground = true, name = "Pasos - con bloques")
+@Composable
+private fun PasosConBloques() {
+    ReposteriaTheme {
+        PasoPasos("Torta de manjar", estadoDeEjemplo(), DialogoPasos.Ninguno, AccionesPasos())
+    }
+}
+
+@Preview(showBackground = true, name = "Pasos - todavía vacío")
+@Composable
+private fun PasosVacio() {
+    ReposteriaTheme {
+        PasoPasos(
+            "Torta de manjar",
+            EstadoPasos(cargando = false),
+            DialogoPasos.Ninguno,
+            AccionesPasos()
+        )
+    }
+}

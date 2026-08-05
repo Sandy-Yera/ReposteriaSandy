@@ -20,6 +20,11 @@ import com.sandyyera.reposteria.logica.moldes.factorEscala
 import com.sandyyera.reposteria.logica.precios.DatosCalculoReceta
 import com.sandyyera.reposteria.logica.precios.ModoPrecio
 import com.sandyyera.reposteria.logica.busqueda.sonElMismoTexto
+import com.sandyyera.reposteria.data.db.entidades.RecetaPaso
+import com.sandyyera.reposteria.logica.partes.TituloDePaso
+import com.sandyyera.reposteria.logica.partes.errorAlUsarTitulo
+import com.sandyyera.reposteria.logica.validaciones.elPasoDiceAlgo
+import com.sandyyera.reposteria.logica.validaciones.errorEnTextoDePaso
 import com.sandyyera.reposteria.logica.precios.basesQueFaltanEn
 import com.sandyyera.reposteria.logica.precios.errorAlElegirReferencia
 import com.sandyyera.reposteria.logica.validaciones.NOMBRE_SECCION_POR_DEFECTO
@@ -991,6 +996,124 @@ class RecetaRepositorio(
             )
         )
         return Resultado.Listo
+    }
+
+    // --- Pasos (8.8) ---
+
+    /** Los pasos de una receta, en su orden y avisando cuando cambien. */
+    fun observarPasos(recetaId: Long): Flow<List<RecetaPaso>> = dao.observarPasos(recetaId)
+
+    /**
+     * Agrega un paso al final, bajo el título que se le indique.
+     *
+     * Nace **vacío y eso está bien**: el paso se crea al tocar "Agregar", y el texto se escribe
+     * después en el campo que aparece. Exigir texto para crearlo obligaría a escribirlo en un
+     * cuadro aparte antes de verlo en su lugar, que es más pasos para lo que se hace más veces.
+     * `guardarTextoDePaso` se encarga de que un paso que quedó en blanco no sobreviva.
+     *
+     * El orden sale de `ultimoOrdenDePaso + 1` y no de contar los pasos: contar da mal apenas
+     * dos filas comparten un `orden`, y ahí dos pasos nuevos seguidos se pisarían.
+     */
+    suspend fun agregarPaso(
+        recetaId: Long,
+        titulo: TituloDePaso = null,
+        esGeneralAnidado: Boolean = false
+    ): Long = dao.insertarPaso(
+        RecetaPaso(
+            recetaId = recetaId,
+            orden = (dao.ultimoOrdenDePaso(recetaId) ?: -1) + 1,
+            contenido = "",
+            tituloSeccionId = titulo,
+            esGeneralAnidado = esGeneralAnidado
+        )
+    )
+
+    /**
+     * Guarda el texto de un paso, **o lo borra si quedó en blanco** (8.8).
+     *
+     * Esa segunda mitad no es un atajo: vaciar el campo es cómo se dice "este paso ya no va"
+     * (`elPasoDiceAlgo`), y guardarlo como una fila vacía dejaría un número en la lista que no
+     * dice nada — con la numeración corrida, además, correría todos los de abajo por un paso
+     * fantasma. Es la misma decisión que `guardarDuracion`.
+     */
+    suspend fun guardarTextoDePaso(pasoId: Long, texto: String): Resultado {
+        val paso = dao.obtenerPaso(pasoId) ?: return Resultado.NoSePudo("Ese paso ya no existe")
+        errorEnTextoDePaso(texto)?.let { return Resultado.NoSePudo(it) }
+        if (!elPasoDiceAlgo(texto)) {
+            dao.eliminarPaso(pasoId)
+            return Resultado.Listo
+        }
+        dao.actualizarPaso(paso.copy(contenido = texto.trim()))
+        return Resultado.Listo
+    }
+
+    /**
+     * Cambia bajo qué título va un paso.
+     *
+     * **Revisa antes de escribir**, como todo lo que puede fallar acá: un título que nombra una
+     * sección no se puede usar dos veces (`errorAlUsarTitulo`), y saberlo exige mirar qué
+     * títulos tienen los **demás** bloques. Se calculan acá y no en la pantalla porque el
+     * repositorio es el que decide, y porque la pantalla podría estar mirando una foto vieja.
+     */
+    suspend fun cambiarTituloDePaso(pasoId: Long, titulo: TituloDePaso): Resultado {
+        val paso = dao.obtenerPaso(pasoId) ?: return Resultado.NoSePudo("Ese paso ya no existe")
+        if (titulo != null) {
+            val secciones = dao.obtenerSecciones(paso.recetaId)
+            val laSeccion = secciones.firstOrNull { it.id == titulo }
+                ?: return Resultado.NoSePudo("Esa parte ya no existe en la receta")
+            val usadosPorOtros = dao.obtenerPasos(paso.recetaId)
+                .filter { it.id != pasoId }
+                .map { it.tituloSeccionId }
+                .distinct()
+            errorAlUsarTitulo(titulo, usadosPorOtros, laSeccion.nombreSeccion)
+                ?.let { return Resultado.NoSePudo(it) }
+        }
+        // Poner un título propio deja de ser un general anidado: son estados excluyentes, y
+        // dejar el `true` puesto dibujaría con sangría un paso que ya no es de otra receta.
+        dao.actualizarPaso(
+            paso.copy(
+                tituloSeccionId = titulo,
+                esGeneralAnidado = if (titulo == null) paso.esGeneralAnidado else false
+            )
+        )
+        return Resultado.Listo
+    }
+
+    suspend fun eliminarPaso(pasoId: Long) = dao.eliminarPaso(pasoId)
+
+    /**
+     * Mueve un paso una posición arriba o abajo.
+     *
+     * **Renumera la lista entera de 0 a n-1 con el movimiento ya aplicado**, en vez de
+     * intercambiar los dos `orden` involucrados. Renumerar parece exagerado y es lo único
+     * correcto: los `orden` guardados **no son necesariamente 0, 1, 2…** — borrar un paso deja
+     * un hueco, así que una receta puede tener perfectamente [0, 5, 9]. Intercambiando índices
+     * contra esos valores, mover el último hacia arriba lo mandaba al principio de la lista, no
+     * una posición. E intercambiando los `orden` tal cual, dos filas que compartieran valor se
+     * quedarían quietas para siempre.
+     *
+     * El costo es una escritura por paso en vez de dos, dentro de una transacción. Una receta
+     * tiene decenas de pasos, no miles.
+     *
+     * Devuelve `false` si no había con quién intercambiar —el primero hacia arriba, el último
+     * hacia abajo—, para que la pantalla pueda apagar el botón en vez de ofrecer algo que no
+     * hace nada.
+     */
+    suspend fun moverPaso(pasoId: Long, haciaArriba: Boolean): Boolean {
+        val todos = dao.obtenerPasos(dao.obtenerPaso(pasoId)?.recetaId ?: return false)
+        val donde = todos.indexOfFirst { it.id == pasoId }
+        val destino = if (haciaArriba) donde - 1 else donde + 1
+        if (donde < 0 || destino !in todos.indices) return false
+
+        val reordenados = todos.toMutableList()
+        reordenados[donde] = todos[destino]
+        reordenados[destino] = todos[donde]
+        // **Una sola escritura de la lista completa**, y no un bucle: `@Transaction` es una
+        // anotación de DAO y acá no significaría nada, así que un bucle podría cortarse a
+        // medias y dejar dos pasos en la misma posición. Room sí envuelve en una transacción
+        // un `@Update` de una colección.
+        dao.actualizarPasos(reordenados.mapIndexed { posicion, paso -> paso.copy(orden = posicion) })
+        return true
     }
 
     /**

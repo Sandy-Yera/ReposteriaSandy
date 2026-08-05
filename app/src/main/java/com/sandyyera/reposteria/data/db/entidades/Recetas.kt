@@ -1,5 +1,6 @@
 package com.sandyyera.reposteria.data.db.entidades
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -29,17 +30,37 @@ data class Receta(
  */
 @Entity(
     tableName = "receta_secciones",
-    foreignKeys = [ForeignKey(
-        entity = Receta::class, parentColumns = ["id"], childColumns = ["recetaId"],
-        onDelete = ForeignKey.CASCADE
-    )],
-    indices = [Index("recetaId")]
+    foreignKeys = [
+        ForeignKey(
+            entity = Receta::class, parentColumns = ["id"], childColumns = ["recetaId"],
+            onDelete = ForeignKey.CASCADE
+        ),
+        // **SET_NULL y no CASCADE**: si la receta original se borra, esta sección conserva sus
+        // ingredientes y solo pierde el vínculo. Qué hacer con ella —mantenerla o borrarla— es
+        // una decisión que se le pregunta a la persona (8.11.4), no algo que la base resuelva
+        // sola llevándose trabajo por delante.
+        ForeignKey(
+            entity = Receta::class, parentColumns = ["id"], childColumns = ["recetaOrigenId"],
+            onDelete = ForeignKey.SET_NULL
+        )
+    ],
+    indices = [Index("recetaId"), Index("recetaOrigenId")]
 )
 data class RecetaSeccion(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val recetaId: Long,
     val nombreSeccion: String,
-    val orden: Int = 0
+    val orden: Int = 0,
+    /** De qué receta se copió esta sección. `null` en las propias (5.5.1). */
+    val recetaOrigenId: Long? = null,
+    /**
+     * La foto de la original al momento de copiar, en texto (5.5.1).
+     *
+     * Va como **texto y no como columnas sueltas** porque lo que se guarda cambió apenas se
+     * decidió adaptar las cantidades en proporción, y con una columna por dato eso habría sido
+     * una migración. Nunca se consulta por estos números: solo se comparan contra los de ahora.
+     */
+    val firmaDelOrigen: String? = null
 )
 
 /**
@@ -67,17 +88,35 @@ data class RecetaIngrediente(
 /** Un paso de la preparación. El "paso previo" va aparte, en [Receta.pasoPrevio]. */
 @Entity(
     tableName = "receta_pasos",
-    foreignKeys = [ForeignKey(
-        entity = Receta::class, parentColumns = ["id"], childColumns = ["recetaId"],
-        onDelete = ForeignKey.CASCADE
-    )],
-    indices = [Index("recetaId")]
+    foreignKeys = [
+        ForeignKey(
+            entity = Receta::class, parentColumns = ["id"], childColumns = ["recetaId"],
+            onDelete = ForeignKey.CASCADE
+        ),
+        // **SET_NULL**: borrar una sección deja sus pasos como General en vez de borrarlos.
+        // El texto de un paso lo escribió alguien, y hacerlo desaparecer porque se reorganizó
+        // la receta sería perder trabajo sin avisar; `bloquesDePasos` ya sabe dibujar un paso
+        // sin título. Irse con la sección es una decisión aparte y explícita (8.11.4).
+        ForeignKey(
+            entity = RecetaSeccion::class, parentColumns = ["id"],
+            childColumns = ["tituloSeccionId"], onDelete = ForeignKey.SET_NULL
+        )
+    ],
+    indices = [Index("recetaId"), Index("tituloSeccionId")]
 )
 data class RecetaPaso(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val recetaId: Long,
     val orden: Int,
-    val contenido: String
+    val contenido: String,
+    /** Bajo qué título va el paso. `null` es el General de esta receta (8.8). */
+    val tituloSeccionId: Long? = null,
+    /**
+     * Si es un General **traído de otra receta**, que se dibuja con sangría y distinto del
+     * General propio (8.8). Solo tiene sentido con [tituloSeccionId] en `null`.
+     */
+    @ColumnInfo(defaultValue = "0")
+    val esGeneralAnidado: Boolean = false
 )
 
 /**
