@@ -135,4 +135,87 @@ class AdaptacionTest {
     fun `una receta no se puede traer dentro de si misma`() {
         assertFalse(sePuedeUsarComoParte(recetaId = 1, laQueSeEstaArmando = 1, tieneSeccionesTraidas = false))
     }
+
+    // --- Emparejar la copia con la original (8.11.3) ---
+
+    /** Una fila de ingrediente cualquiera: lo único que importa acá es a qué ingrediente apunta. */
+    private data class Fila(val id: Long, val ingredienteId: Long, val gramos: Double)
+
+    private fun emparejar(copia: List<Fila>, original: List<Fila>) =
+        emparejarPorIngrediente(copia, original, { it.ingredienteId }, { it.ingredienteId })
+
+    @Test
+    fun `las filas se emparejan por el ingrediente, no por el id de la fila`() {
+        // La copia tiene ids propios: emparejar por el id de la fila no juntaría **nada**.
+        val copia = listOf(Fila(1, 100, 275.0), Fila(2, 101, 100.0))
+        val original = listOf(Fila(50, 100, 550.0), Fila(51, 101, 200.0))
+
+        val resultado = emparejar(copia, original)
+        assertEquals(2, resultado.juntos.size)
+        assertTrue(resultado.soloEnLaCopia.isEmpty())
+        assertTrue(resultado.soloEnLaOriginal.isEmpty())
+        assertEquals(550.0, resultado.juntos.first { it.first.id == 1L }.second.gramos, 0.001)
+    }
+
+    @Test
+    fun `el orden no participa del emparejamiento`() {
+        // Es la razón de que no se empareje por posición: agregar una fila a mano en la copia
+        // corre todas las de abajo, y ahí cada cantidad se adaptaría contra el ingrediente
+        // equivocado — datos reales cambiando sin que nada se vea raro.
+        val copia = listOf(Fila(1, 101, 100.0), Fila(2, 100, 275.0))
+        val original = listOf(Fila(50, 100, 550.0), Fila(51, 101, 200.0))
+
+        val resultado = emparejar(copia, original)
+        assertEquals(550.0, resultado.juntos.first { it.first.ingredienteId == 100L }.second.gramos, 0.001)
+        assertEquals(200.0, resultado.juntos.first { it.first.ingredienteId == 101L }.second.gramos, 0.001)
+    }
+
+    @Test
+    fun `lo que solo esta en la copia se separa de lo que solo esta en la original`() {
+        // Son dos noticias distintas: lo de acá puede ser algo que la original eliminó, y lo
+        // de allá es algo que llegó después y hay que traer.
+        val copia = listOf(Fila(1, 100, 275.0), Fila(2, 999, 50.0))
+        val original = listOf(Fila(50, 100, 550.0), Fila(51, 777, 30.0))
+
+        val resultado = emparejar(copia, original)
+        assertEquals(1, resultado.juntos.size)
+        assertEquals(listOf(999L), resultado.soloEnLaCopia.map { it.ingredienteId })
+        assertEquals(listOf(777L), resultado.soloEnLaOriginal.map { it.ingredienteId })
+    }
+
+    @Test
+    fun `el mismo ingrediente dos veces se empareja entre si, sin perder ninguna`() {
+        // `agregarIngrediente` ya no lo deja hacer, pero existe en datos guardados de antes.
+        // Cualquier otro criterio dejaría una cantidad sin pareja y la borraría o la
+        // duplicaría, que es justo lo que este emparejamiento existe para no hacer.
+        val copia = listOf(Fila(1, 100, 400.0), Fila(2, 100, 150.0))
+        val original = listOf(Fila(50, 100, 800.0), Fila(51, 100, 300.0))
+
+        val resultado = emparejar(copia, original)
+        assertEquals(2, resultado.juntos.size)
+        assertTrue(resultado.soloEnLaCopia.isEmpty())
+        assertTrue(resultado.soloEnLaOriginal.isEmpty())
+        assertEquals(800.0, resultado.juntos[0].second.gramos, 0.001)
+        assertEquals(300.0, resultado.juntos[1].second.gramos, 0.001)
+    }
+
+    @Test
+    fun `dos filas iguales campo por campo siguen siendo dos`() {
+        // La trampa que obligó a emparejar por posición de la lista y no con un `Set`: dos
+        // filas repetidas pueden ser idénticas, y un `Set` de `data class` las toma por una
+        // sola — haciendo desaparecer una cantidad en silencio.
+        val original = listOf(Fila(50, 100, 500.0), Fila(50, 100, 500.0))
+
+        val resultado = emparejar(listOf(Fila(1, 100, 500.0)), original)
+        assertEquals(1, resultado.juntos.size)
+        assertEquals("La segunda queda como sobrante, no desaparecida", 1, resultado.soloEnLaOriginal.size)
+    }
+
+    @Test
+    fun `con las dos listas vacias no hay nada que emparejar`() {
+        val resultado = emparejar(emptyList(), emptyList())
+        assertTrue(resultado.juntos.isEmpty())
+        assertTrue(resultado.soloEnLaCopia.isEmpty())
+        assertTrue(resultado.soloEnLaOriginal.isEmpty())
+    }
 }

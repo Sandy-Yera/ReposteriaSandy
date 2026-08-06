@@ -23,6 +23,15 @@ data class CostoDeReceta(val recetaId: Long, val costo: Double)
 /** Los trozos de una receta, para poder pedir varios de una vez. */
 data class TrozosDeReceta(val recetaId: Long, val trozos: Int)
 
+/**
+ * Cómo se llama un ingrediente del catálogo, para poder pedir varios de una vez.
+ *
+ * Existe por la firma de una receta copiada (8.11.5): lleva el nombre de cada ingrediente para
+ * poder armar la frase ("'Harina' pasó de 550 a 500 g"), y pedirlo de a uno serían tantas
+ * consultas como ingredientes tenga la receta.
+ */
+data class NombreDeIngrediente(val id: Long, val nombre: String)
+
 @Dao
 interface RecetaDao {
 
@@ -179,6 +188,75 @@ interface RecetaDao {
     )
     suspend fun obtenerRecetasConMoldeOrigen(moldeId: Long): List<Receta>
 
+    // --- Partes: recetas que usan otras recetas (8.11) ---
+
+    /**
+     * Qué **otras** recetas tienen secciones copiadas de esta.
+     *
+     * Alimenta la advertencia previa a borrar una receta (8.11.4). Se excluye a sí misma por si
+     * alguna vez quedara una sección apuntando a su propia receta: enumerarse a sí misma en el
+     * aviso de su propio borrado no diría nada.
+     */
+    @Query(
+        """
+        SELECT DISTINCT r.* FROM recetas r
+        JOIN receta_secciones rs ON rs.recetaId = r.id
+        WHERE rs.recetaOrigenId = :recetaId AND r.id != :recetaId
+        ORDER BY r.titulo COLLATE NOCASE
+        """
+    )
+    suspend fun recetasQueUsanLaReceta(recetaId: Long): List<Receta>
+
+    /**
+     * Los ids de las recetas que ya están hechas de partes: el tope de un solo nivel (8.11.6).
+     *
+     * Mira las **dos** columnas y no solo el id, porque una sección cuya original fue borrada
+     * sigue siendo una parte traída aunque SQLite le haya puesto el id en `null` (8.11.7).
+     * Ofrecer esa receta como parte de una tercera sería justo el nivel que no se quiere.
+     */
+    @Query(
+        """
+        SELECT DISTINCT recetaId FROM receta_secciones
+        WHERE recetaOrigenId IS NOT NULL OR firmaDelOrigen IS NOT NULL
+        """
+    )
+    suspend fun idsDeRecetasHechasDePartes(): List<Long>
+
+    /** Las secciones traídas de **toda** la base, para saber qué recetas tienen avisos. */
+    @Query(
+        """
+        SELECT * FROM receta_secciones
+        WHERE recetaOrigenId IS NOT NULL OR firmaDelOrigen IS NOT NULL
+        ORDER BY recetaId, orden
+        """
+    )
+    suspend fun todasLasSeccionesTraidas(): List<RecetaSeccion>
+
+    /**
+     * El latido que hace recalcular los avisos cuando cambia una receta original.
+     *
+     * Un aviso de 8.11.3 depende de los **ingredientes y los pasos de otra receta**, y ninguna
+     * de esas tablas aparece en la consulta de secciones: cambiar los gramos de la harina del
+     * bizcocho no toca `receta_secciones`, así que nada volvería a preguntar y la torta se
+     * quedaría sin avisar. Este `Flow` cierra ese hueco.
+     *
+     * **Que el número no cambie no importa, y es a propósito**: Room reemite un `Flow` cada vez
+     * que se **invalida** una de las tablas de la consulta, sin comparar el resultado anterior.
+     * O sea que corregir un gramaje —que no mueve ningún `COUNT`— igual dispara el recálculo.
+     * Ponerle un `distinctUntilChanged` encima lo rompería en silencio, dejando avisos que solo
+     * aparecen al agregar o quitar filas.
+     *
+     * Es un `COUNT` y no un `SELECT *` porque lo que se necesita es el aviso de que algo pasó, y
+     * traerse todos los ingredientes de la base para tirarlos sería pagar por un dato que no se
+     * usa.
+     */
+    @Query(
+        """
+        SELECT (SELECT COUNT(*) FROM receta_ingredientes) + (SELECT COUNT(*) FROM receta_pasos)
+        """
+    )
+    fun latidoDePartes(): Flow<Int>
+
     /**
      * Borra un ingrediente de todas las recetas donde aparezca.
      *
@@ -204,11 +282,30 @@ interface RecetaDao {
     @Query("SELECT COUNT(*) FROM receta_secciones WHERE recetaId = :recetaId")
     suspend fun contarSecciones(recetaId: Long): Int
 
+    /** Una sección suelta por su id. La usan las acciones de las partes, que reciben solo eso. */
+    @Query("SELECT * FROM receta_secciones WHERE id = :seccionId")
+    suspend fun obtenerSeccion(seccionId: Long): RecetaSeccion?
+
+    /** Las secciones de varias recetas de una consulta, para armar sus firmas en lote (8.11.5). */
+    @Query("SELECT * FROM receta_secciones WHERE recetaId IN (:recetaIds) ORDER BY recetaId, orden")
+    suspend fun seccionesDeVariasRecetas(recetaIds: List<Long>): List<RecetaSeccion>
+
     @Insert
     suspend fun insertarSeccion(seccion: RecetaSeccion): Long
 
     @Update
     suspend fun actualizarSeccion(seccion: RecetaSeccion)
+
+    /**
+     * Reescribe varias secciones de una vez, para tocar todo un grupo traído junto.
+     *
+     * Mismo motivo que `actualizarPasos`: **Room envuelve en una transacción los `@Update` de una
+     * colección**, y un bucle desde el repositorio no —`@Transaction` es una anotación de DAO—.
+     * Desvincular la mitad de un grupo dejaría unas secciones avisando y otras no, con la misma
+     * receta original detrás.
+     */
+    @Update
+    suspend fun actualizarSecciones(lasQueCambian: List<RecetaSeccion>)
 
     @Query("DELETE FROM receta_secciones WHERE id = :seccionId")
     suspend fun eliminarSeccion(seccionId: Long)
@@ -266,6 +363,20 @@ interface RecetaDao {
      */
     @Query("SELECT nombre FROM ingredientes WHERE id = :ingredienteId")
     suspend fun nombreDeIngrediente(ingredienteId: Long): String?
+
+    /** Lo mismo para varios de una vez, que es lo que necesita armar una firma (8.11.5). */
+    @Query("SELECT id, nombre FROM ingredientes WHERE id IN (:ingredienteIds)")
+    suspend fun nombresDeIngredientes(ingredienteIds: List<Long>): List<NombreDeIngrediente>
+
+    /**
+     * Los ingredientes de varias secciones de una consulta.
+     *
+     * Es la versión en lote de [obtenerIngredientesDeSeccion], y hace falta por lo mismo: armar
+     * la firma de una receta de cinco secciones no puede costar cinco consultas, y armar las de
+     * todas las recetas que alguien usó como parte, veinticinco.
+     */
+    @Query("SELECT * FROM receta_ingredientes WHERE seccionId IN (:seccionIds) ORDER BY seccionId, orden, id")
+    suspend fun ingredientesDeVariasSecciones(seccionIds: List<Long>): List<RecetaIngrediente>
 
     @Insert
     suspend fun insertarIngrediente(item: RecetaIngrediente): Long
@@ -445,6 +556,21 @@ interface RecetaDao {
      */
     @Query("SELECT MAX(orden) FROM receta_pasos WHERE recetaId = :recetaId")
     suspend fun ultimoOrdenDePaso(recetaId: Long): Int?
+
+    /** Los pasos de varias recetas de una consulta, para armar sus firmas en lote (8.11.5). */
+    @Query("SELECT * FROM receta_pasos WHERE recetaId IN (:recetaIds) ORDER BY recetaId, orden, id")
+    suspend fun pasosDeVariasRecetas(recetaIds: List<Long>): List<RecetaPaso>
+
+    /**
+     * Borra los pasos que van bajo una sección.
+     *
+     * Hace falta a mano porque la clave foránea es `SET_NULL`: borrar una sección deja sus pasos
+     * como General, que es lo correcto al reorganizar una receta (5.5.1). Irse con la sección es
+     * la decisión explícita de 8.11.4 —"Borrar: se elimina la sección **y también sus pasos**"—
+     * y por eso se pide aparte y antes de borrar la sección.
+     */
+    @Query("DELETE FROM receta_pasos WHERE tituloSeccionId IN (:seccionIds)")
+    suspend fun eliminarPasosDeSecciones(seccionIds: List<Long>)
 
     /**
      * Reescribe varios pasos de una vez, para renumerarlos al mover uno.

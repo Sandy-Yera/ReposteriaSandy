@@ -13,7 +13,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
@@ -333,6 +335,27 @@ private fun TarjetaReceta(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+
+                // El aviso de parte va **además** del costo y no en su lugar: son dos cosas
+                // distintas y las dos importan. En una repetida no se dibuja porque esa no se
+                // puede abrir, y mandarla a entrar sería mandarla a una puerta cerrada.
+                if (fila.tieneAvisoDeParte && !fila.repetida) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(end = Medidas.minimo)
+                        )
+                        Text(
+                            // Dice qué hacer y no solo qué pasó: el detalle está adentro, y
+                            // desde acá lo único accionable es entrar (8.11.3).
+                            text = "Una receta que usa cambió. Entra para decidir.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
             }
 
             IconButton(onClick = alBorrar) {
@@ -387,12 +410,16 @@ private fun FormularioReceta(
 }
 
 /**
- * La advertencia antes de borrar una receta (6.3).
+ * La advertencia antes de borrar una receta (6.3 y 8.11.4).
  *
- * Enumera lo que se va con ella sin consultar nada: a diferencia de un ingrediente —que
- * puede estar usado en recetas que hay que ir a buscar— todo lo de una receta vive dentro
- * de ella. Lo que sí conviene nombrar son los sueldos, porque están en otra sección y es
- * fácil olvidar que dependen de esto.
+ * Lo que se va **con** ella se enumera sin consultar nada: todo lo de una receta vive dentro de
+ * ella. Lo que sí hay que ir a buscar es qué otras recetas la usan como parte, y por eso ese
+ * pedazo espera a la consulta.
+ *
+ * **El tono de esas dos mitades es distinto a propósito.** Lo de adentro se pierde; lo de
+ * afuera no: las copias son independientes y siguen ahí enteras. Lo que les queda es un aviso
+ * pendiente preguntando qué hacer, y decirlo antes es la diferencia entre entenderlo y
+ * encontrárselo meses después sin explicación.
  */
 @Composable
 private fun ConfirmarBorradoReceta(
@@ -411,6 +438,41 @@ private fun ConfirmarBorradoReceta(
                         "esta receta.",
                     style = MaterialTheme.typography.bodyMedium
                 )
+
+                when {
+                    // `null` es "todavía consultando" y no "no la usa ninguna": mientras tanto
+                    // el botón está apagado, porque confirmar acá sería confirmar media
+                    // advertencia.
+                    estado.usadaPor == null -> Text(
+                        text = "Revisando si otras recetas la usan…",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    estado.usadaPor.isNotEmpty() -> Column(
+                        modifier = Modifier
+                            .heightIn(max = Medidas.altoMaximoDeLista)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        Text(
+                            text = "La usan como parte ${estado.usadaPor.size} " +
+                                if (estado.usadaPor.size == 1) "receta:" else "recetas:",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        estado.usadaPor.forEach {
+                            Text(
+                                text = "• ${it.titulo}",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        Text(
+                            text = "No pierden nada: sus copias siguen tal cual. Lo que les " +
+                                "queda es un aviso preguntando qué hacer con esa parte.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
                 Text(
                     text = "Esto no se puede deshacer.",
                     style = MaterialTheme.typography.bodySmall,
@@ -419,7 +481,7 @@ private fun ConfirmarBorradoReceta(
             }
         },
         confirmButton = {
-            TextButton(onClick = alConfirmar, enabled = !estado.borrando) {
+            TextButton(onClick = alConfirmar, enabled = estado.sePuedeBorrar) {
                 Text(text = "Eliminar", color = MaterialTheme.colorScheme.error)
             }
         },
@@ -506,7 +568,49 @@ private fun RecetasBorrando() {
     ReposteriaTheme {
         ListaRecetas(
             estadoDeEjemplo(),
-            DialogoReceta.ConfirmarBorrado(Receta(id = 1, titulo = "Torta de manjar")),
+            DialogoReceta.ConfirmarBorrado(
+                receta = Receta(id = 1, titulo = "Torta de manjar"),
+                usadaPor = emptyList()
+            ),
+            AccionesRecetas()
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "Recetas - borrando una que otras usan")
+@Composable
+private fun RecetasBorrandoUnaUsada() {
+    ReposteriaTheme {
+        ListaRecetas(
+            estadoDeEjemplo(),
+            DialogoReceta.ConfirmarBorrado(
+                receta = Receta(id = 1, titulo = "Bizcocho"),
+                usadaPor = listOf(
+                    Receta(id = 2, titulo = "Torta de manjar"),
+                    Receta(id = 3, titulo = "Mil hojas")
+                )
+            ),
+            AccionesRecetas()
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "Recetas - con aviso de parte")
+@Composable
+private fun RecetasConAvisoDeParte() {
+    ReposteriaTheme {
+        ListaRecetas(
+            estadoDeEjemplo(
+                visibles = listOf(
+                    RecetaConCosto(
+                        receta = Receta(id = 1, titulo = "Torta de manjar"),
+                        costoTotal = 4520.0,
+                        tieneIngredientes = true,
+                        tieneAvisoDeParte = true
+                    )
+                )
+            ),
+            DialogoReceta.Ninguno,
             AccionesRecetas()
         )
     }

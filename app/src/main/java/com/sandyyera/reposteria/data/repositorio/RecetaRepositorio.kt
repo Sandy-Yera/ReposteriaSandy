@@ -20,8 +20,25 @@ import com.sandyyera.reposteria.logica.moldes.factorEscala
 import com.sandyyera.reposteria.logica.precios.DatosCalculoReceta
 import com.sandyyera.reposteria.logica.precios.ModoPrecio
 import com.sandyyera.reposteria.logica.busqueda.sonElMismoTexto
+import com.sandyyera.reposteria.logica.busqueda.marcarRepetidos
 import com.sandyyera.reposteria.data.db.entidades.RecetaPaso
+import com.sandyyera.reposteria.data.db.entidades.esTraida
+import com.sandyyera.reposteria.logica.partes.EstadoDelVinculo
+import com.sandyyera.reposteria.logica.partes.FirmaDeReceta
+import com.sandyyera.reposteria.logica.partes.LineaDeFirma
+import com.sandyyera.reposteria.logica.partes.MOTIVO_TITULO_REPETIDO
+import com.sandyyera.reposteria.logica.partes.MOTIVO_UN_SOLO_NIVEL
+import com.sandyyera.reposteria.logica.partes.SeccionDeFirma
+import com.sandyyera.reposteria.logica.partes.TituloDeFirma
 import com.sandyyera.reposteria.logica.partes.TituloDePaso
+import com.sandyyera.reposteria.logica.partes.VinculoConLaOriginal
+import com.sandyyera.reposteria.logica.partes.cantidadAdaptada
+import com.sandyyera.reposteria.logica.partes.compararFirmas
+import com.sandyyera.reposteria.logica.partes.emparejarPorIngrediente
+import com.sandyyera.reposteria.logica.partes.nombreSinChocar
+import com.sandyyera.reposteria.logica.partes.sePuedeUsarComoParte
+import com.sandyyera.reposteria.logica.partes.textoDelVinculo
+import com.sandyyera.reposteria.logica.partes.vinculoDesdeTexto
 import com.sandyyera.reposteria.logica.partes.errorAlUsarTitulo
 import com.sandyyera.reposteria.logica.validaciones.elPasoDiceAlgo
 import com.sandyyera.reposteria.logica.validaciones.errorEnTextoDePaso
@@ -58,6 +75,51 @@ sealed interface Resultado {
 
     /** No se hizo nada. [motivo] es el texto a mostrar. */
     data class NoSePudo(val motivo: String) : Resultado
+}
+
+/**
+ * Una receta ofrecida para traerla como parte de otra, con el motivo si no se puede (8.11.6).
+ *
+ * Lleva el motivo en vez de quedar fuera de la lista por el mismo criterio que el ingrediente ya
+ * puesto en una sección: **desaparecer haría pensar que la app la perdió**, y un gris sin
+ * explicación invita a tocarlo y a preguntarse qué pasa. Lo resuelve `ComboBuscable` con su
+ * `motivoNoDisponible`.
+ */
+data class RecetaParaTraer(val receta: Receta, val motivoNoDisponible: String?)
+
+/**
+ * Un grupo de secciones traídas de la misma receta, con lo que haya que avisar (8.11.3).
+ *
+ * **El grupo y no la sección suelta es la unidad**, y sale de 8.11.2: traer una receta trae
+ * *todas* sus secciones, "todas quedan marcadas «vienen de Bizcocho», se muestran seguidas y
+ * bajo un encabezado que las agrupa". La firma guardada es la de la receta original **entera**,
+ * así que el "¿Qué cambió?" de cualquiera de sus secciones diría lo mismo — repetido tantas
+ * veces como partes tenga. Mantener, actualizar y desvincular se aplican al grupo por lo mismo:
+ * son decisiones sobre la receta que se trajo, no sobre un pedazo de ella.
+ *
+ * **La excepción son las huérfanas.** Cuando la receta original se borra, SQLite pone
+ * `recetaOrigenId` en `null` en todas sus copias a la vez, y ahí ya no hay con qué distinguir
+ * las que venían de una receta de las que venían de otra. Cada una queda como su propio grupo, y
+ * es además lo que 8.11.4 pide en singular: *"Borrar: se elimina la sección y también sus pasos"*.
+ */
+data class ParteTraida(
+    /** La receta de la que salieron. `null` si fue eliminada (8.11.4). */
+    val origenId: Long?,
+    /** Cómo se llama esa receta hoy. `null` si fue eliminada. */
+    val tituloDelOrigen: String?,
+    val seccionIds: List<Long>,
+    val estado: EstadoDelVinculo,
+    /** Las frases de "¿Qué cambió?" (8.11.5). Vacía si no cambió nada que esto mire. */
+    val cambios: List<String>
+) {
+    /**
+     * Si hay que dibujar el símbolo de advertencia sobre estas secciones.
+     *
+     * Una original borrada **siempre** avisa aunque no haya ningún cambio que contar: lo que se
+     * está diciendo es que hay una decisión pendiente, no que algo se movió.
+     */
+    val hayQueAvisar: Boolean
+        get() = estado == EstadoDelVinculo.ORIGINAL_BORRADA || cambios.isNotEmpty()
 }
 
 /**
@@ -1115,6 +1177,565 @@ class RecetaRepositorio(
         dao.actualizarPasos(reordenados.mapIndexed { posicion, paso -> paso.copy(orden = posicion) })
         return true
     }
+
+    // --- Partes: recetas que usan otras recetas (8.11) ---
+
+    /**
+     * Las recetas que se pueden traer dentro de [recetaId], y las que no con su motivo.
+     *
+     * Deja fuera de la lista **solo a sí misma**; las demás vienen todas, las que se pueden usar
+     * y las que no. Quién decide es `sePuedeUsarComoParte`, en `logica/`, y no un `if` escrito
+     * acá: es la misma regla que se prueba sin base de datos.
+     *
+     * Los dos motivos de rechazo son distintos y por eso se distinguen: una receta **hecha de
+     * partes** no se puede usar por el tope de un solo nivel (8.11.6), y una de **título
+     * repetido** porque esas no se pueden ni abrir (8.11.7) — copiarla dejaría una parte cuya
+     * original no se puede revisar.
+     */
+    suspend fun recetasParaTraer(recetaId: Long): List<RecetaParaTraer> {
+        val todas = dao.observarTodas().first()
+        val hechasDePartes = dao.idsDeRecetasHechasDePartes().toSet()
+        // Se marcan las repetidas sobre la lista ordenada por antigüedad, igual que la lista de
+        // recetas: así la que queda utilizable es la original y no una cualquiera.
+        val porAntiguedad = todas.sortedBy { it.id }
+        val repetidas = marcarRepetidos(porAntiguedad) { it.titulo }
+            .withIndex().filter { it.value }.map { porAntiguedad[it.index].id }.toSet()
+
+        return todas.filter { it.id != recetaId }.map { receta ->
+            RecetaParaTraer(
+                receta = receta,
+                motivoNoDisponible = when {
+                    !sePuedeUsarComoParte(receta.id, recetaId, receta.id in hechasDePartes) ->
+                        MOTIVO_UN_SOLO_NIVEL
+                    receta.id in repetidas -> MOTIVO_TITULO_REPETIDO
+                    else -> null
+                }
+            )
+        }
+    }
+
+    /**
+     * Copia una receta entera dentro de otra, dejando el vínculo de referencia (8.11.1).
+     *
+     * **La copia es independiente**: cambiar una cantidad acá no toca la original y cambiar la
+     * original no cambia esto. Lo único que queda es el vínculo, que sirve para decir de dónde
+     * vino y para avisar cuando aquella cambie.
+     *
+     * Llegan **todas** las secciones de la original, no una sola con todo adentro (8.11.2):
+     * aplastarlas perdería la división que la receta original tenía por algo. Un nombre que
+     * choque se renombra con `nombreSinChocar` en vez de rechazar la copia entera.
+     *
+     * Los pasos vienen con ellas: los que iban bajo un título quedan bajo la sección copiada, y
+     * **los que eran generales de la original quedan como generales anidados** (8.8) — son de
+     * la parte que se trajo, no de la receta que se está armando, y mezclarlos haría imposible
+     * distinguir "batir hasta que doble" del bizcocho de uno propio.
+     *
+     * [nombreDeLaPrimera] es lo mismo que en [agregarSeccion] y por el mismo motivo: si la
+     * receta todavía tiene su única sección con el nombre automático **y algo cargado**, hay
+     * que bautizarla antes de que deje de ser invisible, o quedaría un encabezado "General" al
+     * lado de "Bizcocho". Si esa sección está **vacía** no se pregunta nada y se elimina: es la
+     * que se siembra al crear la receta (8.10) y no tiene nada que perder.
+     */
+    suspend fun traerReceta(
+        destinoId: Long,
+        origenId: Long,
+        nombreDeLaPrimera: String? = null
+    ): Resultado {
+        if (destinoId == origenId) {
+            return Resultado.NoSePudo("Una receta no se puede traer dentro de sí misma")
+        }
+        val origen = dao.obtener(origenId) ?: return Resultado.NoSePudo("Esa receta ya no existe")
+        val destino = dao.obtener(destinoId) ?: return Resultado.NoSePudo("Esa receta ya no existe")
+
+        val seccionesDelOrigen = dao.obtenerSecciones(origenId)
+        if (seccionesDelOrigen.isEmpty()) {
+            return Resultado.NoSePudo("'${origen.titulo}' no tiene nada que traer")
+        }
+        // El tope de un solo nivel se comprueba **acá y no solo en la pantalla**, por lo mismo
+        // que todas las reglas de este repositorio: la pantalla ofrece, este decide.
+        val hechaDePartes = seccionesDelOrigen.any {
+            it.recetaOrigenId != null || it.firmaDelOrigen != null
+        }
+        if (!sePuedeUsarComoParte(origenId, destinoId, hechaDePartes)) {
+            return Resultado.NoSePudo(MOTIVO_UN_SOLO_NIVEL)
+        }
+
+        val existentes = dao.obtenerSecciones(destinoId)
+        val sembradaVacia = laSeccionSembradaQueSePuedeTirar(destinoId, existentes)
+        if (sembradaVacia == null) {
+            // Mismo trato que agregar una sección a mano: la que era invisible tiene que
+            // quedar bautizada antes de que aparezca otra al lado.
+            val unica = existentes.singleOrNull()
+            if (unica != null && esNombreAutomaticoDeSeccion(unica.nombreSeccion)) {
+                val bautizo = nombreDeLaPrimera?.trim()
+                    ?: return Resultado.NoSePudo(
+                        "Antes de traer otra receta hay que ponerle nombre a la sección que ya existe"
+                    )
+                errorEnNombreSeccion(bautizo)?.let { return Resultado.NoSePudo(it) }
+                dao.actualizarSeccion(unica.copy(nombreSeccion = bautizo))
+            }
+        }
+
+        val firma = firmasDe(listOf(origenId)).getValue(origenId)
+        val yaUsados = dao.obtenerSecciones(destinoId)
+            .filter { it.id != sembradaVacia?.id }
+            .map { it.nombreSeccion }
+            .toMutableList()
+        var orden = (existentes.maxOfOrNull { it.orden } ?: -1) + 1
+        // De qué sección de la copia salió cada sección de la original, para que los pasos
+        // copiados apunten a la sección de acá y no a la de allá.
+        val equivalencia = mutableMapOf<Long, Long>()
+
+        seccionesDelOrigen.forEach { seccion ->
+            val nombre = nombreSinChocar(nombreConQueLlega(seccion, origen, seccionesDelOrigen), yaUsados)
+            yaUsados += nombre
+            val nuevaId = dao.insertarSeccion(
+                RecetaSeccion(
+                    recetaId = destinoId,
+                    nombreSeccion = nombre,
+                    orden = orden++,
+                    recetaOrigenId = origenId,
+                    firmaDelOrigen = textoDelVinculo(VinculoConLaOriginal(seccion.id, firma))
+                )
+            )
+            equivalencia[seccion.id] = nuevaId
+            // Se insertan directo y no por `agregarIngrediente`: aquella rechaza el repetido en
+            // una sección, y acá la sección es nueva y está vacía — no hay con qué chocar. Y si
+            // la original trae dos filas del mismo ingrediente (datos de antes de la regla), se
+            // copian las dos: perder una sería perder una cantidad sin avisar.
+            dao.obtenerIngredientesDeSeccion(seccion.id).forEach { fila ->
+                dao.insertarIngrediente(
+                    RecetaIngrediente(
+                        seccionId = nuevaId,
+                        ingredienteId = fila.ingredienteId,
+                        cantidadG = fila.cantidadG,
+                        orden = fila.orden
+                    )
+                )
+            }
+        }
+
+        var ordenDePaso = (dao.ultimoOrdenDePaso(destinoId) ?: -1) + 1
+        dao.obtenerPasos(origenId).forEach { paso ->
+            dao.insertarPaso(
+                RecetaPaso(
+                    recetaId = destinoId,
+                    orden = ordenDePaso++,
+                    contenido = paso.contenido,
+                    tituloSeccionId = paso.tituloSeccionId?.let { equivalencia[it] },
+                    // Un paso general de la original pasa a ser general **anidado** acá. Y uno
+                    // cuyo título apuntaba a una sección que ya no existe llega sin título, o
+                    // sea también anidado: sigue siendo de la parte que se trajo.
+                    esGeneralAnidado = paso.tituloSeccionId?.let { equivalencia[it] } == null
+                )
+            )
+        }
+
+        // Al final y no antes: `eliminarSeccion` no deja la receta sin ninguna, y esa red tiene
+        // que seguir puesta. Con las traídas ya adentro, sacar la vacía no puede vaciar nada.
+        sembradaVacia?.let { eliminarSeccion(destinoId, it.id) }
+
+        historial.registrar(
+            tipo = TipoEvento.EDICION,
+            entidad = EntidadEvento.RECETA,
+            descripcion = "Se trajo '${origen.titulo}' dentro de '${destino.titulo}'",
+            detalleAdicional = "Llegaron ${seccionesDelOrigen.size} " +
+                if (seccionesDelOrigen.size == 1) "sección" else "secciones"
+        )
+        return Resultado.Listo
+    }
+
+    /**
+     * Con qué nombre entra una sección traída, antes de esquivar los que ya existen.
+     *
+     * Casi siempre es el suyo. La excepción es la sección **invisible**: una receta de una sola
+     * parte la tiene todavía llamada "General" (8.2), y ese nombre nunca se muestra allá porque
+     * es la única. Copiado tal cual, aparecería un encabezado que dice "General" al lado de
+     * "Crema" — un nombre que nadie escribió y que no dice de qué parte se trata.
+     *
+     * Entra con **el título de la receta de la que salió**, que es lo que uno diría en voz alta:
+     * el bizcocho de la torta es "Bizcocho". Es la misma sugerencia que la app propone al
+     * bautizar la primera sección a mano (`nombreSugeridoParaPrimeraSeccion`), así que ya viene
+     * recortada al tope y nunca sale inválida.
+     *
+     * **Solo cuando es la única de allá.** Con dos o más, los nombres ya se ven y los eligió
+     * alguien; una que se llame "General" entre ellas es una decisión, no un nombre pendiente.
+     */
+    private fun nombreConQueLlega(
+        seccion: RecetaSeccion,
+        origen: Receta,
+        todasLasDelOrigen: List<RecetaSeccion>
+    ): String =
+        if (todasLasDelOrigen.size == 1 && esNombreAutomaticoDeSeccion(seccion.nombreSeccion)) {
+            nombreSugeridoParaPrimeraSeccion(origen.titulo)
+        } else {
+            seccion.nombreSeccion
+        }
+
+    /**
+     * La sección sembrada al crear la receta, si se puede tirar sin perder nada.
+     *
+     * Es la decisión que 8.11.7 dejó abierta: una receta nueva nace con una sección vacía
+     * (8.10), y al traerle una receta entera quedaría esa "General" al lado de las importadas.
+     * **Se elimina, y solo cuando se puede demostrar que está vacía**: es la única, todavía
+     * tiene el nombre automático, no tiene ingredientes y ningún paso la usa de título.
+     *
+     * Las cuatro condiciones son necesarias. Con nombre propio la escribió alguien; con
+     * ingredientes o con pasos hay trabajo adentro; y si no es la única, ya dejó de ser
+     * invisible hace rato. En cualquiera de esos casos se conserva y se la bautiza como al
+     * agregar una sección a mano.
+     */
+    private suspend fun laSeccionSembradaQueSePuedeTirar(
+        recetaId: Long,
+        existentes: List<RecetaSeccion>
+    ): RecetaSeccion? {
+        val unica = existentes.singleOrNull() ?: return null
+        if (!esNombreAutomaticoDeSeccion(unica.nombreSeccion)) return null
+        if (dao.obtenerIngredientesDeSeccion(unica.id).isNotEmpty()) return null
+        if (dao.obtenerPasos(recetaId).any { it.tituloSeccionId == unica.id }) return null
+        return unica
+    }
+
+    /**
+     * La foto actual de varias recetas, para comparar contra la guardada (8.11.5).
+     *
+     * Recibe una lista y no un id suelto por lo mismo que `obtenerDatosCalculo`: los avisos de
+     * la lista de recetas necesitan las firmas de **todas** las originales que alguien usó, y
+     * pedirlas de a una serían cuatro consultas por receta. Así son cuatro en total.
+     */
+    private suspend fun firmasDe(recetaIds: List<Long>): Map<Long, FirmaDeReceta> {
+        if (recetaIds.isEmpty()) return emptyMap()
+
+        val secciones = dao.seccionesDeVariasRecetas(recetaIds)
+        val ingredientes = dao.ingredientesDeVariasSecciones(secciones.map { it.id })
+        val nombres = dao.nombresDeIngredientes(ingredientes.map { it.ingredienteId }.distinct())
+            .associate { it.id to it.nombre }
+        val pasos = dao.pasosDeVariasRecetas(recetaIds)
+
+        val porSeccion = ingredientes.groupBy { it.seccionId }
+        return recetaIds.associateWith { recetaId ->
+            val suyas = secciones.filter { it.recetaId == recetaId }
+            val susPasos = pasos.filter { it.recetaId == recetaId }
+            FirmaDeReceta(
+                secciones = suyas.map { seccion ->
+                    SeccionDeFirma(
+                        seccionId = seccion.id,
+                        nombre = seccion.nombreSeccion,
+                        lineas = porSeccion[seccion.id].orEmpty().map { fila ->
+                            LineaDeFirma(
+                                lineaId = fila.id,
+                                ingredienteId = fila.ingredienteId,
+                                // Un ingrediente borrado del catálogo deja su fila sin nombre;
+                                // la firma se arma igual, porque lo que compara son cantidades.
+                                nombre = nombres[fila.ingredienteId] ?: "Ese ingrediente",
+                                gramos = fila.cantidadG
+                            )
+                        }
+                    )
+                },
+                // Solo los títulos que de verdad tienen pasos: una sección sin ninguno no es un
+                // título de la receta, y contarla como uno vacío haría aparecer y desaparecer
+                // avisos de "se agregaron los pasos de X" al escribir el primero y borrarlo.
+                titulos = suyas.mapNotNull { seccion ->
+                    val cuantos = susPasos.count { it.tituloSeccionId == seccion.id }
+                    if (cuantos == 0) null
+                    else TituloDeFirma(seccion.id, seccion.nombreSeccion, cuantos)
+                },
+                pasosGenerales = susPasos.count { it.tituloSeccionId == null }
+            )
+        }
+    }
+
+    /**
+     * Las partes traídas de una receta, agrupadas y con lo que haya que avisar.
+     *
+     * Devuelve un grupo por receta original; las huérfanas quedan de a una (ver [ParteTraida]).
+     * Una sección cuyo vínculo no se puede leer **no aparece**: se comporta como propia, que es
+     * la degradación que ya eligió `firmaDesdeTexto` — perder el aviso, nunca la receta.
+     */
+    suspend fun partesDe(recetaId: Long): List<ParteTraida> =
+        armarPartes(dao.obtenerSecciones(recetaId).filter { it.esTraida })
+
+    /**
+     * Lo mismo, avisando cuando cambie **la receta original**.
+     *
+     * Es la que hay que usar para mostrar los avisos, y lo que la hace distinta de las otras
+     * `observar…` es de qué depende: un aviso de acá se enciende porque alguien tocó *otra*
+     * receta. Por eso se cuelga de [RecetaDao.latidoDePartes] además de las secciones — sin él,
+     * cambiar los gramos del bizcocho no movería nada en la torta hasta reabrirla.
+     */
+    fun observarPartesDe(recetaId: Long): Flow<List<ParteTraida>> =
+        combine(dao.observarSecciones(recetaId), dao.latidoDePartes()) { secciones, _ ->
+            armarPartes(secciones.filter { it.esTraida })
+        }
+
+    /**
+     * Qué recetas tienen algún aviso pendiente, para marcarlas en la lista (8.11.3).
+     *
+     * Devuelve solo los ids porque es lo único que la lista necesita: el detalle se ve entrando,
+     * que es justo lo que el aviso de afuera pide hacer.
+     */
+    fun observarRecetasConAviso(): Flow<Set<Long>> =
+        dao.latidoDePartes().map {
+            val traidas = dao.todasLasSeccionesTraidas()
+            val deQueReceta = traidas.associate { seccion -> seccion.id to seccion.recetaId }
+            armarPartes(traidas)
+                .filter { parte -> parte.hayQueAvisar }
+                .flatMap { parte -> parte.seccionIds }
+                .mapNotNull { seccionId -> deQueReceta[seccionId] }
+                .toSet()
+        }
+
+    /** Agrupa las secciones traídas y calcula el "¿Qué cambió?" de cada grupo. */
+    private suspend fun armarPartes(traidas: List<RecetaSeccion>): List<ParteTraida> {
+        if (traidas.isEmpty()) return emptyList()
+
+        val conVinculo = traidas.mapNotNull { seccion ->
+            vinculoDesdeTexto(seccion.firmaDelOrigen)?.let { seccion to it }
+        }
+        val origenes = conVinculo.mapNotNull { it.first.recetaOrigenId }.distinct()
+        val ahora = firmasDe(origenes)
+        val titulos = origenes.associateWith { dao.obtener(it)?.titulo }
+
+        // Las vivas se juntan por receta original; las huérfanas quedan de a una, porque al
+        // borrarse la original SQLite les puso el id en null a todas a la vez y ya no hay con
+        // qué distinguir de cuál venía cada una.
+        val vivas = conVinculo.filter { it.first.recetaOrigenId != null }
+        val huerfanas = conVinculo.filter { it.first.recetaOrigenId == null }
+
+        val deLasVivas = vivas.groupBy { it.first.recetaOrigenId!! }.map { (origenId, delGrupo) ->
+            val firmaGuardada = delGrupo.first().second.firma
+            ParteTraida(
+                origenId = origenId,
+                tituloDelOrigen = titulos[origenId],
+                seccionIds = delGrupo.map { it.first.id },
+                estado = EstadoDelVinculo.VIVO,
+                cambios = ahora[origenId]
+                    ?.let { compararFirmas(firmaGuardada, it).map { cambio -> cambio.frase } }
+                    .orEmpty()
+            )
+        }
+
+        val deLasHuerfanas = huerfanas.map { (seccion, _) ->
+            ParteTraida(
+                origenId = null,
+                tituloDelOrigen = null,
+                seccionIds = listOf(seccion.id),
+                estado = EstadoDelVinculo.ORIGINAL_BORRADA,
+                cambios = emptyList()
+            )
+        }
+
+        return deLasVivas + deLasHuerfanas
+    }
+
+    /**
+     * Trae a la copia lo que cambió en la original, **sin pisar las cantidades ajustadas a mano**.
+     *
+     * Es la promesa de 8.11.3 y toda la dificultad está ahí: una cantidad de la copia puede ser
+     * distinta *a propósito* —la crema de la torta lleva la mitad que la que se vende sola— y
+     * eso no se toca nunca. Lo que llega es el cambio de la original, aplicado **como factor de
+     * ese ingrediente** (`cantidadAdaptada`): de 550 a 500 allá, con 275 acá, quedan 250.
+     *
+     * Es por ingrediente y no un factor global porque en la original puede haber cambiado uno
+     * solo. Y la fila de acá se empareja con la de allá por el **ingrediente del catálogo**
+     * (`emparejarPorIngrediente`), que es lo único estable entre dos recetas con ids propios.
+     *
+     * Tres casos más, cada uno con su regla:
+     *
+     * - **Un ingrediente nuevo en la original** llega con la cantidad de allá: no hay una "tuya"
+     *   que conservar.
+     * - **Uno que la original eliminó** se va — pero solo si la firma dice que había venido de
+     *   ella. Lo que se agregó a mano acá se queda: la original nunca lo tuvo y borrarlo sería
+     *   perder trabajo por un cambio de otra receta.
+     * - **Uno que está en los dos lados pero no en la firma** no se toca. Nadie puede decir de
+     *   qué proporción venía, y adivinar es exactamente lo que esto no hace.
+     *
+     * Al terminar vuelve a tomar la foto, así el aviso se apaga. Actúa sobre **todo el grupo**
+     * traído junto (ver [ParteTraida]).
+     */
+    suspend fun actualizarParte(seccionId: Long): Resultado {
+        val tocada = dao.obtenerSeccion(seccionId)
+            ?: return Resultado.NoSePudo("Esa sección ya no existe")
+        val origenId = tocada.recetaOrigenId
+            ?: return Resultado.NoSePudo("La receta original fue eliminada, no hay de dónde traer")
+        // Existe seguro: la clave foránea no deja apuntar a una receta borrada, la pone en null
+        // — que es el caso de arriba. Se lee igual porque el historial necesita nombrarla.
+        val origen = dao.obtener(origenId)
+            ?: return Resultado.NoSePudo("La receta original fue eliminada, no hay de dónde traer")
+        val nueva = firmasDe(listOf(origenId)).getValue(origenId)
+
+        val delGrupo = seccionesDelGrupo(tocada)
+        val actualizadas = mutableListOf<RecetaSeccion>()
+
+        delGrupo.forEach { seccion ->
+            val vinculo = vinculoDesdeTexto(seccion.firmaDelOrigen) ?: return@forEach
+            val laDeAlla = vinculo.firma.secciones
+                .firstOrNull { it.seccionId == vinculo.seccionDeOrigen }
+            val filasDeAlla = dao.obtenerIngredientesDeSeccion(vinculo.seccionDeOrigen)
+            val filasDeAca = dao.obtenerIngredientesDeSeccion(seccion.id)
+
+            val emparejadas = emparejarPorIngrediente(
+                copia = filasDeAca,
+                original = filasDeAlla,
+                ingredienteDeLaCopia = { it.ingredienteId },
+                ingredienteDeLaOriginal = { it.ingredienteId }
+            )
+
+            emparejadas.juntos.forEach { (aca, alla) ->
+                val antes = vinculo.firma.linea(alla.id)?.gramos ?: return@forEach
+                dao.actualizarCantidad(
+                    aca.id,
+                    cantidadAdaptada(aca.cantidadG, antes, alla.cantidadG)
+                )
+            }
+            emparejadas.soloEnLaCopia.forEach { aca ->
+                val vinoDeLaOriginal = laDeAlla?.lineas?.any { it.ingredienteId == aca.ingredienteId }
+                if (vinoDeLaOriginal == true) dao.eliminarIngrediente(aca.id)
+            }
+            emparejadas.soloEnLaOriginal.forEach { alla ->
+                dao.insertarIngrediente(
+                    RecetaIngrediente(
+                        seccionId = seccion.id,
+                        ingredienteId = alla.ingredienteId,
+                        cantidadG = alla.cantidadG,
+                        orden = alla.orden
+                    )
+                )
+            }
+
+            actualizadas += seccion.copy(
+                firmaDelOrigen = textoDelVinculo(
+                    VinculoConLaOriginal(vinculo.seccionDeOrigen, nueva)
+                )
+            )
+        }
+
+        refirmar(actualizadas)
+        historial.registrar(
+            tipo = TipoEvento.EDICION,
+            entidad = EntidadEvento.RECETA,
+            descripcion = "Se actualizó una parte traída de '${origen.titulo}'",
+            detalleAdicional = "Las cantidades se adaptaron en proporción"
+        )
+        return Resultado.Listo
+    }
+
+    /**
+     * Deja la parte como está, pero **apaga este aviso** (8.11.3).
+     *
+     * "Mantener" y "actualizar" son decisiones sobre *este* cambio, y las dos dejan el vínculo
+     * vivo: el próximo cambio de la original vuelve a preguntar. Para que eso se cumpla, mantener
+     * no puede ser no hacer nada — sin volver a tomar la foto, el mismo aviso seguiría encendido
+     * para siempre y no habría forma de distinguir "todavía no lo miré" de "lo miré y lo dejo
+     * así". Lo único que se escribe es la firma nueva; **ningún ingrediente se toca**.
+     *
+     * No es lo mismo que [desvincularParte], que corta el vínculo y no vuelve a avisar nunca.
+     */
+    suspend fun mantenerParte(seccionId: Long): Resultado {
+        val tocada = dao.obtenerSeccion(seccionId)
+            ?: return Resultado.NoSePudo("Esa sección ya no existe")
+        val origenId = tocada.recetaOrigenId
+            ?: return Resultado.NoSePudo("La receta original fue eliminada")
+        val nueva = firmasDe(listOf(origenId)).getValue(origenId)
+
+        refirmar(
+            seccionesDelGrupo(tocada).mapNotNull { seccion ->
+                vinculoDesdeTexto(seccion.firmaDelOrigen)?.let { vinculo ->
+                    seccion.copy(
+                        firmaDelOrigen = textoDelVinculo(
+                            VinculoConLaOriginal(vinculo.seccionDeOrigen, nueva)
+                        )
+                    )
+                }
+            }
+        )
+        return Resultado.Listo
+    }
+
+    /**
+     * Guarda la foto nueva de todo un grupo **en una sola escritura**.
+     *
+     * Va junto y no sección por sección por lo mismo que la renumeración de los pasos: Room
+     * envuelve en una transacción los `@Update` de una colección y un bucle desde acá no. Media
+     * firma vieja dejaría unas secciones avisando y otras no, con la misma receta original
+     * detrás — y el aviso que sobrevive no tendría ninguna explicación.
+     */
+    private suspend fun refirmar(secciones: List<RecetaSeccion>) {
+        if (secciones.isNotEmpty()) dao.actualizarSecciones(secciones)
+    }
+
+    /**
+     * Corta el vínculo para siempre: la sección se queda con lo que tiene y deja de avisar.
+     *
+     * **Limpia las dos columnas y no solo el id**, que es la regla de 8.11.7: con el id en
+     * `null` y la firma puesta, la sección quedaría diciendo que su original desapareció y
+     * volvería a preguntar para siempre — lo contrario de lo que se pidió.
+     *
+     * **No toca los ingredientes.** Lo que está escrito se queda escrito; lo único que se pierde
+     * es el "vino de Bizcocho" y el "¿Qué cambió?", que es exactamente lo que se está pidiendo.
+     *
+     * Es también lo que hace "Mantener" cuando la original fue borrada (8.11.4): ahí no hay nada
+     * que seguir mirando, así que dejar el vínculo puesto sería guardar un aviso que no se apaga.
+     */
+    suspend fun desvincularParte(seccionId: Long): Resultado {
+        val tocada = dao.obtenerSeccion(seccionId)
+            ?: return Resultado.NoSePudo("Esa sección ya no existe")
+        val delGrupo = seccionesDelGrupo(tocada)
+        dao.actualizarSecciones(
+            delGrupo.map { it.copy(recetaOrigenId = null, firmaDelOrigen = null) }
+        )
+        return Resultado.Listo
+    }
+
+    /**
+     * Borra las secciones traídas **y sus pasos** (8.11.4).
+     *
+     * Los pasos hay que borrarlos a mano: la clave foránea es `SET_NULL`, así que borrar la
+     * sección sola los dejaría como generales de esta receta — que es lo correcto al
+     * reorganizarla, y lo incorrecto acá, donde lo que se está diciendo es que esa parte no va.
+     *
+     * **No deja la receta sin ninguna sección**, la misma red de [eliminarSeccion]: los
+     * ingredientes necesitan dónde colgar. Si el grupo es todo lo que hay, se rechaza en vez de
+     * borrar a medias.
+     */
+    suspend fun borrarParte(seccionId: Long): Resultado {
+        val tocada = dao.obtenerSeccion(seccionId)
+            ?: return Resultado.NoSePudo("Esa sección ya no existe")
+        val delGrupo = seccionesDelGrupo(tocada)
+        if (dao.contarSecciones(tocada.recetaId) <= delGrupo.size) {
+            return Resultado.NoSePudo(
+                "La receta quedaría sin ninguna sección. Crea una antes de borrar esta."
+            )
+        }
+
+        val ids = delGrupo.map { it.id }
+        dao.eliminarPasosDeSecciones(ids)
+        ids.forEach { dao.eliminarSeccion(it) }
+        return Resultado.Listo
+    }
+
+    /**
+     * Las demás secciones que llegaron junto con esta.
+     *
+     * Una huérfana es **su propio grupo**: sin `recetaOrigenId` no hay con qué juntarla con las
+     * que venían de la misma receta borrada, y agruparlas por lo único que queda —la firma—
+     * mezclaría las de dos originales distintas si las dos se borraron.
+     */
+    private suspend fun seccionesDelGrupo(seccion: RecetaSeccion): List<RecetaSeccion> {
+        val origenId = seccion.recetaOrigenId ?: return listOf(seccion)
+        return dao.obtenerSecciones(seccion.recetaId).filter { it.recetaOrigenId == origenId }
+    }
+
+    /**
+     * Qué otras recetas usan esta como parte. Alimenta la advertencia de 8.11.4.
+     *
+     * Borrar una receta usada por otras **no rompe nada de inmediato** —las copias siguen ahí,
+     * son independientes— pero deja un aviso pendiente en cada una. Por eso se enumera antes:
+     * descubrirlo después no tendría explicación.
+     */
+    suspend fun recetasQueUsanEstaReceta(recetaId: Long): List<Receta> =
+        dao.recetasQueUsanLaReceta(recetaId)
 
     /**
      * Cambia cuál de los precios de la receta alimenta las cifras automáticas (8.6).

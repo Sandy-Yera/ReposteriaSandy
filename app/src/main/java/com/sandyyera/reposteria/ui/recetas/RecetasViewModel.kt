@@ -39,7 +39,15 @@ data class RecetaConCosto(
      * pantalla necesita distinguirlas.
      */
     val tieneIngredientes: Boolean = false,
-    val repetida: Boolean = false
+    val repetida: Boolean = false,
+    /**
+     * Si alguna de sus partes traídas tiene un aviso pendiente (8.11.3).
+     *
+     * Va **también acá afuera** y no solo dentro de la receta porque el aviso es sobre algo que
+     * pasó en *otra* receta: sin la marca en la lista, la única forma de enterarse sería entrar
+     * a cada una a mirar, que es exactamente lo que un aviso existe para evitar.
+     */
+    val tieneAvisoDeParte: Boolean = false
 )
 
 /** Lo que se muestra al tocar una receta que quedó repetida. */
@@ -81,15 +89,26 @@ sealed interface DialogoReceta {
     }
 
     /**
-     * La advertencia previa a borrar (6.3).
+     * La advertencia previa a borrar (6.3 y 8.11.4).
      *
-     * A diferencia de un ingrediente, acá no hay que consultar nada antes: lo que se pierde
-     * está todo adentro de la receta. Por eso el aviso puede enumerarlo de inmediato.
+     * Lo que se pierde *dentro* de la receta se puede enumerar de inmediato: está todo adentro.
+     * Lo que hay que consultar es lo de **afuera** — qué otras recetas la usan como parte—, y
+     * por eso [usadaPor] llega después, con la misma distinción que la advertencia de borrar un
+     * ingrediente: `null` es "todavía consultando" y lista vacía es "no la usa ninguna".
+     * Confundirlos dejaría borrar sin haber mostrado la advertencia completa.
+     *
+     * El tono es distinto al de un ingrediente a propósito: borrar una receta usada por otras
+     * **no rompe nada de inmediato** —las copias son independientes y siguen ahí— pero deja un
+     * aviso pendiente en cada una, y descubrirlo meses después no tendría explicación.
      */
     data class ConfirmarBorrado(
         val receta: Receta,
+        val usadaPor: List<Receta>? = null,
         val borrando: Boolean = false
-    ) : DialogoReceta
+    ) : DialogoReceta {
+        /** Mientras la consulta no vuelva no se puede confirmar: faltaría la mitad del aviso. */
+        val sePuedeBorrar: Boolean get() = usadaPor != null && !borrando
+    }
 }
 
 /** Lo que la pantalla de recetas necesita para dibujarse. */
@@ -153,8 +172,13 @@ class RecetasViewModel(
      */
     private val conCosto = combine(
         repositorio.observarTodas(),
-        repositorio.observarCostos()
-    ) { recetas, costos ->
+        repositorio.observarCostos(),
+        // Los avisos entran como un flujo más y no como una consulta dentro de la
+        // transformación, por lo mismo que el costo: dependen de tablas que esta consulta no
+        // mira —los ingredientes y los pasos de **otra** receta— y una foto de un momento se
+        // quedaría vieja justo cuando hay algo que avisar (8.11.3).
+        repositorio.observarRecetasConAviso()
+    ) { recetas, costos, conAviso ->
         // Se marcan las repetidas sobre la lista ordenada por antigüedad, no por título:
         // así la que se conserva utilizable es la original y no una cualquiera.
         val porAntiguedad = recetas.sortedBy { it.id }
@@ -171,7 +195,8 @@ class RecetasViewModel(
                 // tienen algo cargado**: estar en el mapa es exactamente "tiene
                 // ingredientes", y un 0 ahí adentro es "los tiene, y no suman nada".
                 tieneIngredientes = receta.id in costos,
-                repetida = receta.id in repetidas
+                repetida = receta.id in repetidas,
+                tieneAvisoDeParte = receta.id in conAviso
             )
         }
     }
@@ -238,13 +263,31 @@ class RecetasViewModel(
         }
     }
 
+    /**
+     * Abre la advertencia de borrado y va a buscar a quién afecta (8.11.4).
+     *
+     * El cuadro se abre al instante y la lista se completa cuando la consulta vuelve, igual que
+     * el de ingredientes. Al llegar se comprueba que el cuadro **siga abierto y sea la misma
+     * receta**: entre abrir y responder pudo abrirse otro, y pegarle ahí la lista de una receta
+     * distinta enumeraría recetas que no tienen nada que ver.
+     */
     fun pedirBorrado(receta: Receta) {
         _dialogo.value = DialogoReceta.ConfirmarBorrado(receta)
+        viewModelScope.launch {
+            val usadaPor = repositorio.recetasQueUsanEstaReceta(receta.id)
+            _dialogo.update { actual ->
+                if (actual is DialogoReceta.ConfirmarBorrado && actual.receta.id == receta.id) {
+                    actual.copy(usadaPor = usadaPor)
+                } else {
+                    actual
+                }
+            }
+        }
     }
 
     fun confirmarBorrado() {
         val aviso = _dialogo.value as? DialogoReceta.ConfirmarBorrado ?: return
-        if (aviso.borrando) return
+        if (!aviso.sePuedeBorrar) return
 
         _dialogo.value = aviso.copy(borrando = true)
 

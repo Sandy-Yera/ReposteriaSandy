@@ -92,3 +92,83 @@ fun sePuedeUsarComoParte(
 /** Lo que se muestra al lado de una receta que quedó fuera de la lista por el tope de 8.11.6. */
 const val MOTIVO_UN_SOLO_NIVEL =
     "Esta receta ya está hecha de partes, así que no se puede usar dentro de otra."
+
+/**
+ * Lo que se muestra al lado de una receta que no se puede traer por tener el título repetido.
+ *
+ * Esas recetas **no se pueden ni abrir** (`marcarRepetidos` las bloquea en la lista, porque son
+ * datos anteriores a prohibir los repetidos), así que copiarlas dentro de otra sería peor:
+ * quedaría una parte cuya original no se puede revisar y cuyos avisos no llevan a ninguna parte.
+ */
+const val MOTIVO_TITULO_REPETIDO =
+    "Esta receta tiene el título repetido. Renómbrala en la lista y después podrás usarla."
+
+/**
+ * El resultado de emparejar dos listas de filas por el ingrediente que usan.
+ *
+ * Los tres grupos son tres noticias distintas y hay que poder distinguirlas: [juntos] son los
+ * que hay que adaptar, [soloEnLaCopia] los candidatos a que la original los haya eliminado, y
+ * [soloEnLaOriginal] los que llegaron después y hay que traer.
+ */
+data class Emparejamiento<C, O>(
+    val juntos: List<Pair<C, O>>,
+    val soloEnLaCopia: List<C>,
+    val soloEnLaOriginal: List<O>
+)
+
+/**
+ * Empareja las filas de una sección copiada con las de la sección original, por el **ingrediente
+ * del catálogo** que usa cada una.
+ *
+ * Es por el ingrediente y no por el id de la fila porque **la copia tiene ids propios**: una fila
+ * de la copia no tiene forma de decir de qué fila de la original salió (5.5.1 lo deja así a
+ * propósito, para no repetir el vínculo en cada ingrediente). Tampoco sirve el orden: agregar o
+ * quitar una fila a mano corre todas las de abajo, y ahí las cantidades se adaptarían contra el
+ * ingrediente equivocado — cambiando datos reales sin que nada se vea raro.
+ *
+ * Por el nombre tampoco: renombrar un ingrediente del catálogo no toca ninguna receta, y
+ * emparejar por nombre haría que un renombre pareciera un ingrediente eliminado más otro
+ * agregado. Es el mismo agujero que ya obligó a rehacer la firma.
+ *
+ * **Si un ingrediente aparece dos veces en la misma sección** —cosa que `agregarIngrediente` ya
+ * no deja hacer, pero que existe en datos guardados de antes— las repetidas se emparejan **entre
+ * ellas en el orden en que vienen**. No hay forma de saber cuál era cuál, y este es el único
+ * criterio que no pierde ninguna: cualquier otro dejaría una cantidad sin pareja y la borraría o
+ * la duplicaría.
+ */
+fun <C, O> emparejarPorIngrediente(
+    copia: List<C>,
+    original: List<O>,
+    ingredienteDeLaCopia: (C) -> Long,
+    ingredienteDeLaOriginal: (O) -> Long
+): Emparejamiento<C, O> {
+    // Se trabaja con **posiciones** de la lista original y no con las filas mismas: dos filas
+    // repetidas de la misma sección pueden ser iguales campo por campo, y un `Set` de `data
+    // class` las tomaría por una sola — perdiendo una cantidad justo en el caso raro que este
+    // emparejamiento existe para no perder.
+    val posicionesPorIngrediente = original.indices.groupBy { ingredienteDeLaOriginal(original[it]) }
+    val juntos = mutableListOf<Pair<C, O>>()
+    val soloAcá = mutableListOf<C>()
+    val emparejadas = mutableSetOf<Int>()
+    // Cuántas del mismo ingrediente ya se usaron de allá, para que la segunda "Harina" de acá
+    // se empareje con la segunda de allá y no otra vez con la primera.
+    val yaUsadas = mutableMapOf<Long, Int>()
+
+    copia.forEach { fila ->
+        val ingrediente = ingredienteDeLaCopia(fila)
+        val candidatas = posicionesPorIngrediente[ingrediente].orEmpty()
+        val cual = yaUsadas.getOrDefault(ingrediente, 0)
+        val posicion = candidatas.getOrNull(cual)
+        if (posicion == null) {
+            soloAcá += fila
+        } else {
+            juntos += fila to original[posicion]
+            emparejadas += posicion
+            yaUsadas[ingrediente] = cual + 1
+        }
+    }
+
+    val soloAllá = original.filterIndexed { posicion, _ -> posicion !in emparejadas }
+
+    return Emparejamiento(juntos, soloAcá, soloAllá)
+}

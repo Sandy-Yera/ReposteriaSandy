@@ -64,6 +64,20 @@ data class RecetaSeccion(
 )
 
 /**
+ * Si esta sección se copió de otra receta, aunque esa receta ya no exista (8.11.7).
+ *
+ * Mira las **dos** columnas y no solo el id, y ahí está todo el punto: `recetaOrigenId` es
+ * `SET_NULL`, así que borrar la original lo pone en `null` sin tocar la firma. Preguntando solo
+ * por el id, una sección huérfana pasaría por propia y nadie le preguntaría nunca qué hacer con
+ * ella — que es justo lo que 8.11.4 existe para no dejar pasar.
+ *
+ * Va como extensión y no como propiedad de la entidad para que Room no intente mapearla a una
+ * columna: es una pregunta sobre la fila, no un dato guardado.
+ */
+val RecetaSeccion.esTraida: Boolean
+    get() = recetaOrigenId != null || firmaDelOrigen != null
+
+/**
  * Cuánto se usa de un ingrediente dentro de una sección.
  *
  * Cuelga de la sección, no de la receta: al borrar una sección se van sus ingredientes.

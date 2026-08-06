@@ -10,11 +10,14 @@ import com.sandyyera.reposteria.data.db.entidades.Receta
 import com.sandyyera.reposteria.data.db.entidades.RecetaIngrediente
 import com.sandyyera.reposteria.data.db.entidades.RecetaSeccion
 import com.sandyyera.reposteria.data.repositorio.IngredienteRepositorio
+import com.sandyyera.reposteria.data.repositorio.ParteTraida
+import com.sandyyera.reposteria.data.repositorio.RecetaParaTraer
 import com.sandyyera.reposteria.data.repositorio.RecetaRepositorio
 import com.sandyyera.reposteria.data.repositorio.Resultado
 import com.sandyyera.reposteria.data.repositorio.ResultadoGuardarIngrediente
 import com.sandyyera.reposteria.logica.formato.formatearMientrasSeEscribe
 import com.sandyyera.reposteria.logica.formato.formatearNumero
+import com.sandyyera.reposteria.logica.partes.EstadoDelVinculo
 import com.sandyyera.reposteria.logica.validaciones.debenMostrarseLosNombresDeSeccion
 import com.sandyyera.reposteria.logica.validaciones.errorEnCantidadEnGramosTexto
 import com.sandyyera.reposteria.logica.validaciones.errorEnNombreSeccion
@@ -193,6 +196,59 @@ sealed interface DialogoCantidades {
         val seccion: SeccionConIngredientes,
         val borrando: Boolean = false
     ) : DialogoCantidades
+
+    /**
+     * Elegir qué receta traer dentro de esta (8.11).
+     *
+     * [candidatas] llega `null` mientras se consulta y no como lista vacía, la misma distinción
+     * que la advertencia de borrado: vacía significa "no tienes otra receta que traer", que es
+     * un mensaje distinto de "todavía estoy mirando".
+     *
+     * [nombreDeLaPrimera] es lo mismo que en [Seccion]: si la receta tiene su única sección con
+     * el nombre automático **y algo cargado**, hay que bautizarla antes de que aparezcan otras
+     * al lado. Cuando esa sección está vacía viene en `null` y no se pregunta nada — se elimina
+     * sola, porque es la que se siembra al crear la receta.
+     */
+    data class TraerReceta(
+        val busqueda: String = "",
+        val candidatas: List<RecetaParaTraer>? = null,
+        val nombreDeLaPrimera: String? = null,
+        val trayendo: Boolean = false,
+        val rechazo: String? = null
+    ) : DialogoCantidades {
+
+        val errorDeLaPrimera: String?
+            get() = nombreDeLaPrimera?.let { errorEnNombreSeccion(it) }
+
+        val puedeTraer: Boolean
+            get() = !trayendo && errorDeLaPrimera == null
+
+        /** Ninguna otra receta que traer, ya consultado. Distinto de estar consultando. */
+        val noHayNingunaOtra: Boolean get() = candidatas?.isEmpty() == true
+    }
+
+    /**
+     * El aviso de que la receta original cambió, o de que fue eliminada (8.11.3 y 8.11.4).
+     *
+     * Es **un cuadro y no tres botones sueltos en la pantalla** porque las tres salidas no son
+     * equivalentes: dos son sobre este cambio y la tercera —desvincular— no se deshace. Ponerlas
+     * al mismo nivel invitaría a tocar la definitiva sin leer.
+     *
+     * [confirmandoDesvincular] es el segundo paso de esa tercera salida: se avisa qué se pierde
+     * **antes** de confirmar, porque después no hay vuelta atrás (8.11.3).
+     */
+    data class AvisoDeParte(
+        val parte: ParteTraida,
+        val trabajando: Boolean = false,
+        val confirmandoDesvincular: Boolean = false,
+        val confirmandoBorrar: Boolean = false
+    ) : DialogoCantidades {
+        /** Cualquiera de sus secciones sirve para nombrar al grupo en las acciones. */
+        val seccionId: Long get() = parte.seccionIds.first()
+
+        val laOriginalSeBorro: Boolean
+            get() = parte.estado == EstadoDelVinculo.ORIGINAL_BORRADA
+    }
 }
 
 /** Lo que el paso de cantidades necesita para dibujarse. */
@@ -201,9 +257,31 @@ data class EstadoCantidades(
     val secciones: List<SeccionConIngredientes> = emptyList(),
     val costoTotal: Double = 0.0,
     val catalogo: List<Ingrediente> = emptyList(),
+    /** Los grupos de secciones traídas de otra receta, con sus avisos (8.11). */
+    val partes: List<ParteTraida> = emptyList(),
     val mensaje: String? = null,
     val cargando: Boolean = true
 ) {
+
+    /**
+     * De qué grupo traído es una sección, o `null` si es propia.
+     *
+     * Se resuelve por el id y no guardando el grupo dentro de [SeccionConIngredientes] para que
+     * ese tipo siga siendo lo que es —una sección con sus líneas— y no dependa de una consulta
+     * que puede llegar después que las demás.
+     */
+    fun parteDe(seccionId: Long): ParteTraida? =
+        partes.firstOrNull { seccionId in it.seccionIds }
+
+    /**
+     * Si esta sección abre el encabezado de su grupo ("Vienen de Bizcocho").
+     *
+     * Solo la **primera** de cada grupo lo dibuja: las secciones traídas juntas se muestran
+     * seguidas (8.11.2), así que repetir el encabezado en cada una diría tres veces lo mismo.
+     */
+    fun abreElGrupo(seccionId: Long): Boolean =
+        parteDe(seccionId)?.seccionIds?.firstOrNull() == seccionId
+
     /**
      * Si se muestran los encabezados con el nombre de cada sección.
      *
@@ -273,12 +351,16 @@ class CantidadesViewModel(
         recetas.observarReceta(recetaId),
         recetas.observarSecciones(recetaId),
         recetas.observarIngredientes(recetaId),
-        // El catálogo y el costo van juntos en un `combine` de a dos porque `combine` llega
-        // hasta cinco flujos y acá hacen falta seis. No cambia cuándo emite nada.
-        combine(ingredientes.observarTodos(), recetas.observarCosto(recetaId)) { c, k -> c to k },
+        // El catálogo, el costo y las partes van juntos en un `combine` anidado porque `combine`
+        // llega hasta cinco flujos y acá hacen falta siete. No cambia cuándo emite nada.
+        combine(
+            ingredientes.observarTodos(),
+            recetas.observarCosto(recetaId),
+            recetas.observarPartesDe(recetaId)
+        ) { c, k, p -> Triple(c, k, p) },
         mensaje
-    ) { receta, secciones, items, catalogoYCosto, mensajeActual ->
-        val (catalogo, costoDeLaReceta) = catalogoYCosto
+    ) { receta, secciones, items, loDemas, mensajeActual ->
+        val (catalogo, costoDeLaReceta, partesTraidas) = loDemas
         val porId = catalogo.associateBy { it.id }
 
         EstadoCantidades(
@@ -305,6 +387,7 @@ class CantidadesViewModel(
             // alguna de las tres tablas de las que depende.
             costoTotal = costoDeLaReceta,
             catalogo = catalogo,
+            partes = partesTraidas,
             mensaje = mensajeActual,
             cargando = false
         )
@@ -533,6 +616,140 @@ class CantidadesViewModel(
         }
     }
 
+    // --- Partes: traer otra receta dentro de esta (8.11) ---
+
+    /**
+     * Abre el cuadro de traer una receta.
+     *
+     * Consulta dos cosas y las dos por el mismo motivo que [abrirAgregarSeccion]: dependen de lo
+     * que hay en la base y no de lo que se esté viendo. La lista llega después porque cruza tres
+     * consultas, así que el cuadro se abre vacío y se rellena — con `candidatas = null` mientras
+     * tanto, para poder decir "buscando" en vez de "no tienes ninguna otra receta".
+     */
+    fun abrirTraerReceta() {
+        _dialogo.value = DialogoCantidades.TraerReceta()
+        viewModelScope.launch {
+            val candidatas = recetas.recetasParaTraer(recetaId)
+            val bautizo = recetas.nombreQueFaltaBautizar(recetaId)
+            enDialogoTraer { it.copy(candidatas = candidatas, nombreDeLaPrimera = bautizo) }
+        }
+    }
+
+    fun buscarRecetaParaTraer(texto: String) = enDialogoTraer { it.copy(busqueda = texto) }
+
+    fun cambiarNombreDeLaPrimeraAlTraer(texto: String) = enDialogoTraer {
+        it.copy(nombreDeLaPrimera = texto, rechazo = null)
+    }
+
+    fun traerReceta(origenId: Long) {
+        val actual = _dialogo.value as? DialogoCantidades.TraerReceta ?: return
+        if (!actual.puedeTraer) return
+
+        _dialogo.value = actual.copy(trayendo = true)
+
+        viewModelScope.launch {
+            val elegida = actual.candidatas?.firstOrNull { it.receta.id == origenId }
+            when (
+                val resultado = recetas.traerReceta(
+                    destinoId = recetaId,
+                    origenId = origenId,
+                    nombreDeLaPrimera = actual.nombreDeLaPrimera
+                )
+            ) {
+                is Resultado.Listo -> {
+                    _dialogo.value = DialogoCantidades.Ninguno
+                    mensaje.value = "Se trajo '${elegida?.receta?.titulo ?: "la receta"}'"
+                }
+                // Dentro del cuadro: es sobre lo que se acaba de elegir, y el bautizo que
+                // pudiera faltar se corrige ahí mismo sin volver a abrirlo (8.2).
+                is Resultado.NoSePudo ->
+                    enDialogoTraer { it.copy(trayendo = false, rechazo = resultado.motivo) }
+            }
+        }
+    }
+
+    /** Abre el aviso de una sección traída. La pantalla lo llama al tocar el símbolo. */
+    fun abrirAvisoDeParte(seccionId: Long) {
+        val parte = estado.value.parteDe(seccionId) ?: return
+        _dialogo.value = DialogoCantidades.AvisoDeParte(parte)
+    }
+
+    /** Pide confirmar antes de desvincular, porque eso no se deshace (8.11.3). */
+    fun pedirDesvincularParte() = enAvisoDeParte { it.copy(confirmandoDesvincular = true) }
+
+    /** Pide confirmar antes de borrar la parte con sus pasos (8.11.4). */
+    fun pedirBorrarParte() = enAvisoDeParte { it.copy(confirmandoBorrar = true) }
+
+    fun volverDelAviso() = enAvisoDeParte {
+        it.copy(confirmandoDesvincular = false, confirmandoBorrar = false)
+    }
+
+    /**
+     * "Mantener": deja todo como está y apaga **este** aviso.
+     *
+     * Con la original viva se vuelve a tomar la foto, así el próximo cambio pregunta de nuevo
+     * (8.11.3). Con la original **borrada** no hay foto que tomar ni nada que seguir mirando, y
+     * mantener es literalmente desvincular (8.11.4) — dejar el vínculo puesto sería guardar un
+     * aviso que ya no se puede apagar nunca.
+     */
+    fun mantenerParte() {
+        val aviso = _dialogo.value as? DialogoCantidades.AvisoDeParte ?: return
+        conLaParte(aviso) {
+            if (aviso.laOriginalSeBorro) recetas.desvincularParte(aviso.seccionId)
+            else recetas.mantenerParte(aviso.seccionId)
+        }
+    }
+
+    fun actualizarParte() {
+        val aviso = _dialogo.value as? DialogoCantidades.AvisoDeParte ?: return
+        conLaParte(aviso, exito = "Se actualizó con lo nuevo de la receta original") {
+            recetas.actualizarParte(aviso.seccionId)
+        }
+    }
+
+    fun desvincularParte() {
+        val aviso = _dialogo.value as? DialogoCantidades.AvisoDeParte ?: return
+        conLaParte(aviso, exito = "Esta parte ya no está enlazada") {
+            recetas.desvincularParte(aviso.seccionId)
+        }
+    }
+
+    fun borrarParte() {
+        val aviso = _dialogo.value as? DialogoCantidades.AvisoDeParte ?: return
+        conLaParte(aviso, exito = "Se borró la parte con sus pasos") {
+            recetas.borrarParte(aviso.seccionId)
+        }
+    }
+
+    /**
+     * El envoltorio común de las cuatro salidas del aviso.
+     *
+     * Las cuatro hacen lo mismo alrededor: marcar que se está trabajando, esperar, y cerrar o
+     * mostrar el motivo. Escrito cuatro veces, la que se olvidara de apagar `trabajando` dejaría
+     * el cuadro tomado para siempre sin que ninguna prueba lo notara.
+     */
+    private fun conLaParte(
+        aviso: DialogoCantidades.AvisoDeParte,
+        exito: String? = null,
+        accion: suspend () -> Resultado
+    ) {
+        if (aviso.trabajando) return
+        _dialogo.value = aviso.copy(trabajando = true)
+
+        viewModelScope.launch {
+            when (val resultado = accion()) {
+                is Resultado.Listo -> {
+                    _dialogo.value = DialogoCantidades.Ninguno
+                    exito?.let { mensaje.value = it }
+                }
+                is Resultado.NoSePudo -> {
+                    _dialogo.value = DialogoCantidades.Ninguno
+                    mensaje.value = resultado.motivo
+                }
+            }
+        }
+    }
+
     // --- El título de la receta ---
 
     /**
@@ -605,6 +822,22 @@ class CantidadesViewModel(
     ) {
         _dialogo.update { actual ->
             if (actual is DialogoCantidades.Seccion) cambio(actual) else actual
+        }
+    }
+
+    private fun enDialogoTraer(
+        cambio: (DialogoCantidades.TraerReceta) -> DialogoCantidades.TraerReceta
+    ) {
+        _dialogo.update { actual ->
+            if (actual is DialogoCantidades.TraerReceta) cambio(actual) else actual
+        }
+    }
+
+    private fun enAvisoDeParte(
+        cambio: (DialogoCantidades.AvisoDeParte) -> DialogoCantidades.AvisoDeParte
+    ) {
+        _dialogo.update { actual ->
+            if (actual is DialogoCantidades.AvisoDeParte) cambio(actual) else actual
         }
     }
 

@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -38,6 +39,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -52,7 +54,13 @@ import com.sandyyera.reposteria.data.db.entidades.Ingrediente
 import com.sandyyera.reposteria.data.db.entidades.Receta
 import com.sandyyera.reposteria.data.db.entidades.RecetaIngrediente
 import com.sandyyera.reposteria.data.db.entidades.RecetaSeccion
+import com.sandyyera.reposteria.data.repositorio.ParteTraida
+import com.sandyyera.reposteria.data.repositorio.RecetaParaTraer
 import com.sandyyera.reposteria.logica.formato.formatearNumero
+import com.sandyyera.reposteria.logica.partes.AVISO_AL_DESVINCULAR
+import com.sandyyera.reposteria.logica.partes.AVISO_ORIGINAL_BORRADA
+import com.sandyyera.reposteria.logica.partes.EstadoDelVinculo
+import com.sandyyera.reposteria.logica.partes.MOTIVO_UN_SOLO_NIVEL
 import com.sandyyera.reposteria.ui.componentes.CampoNumerico
 import com.sandyyera.reposteria.ui.componentes.ComboBuscable
 import com.sandyyera.reposteria.ui.theme.Medidas
@@ -82,6 +90,19 @@ data class AccionesCantidades(
     val renombrarReceta: () -> Unit = {},
     val cambiarTituloDeLaReceta: (String) -> Unit = {},
     val guardarTituloDeLaReceta: () -> Unit = {},
+
+    val abrirTraerReceta: () -> Unit = {},
+    val buscarRecetaParaTraer: (String) -> Unit = {},
+    val cambiarNombreDeLaPrimeraAlTraer: (String) -> Unit = {},
+    val traerReceta: (Long) -> Unit = {},
+    val abrirAvisoDeParte: (Long) -> Unit = {},
+    val mantenerParte: () -> Unit = {},
+    val actualizarParte: () -> Unit = {},
+    val pedirDesvincularParte: () -> Unit = {},
+    val desvincularParte: () -> Unit = {},
+    val pedirBorrarParte: () -> Unit = {},
+    val borrarParte: () -> Unit = {},
+    val volverDelAviso: () -> Unit = {},
 
     val cerrarDialogo: () -> Unit = {},
     val mensajeMostrado: () -> Unit = {},
@@ -127,6 +148,18 @@ fun PasoCantidadesScreen(
             renombrarReceta = modelo::abrirRenombrarReceta,
             cambiarTituloDeLaReceta = modelo::cambiarTituloDeLaReceta,
             guardarTituloDeLaReceta = modelo::guardarTituloDeLaReceta,
+            abrirTraerReceta = modelo::abrirTraerReceta,
+            buscarRecetaParaTraer = modelo::buscarRecetaParaTraer,
+            cambiarNombreDeLaPrimeraAlTraer = modelo::cambiarNombreDeLaPrimeraAlTraer,
+            traerReceta = modelo::traerReceta,
+            abrirAvisoDeParte = modelo::abrirAvisoDeParte,
+            mantenerParte = modelo::mantenerParte,
+            actualizarParte = modelo::actualizarParte,
+            pedirDesvincularParte = modelo::pedirDesvincularParte,
+            desvincularParte = modelo::desvincularParte,
+            pedirBorrarParte = modelo::pedirBorrarParte,
+            borrarParte = modelo::borrarParte,
+            volverDelAviso = modelo::volverDelAviso,
             cerrarDialogo = modelo::cerrarDialogo,
             mensajeMostrado = modelo::mensajeMostrado,
             irAlPaso = alElegirPaso,
@@ -247,6 +280,23 @@ fun PasoCantidades(
                 contentPadding = PaddingValues(bottom = Medidas.grande)
             ) {
                 estado.secciones.forEach { seccion ->
+                    // El encabezado del grupo va **antes** del de la sección y solo en la
+                    // primera de las que llegaron juntas (8.11.2): las traídas se muestran
+                    // seguidas, así que repetirlo en cada una diría tres veces lo mismo.
+                    if (estado.abreElGrupo(seccion.seccion.id)) {
+                        val parte = estado.parteDe(seccion.seccion.id)
+                        if (parte != null) {
+                            item(key = "grupo-${seccion.seccion.id}") {
+                                EncabezadoDeParte(
+                                    parte = parte,
+                                    alTocarElAviso = {
+                                        acciones.abrirAvisoDeParte(seccion.seccion.id)
+                                    }
+                                )
+                            }
+                        }
+                    }
+
                     if (estado.mostrarNombresDeSeccion) {
                         item(key = "encabezado-${seccion.seccion.id}") {
                             EncabezadoDeSeccion(
@@ -293,6 +343,21 @@ fun PasoCantidades(
                     ) {
                         Icon(Icons.Default.Add, contentDescription = null)
                         Text("  Agregar sección")
+                    }
+                }
+
+                // Traer una receta va **debajo** de agregar una sección y no arriba de todo:
+                // lo normal es cargar la receta a mano, y traer otra es el atajo para cuando
+                // ya existe. Arriba competiría por la mirada con lo que se hace siempre.
+                item(key = "traer-receta") {
+                    TextButton(
+                        onClick = acciones.abrirTraerReceta,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = Medidas.objetivoTactil)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Text("  Traer otra receta")
                     }
                 }
             }
@@ -364,6 +429,10 @@ fun PasoCantidades(
                     TextButton(onClick = acciones.cerrarDialogo) { Text("Cancelar") }
                 }
             )
+
+            is DialogoCantidades.TraerReceta -> DialogoTraerReceta(dialogo, acciones)
+
+            is DialogoCantidades.AvisoDeParte -> DialogoAvisoDeParte(dialogo, acciones)
 
             is DialogoCantidades.ConfirmarBorrarSeccion -> AlertDialog(
                 onDismissRequest = acciones.cerrarDialogo,
@@ -481,6 +550,253 @@ private fun EncabezadoDeSeccion(
             }
         }
         HorizontalDivider()
+    }
+}
+
+/**
+ * El encabezado que agrupa las secciones traídas de la misma receta (8.11.2).
+ *
+ * Dice de dónde vinieron, que es la mitad de para qué existe el vínculo. La otra mitad —el
+ * aviso de que la original cambió— aparece **acá y no en cada sección**: la firma guardada es
+ * de la receta original entera, así que el "¿Qué cambió?" de cada una diría lo mismo, repetido
+ * tantas veces como partes tenga.
+ *
+ * El aviso va en el color de error y **no en un pastel** (12.6): los pasteles pintan fondos y
+ * las señales pintan íconos y texto. Es un botón de verdad y no un ícono decorativo, porque lo
+ * que hay detrás es una decisión pendiente.
+ */
+@Composable
+private fun EncabezadoDeParte(
+    parte: ParteTraida,
+    alTocarElAviso: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = Medidas.medio)
+            .heightIn(min = Medidas.objetivoTactil),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = parte.tituloDelOrigen
+                ?.let { "Viene de '$it'" }
+                // Sin título es porque la receta se borró. Se dice así y no "Viene de null":
+                // el aviso de al lado es el que explica qué hacer.
+                ?: "Venía de una receta eliminada",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .weight(1f)
+                .wrapContentHeight()
+        )
+        if (parte.hayQueAvisar) {
+            TextButton(onClick = alTocarElAviso) {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
+                )
+                Text(
+                    text = "  Cambió",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Elegir qué receta traer dentro de esta (8.11).
+ *
+ * Usa `ComboBuscable` con su `motivoNoDisponible`, o sea que **las que no se pueden usar se ven
+ * igual, con el motivo al lado**: desaparecer haría pensar que la app las perdió, y un gris sin
+ * explicación invita a tocarlo y a preguntarse qué pasa.
+ *
+ * El campo de bautizo aparece **antes** de la lista cuando hace falta, y no después de elegir:
+ * es una condición para que la copia entre, no un detalle a completar al final.
+ */
+@Composable
+private fun DialogoTraerReceta(
+    estado: DialogoCantidades.TraerReceta,
+    acciones: AccionesCantidades
+) {
+    AlertDialog(
+        onDismissRequest = acciones.cerrarDialogo,
+        title = { Text("Traer otra receta") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Medidas.chico)) {
+                Text(
+                    text = "Sus ingredientes y sus pasos se copian acá. La copia es tuya: " +
+                        "cambiarla no toca la receta original.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                estado.nombreDeLaPrimera?.let { bautizo ->
+                    OutlinedTextField(
+                        value = bautizo,
+                        onValueChange = acciones.cambiarNombreDeLaPrimeraAlTraer,
+                        label = { Text("Nombre de lo que ya cargaste") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        isError = estado.errorDeLaPrimera != null,
+                        supportingText = {
+                            Text(
+                                estado.errorDeLaPrimera
+                                    ?: "Al llegar otra parte, la que ya está deja de ser la única"
+                            )
+                        },
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Sentences,
+                            imeAction = ImeAction.Done
+                        )
+                    )
+                }
+
+                estado.rechazo?.let {
+                    Text(text = it, color = MaterialTheme.colorScheme.error)
+                }
+
+                when {
+                    estado.candidatas == null -> Text(
+                        text = "Buscando…",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    estado.noHayNingunaOtra -> Text(
+                        text = "Todavía no tienes otra receta que traer.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    // Se le pasa la lista completa y no una ya filtrada: `ComboBuscable` filtra
+                    // con `filtrarPor`, que es la misma regla de coincidencia de las cuatro
+                    // pantallas con buscador. Filtrar antes sería hacerlo dos veces.
+                    else -> ComboBuscable(
+                        opciones = estado.candidatas.orEmpty(),
+                        textoDe = { it.receta.titulo },
+                        busqueda = estado.busqueda,
+                        alBuscar = acciones.buscarRecetaParaTraer,
+                        alElegir = { acciones.traerReceta(it.receta.id) },
+                        marcador = "Buscar receta",
+                        motivoNoDisponible = { it.motivoNoDisponible }
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = acciones.cerrarDialogo) { Text("Cerrar") }
+        }
+    )
+}
+
+/**
+ * El aviso de que la receta original cambió, con sus tres salidas (8.11.3 y 8.11.4).
+ *
+ * Las tres no son equivalentes y por eso no van al mismo nivel: **mantener** y **actualizar**
+ * son decisiones sobre este cambio y las dos dejan el vínculo vivo; **desvincular** no se
+ * deshace, así que va aparte y con su propia confirmación, que dice qué se pierde antes y no
+ * después.
+ *
+ * Con la receta original **eliminada** el cuadro es otro: no hay nada que actualizar, y las
+ * salidas son mantener (que ahí es desvincular) o borrar la sección con sus pasos.
+ */
+@Composable
+private fun DialogoAvisoDeParte(
+    estado: DialogoCantidades.AvisoDeParte,
+    acciones: AccionesCantidades
+) {
+    when {
+        estado.confirmandoDesvincular -> AlertDialog(
+            onDismissRequest = acciones.volverDelAviso,
+            title = { Text("¿Desvincular?") },
+            text = { Text(AVISO_AL_DESVINCULAR) },
+            confirmButton = {
+                TextButton(onClick = acciones.desvincularParte, enabled = !estado.trabajando) {
+                    Text(text = "Desvincular", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = acciones.volverDelAviso) { Text("Volver") }
+            }
+        )
+
+        estado.confirmandoBorrar -> AlertDialog(
+            onDismissRequest = acciones.volverDelAviso,
+            title = { Text("¿Borrar esta parte?") },
+            text = {
+                Text(
+                    "Se van sus ingredientes y también sus pasos. No se puede deshacer."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = acciones.borrarParte, enabled = !estado.trabajando) {
+                    Text(text = "Borrar", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = acciones.volverDelAviso) { Text("Volver") }
+            }
+        )
+
+        estado.laOriginalSeBorro -> AlertDialog(
+            onDismissRequest = acciones.cerrarDialogo,
+            title = { Text("La receta original ya no está") },
+            text = { Text(AVISO_ORIGINAL_BORRADA) },
+            confirmButton = {
+                TextButton(onClick = acciones.mantenerParte, enabled = !estado.trabajando) {
+                    Text("Mantener")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = acciones.pedirBorrarParte, enabled = !estado.trabajando) {
+                    Text(text = "Borrar", color = MaterialTheme.colorScheme.error)
+                }
+            }
+        )
+
+        else -> AlertDialog(
+            onDismissRequest = acciones.cerrarDialogo,
+            title = {
+                val deDonde = estado.parte.tituloDelOrigen
+                Text(if (deDonde == null) "La receta original cambió" else "'$deDonde' cambió")
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = Medidas.altoMaximoDeLista)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(Medidas.chico)
+                ) {
+                    Text(
+                        "¿Desea mantenerla igual? De lo contrario, se copiarán los datos " +
+                            "nuevos, sin afectar las cantidades que ajustaste."
+                    )
+                    HorizontalDivider()
+                    Text(
+                        text = "¿Qué cambió?",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    estado.parte.cambios.forEach {
+                        Text(text = "• $it", style = MaterialTheme.typography.bodySmall)
+                    }
+                    TextButton(onClick = acciones.pedirDesvincularParte) {
+                        Text(
+                            text = "Desvincular de la original",
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = acciones.actualizarParte, enabled = !estado.trabajando) {
+                    Text("Actualizar")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = acciones.mantenerParte, enabled = !estado.trabajando) {
+                    Text("Mantener")
+                }
+            }
+        )
     }
 }
 
@@ -756,6 +1072,84 @@ private fun CantidadesBautizando() {
             "Torta de manjar",
             recetaSimple,
             DialogoCantidades.Seccion(nombre = "", nombreDeLaPrimera = "Torta de manjar"),
+            AccionesCantidades()
+        )
+    }
+}
+
+/** Una parte traída con algo que avisar, para las vistas previas. */
+private val parteQueCambio = ParteTraida(
+    origenId = 9,
+    tituloDelOrigen = "Bizcocho",
+    seccionIds = listOf(1),
+    estado = EstadoDelVinculo.VIVO,
+    cambios = listOf(
+        "'Harina' pasó de 550 a 500 g",
+        "Se agregó 'Sal' a la sección 'Bizcocho'",
+        "Se agregó un paso en 'Bizcocho'"
+    )
+)
+
+@Preview(showBackground = true, name = "Cantidades - con una parte traída")
+@Composable
+private fun CantidadesConParte() {
+    ReposteriaTheme {
+        PasoCantidades(
+            "Torta de manjar",
+            recetaConDosSecciones.copy(partes = listOf(parteQueCambio)),
+            DialogoCantidades.Ninguno,
+            AccionesCantidades()
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "Cantidades - qué cambió en la original")
+@Composable
+private fun CantidadesAvisoDeParte() {
+    ReposteriaTheme {
+        PasoCantidades(
+            "Torta de manjar",
+            recetaConDosSecciones.copy(partes = listOf(parteQueCambio)),
+            DialogoCantidades.AvisoDeParte(parteQueCambio),
+            AccionesCantidades()
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "Cantidades - la original fue eliminada")
+@Composable
+private fun CantidadesOriginalBorrada() {
+    ReposteriaTheme {
+        PasoCantidades(
+            "Torta de manjar",
+            recetaConDosSecciones,
+            DialogoCantidades.AvisoDeParte(
+                parteQueCambio.copy(
+                    origenId = null,
+                    tituloDelOrigen = null,
+                    estado = EstadoDelVinculo.ORIGINAL_BORRADA,
+                    cambios = emptyList()
+                )
+            ),
+            AccionesCantidades()
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "Cantidades - traer otra receta")
+@Composable
+private fun CantidadesTraerReceta() {
+    ReposteriaTheme {
+        PasoCantidades(
+            "Torta de manjar",
+            recetaSimple,
+            DialogoCantidades.TraerReceta(
+                candidatas = listOf(
+                    RecetaParaTraer(Receta(id = 2, titulo = "Bizcocho"), null),
+                    RecetaParaTraer(Receta(id = 3, titulo = "Crema pastelera"), null),
+                    RecetaParaTraer(Receta(id = 4, titulo = "Mil hojas"), MOTIVO_UN_SOLO_NIVEL)
+                )
+            ),
             AccionesCantidades()
         )
     }

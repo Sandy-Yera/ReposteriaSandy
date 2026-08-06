@@ -1602,6 +1602,18 @@ aporta nada de eso.
   elemento: ya sea para cambiarlo o mantenerlo"*.
 - **Adentro**, un símbolo de advertencia sobre la sección afectada.
 
+**El aviso es del grupo, no de cada sección.** La firma guardada es la foto de la receta
+original **entera** —tiene que serlo, porque *"se agregó una sección"* es uno de los avisos que
+8.11.5 pide y desde una sección sola no se ve—, así que el "¿Qué cambió?" de cada copia diría
+exactamente lo mismo, repetido tantas veces como partes se hayan traído. Va una vez, en el
+encabezado que ya las agrupa (8.11.2), y las tres salidas se aplican a todas juntas: son
+decisiones sobre la receta que se trajo, no sobre un pedazo de ella.
+
+**"Mantener" no es no hacer nada.** Vuelve a tomar la foto, sin tocar ningún ingrediente. Sin
+eso, el mismo aviso quedaría encendido para siempre y no habría forma de distinguir *"todavía
+no lo miré"* de *"lo miré y lo dejo así"* — y el próximo cambio no podría preguntar, porque
+nunca dejó de estar preguntando.
+
 Al tocar el símbolo se ofrece: *"¿Desea mantenerla igual? De lo contrario, se copiarán los
 datos nuevos, sin afectar las cantidades"*.
 
@@ -1652,6 +1664,12 @@ Sale el mismo aviso. Al tocarlo se explica que la receta fue eliminada, y quedan
 
 - **Mantener** — la sección se queda tal cual, y el vínculo se corta. Deja de avisar.
 - **Borrar** — se elimina la sección **y también sus pasos**.
+
+**Acá el aviso sí es por sección y no por grupo**, al revés que en 8.11.3, y no es una
+inconsistencia: al borrarse la original, SQLite pone `recetaOrigenId` en `null` en todas sus
+copias a la vez, así que ya no queda con qué saber cuáles venían de la misma receta. Cada una
+decide sola — que es además como está escrito arriba, en singular. Los pasos hay que borrarlos
+a mano: la clave foránea es `SET_NULL` y sin eso quedarían como generales de esta receta.
 
 Borrar una receta, entonces, tiene que decir **a qué otras recetas afecta** antes de
 confirmar, igual que borrar un ingrediente (7.1). La diferencia es el tono: borrar un
@@ -1719,7 +1737,7 @@ que exige nombres únicos exige que quepan en 60 caracteres; a un nombre ya al l
 pegarle " 2" lo dejaba en 62 y la copia se rechazaba **por el nombre que la propia app acababa
 de proponer**.
 
-**Por decidir: borrar la original borra la evidencia.** `recetaOrigenId` es `SET_NULL`, así
+**Resuelto: borrar la original borra la evidencia.** `recetaOrigenId` es `SET_NULL`, así
 que cuando la original se borra el vínculo lo corta SQLite sola — antes de que nadie elija
 nada. Pero 8.11.4 necesita que la copia **sepa** que la original desapareció para ofrecer
 "Mantener" o "Borrar", y una sección con el id en `null` se ve igual que una desvinculada a
@@ -1731,29 +1749,73 @@ mano (8.11.3). Lo que las distingue tiene que quedar escrito y respetado:
 | `null` | **tiene firma** | la original se borró: hay que preguntar (8.11.4) |
 | `null` | `null` | desvinculada a mano: no avisa nunca más (8.11.3) |
 
-De ahí que "Desvincular" tenga que limpiar **las dos** columnas, no solo el id.
+De ahí que "Desvincular" tenga que limpiar **las dos** columnas, no solo el id. Está escrito
+como función y no como comentario: `estadoDelVinculo` devuelve esos tres estados y es la única
+que los decide.
 
-**Por decidir: borrar una receta todavía no dice a qué otras afecta.** 8.11.4 lo exige y
-`confirmarEliminacion` no lo hace: hoy enumera lo que se va con la receta, no lo que queda
-esperando afuera.
+**Resuelto: borrar una receta ahora dice a qué otras afecta.** `recetasQueUsanEstaReceta` las
+enumera y el cuadro las lista antes de confirmar, con el tono que corresponde: no pierden nada
+—las copias son independientes y siguen enteras— pero les queda un aviso preguntando qué hacer
+con esa parte. Mientras la consulta no vuelve, el botón de eliminar está apagado: confirmar ahí
+sería confirmar media advertencia.
 
-**Falta: dos índices.** `receta_secciones.recetaOrigenId` y `receta_pasos.tituloSeccionId`
-son claves foráneas, y Room avisa en compilación si no están indexadas; sin ellas, además, el
-`SET_NULL` al borrar una receta recorre la tabla entera (5.6).
+**Resuelto: los dos índices.** `receta_secciones.recetaOrigenId` y `receta_pasos.tituloSeccionId`
+entraron con `MIGRACION_4_5`, creados a mano y con el nombre que Room genera (`ALTER TABLE` no
+los crea).
 
-**Por decidir: reescalar la original produce una frase por ingrediente.** Cambiar de molde
-multiplica **todas** las cantidades, así que "¿Qué cambió?" mostraría doce líneas en una
-receta de doce ingredientes. Es cierto pero ilegible; conviene resumirlo en una sola frase
-cuando el factor es el mismo para todas.
+**Resuelto: reescalar la original produce una frase por ingrediente.** `frasesDeCantidades`
+resume en una sola —*"La receta se reescaló: todas las cantidades quedaron multiplicadas por
+1,50"*— cuando el reescalado es la única explicación posible: todas las líneas que siguen
+existiendo cambiaron, todas por el mismo factor, y son al menos tres. Con dos, las frases
+sueltas ya son la información completa y la coincidencia todavía puede ser casualidad. Con una
+sola línea sin tocar se vuelve al detalle: ahí no hubo cambio de molde, y decir "se reescaló
+todo" sería falso sobre la que no se movió.
 
-**Por decidir: una receta de título repetido no debería ofrecerse como parte.** Esas no se
-pueden ni abrir (`marcarRepetidos`), así que traerlas dentro de otra sería peor.
-`sePuedeUsarComoParte` no lo sabe: hay que filtrarlas al armar la lista.
+**Resuelto: una receta de título repetido no se ofrece como parte.** Se filtra al armar la
+lista, con `marcarRepetidos` sobre las recetas ordenadas por antigüedad —igual que en la
+lista— y sale con `MOTIVO_TITULO_REPETIDO` al lado en vez de desaparecer.
 
-**Por decidir: la sección "General" que se siembra al crear la receta.** Una receta nueva
-nace con una sección vacía (8.10). Al traerle una receta entera queda esa "General" vacía al
-lado de las importadas; hay que decidir si se reutiliza para la primera que llega o se
-elimina.
+**Resuelto: la sección "General" que se siembra al crear la receta.** Se **elimina**, y solo
+cuando se puede demostrar que está vacía: es la única, todavía tiene el nombre automático, no
+tiene ingredientes y ningún paso la usa de título. Con cualquiera de esas cuatro cosas
+distinta hay trabajo adentro o un nombre que alguien escribió, así que se conserva y se la
+bautiza igual que al agregar una sección a mano.
+
+**Y su espejo, que apareció al implementarlo: la sección invisible de la *original*.** Una
+receta de una sola parte tiene su sección todavía llamada "General", y ese nombre nunca se ve
+allá porque es la única (8.2). Copiada tal cual, aparecería un encabezado "General" al lado de
+"Crema" — un nombre que nadie escribió y que no dice de qué parte habla. Entra con **el título
+de la receta de la que salió**, que es lo que uno diría en voz alta: el bizcocho de la torta se
+llama "Bizcocho". Solo cuando es la única de allá; con dos o más, los nombres ya se ven y los
+eligió alguien.
+
+#### 8.11.8 Cómo se empareja la copia con la original
+
+Adaptar una cantidad en proporción (8.11.3) exige saber **a qué fila de allá corresponde cada
+fila de acá**, y eso no es gratis: la copia tiene ids propios, y 5.5.1 decide a propósito que
+un ingrediente copiado no guarde de dónde vino —lo sabe su sección—. Quedan dos emparejamientos
+que resolver, y los dos se pagan caro si se hacen "por lo que se ve":
+
+- **Qué sección de la original es esta copia.** Lo guarda el vínculo (`VinculoConLaOriginal`),
+  junto a la firma y en la misma columna. No sirve el nombre —pudo renombrarse al chocar, o a
+  mano después— ni el orden, que aguanta hasta que alguien borre o mueva una sección; ahí las
+  cantidades se adaptarían contra la sección equivocada, y eso se ve mucho después y ya con los
+  datos pisados.
+- **Qué fila de ingrediente es cuál.** Por el **ingrediente del catálogo**
+  (`emparejarPorIngrediente`). Por posición no, porque agregar una fila a mano corre todas las
+  de abajo. Por nombre tampoco: renombrar un ingrediente del catálogo no toca ninguna receta, y
+  es el mismo agujero que ya obligó a rehacer la firma. Por eso la firma guarda también el
+  `ingredienteId`, que es distinto del id de la fila y no lo reemplaza: aquel identifica la fila
+  *de la original* para comparar dos fotos de ella, este permite cruzarla con la copia.
+
+De ahí sale la única decisión destructiva del actualizado y su límite: **un ingrediente se
+borra de la copia solo si la firma dice que había venido de la original**. Lo agregado a mano se
+queda. Sin el `ingredienteId` en la firma, la única alternativa habría sido borrar de la copia
+todo lo que la original no tenga — y eso se lleva por delante el trabajo propio.
+
+**Lo que esto no distingue, y está aceptado:** que la original borre un ingrediente y después
+alguien lo agregue a mano en la copia. Al actualizar se va, porque por los datos es
+indistinguible del que vino de allá. Es raro y la salida existe: volver a agregarlo.
 
 **Aceptado: lo que inserta `:ingredientes:` queda congelado.** Es texto dentro del paso, así
 que si después se renombra o se quita ese ingrediente, el paso sigue diciendo lo de antes. Es
@@ -2455,6 +2517,12 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 - **La migración se deja para el mismo cambio que las pantallas**, a propósito: adelantarla
   obligaría a instalar una versión de base nueva en el celular para una funcionalidad que
   todavía no existe, y a versionar un `4.json` que nadie usa.
+- **Lo que la segunda mitad agregó a la lógica pura**, además del repositorio y las pantallas:
+  `estadoDelVinculo` y el `VinculoConLaOriginal` que se guarda en la columna,
+  `emparejarPorIngrediente`, y el resumen del reescalado en `compararFirmas`. Las tres salieron
+  de implementar y no de diseñar: la firma sola no alcanzaba para saber **a qué fila de allá
+  corresponde cada fila de acá** (8.11.8), y sin eso la adaptación en proporción no se puede
+  escribir sin adivinar. La firma pasó a `v2` por lo mismo; una `v1` guardada se descarta entera.
 
 ### Fase 10 — Vista final de receta + lista
 

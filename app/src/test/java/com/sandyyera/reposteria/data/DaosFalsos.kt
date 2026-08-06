@@ -4,6 +4,7 @@ import com.sandyyera.reposteria.data.db.dao.CostoDeReceta
 import com.sandyyera.reposteria.data.db.dao.HistorialDao
 import com.sandyyera.reposteria.data.db.dao.IngredienteDao
 import com.sandyyera.reposteria.data.db.dao.MoldeDao
+import com.sandyyera.reposteria.data.db.dao.NombreDeIngrediente
 import com.sandyyera.reposteria.data.db.dao.RecetaDao
 import com.sandyyera.reposteria.data.db.dao.TrozosDeReceta
 import com.sandyyera.reposteria.data.db.entidades.EventoCambio
@@ -17,6 +18,7 @@ import com.sandyyera.reposteria.data.db.entidades.RecetaPrecio
 import com.sandyyera.reposteria.data.db.entidades.RecetaRendimiento
 import com.sandyyera.reposteria.data.db.entidades.RecetaSeccion
 import com.sandyyera.reposteria.data.db.entidades.RecetaSimulacionVenta
+import com.sandyyera.reposteria.data.db.entidades.esTraida
 import com.sandyyera.reposteria.logica.duracion.TipoDuracion
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -313,6 +315,15 @@ class RecetaDaoFalso(
         precios.removeAll { it.recetaId == recetaId }
         simulaciones.removeAll { it.recetaId == recetaId }
         duraciones.removeAll { it.recetaId == recetaId }
+        pasos.removeAll { it.recetaId == recetaId }
+        // **SET_NULL sobre `recetaOrigenId`**, que es lo que hace la clave foránea de 5.5.1: las
+        // secciones que se copiaron de esta receta **no se borran** —conservan sus ingredientes—
+        // y solo pierden el id. La firma **no se toca**, y ahí está todo el punto: es lo único
+        // que después distingue una sección huérfana de una desvinculada a mano (8.11.7). Sin
+        // esto acá, una prueba podría afirmar que la copia sobrevive sin que nada lo hiciera.
+        secciones.replaceAll {
+            if (it.recetaOrigenId == recetaId) it.copy(recetaOrigenId = null) else it
+        }
         recetas.value = recetas.value.filterNot { it.id == recetaId }
         cambio()
     }
@@ -386,6 +397,17 @@ class RecetaDaoFalso(
     override suspend fun contarSecciones(recetaId: Long): Int =
         secciones.count { it.recetaId == recetaId }
 
+    override suspend fun obtenerSeccion(seccionId: Long): RecetaSeccion? =
+        secciones.firstOrNull { it.id == seccionId }
+
+    override suspend fun seccionesDeVariasRecetas(recetaIds: List<Long>): List<RecetaSeccion> =
+        secciones.filter { it.recetaId in recetaIds }
+            .sortedWith(compareBy({ it.recetaId }, { it.orden }))
+
+    override suspend fun actualizarSecciones(lasQueCambian: List<RecetaSeccion>) {
+        lasQueCambian.forEach { actualizarSeccion(it) }
+    }
+
     override suspend fun insertarSeccion(seccion: RecetaSeccion): Long {
         val id = nuevoId()
         secciones += seccion.copy(id = id)
@@ -428,6 +450,17 @@ class RecetaDaoFalso(
     // cualquier cosa.
     override suspend fun nombreDeIngrediente(ingredienteId: Long): String? =
         catalogo.obtener(ingredienteId)?.nombre
+
+    override suspend fun nombresDeIngredientes(
+        ingredienteIds: List<Long>
+    ): List<NombreDeIngrediente> = ingredienteIds.mapNotNull { id ->
+        catalogo.obtener(id)?.let { NombreDeIngrediente(id, it.nombre) }
+    }
+
+    override suspend fun ingredientesDeVariasSecciones(
+        seccionIds: List<Long>
+    ): List<RecetaIngrediente> = items.filter { it.seccionId in seccionIds }
+        .sortedWith(compareBy({ it.seccionId }, { it.orden }, { it.id }))
 
     override suspend fun insertarIngrediente(item: RecetaIngrediente): Long {
         val id = nuevoId()
@@ -608,6 +641,42 @@ class RecetaDaoFalso(
      */
     override suspend fun ultimoOrdenDePaso(recetaId: Long): Int? =
         pasos.filter { it.recetaId == recetaId }.maxOfOrNull { it.orden }
+
+    override suspend fun pasosDeVariasRecetas(recetaIds: List<Long>): List<RecetaPaso> =
+        pasos.filter { it.recetaId in recetaIds }
+            .sortedWith(compareBy({ it.recetaId }, { it.orden }, { it.id }))
+
+    override suspend fun eliminarPasosDeSecciones(seccionIds: List<Long>) {
+        pasos.removeAll { it.tituloSeccionId in seccionIds }
+        cambio()
+    }
+
+    // --- Partes: recetas que usan otras recetas (8.11) ---
+
+    override suspend fun recetasQueUsanLaReceta(recetaId: Long): List<Receta> {
+        val ids = secciones
+            .filter { it.recetaOrigenId == recetaId && it.recetaId != recetaId }
+            .map { it.recetaId }
+            .toSet()
+        return recetas.value.filter { it.id in ids }.sortedBy { it.titulo.lowercase() }
+    }
+
+    override suspend fun idsDeRecetasHechasDePartes(): List<Long> =
+        secciones.filter { it.esTraida }.map { it.recetaId }.distinct()
+
+    override suspend fun todasLasSeccionesTraidas(): List<RecetaSeccion> =
+        secciones.filter { it.esTraida }.sortedWith(compareBy({ it.recetaId }, { it.orden }))
+
+    /**
+     * El latido, colgado del contador de cambios y no de un número que se pueda repetir.
+     *
+     * Es lo que hace la consulta real sin quererlo: Room reemite cada vez que se **invalida**
+     * una tabla, aunque el `COUNT` dé lo mismo que antes. Acá `cambios` sube en cada escritura,
+     * así que corregir un gramaje —que no mueve ningún contador— igual dispara el recálculo. Un
+     * falso que devolviera el `COUNT` de verdad **no** avisaría en ese caso, y la prueba del
+     * aviso pasaría sin probar nada.
+     */
+    override fun latidoDePartes(): Flow<Int> = cambios
 
     // --- Lo que todavía no hace falta ---
 

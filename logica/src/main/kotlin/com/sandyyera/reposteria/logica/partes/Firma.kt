@@ -22,9 +22,19 @@ import com.sandyyera.reposteria.logica.formato.formatearNumero
  *
  * [nombre] queda solo para la frase que se muestra. Se lee del estado **actual** cuando la
  * línea sigue existiendo, así un renombre se ve con el nombre nuevo sin generar aviso.
+ *
+ * **[ingredienteId] es otra cosa que [lineaId] y las dos hacen falta.** [lineaId] identifica la
+ * *fila de la original* y es lo que permite comparar dos fotos de ella. [ingredienteId] es el
+ * ingrediente del catálogo, y es lo único que permite emparejar esa fila con la de **la copia**:
+ * la copia tiene ids de fila propios, así que sin esto no hay forma de saber a qué cantidad de
+ * acá le corresponde qué cantidad de allá — que es exactamente lo que necesita la adaptación en
+ * proporción (8.11.3). Y es lo que permite saber, cuando la original borra un ingrediente, cuál
+ * de las filas de la copia era esa; sin el dato, la única alternativa sería borrar de la copia
+ * todo lo que la original no tenga, y eso se llevaría por delante lo que se agregó a mano.
  */
 data class LineaDeFirma(
     val lineaId: Long,
+    val ingredienteId: Long,
     val nombre: String,
     val gramos: Double
 )
@@ -92,6 +102,12 @@ data class CambioDetectado(val frase: String)
  * porque es el orden en que uno se pregunta qué pasó: primero si falta una parte entera,
  * después si falta algo dentro de ella.
  *
+ * **Las cantidades pueden salir resumidas en una sola frase.** Cambiar de molde multiplica
+ * todas a la vez por el mismo factor, y ahí una frase por ingrediente es cierta e ilegible: en
+ * una receta de doce, doce renglones para una sola noticia. Cuándo se resume lo decide
+ * `frasesDeCantidades`, y en cuanto el reescalado deja de ser la única explicación posible se
+ * vuelve al detalle.
+ *
  * Una lista vacía significa que **nada de lo que esto mira cambió**, que no es lo mismo que
  * "la receta está idéntica": ver arriba lo que no detecta.
  */
@@ -112,6 +128,13 @@ fun compararFirmas(antes: FirmaDeReceta, ahora: FirmaDeReceta): List<CambioDetec
 
     // Solo las que siguen existiendo: en las que se fueron o llegaron enteras, hablar de sus
     // ingredientes uno por uno sería repetir la misma noticia varias veces.
+    //
+    // Las cantidades se juntan aparte y se deciden al final, en vez de escribirse acá dentro:
+    // hay un caso —reescalar la original— en que **todas** cambian a la vez y por el mismo
+    // factor, y ahí una frase por ingrediente es cierta e ilegible. Verlo exige mirarlas todas
+    // juntas, y dentro del bucle nunca están todas.
+    val cantidades = mutableListOf<CambioDeCantidad>()
+
     seccionesAntes.keys.filter { it in seccionesAhora }.forEach { id ->
         val deAntes = seccionesAntes.getValue(id).lineas.associateBy { it.lineaId }
         val laDeAhora = seccionesAhora.getValue(id)
@@ -125,14 +148,16 @@ fun compararFirmas(antes: FirmaDeReceta, ahora: FirmaDeReceta): List<CambioDetec
             cambios += "Se agregó '${deAhora.getValue(it).nombre}' a $donde"
         }
         deAntes.keys.filter { it in deAhora }.forEach { lineaId ->
-            val viejo = deAntes.getValue(lineaId).gramos
             val nuevo = deAhora.getValue(lineaId)
-            if (!sonElMismoGramaje(viejo, nuevo.gramos)) {
-                cambios += "'${nuevo.nombre}' pasó de ${formatearNumero(viejo)} a " +
-                    "${formatearNumero(nuevo.gramos)} g"
-            }
+            cantidades += CambioDeCantidad(
+                nombre = nuevo.nombre,
+                antes = deAntes.getValue(lineaId).gramos,
+                ahora = nuevo.gramos
+            )
         }
     }
+
+    cambios += frasesDeCantidades(cantidades)
 
     val titulosAntes = antes.titulos.associateBy { it.seccionId }
     val titulosAhora = ahora.titulos.associateBy { it.seccionId }
@@ -156,6 +181,54 @@ fun compararFirmas(antes: FirmaDeReceta, ahora: FirmaDeReceta): List<CambioDetec
     return cambios.map { CambioDetectado(it) }
 }
 
+/** Una cantidad que puede haber cambiado, mientras se decide cómo contarla. */
+private data class CambioDeCantidad(val nombre: String, val antes: Double, val ahora: Double)
+
+/**
+ * Desde cuántos ingredientes conviene resumir un reescalado en una sola frase.
+ *
+ * Con **dos**, las frases sueltas ya son la información completa y ocupan dos renglones: decir
+ * "todas se multiplicaron por 1,5" ahorraría un renglón y escondería los números. Con dos
+ * ingredientes, además, que los dos cambien en la misma proporción todavía puede ser
+ * casualidad.
+ *
+ * Desde **tres** se da vuelta: la casualidad deja de ser creíble —el mismo factor exacto en
+ * tres cantidades es un reescalado, no tres decisiones— y la lista una por una es justo lo que
+ * esconde la noticia. Una receta de doce ingredientes daría doce frases ciertas e ilegibles.
+ */
+const val MINIMO_PARA_RESUMIR_REESCALADO = 3
+
+/**
+ * Cómo se cuentan las cantidades que cambiaron: una por una, o resumidas en un reescalado.
+ *
+ * Se resume **solo cuando el reescalado es la única explicación posible**: todas las líneas que
+ * siguen existiendo cambiaron, todas por el mismo factor, y son al menos
+ * [MINIMO_PARA_RESUMIR_REESCALADO]. Basta con que una haya quedado igual para que ya no sea un
+ * reescalado sino un cambio de ingredientes que casualmente comparten proporción, y ahí lo que
+ * hay que ver es cuáles.
+ *
+ * Las líneas que antes estaban en 0 **descartan el resumen**: de un 0 no sale ninguna
+ * proporción —es el mismo caso que `cantidadAdaptada` resuelve devolviendo la cantidad nueva—,
+ * así que no se puede afirmar que sigan el factor de las demás. Es un caso raro y ahí se
+ * prefiere el detalle, que nunca miente.
+ */
+private fun frasesDeCantidades(cambios: List<CambioDeCantidad>): List<String> {
+    val detalle = cambios.filter { !sonElMismoGramaje(it.antes, it.ahora) }.map {
+        "'${it.nombre}' pasó de ${formatearNumero(it.antes)} a ${formatearNumero(it.ahora)} g"
+    }
+    if (cambios.size < MINIMO_PARA_RESUMIR_REESCALADO) return detalle
+    if (detalle.size != cambios.size) return detalle
+    if (cambios.any { it.antes <= 0.0 }) return detalle
+
+    val factor = cambios.first().let { it.ahora / it.antes }
+    if (!cambios.all { sigueElFactor(it.antes, it.ahora, factor) }) return detalle
+
+    return listOf(
+        "La receta se reescaló: todas las cantidades quedaron multiplicadas por " +
+            formatearNumero(factor)
+    )
+}
+
 /**
  * Si dos gramajes son el mismo número para esta app.
  *
@@ -165,6 +238,28 @@ fun compararFirmas(antes: FirmaDeReceta, ahora: FirmaDeReceta): List<CambioDetec
  */
 private fun sonElMismoGramaje(uno: Double, otro: Double): Boolean =
     kotlin.math.abs(uno - otro) < 0.005
+
+/**
+ * Si una cantidad cambió siguiendo el mismo [factor] que las demás.
+ *
+ * **La tolerancia es relativa y no la absoluta de `sonElMismoGramaje`**, y no es un capricho: el
+ * factor se deduce de una línea cuyos dos gramajes ya vienen redondeados a 2 decimales, así que
+ * trae un error propio de hasta 0,005 ÷ esa cantidad — y ese error se **multiplica** al
+ * aplicarlo a una cantidad grande. Con 100 g de referencia y una línea de 5 kg, el desvío
+ * legítimo pasa de medio gramo, muy por encima de los 0,005 de allá.
+ *
+ * Con tolerancia absoluta el resumen se caía justo en las recetas grandes, que son las que más
+ * lo necesitan: doce frases donde había una sola noticia.
+ *
+ * El 0,1 % es holgado a propósito. Lo que se está decidiendo no es un número que se muestre
+ * sino **cómo contar la noticia**, y tres cantidades que se movieron dentro del 0,1 % del mismo
+ * factor son un reescalado; leerlas como tres decisiones separadas sería lo falso.
+ */
+private fun sigueElFactor(antes: Double, ahora: Double, factor: Double): Boolean {
+    val esperado = antes * factor
+    val margen = kotlin.math.max(0.01, kotlin.math.abs(esperado) * 0.001)
+    return kotlin.math.abs(esperado - ahora) <= margen
+}
 
 /**
  * "Se agregaron 2 pasos generales" / "Se eliminó un paso en 'Crema'".

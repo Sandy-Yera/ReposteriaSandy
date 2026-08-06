@@ -30,13 +30,13 @@ class FirmaTest {
             SeccionDeFirma(
                 seccionId = 1, nombre = nombreDelBizcocho,
                 lineas = listOf(
-                    LineaDeFirma(lineaId = 10, nombre = nombreDeLaHarina, gramos = harina),
-                    LineaDeFirma(lineaId = 11, nombre = "Azúcar", gramos = 200.0)
+                    LineaDeFirma(lineaId = 10, ingredienteId = 100, nombre = nombreDeLaHarina, gramos = harina),
+                    LineaDeFirma(lineaId = 11, ingredienteId = 101, nombre = "Azúcar", gramos = 200.0)
                 )
             ),
             SeccionDeFirma(
                 seccionId = 2, nombre = "Crema",
-                lineas = listOf(LineaDeFirma(lineaId = 12, nombre = "Crema de leche", gramos = 300.0))
+                lineas = listOf(LineaDeFirma(lineaId = 12, ingredienteId = 102, nombre = "Crema de leche", gramos = 300.0))
             )
         ),
         titulos = listOf(TituloDeFirma(seccionId = 1, nombre = nombreDelBizcocho, cuantosPasos = pasos)),
@@ -79,7 +79,7 @@ class FirmaTest {
         // silencio.
         val firma = FirmaDeReceta(
             secciones = listOf(
-                SeccionDeFirma(1, "Crema 50|50", listOf(LineaDeFirma(10, "Azúcar | flor", 120.0)))
+                SeccionDeFirma(1, "Crema 50|50", listOf(LineaDeFirma(10, 100, "Azúcar | flor", 120.0)))
             ),
             titulos = listOf(TituloDeFirma(1, "Paso a|b", 1)),
             pasosGenerales = 0
@@ -91,7 +91,7 @@ class FirmaTest {
     fun `una barra invertida sola tambien sobrevive`() {
         val firma = FirmaDeReceta(
             secciones = listOf(
-                SeccionDeFirma(1, "Con \\ barra", listOf(LineaDeFirma(10, "Otro \\| raro", 5.0)))
+                SeccionDeFirma(1, "Con \\ barra", listOf(LineaDeFirma(10, 100, "Otro \\| raro", 5.0)))
             ),
             titulos = emptyList(),
             pasosGenerales = 0
@@ -105,7 +105,7 @@ class FirmaTest {
         // archivo entero. Puede llegar pegando texto desde otra app.
         val firma = FirmaDeReceta(
             secciones = listOf(
-                SeccionDeFirma(1, "Crema\nde leche", listOf(LineaDeFirma(10, "Azúcar\nflor", 5.0)))
+                SeccionDeFirma(1, "Crema\nde leche", listOf(LineaDeFirma(10, 100, "Azúcar\nflor", 5.0)))
             ),
             titulos = emptyList(),
             pasosGenerales = 0
@@ -121,14 +121,23 @@ class FirmaTest {
         assertNull(firmaDesdeTexto(""))
         assertNull(firmaDesdeTexto("cualquier cosa"))
         assertNull("Otra versión del formato", firmaDesdeTexto("v9\nG|0"))
-        assertNull("Una línea que no se entiende", firmaDesdeTexto("v1\nX|algo"))
-        assertNull("Un id que no es número", firmaDesdeTexto("v1\nS|uno|Bizcocho\nG|0"))
-        assertNull("Un gramaje que no es número", firmaDesdeTexto("v1\nS|1|A\nI|1|2|Harina|mucho"))
-        assertNull("Campos de menos", firmaDesdeTexto("v1\nS|1"))
+        assertNull("Una línea que no se entiende", firmaDesdeTexto("v2\nX|algo"))
+        assertNull("Un id que no es número", firmaDesdeTexto("v2\nS|uno|Bizcocho\nG|0"))
+        assertNull("Un gramaje que no es número", firmaDesdeTexto("v2\nS|1|A\nI|1|2|3|Harina|mucho"))
+        assertNull("Campos de menos", firmaDesdeTexto("v2\nS|1"))
         assertNull(
             "Un ingrediente cuya sección no vino antes",
-            firmaDesdeTexto("v1\nI|9|2|Harina|100.0\nG|0")
+            firmaDesdeTexto("v2\nI|9|2|3|Harina|100.0\nG|0")
         )
+    }
+
+    @Test
+    fun `una firma de la version vieja se descarta entera, no se lee a medias`() {
+        // La `v1` no llevaba el id del ingrediente del catálogo, que es lo único con que se
+        // empareja una fila de la copia con la suya en la original. Leerla igual dejaría a la
+        // adaptación emparejando a ciegas: perder el aviso es reversible volviendo a traer la
+        // receta; pisar las cantidades contra el ingrediente equivocado, no.
+        assertNull(firmaDesdeTexto("v1\nS|1|Bizcocho\nI|1|10|Harina|550.0\nG|0"))
     }
 
     @Test
@@ -182,8 +191,8 @@ class FirmaTest {
                 SeccionDeFirma(
                     seccionId = 1, nombre = "Bizcocho",
                     lineas = listOf(
-                        LineaDeFirma(lineaId = 10, nombre = "Harina", gramos = 400.0),
-                        LineaDeFirma(lineaId = 11, nombre = "Harina", gramos = 150.0)
+                        LineaDeFirma(lineaId = 10, ingredienteId = 100, nombre = "Harina", gramos = 400.0),
+                        LineaDeFirma(lineaId = 11, ingredienteId = 100, nombre = "Harina", gramos = 150.0)
                     )
                 )
             ),
@@ -199,8 +208,8 @@ class FirmaTest {
             secciones = listOf(
                 conRepetido.secciones[0].copy(
                     lineas = listOf(
-                        LineaDeFirma(10, "Harina", 400.0),
-                        LineaDeFirma(11, "Harina", 100.0)
+                        LineaDeFirma(10, 100, "Harina", 400.0),
+                        LineaDeFirma(11, 100, "Harina", 100.0)
                     )
                 )
             )
@@ -238,7 +247,7 @@ class FirmaTest {
         val ahora = antes.copy(
             secciones = listOf(
                 antes.secciones[0].copy(
-                    lineas = antes.secciones[0].lineas + LineaDeFirma(13, "Sal", 5.0)
+                    lineas = antes.secciones[0].lineas + LineaDeFirma(13, 103, "Sal", 5.0)
                 ),
                 antes.secciones[1].copy(lineas = emptyList())
             )
@@ -297,8 +306,8 @@ class FirmaTest {
                 SeccionDeFirma(
                     seccionId = 1, nombre = "Bizcocho",
                     lineas = listOf(
-                        LineaDeFirma(10, "Harina", 500.0),
-                        LineaDeFirma(11, "Azúcar", 200.0)
+                        LineaDeFirma(10, 100, "Harina", 500.0),
+                        LineaDeFirma(11, 101, "Azúcar", 200.0)
                     )
                 )
             ),
@@ -314,5 +323,165 @@ class FirmaTest {
         )
         assertTrue(cambios.contains("'Harina' pasó de 550 a 500 g"))
         assertTrue(cambios.contains("Se agregaron 2 pasos en 'Bizcocho'"))
+    }
+
+    // --- El reescalado, que mueve todas las cantidades a la vez (8.11.7) ---
+
+    /** La misma receta con **todas** sus cantidades multiplicadas por [factor]. */
+    private fun reescalada(factor: Double, sobre: FirmaDeReceta = bizcocho()) = sobre.copy(
+        secciones = sobre.secciones.map { seccion ->
+            seccion.copy(lineas = seccion.lineas.map { it.copy(gramos = redondear(it.gramos * factor)) })
+        }
+    )
+
+    private fun redondear(valor: Double) = kotlin.math.round(valor * 100) / 100.0
+
+    @Test
+    fun `cambiar de molde en la original se resume en una frase, no en doce`() {
+        // Es el caso que quedó anotado en 8.11.7: reescalar multiplica todas las cantidades,
+        // así que una frase por ingrediente sería cierta e ilegible — doce renglones para una
+        // sola noticia, y la noticia enterrada.
+        // El "1,50" y no "1,5" es `formatearNumero`, que es el formato de toda la app: los
+        // números se leen igual acá que en cualquier otra pantalla.
+        assertEquals(
+            listOf("La receta se reescaló: todas las cantidades quedaron multiplicadas por 1,50"),
+            frases(bizcocho(), reescalada(1.5))
+        )
+    }
+
+    @Test
+    fun `el resumen aguanta el redondeo a dos decimales de una receta grande`() {
+        // La trampa que costó escribir `sigueElFactor`: el factor se deduce de una línea cuyos
+        // gramajes ya vienen redondeados, y ese error se **multiplica** al aplicarlo a una
+        // cantidad grande. Con tolerancia absoluta, esto se caía al detalle justo en las
+        // recetas donde el resumen más falta hace.
+        val grande = FirmaDeReceta(
+            secciones = listOf(
+                SeccionDeFirma(
+                    1, "Bizcocho",
+                    listOf(
+                        LineaDeFirma(10, 100, "Harina", 100.0),
+                        LineaDeFirma(11, 101, "Azúcar", 5000.0),
+                        LineaDeFirma(12, 102, "Leche", 12345.67)
+                    )
+                )
+            ),
+            titulos = emptyList(),
+            pasosGenerales = 0
+        )
+
+        val cambios = frases(grande, reescalada(1.0 / 3.0, sobre = grande))
+        assertEquals("Tiene que ser una sola frase", 1, cambios.size)
+        assertTrue("Y tiene que ser la del reescalado", cambios.first().startsWith("La receta se reescaló"))
+    }
+
+    @Test
+    fun `si una cantidad no sigue el factor, se vuelve al detalle`() {
+        // Basta con que una quede fuera para que ya no sea un reescalado sino un cambio de
+        // ingredientes que casualmente comparten proporción — y ahí lo que hay que ver es
+        // cuáles se movieron.
+        val ahora = reescalada(2.0).let { r ->
+            r.copy(
+                secciones = r.secciones.mapIndexed { i, s ->
+                    if (i == 1) s.copy(lineas = s.lineas.map { it.copy(gramos = 999.0) }) else s
+                }
+            )
+        }
+
+        val cambios = frases(bizcocho(), ahora)
+        assertEquals(3, cambios.size)
+        assertTrue(cambios.contains("'Harina' pasó de 550 a 1.100 g"))
+        assertTrue(cambios.contains("'Crema de leche' pasó de 300 a 999 g"))
+    }
+
+    @Test
+    fun `si una cantidad quedo igual tampoco es un reescalado`() {
+        // Una sola línea sin tocar delata que nadie cambió de molde: alguien editó las otras
+        // dos, y decir "se reescaló todo" sería falso sobre la que no se movió.
+        val ahora = reescalada(2.0).let { r ->
+            r.copy(
+                secciones = r.secciones.mapIndexed { i, s ->
+                    if (i == 1) bizcocho().secciones[1] else s
+                }
+            )
+        }
+
+        val cambios = frases(bizcocho(), ahora)
+        assertEquals(2, cambios.size)
+        assertTrue(cambios.none { it.startsWith("La receta se reescaló") })
+    }
+
+    @Test
+    fun `con dos ingredientes se prefiere el detalle`() {
+        // Con dos, las frases sueltas ya son la información completa y ocupan dos renglones:
+        // resumir ahorraría uno y escondería los números. Y que dos cambien en la misma
+        // proporción todavía puede ser casualidad.
+        val dos = FirmaDeReceta(
+            secciones = listOf(
+                SeccionDeFirma(
+                    1, "Bizcocho",
+                    listOf(LineaDeFirma(10, 100, "Harina", 100.0), LineaDeFirma(11, 101, "Azúcar", 50.0))
+                )
+            ),
+            titulos = emptyList(),
+            pasosGenerales = 0
+        )
+
+        assertEquals(
+            listOf("'Harina' pasó de 100 a 200 g", "'Azúcar' pasó de 50 a 100 g"),
+            frases(dos, reescalada(2.0, sobre = dos))
+        )
+    }
+
+    @Test
+    fun `un ingrediente que estaba en cero descarta el resumen`() {
+        // De un 0 no sale ninguna proporción, así que no se puede afirmar que siga el factor
+        // de los demás. Es raro, y ahí se prefiere el detalle, que nunca miente.
+        val conCero = FirmaDeReceta(
+            secciones = listOf(
+                SeccionDeFirma(
+                    1, "Bizcocho",
+                    listOf(
+                        LineaDeFirma(10, 100, "Harina", 100.0),
+                        LineaDeFirma(11, 101, "Azúcar", 50.0),
+                        LineaDeFirma(12, 102, "Sal", 0.0)
+                    )
+                )
+            ),
+            titulos = emptyList(),
+            pasosGenerales = 0
+        )
+        val ahora = conCero.copy(
+            secciones = listOf(
+                conCero.secciones[0].copy(
+                    lineas = listOf(
+                        LineaDeFirma(10, 100, "Harina", 200.0),
+                        LineaDeFirma(11, 101, "Azúcar", 100.0),
+                        LineaDeFirma(12, 102, "Sal", 3.0)
+                    )
+                )
+            )
+        )
+
+        val cambios = frases(conCero, ahora)
+        assertEquals(3, cambios.size)
+        assertTrue(cambios.none { it.startsWith("La receta se reescaló") })
+    }
+
+    @Test
+    fun `agregar un ingrediente ademas del reescalado no esconde el agregado`() {
+        // El resumen es solo de las cantidades. Lo que entró o salió se sigue nombrando: son
+        // dos noticias distintas y la segunda no se deduce de la primera.
+        val ahora = reescalada(1.5).let { r ->
+            r.copy(
+                secciones = r.secciones.mapIndexed { i, s ->
+                    if (i == 0) s.copy(lineas = s.lineas + LineaDeFirma(99, 199, "Sal", 5.0)) else s
+                }
+            )
+        }
+
+        val cambios = frases(bizcocho(), ahora)
+        assertTrue(cambios.contains("Se agregó 'Sal' a la sección 'Bizcocho'"))
+        assertTrue(cambios.any { it.startsWith("La receta se reescaló") })
     }
 }
