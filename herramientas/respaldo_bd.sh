@@ -82,6 +82,13 @@ subir() {
     # deja a Room leyendo una versión y el disco con otra.
     adb shell "am force-stop $PAQUETE"
 
+    # La carpeta databases/ no viene con la app: la crea Room la primera vez que se abre.
+    # O sea que después de una instalación limpia todavía no existe — que es exactamente
+    # cuando uno viene a restaurar. Sin esto, el 'cp' falla con "No such file or directory"
+    # y el respaldo parece roto cuando el que falta es el directorio.
+    adb shell "run-as $PAQUETE mkdir -p databases" ||
+        fallar "no pude crear la carpeta databases/ en el celular."
+
     for archivo in "${ARCHIVOS[@]}"; do
         if [ -f "$carpeta/$archivo" ]; then
             adb push "$carpeta/$archivo" "/data/local/tmp/$archivo" >/dev/null
@@ -94,6 +101,12 @@ subir() {
             adb shell "run-as $PAQUETE rm -f databases/$archivo"
         fi
     done
+
+    # Comprobar que la base quedó de verdad allá. Decir "Listo" sin mirar es lo que
+    # convierte un respaldo en una falsa tranquilidad.
+    adb shell "run-as $PAQUETE test -f databases/$BASE" 2>/dev/null ||
+        fallar "la copia no quedó en el celular: '$BASE' no está en databases/."
+
     echo "Listo. Abre la app y revisa que estén tus datos."
 }
 
