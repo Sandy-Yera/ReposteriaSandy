@@ -478,6 +478,15 @@ class MoldeDeRecetaViewModelTest {
         advanceUntilIdle()
         modelo.cambiarOrigenDelMolde(OrigenDelMolde.PRUEBA)
         modelo.elegirFormaDePrueba(forma)
+        advanceUntilIdle()
+
+        // **Comprueba su propio trabajo, y no es paranoia.** Un fallo dentro de `runTest` se
+        // reporta en la línea del `runTest` y no en la aserción, así que sin esto cinco
+        // pruebas distintas fallaban todas en la misma línea sin decir cuál era el problema.
+        // Dejando el ayudante verificado, lo que falle después es de la prueba y no de acá.
+        val quedo = cuadro(modelo)
+        assertEquals("medirAMano no dejó el cuadro en modo prueba", OrigenDelMolde.PRUEBA, quedo.origen)
+        assertEquals("medirAMano no dejó la forma elegida", forma, quedo.forma)
     }
 
     @Test
@@ -487,7 +496,7 @@ class MoldeDeRecetaViewModelTest {
         // quedaba el trozo.
         medirAMano(modelo, TipoFormaMolde.EXOTICO)
 
-        assertTrue(cuadro(modelo).hayQuePreguntarElCorte)
+        assertTrue("Un exótico tiene que preguntar el corte", cuadro(modelo).hayQuePreguntarElCorte)
         assertNull("Y no se supone ninguno", cuadro(modelo).corteEfectivo)
     }
 
@@ -496,8 +505,12 @@ class MoldeDeRecetaViewModelTest {
         // Preguntarlo siempre sería pedir que confirmen algo que nadie discute.
         medirAMano(modelo, TipoFormaMolde.CUADRADO)
 
-        assertFalse(cuadro(modelo).hayQuePreguntarElCorte)
-        assertEquals(FormaDelCorte.CUADRICULA, cuadro(modelo).corteEfectivo)
+        assertFalse("Un cuadrado no se pregunta", cuadro(modelo).hayQuePreguntarElCorte)
+        assertEquals(
+            "Y se supone cuadrícula",
+            FormaDelCorte.CUADRICULA,
+            cuadro(modelo).corteEfectivo
+        )
     }
 
     @Test
@@ -508,7 +521,7 @@ class MoldeDeRecetaViewModelTest {
         modelo.abrirElegirMolde()
         advanceUntilIdle()
 
-        assertFalse(cuadro(modelo).hayQuePreguntarElCorte)
+        assertFalse("Del catálogo el corte viene con el molde", cuadro(modelo).hayQuePreguntarElCorte)
     }
 
     @Test
@@ -547,8 +560,9 @@ class MoldeDeRecetaViewModelTest {
         // Un rectángulo ya tiene sus lados; un triángulo no, así que hay que preguntarlos.
         medirAMano(modelo, TipoFormaMolde.TRIANGULO)
         modelo.elegirCorte(FormaDelCorte.CUADRICULA)
+        advanceUntilIdle()
 
-        assertTrue(cuadro(modelo).pideMedidasDeCorte)
+        assertTrue("Un triángulo en cuadrícula no da sus lados", cuadro(modelo).pideMedidasDeCorte)
     }
 
     @Test
@@ -560,10 +574,11 @@ class MoldeDeRecetaViewModelTest {
         modelo.cambiarMedidaDePrueba(CampoDeMolde.ALTURA_MOLDE, "6")
         modelo.elegirCorte(FormaDelCorte.CUADRICULA)
         modelo.cambiarLargoDeCorte("5")
+        advanceUntilIdle()
 
         val abierto = cuadro(modelo)
         assertNotNull("Falta el otro lado", abierto.errorCorte)
-        assertFalse(abierto.puedeGuardar)
+        assertFalse("Y con un lado a medias no se guarda", abierto.puedeGuardar)
     }
 
     @Test
@@ -574,9 +589,10 @@ class MoldeDeRecetaViewModelTest {
         modelo.cambiarMedidaDePrueba(CampoDeMolde.ALTURA_TRIANGULO, "15")
         modelo.cambiarMedidaDePrueba(CampoDeMolde.ALTURA_MOLDE, "6")
         modelo.elegirCorte(FormaDelCorte.CUADRICULA)
+        advanceUntilIdle()
 
         val abierto = cuadro(modelo)
-        assertNull(abierto.errorCorte)
-        assertTrue(abierto.puedeGuardar)
+        assertNull("No anotarlas es válido", abierto.errorCorte)
+        assertTrue("Y se puede guardar igual", abierto.puedeGuardar)
     }
 }

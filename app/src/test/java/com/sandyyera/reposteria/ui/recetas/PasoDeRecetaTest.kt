@@ -56,9 +56,14 @@ class PasoDeRecetaTest {
                 PasoDeReceta.SIMULACION
             ),
             PasoDeReceta.entries.filterNot {
-                it == PasoDeReceta.CANTIDADES || it == PasoDeReceta.DURACION
+                it == PasoDeReceta.CANTIDADES ||
+                    it == PasoDeReceta.DURACION ||
+                    // Pasos tampoco alimenta ninguna cifra, pero va al final y no segundo:
+                    // es lo más largo de escribir y se hace cuando lo demás ya está decidido.
+                    it == PasoDeReceta.PASOS
             }
         )
         assertEquals("Y duración queda segunda", PasoDeReceta.DURACION, PasoDeReceta.entries[1])
+        assertEquals("Y pasos, último", PasoDeReceta.PASOS, PasoDeReceta.entries.last())
     }
 }

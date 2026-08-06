@@ -179,7 +179,7 @@ class PasosViewModelTest {
 
     @Test
     fun `con dos secciones se ofrecen sus nombres y el General`() = probar { modelo ->
-        recetas.agregarSeccion(recetaId, "Crema")
+        recetas.agregarSeccion(recetaId, "Crema", "Bizcocho")
         advanceUntilIdle()
         val id = agregar(modelo, "Un paso")
 
@@ -193,7 +193,7 @@ class PasosViewModelTest {
 
     @Test
     fun `elegir un titulo lo deja guardado y agrupa el paso`() = probar { modelo ->
-        recetas.agregarSeccion(recetaId, "Crema")
+        recetas.agregarSeccion(recetaId, "Crema", "Bizcocho")
         advanceUntilIdle()
         val crema = recetas.obtenerSecciones(recetaId).first { it.nombreSeccion == "Crema" }
         val id = agregar(modelo, "Batir la crema.")
@@ -209,7 +209,7 @@ class PasosViewModelTest {
     @Test
     fun `una seccion ya usada por otro bloque no se vuelve a ofrecer`() = probar { modelo ->
         // Dos bloques "Crema" no dicen en cuál va cada cosa. Solo el General se repite.
-        recetas.agregarSeccion(recetaId, "Crema")
+        recetas.agregarSeccion(recetaId, "Crema", "Bizcocho")
         advanceUntilIdle()
         val crema = recetas.obtenerSecciones(recetaId).first { it.nombreSeccion == "Crema" }
         // Los dos pasos van **antes** de asignar ningún título: un paso nuevo hereda el del
@@ -230,7 +230,7 @@ class PasosViewModelTest {
     @Test
     fun `al reabrir el titulo de un bloque, el suyo sigue estando`() = probar { modelo ->
         // Contarse a sí mismo entre los usados lo dejaría fuera de su propia lista.
-        recetas.agregarSeccion(recetaId, "Crema")
+        recetas.agregarSeccion(recetaId, "Crema", "Bizcocho")
         advanceUntilIdle()
         val crema = recetas.obtenerSecciones(recetaId).first { it.nombreSeccion == "Crema" }
         val id = agregar(modelo, "Batir la crema.")
@@ -247,7 +247,7 @@ class PasosViewModelTest {
 
     @Test
     fun `el General se puede repetir`() = probar { modelo ->
-        recetas.agregarSeccion(recetaId, "Crema")
+        recetas.agregarSeccion(recetaId, "Crema", "Bizcocho")
         advanceUntilIdle()
         val crema = recetas.obtenerSecciones(recetaId).first { it.nombreSeccion == "Crema" }
         val primero = agregar(modelo, "Uno")
@@ -369,7 +369,7 @@ class PasosViewModelTest {
     fun `borrar una seccion deja sus pasos como General, sin perderlos`() = probar { modelo ->
         // El texto lo escribió alguien: hacerlo desaparecer porque se reorganizó la receta
         // sería perder trabajo sin avisar. Es la regla SET_NULL de la clave foránea.
-        recetas.agregarSeccion(recetaId, "Crema")
+        recetas.agregarSeccion(recetaId, "Crema", "Bizcocho")
         advanceUntilIdle()
         val crema = recetas.obtenerSecciones(recetaId).first { it.nombreSeccion == "Crema" }
         val id = agregar(modelo, "Batir la crema.")
@@ -395,7 +395,7 @@ class PasosViewModelTest {
 
     @Test
     fun `con dos bloques el General si lleva su encabezado`() = probar { modelo ->
-        recetas.agregarSeccion(recetaId, "Crema")
+        recetas.agregarSeccion(recetaId, "Crema", "Bizcocho")
         advanceUntilIdle()
         val crema = recetas.obtenerSecciones(recetaId).first { it.nombreSeccion == "Crema" }
         val primero = agregar(modelo, "Batir la crema.")

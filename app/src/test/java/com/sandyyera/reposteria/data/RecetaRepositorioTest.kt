@@ -426,7 +426,7 @@ class RecetaRepositorioTest {
     fun `no se puede agregar la segunda seccion sin bautizar la primera`() = runBlocking {
         val id = crearReceta("Torta de manjar")
 
-        val resultado = repositorio.agregarSeccion(id, "Crema")
+        val resultado = repositorio.agregarSeccion(id, "Crema", "Bizcocho")
 
         assertTrue(resultado is Resultado.NoSePudo)
         // Y no se creó nada a medias: sigue habiendo una sola sección.
@@ -680,7 +680,7 @@ class RecetaRepositorioTest {
         repositorio.renombrarSeccion(repositorio.obtenerSecciones(id).single(), "Salsa")
 
         // Sin pasar nombreDeLaPrimera: no hace falta, porque ya tiene uno propio.
-        val resultado = repositorio.agregarSeccion(id, "Crema")
+        val resultado = repositorio.agregarSeccion(id, "Crema", "Bizcocho")
 
         assertTrue(resultado is Resultado.Listo)
         assertEquals(
@@ -882,7 +882,7 @@ class RecetaRepositorioTest {
     fun `una seccion no se puede usar como titulo dos veces`() = runBlocking {
         // Dos bloques "Crema" no dicen en cuál va cada cosa (8.8). Solo el General se repite.
         val id = crearReceta()
-        repositorio.agregarSeccion(id, "Crema")
+        repositorio.agregarSeccion(id, "Crema", "Bizcocho")
         val crema = repositorio.obtenerSecciones(id).first { it.nombreSeccion == "Crema" }
         val uno = repositorio.agregarPaso(id)
         val dos = repositorio.agregarPaso(id)
@@ -910,7 +910,7 @@ class RecetaRepositorioTest {
             // Son estados excluyentes: dejar el `true` puesto dibujaría con sangría un paso
             // que ya no viene de otra receta.
             val id = crearReceta()
-            repositorio.agregarSeccion(id, "Crema")
+            repositorio.agregarSeccion(id, "Crema", "Bizcocho")
             val crema = repositorio.obtenerSecciones(id).first { it.nombreSeccion == "Crema" }
             val paso = repositorio.agregarPaso(id, esGeneralAnidado = true)
 
@@ -952,7 +952,7 @@ class RecetaRepositorioTest {
         // El texto lo escribió alguien: hacerlo desaparecer porque se reorganizó la receta
         // sería perder trabajo sin avisar. Es la regla SET_NULL de la clave foránea.
         val id = crearReceta()
-        repositorio.agregarSeccion(id, "Crema")
+        repositorio.agregarSeccion(id, "Crema", "Bizcocho")
         val crema = repositorio.obtenerSecciones(id).first { it.nombreSeccion == "Crema" }
         val paso = repositorio.agregarPaso(id)
         repositorio.guardarTextoDePaso(paso, "Batir la crema.")
