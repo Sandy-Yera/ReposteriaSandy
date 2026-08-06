@@ -426,7 +426,10 @@ class RecetaRepositorioTest {
     fun `no se puede agregar la segunda seccion sin bautizar la primera`() = runBlocking {
         val id = crearReceta("Torta de manjar")
 
-        val resultado = repositorio.agregarSeccion(id, "Crema", "Bizcocho")
+        // **Sin el tercer argumento a propósito**: es exactamente lo que esta prueba mide.
+        // Un reemplazo masivo se lo agregó junto con el de las otras llamadas y la dejó
+        // comprobando lo contrario de lo que dice su nombre.
+        val resultado = repositorio.agregarSeccion(id, "Crema")
 
         assertTrue(resultado is Resultado.NoSePudo)
         // Y no se creó nada a medias: sigue habiendo una sola sección.
