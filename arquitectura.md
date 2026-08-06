@@ -686,6 +686,21 @@ perdido y significa "todavía no se generó": los assets del APK de pruebas se j
 que KSP escriba el esquema nuevo, así que en una sola invocación no llega. Pasó de verdad al
 subir a la versión 5, y `probar_todo.sh` lo recuerda al terminar.
 
+**Y `connectedAndroidTest` desinstala la app al terminar.** Instala, prueba y quita: es lo que
+hace Gradle siempre, no un fallo. Con la app se va **su base de datos**, o sea las recetas
+reales del celular — se vio así, con la app desaparecida de la pantalla de inicio después de
+una corrida. Por eso la secuencia completa termina reinstalando y devolviendo el respaldo:
+
+```bash
+herramientas/respaldo_bd.sh bajar               # antes de todo
+./gradlew :app:connectedAndroidTest             # esto desinstala al terminar
+./gradlew :app:installDebug                     # reinstalar
+herramientas/respaldo_bd.sh subir <carpeta>     # y devolver los datos
+```
+
+El respaldo no es una precaución por si acaso: en esta secuencia **es el único lugar donde los
+datos existen** entre la desinstalación y la restauración.
+
 **Por qué el nivel del recorrido completo existe aparte.** Los errores que llegaron al celular no fueron de una pieza sola: fueron de dos que dejaron de estar de acuerdo. La lista de recetas mostrando el costo de antes de borrar un ingrediente es exactamente eso, y ninguna prueba de `RecetaRepositorio` sola podía verlo, porque el ingrediente lo borra **otro** repositorio. `FlujoCompletoTest` recorre una tarde entera de uso —cargar ingredientes, armar una receta con secciones, medir un molde, ponerle precio, corregir cosas, borrar otras— y después de cada paso comprueba que **todos los caminos hacia el mismo número sigan dando lo mismo**: `costoTotal`, `observarCostos`, `costosDe` y el `DatosCalculoReceta`. Cada uno lo usa una parte distinta de la app; si se separan, la misma receta muestra cifras distintas según desde dónde se la mire.
 
 **El nivel 2 usa el repositorio de verdad sobre DAO falsos**, no un repositorio falso. Probar contra una imitación del repositorio dejaría sin probar justamente la parte que se escribió.

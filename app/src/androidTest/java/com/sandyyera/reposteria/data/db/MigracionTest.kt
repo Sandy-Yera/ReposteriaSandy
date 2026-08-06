@@ -35,6 +35,14 @@ import org.junit.runner.RunWith
  *
  *     ./gradlew :app:assembleDebug          # Room escribe app/schemas/N.json al compilar
  *     ./gradlew :app:connectedAndroidTest   # recién ahora existe para empaquetarlo
+ *     ./gradlew :app:installDebug           # porque lo anterior DESINSTALÓ la app
+ *
+ * **Esa tercera línea no es opcional.** `connectedAndroidTest` instala la app, corre las
+ * pruebas y **la desinstala** — es lo que hace Gradle siempre, no un fallo. Y con la app se va
+ * su base de datos: las recetas reales del celular. De ahí que el respaldo
+ * (`herramientas/respaldo_bd.sh bajar`) vaya **antes** de correr esto, y que devolverlo con
+ * `subir <carpeta>` sea parte del procedimiento y no un plan de emergencia. Pasó de verdad:
+ * la app desapareció del celular después de una corrida y hubo que restaurar.
  *
  * Al revés falla con `Cannot find the schema file in the assets folder`, que suena a que el
  * archivo se perdió y en realidad significa que todavía no se generó: los assets del APK de

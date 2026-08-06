@@ -68,7 +68,12 @@ echo "    herramientas/respaldo_bd.sh bajar        # el respaldo, primero"
 echo "    ./gradlew :app:assembleDebug             # ANTES: escribe app/schemas/N.json"
 echo "    git add app/schemas && git commit         # y ese archivo se versiona"
 echo "    ./gradlew :app:connectedAndroidTest      # la prueba de migración"
-echo "    ./gradlew :app:installDebug              # instalar"
+echo "    ./gradlew :app:installDebug              # instalar (SÍ o SÍ después del anterior)"
+echo "    herramientas/respaldo_bd.sh subir <carpeta>   # y devolver los datos"
+echo
+echo "OJO: connectedAndroidTest DESINSTALA la app al terminar -- instala, prueba y quita,"
+echo "es lo que hace Gradle siempre. Con la app se va su base de datos. Por eso el respaldo"
+echo "va antes, y por eso installDebug y el 'subir' van después y no son opcionales."
 echo
 echo "    herramientas/medir_arranque.sh           # si se siente lenta al abrir"
 echo
