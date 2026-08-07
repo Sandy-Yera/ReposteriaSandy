@@ -227,11 +227,34 @@ class RecetasViewModelTest {
         advanceUntilIdle()
 
         modelo.pedirBorrado(modelo.estado.value.visibles.single().receta)
+        // El `advanceUntilIdle` de acá no es de adorno y no estaba antes: desde 8.11.4,
+        // `pedirBorrado` sale a consultar **a qué otras recetas afecta** el borrado, y hasta
+        // que esa respuesta no llega el cuadro tiene el botón apagado. Sin esperarla, esta
+        // prueba estaría comprobando que se puede borrar sin haber mostrado media advertencia.
+        advanceUntilIdle()
         modelo.confirmarBorrado()
         advanceUntilIdle()
 
         assertTrue(modelo.estado.value.visibles.isEmpty())
         assertNotNull(modelo.estado.value.mensaje)
+    }
+
+    @Test
+    fun `no se puede confirmar el borrado antes de saber a quien afecta`() = probar { modelo ->
+        // La otra mitad de lo de arriba, y la que de verdad importa: el cuadro se abre al
+        // instante y la lista de afectadas llega después (8.11.4). Confirmar en esa ventana
+        // no puede borrar nada, porque sería borrar sin haber leído por qué convenía pensarlo.
+        crearReceta("Torta de manjar")
+        advanceUntilIdle()
+
+        modelo.pedirBorrado(modelo.estado.value.visibles.single().receta)
+        modelo.confirmarBorrado()
+        advanceUntilIdle()
+
+        assertEquals("La receta sigue ahí", 1, modelo.estado.value.visibles.size)
+        val cuadro = modelo.dialogo.value as DialogoReceta.ConfirmarBorrado
+        assertNotNull("Y el cuadro sigue abierto, ya con la respuesta", cuadro.usadaPor)
+        assertTrue("Ahora sí se puede confirmar", cuadro.sePuedeBorrar)
     }
 
     // --- Las repetidas de antes de la regla ---
