@@ -2,6 +2,7 @@ package com.sandyyera.reposteria
 
 import android.content.Context
 import com.sandyyera.reposteria.data.db.AppDatabase
+import com.sandyyera.reposteria.data.repositorio.AlmacenRepositorio
 import com.sandyyera.reposteria.data.repositorio.HistorialRepositorio
 import com.sandyyera.reposteria.data.repositorio.IngredienteRepositorio
 import com.sandyyera.reposteria.data.repositorio.MoldeRepositorio
@@ -72,6 +73,18 @@ class AppContainer(private val context: Context) {
      */
     val moldes: MoldeRepositorio by lazy {
         MoldeRepositorio(dao = base.moldeDao(), recetas = recetas, historial = historial)
+    }
+
+    /**
+     * El inventario (sección 14).
+     *
+     * Depende solo de su DAO y del historial: el almacén **lee** el catálogo de ingredientes
+     * —para nombrar y valorar lo que guarda— pero lo hace con un `JOIN` dentro de su propia
+     * consulta, no pidiéndole nada al repositorio de ingredientes. Así no queda un camino de ida
+     * y vuelta entre los dos, que es el mismo cuidado que ya se tuvo con `nombreDeIngrediente`.
+     */
+    val almacen: AlmacenRepositorio by lazy {
+        AlmacenRepositorio(dao = base.almacenDao(), historial = historial)
     }
 
     // El repositorio de empleados se agrega al llegar su fase.

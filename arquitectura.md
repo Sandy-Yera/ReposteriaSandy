@@ -2020,6 +2020,77 @@ algo es de la receta y no del molde: el mismo molde da 6 porciones de torta y 12
 Guardarlo en el molde sería un segundo lugar donde el mismo dato puede quedar viejo. Es un campo
 del cuadro, para mirar, y el texto lo dice con todas las letras.
 
+## 14. Módulo Almacén (inventario)
+
+Lo pidió Sandy como *"una nueva sección en el menú principal, una que sea la primera, antes de
+ingredientes: almacén. Donde pueda llevar inventario de todo, pudiendo actualizarlo día a día.
+Uno básico por el momento."*
+
+**Va primero en el menú**, antes de Ingredientes. Encaja con la regla que ya ordenaba las otras
+tres —el orden es el de lo que hay que tener antes— mirada de más lejos: el almacén es lo que hay
+de verdad, y el catálogo de ingredientes es lo que se *sabe* de eso. Es además la única sección
+que se abre a diario, mientras las otras se llenan una vez y se corrigen de a poco.
+
+### 14.1 Dos clases de cosas, una sola lista
+
+Un artículo del almacén puede ser **un ingrediente del catálogo** o **algo suelto**, y esa
+distinción ordena toda la tabla:
+
+| | Ingrediente enlazado | Artículo suelto |
+|---|---|---|
+| Qué es | Harina, azúcar: lo que entra en las recetas | Cajas, cintas, velas |
+| Cómo se cuenta | En **gramos**, como todo el resto de la app | En **unidades** |
+| Cuánto vale | Sale de su `valorPorGramo`, sin escribir nada | No tiene valor por gramo |
+| Cómo se llama | Se lee del catálogo | Se escribe acá |
+
+**El nombre de los enlazados no se copia**: se lee del catálogo, así un renombre llega solo. Es
+la misma lección que ya obligó a rehacer la firma de una receta copiada (8.11.7) — un segundo
+nombre guardado aparte es un nombre que se queda viejo.
+
+**Los sueltos no van al catálogo de ingredientes**, aunque sería más simple. Una caja en el
+catálogo aparecería en el buscador de "agregar ingrediente a la receta", que es exactamente donde
+no va, y tendría un valor por gramo que no significa nada.
+
+**La unidad se deduce y no se guarda.** Una columna de unidad abriría la puerta a anotar "3" de
+algo que la receta mide en gramos, y ahí el valor de lo guardado daría cualquier cosa.
+
+### 14.2 Lo que se hace todos los días
+
+Tocar una fila cambia la cantidad, y **el 0 es un dato válido**: "no queda nada" es justo lo que
+uno viene a anotar antes de salir a comprar. Rechazarlo obligaría a borrar la fila para decirlo,
+perdiendo de paso que ese artículo existe.
+
+**Actualizar toca la fecha aunque la cantidad no cambie.** Confirmar que sigue habiendo lo mismo
+*es* haber revisado, y la fecha responde "cuándo lo miré", no "cuándo cambió". Si no, revisar sin
+cambiar nada dejaría la fecha vieja y empujaría a inventar un cambio para que se note.
+
+**Cambiar una cantidad no deja evento en el historial**, a diferencia de crear y borrar. Es lo
+que se hace a diario, y anotarlo taparía el panel de cambios hasta esconder lo que sí importa;
+la fecha de la fila cuenta esa historia mejor que doscientos eventos.
+
+### 14.3 El valor de lo guardado, y lo que queda fuera
+
+Arriba va lo que vale todo el inventario, sumando cantidad × valor por gramo de lo enlazado.
+**Los artículos sueltos no se cuentan como 0: se dicen aparte** — *"no incluye 3 artículos sin
+valor por gramo"*. Un total presentado como "el valor del almacén" que ignora en silencio parte
+de las filas es un número que se cree y está mal.
+
+### 14.4 Lo que este módulo **no** hace todavía
+
+Es "uno básico", como se pidió, y estas ausencias son deliberadas y no olvidos:
+
+- **No descuenta solo al producir una receta.** Eso necesita decidir qué es "producir" y qué
+  pasa cuando falta stock, y ninguna de las dos preguntas está contestada.
+- **No avisa cuando algo se está acabando.** Un mínimo por artículo es una columna más y una
+  decisión por artículo; primero conviene usarlo un tiempo y ver qué mínimos son reales.
+- **No costea los envases.** Una caja no tiene valor por gramo; el día que haga falta, eso será
+  un costo fijo por producto y no un valor por gramo inventado en el almacén.
+
+Sacar algo del almacén **no lo saca del catálogo**: dejar de llevarle la cuenta a la harina no es
+dejar de usarla en las recetas. La advertencia lo dice con todas las letras, porque confundirlas
+haría creer que desde ahí se borra un ingrediente en uso — que además avisaría a qué recetas
+afecta (7.1), cosa que esa pantalla no hace.
+
 ## 10. Módulo Empleados
 
 ### 10.1 Cálculo de sueldo por receta

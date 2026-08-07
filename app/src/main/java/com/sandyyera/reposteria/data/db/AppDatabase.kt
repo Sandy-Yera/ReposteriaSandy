@@ -7,6 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.sandyyera.reposteria.data.db.dao.AlmacenDao
 import com.sandyyera.reposteria.data.db.dao.EmpleadoDao
 import com.sandyyera.reposteria.data.db.dao.HistorialDao
 import com.sandyyera.reposteria.data.db.dao.IngredienteDao
@@ -16,6 +17,7 @@ import com.sandyyera.reposteria.data.db.entidades.Empleado
 import com.sandyyera.reposteria.data.db.entidades.EmpleadoRecetaSueldo
 import com.sandyyera.reposteria.data.db.entidades.EmpleadoSimulacionMultiple
 import com.sandyyera.reposteria.data.db.entidades.EmpleadoSimulacionMultipleDetalle
+import com.sandyyera.reposteria.data.db.entidades.ArticuloDeAlmacen
 import com.sandyyera.reposteria.data.db.entidades.EventoCambio
 import com.sandyyera.reposteria.data.db.entidades.Ingrediente
 import com.sandyyera.reposteria.data.db.entidades.Molde
@@ -54,9 +56,10 @@ import com.sandyyera.reposteria.data.db.entidades.RecetaSimulacionVenta
         EmpleadoRecetaSueldo::class,
         EmpleadoSimulacionMultiple::class,
         EmpleadoSimulacionMultipleDetalle::class,
-        EventoCambio::class
+        EventoCambio::class,
+        ArticuloDeAlmacen::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = true
 )
 @TypeConverters(Convertidores::class)
@@ -67,6 +70,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun moldeDao(): MoldeDao
     abstract fun empleadoDao(): EmpleadoDao
     abstract fun historialDao(): HistorialDao
+    abstract fun almacenDao(): AlmacenDao
 
     companion object {
         private const val NOMBRE_ARCHIVO = "reposteria.db"
@@ -104,7 +108,8 @@ abstract class AppDatabase : RoomDatabase() {
             )
                 .addCallback(SembrarDatosIniciales)
                 .addMigrations(
-                    MIGRACION_1_2, MIGRACION_2_3, MIGRACION_3_4, MIGRACION_4_5, MIGRACION_5_6
+                    MIGRACION_1_2, MIGRACION_2_3, MIGRACION_3_4, MIGRACION_4_5, MIGRACION_5_6,
+                    MIGRACION_6_7
                 )
                 .build()
 
@@ -215,6 +220,39 @@ abstract class AppDatabase : RoomDatabase() {
          * se reparte parejo—, y ese cambio no necesita migración porque el tamaño del trozo
          * nunca se guardó: se calcula al mostrarlo.
          */
+        /**
+         * Crea la tabla del almacén (sección 14).
+         *
+         * **Es la primera migración que agrega una tabla y no una columna**, y eso cambia el
+         * cuidado que hay que tener: el `CREATE TABLE` tiene que quedar **letra por letra** como
+         * lo generaría Room —tipos, `NOT NULL`, `DEFAULT`, la clave foránea y el índice único—
+         * o `runMigrationsAndValidate` falla al comparar contra `7.json`. Room compara el
+         * esquema entero, no "que exista una tabla parecida".
+         *
+         * El índice es único sobre `ingredienteId` y eso es una regla del negocio, no una
+         * optimización: un ingrediente con dos filas de almacén haría que "cuánta harina queda"
+         * tuviera dos respuestas. SQLite permite varios `NULL` ahí, así que los artículos
+         * sueltos —que no tienen ingrediente— no se estorban entre sí.
+         */
+        val MIGRACION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `almacen` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`ingredienteId` INTEGER, " +
+                        "`nombre` TEXT NOT NULL, " +
+                        "`cantidad` REAL NOT NULL, " +
+                        "`actualizadoEn` INTEGER NOT NULL, " +
+                        "FOREIGN KEY(`ingredienteId`) REFERENCES `ingredientes`(`id`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE )"
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_almacen_ingredienteId` " +
+                        "ON `almacen` (`ingredienteId`)"
+                )
+            }
+        }
+
         val MIGRACION_5_6 = object : Migration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE receta_rendimiento ADD COLUMN trozosALoLargo INTEGER")

@@ -3,6 +3,7 @@ package com.sandyyera.reposteria.ui
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.DrawerValue
@@ -27,6 +28,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.sandyyera.reposteria.AppContainer
+import com.sandyyera.reposteria.ui.almacen.AlmacenViewModel
+import com.sandyyera.reposteria.ui.almacen.ListaAlmacenScreen
 import com.sandyyera.reposteria.ui.ingredientes.IngredientesViewModel
 import com.sandyyera.reposteria.ui.ingredientes.ListaIngredientesScreen
 import com.sandyyera.reposteria.ui.moldes.ListaMoldesScreen
@@ -65,7 +68,13 @@ enum class Seccion(val titulo: String, val icono: ImageVector) {
      * El orden es el de **lo que hay que tener antes**, no el de lo que más se usa: una receta
      * no se puede costear sin ingredientes cargados, y no se le puede poner molde sin moldes en
      * el catálogo. Recetas queda al final por ser la que depende de las otras dos.
+     *
+     * **Almacén va primero**, y lo pidió Sandy así. Encaja con la misma regla mirada de más
+     * lejos: el almacén es lo que hay de verdad, y el catálogo de ingredientes es lo que se sabe
+     * de eso. Es además la que se abre a diario —anotar lo que queda— mientras las otras tres se
+     * llenan una vez y se corrigen de a poco.
      */
+    ALMACEN("Almacén", Icons.Default.Home),
     INGREDIENTES("Ingredientes", Icons.Default.ShoppingCart),
     MOLDES("Moldes", Icons.Default.Star),
     RECETAS("Recetas", Icons.Default.Favorite)
@@ -86,7 +95,7 @@ fun NavegacionPrincipal(
     contenedor: AppContainer,
     modifier: Modifier = Modifier
 ) {
-    var seccionActual by rememberSaveable { mutableStateOf(Seccion.INGREDIENTES) }
+    var seccionActual by rememberSaveable { mutableStateOf(Seccion.ALMACEN) }
 
     // Qué receta está abierta, o null si se está viendo la lista. Va en rememberSaveable
     // para que girar el teléfono no devuelva a la lista a mitad de carga.
@@ -318,6 +327,16 @@ private fun MenuDeSecciones(
         val abrirMenu: () -> Unit = { alcance.launch { estadoDelMenu.open() } }
 
         when (seccionActual) {
+            Seccion.ALMACEN -> ListaAlmacenScreen(
+                modelo = viewModel(
+                    factory = AlmacenViewModel.fabrica(
+                        almacen = contenedor.almacen,
+                        ingredientes = contenedor.ingredientes
+                    )
+                ),
+                alAbrirMenu = abrirMenu
+            )
+
             Seccion.INGREDIENTES -> ListaIngredientesScreen(
                 modelo = viewModel(
                     factory = IngredientesViewModel.fabrica(contenedor.ingredientes)
