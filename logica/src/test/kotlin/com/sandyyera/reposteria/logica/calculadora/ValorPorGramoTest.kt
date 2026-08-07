@@ -36,7 +36,7 @@ class ValorPorGramoTest {
     @Test
     fun `acepta paquetes con decimales`() {
         // Una bolsa de 1,5 kilos por $2.500.
-        assertEquals(1.67, valorPorGramo(2500.0, 1.5, UnidadDeCompra.KILO), 0.001)
+        assertEquals(1.66667, valorPorGramo(2500.0, 1.5, UnidadDeCompra.KILO), 0.00001)
     }
 
     @Test
@@ -47,11 +47,11 @@ class ValorPorGramoTest {
 
     @Test
     fun `lo que se guarda es exactamente lo que se muestra`() {
-        // 2.500 / 1.500 da 1,6666... Si se guardara así, la pantalla diría "1,67" y
-        // multiplicarlo por los gramos de una receta no daría el número que se vio.
+        // 2.500 / 1.500 da 1,6666... Si se guardara así, la pantalla mostraría el número
+        // redondeado y multiplicarlo por los gramos de una receta no daría lo que se vio.
         val valor = valorPorGramo(2500.0, 1.5, UnidadDeCompra.KILO)
-        assertEquals("1,67", formatearNumero(valor))
-        assertEquals(valor, 1.67, 0.0)
+        assertEquals("1,66667", formatearNumero(valor))
+        assertEquals(valor, 1.66667, 0.0)
     }
 
     @Test
@@ -65,15 +65,24 @@ class ValorPorGramoTest {
     }
 
     @Test
-    fun `debajo de medio centavo por gramo el valor queda en cero`() {
-        // El límite de guardar con 2 decimales. 25 kilos por $200 da 0,008 por gramo y
-        // sobrevive como 0,01; por $100 da 0,004 y se pierde en el redondeo.
-        assertEquals(0.01, valorPorGramo(200.0, 25.0, UnidadDeCompra.KILO), 0.0)
-        assertEquals(0.0, valorPorGramo(100.0, 25.0, UnidadDeCompra.KILO), 0.0)
+    fun `un ingrediente barato a granel ya no se pierde en el redondeo`() {
+        // **Esta prueba decía lo contrario hasta los 5 decimales**, y ese era justo el
+        // problema: con 2, 25 kilos por $200 daban 0,008 por gramo y se guardaban como 0,01
+        // (un 25 % de más), y por $100 daban 0,004 y quedaban en **cero** — el ingrediente
+        // salía gratis en toda receta que lo usara.
+        assertEquals(0.008, valorPorGramo(200.0, 25.0, UnidadDeCompra.KILO), 0.0)
+        assertEquals(0.004, valorPorGramo(100.0, 25.0, UnidadDeCompra.KILO), 0.0)
+        assertEquals("0,004", formatearNumero(valorPorGramo(100.0, 25.0, UnidadDeCompra.KILO)))
+    }
 
-        // No es un error escondido: la calculadora muestra ese 0 antes de aceptar, así
-        // que se ve en la pantalla y no después, dentro de una receta.
-        assertEquals("0", formatearNumero(valorPorGramo(100.0, 25.0, UnidadDeCompra.KILO)))
+    @Test
+    fun `el limite ahora esta cinco ceros mas abajo`() {
+        // Sigue habiendo un piso, y sigue siendo visible antes de aceptar: la calculadora
+        // muestra el resultado en vivo, así que un 0 se ve en la pantalla y no después,
+        // dentro de una receta. Pero hay que irse a un peso por cada 100 kilos para llegar.
+        assertEquals(0.00001, valorPorGramo(1.0, 100.0, UnidadDeCompra.KILO), 0.0)
+        assertEquals(0.0, valorPorGramo(0.1, 100.0, UnidadDeCompra.KILO), 0.0)
+        assertEquals("0", formatearNumero(valorPorGramo(0.1, 100.0, UnidadDeCompra.KILO)))
     }
 
     // --- Conversión de unidades ---
@@ -192,7 +201,7 @@ class ValorPorGramoTest {
         // La pantalla pasa el resultado al formulario como texto, y de ahí vuelve a número.
         val valor = calcularValorPorGramo("2.500", "1,5", UnidadDeCompra.KILO)!!
         val comoTexto = formatearNumero(valor)
-        assertEquals("1,67", comoTexto)
+        assertEquals("1,66667", comoTexto)
         assertEquals(
             valor,
             com.sandyyera.reposteria.logica.validaciones.textoANumero(comoTexto)!!,

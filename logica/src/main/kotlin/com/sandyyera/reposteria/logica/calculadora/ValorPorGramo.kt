@@ -1,6 +1,6 @@
 package com.sandyyera.reposteria.logica.calculadora
 
-import com.sandyyera.reposteria.logica.formato.redondearADosDecimales
+import com.sandyyera.reposteria.logica.formato.redondearParaGuardar
 import com.sandyyera.reposteria.logica.validaciones.errorEnNumeroPositivoTexto
 import com.sandyyera.reposteria.logica.validaciones.textoANumero
 
@@ -47,7 +47,7 @@ enum class UnidadDeCompra {
 fun valorPorGramo(precioTotal: Double, cantidad: Double, unidad: UnidadDeCompra): Double {
     val gramos = unidad.aGramos(cantidad)
     require(gramos > 0) { "La cantidad tiene que ser mayor que cero para poder dividir" }
-    return redondearADosDecimales(precioTotal / gramos)
+    return redondearParaGuardar(precioTotal / gramos)
 }
 
 /**

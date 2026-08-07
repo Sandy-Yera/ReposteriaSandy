@@ -341,10 +341,8 @@ class FirmaTest {
         // Es el caso que quedó anotado en 8.11.7: reescalar multiplica todas las cantidades,
         // así que una frase por ingrediente sería cierta e ilegible — doce renglones para una
         // sola noticia, y la noticia enterrada.
-        // El "1,50" y no "1,5" es `formatearNumero`, que es el formato de toda la app: los
-        // números se leen igual acá que en cualquier otra pantalla.
         assertEquals(
-            listOf("La receta se reescaló: todas las cantidades quedaron multiplicadas por 1,50"),
+            listOf("La receta se reescaló: todas las cantidades quedaron multiplicadas por 1,5"),
             frases(bizcocho(), reescalada(1.5))
         )
     }

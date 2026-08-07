@@ -1,7 +1,7 @@
 package com.sandyyera.reposteria.logica.partes
 
 import com.sandyyera.reposteria.logica.busqueda.sonElMismoTexto
-import com.sandyyera.reposteria.logica.formato.redondearADosDecimales
+import com.sandyyera.reposteria.logica.formato.redondearParaGuardar
 import com.sandyyera.reposteria.logica.validaciones.LARGO_MAXIMO_NOMBRE
 
 /**
@@ -31,8 +31,8 @@ fun cantidadAdaptada(
     enLaOriginalAntes: Double,
     enLaOriginalAhora: Double
 ): Double {
-    if (enLaOriginalAntes <= 0.0) return redondearADosDecimales(enLaOriginalAhora)
-    return redondearADosDecimales(enLaCopia * (enLaOriginalAhora / enLaOriginalAntes))
+    if (enLaOriginalAntes <= 0.0) return redondearParaGuardar(enLaOriginalAhora)
+    return redondearParaGuardar(enLaCopia * (enLaOriginalAhora / enLaOriginalAntes))
 }
 
 /**

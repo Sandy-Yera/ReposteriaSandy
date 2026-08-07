@@ -512,29 +512,40 @@ Un índice es una lista ordenada que SQLite mantiene aparte para no tener que re
 
 ### 6.1 Formato numérico
 
-Punto para miles, coma para decimales, redondeo a 2 decimales, se omite la coma si el decimal es ",00":
+Punto para miles, coma para decimales, **hasta 5 decimales sin rellenar con ceros**, y sin coma
+cuando no hay decimales:
 
-```kotlin
-fun formatearNumero(valor: Double): String {
-    val redondeado = Math.round(valor * 100) / 100.0
-    val negativo = redondeado < 0
-    val absoluto = Math.abs(redondeado)          // se trabaja en positivo y el signo se pega al final:
-    val entero = absoluto.toLong()               // (-0,56).toInt() da 0 y perdería el "-", mostrando
-    val decimal = Math.round((absoluto - entero) * 100).toInt()  // una pérdida como si fuera ganancia
-    // Locale.US fija "," como separador de miles para poder cambiarlo por "." de forma predecible.
-    // Sin fijarlo se usa el idioma del celular, donde el separador puede ser otro (un espacio, por
-    // ejemplo) y entonces el .replace() no encuentra nada que reemplazar.
-    val enteroFmt = String.format(Locale.US, "%,d", entero).replace(",", ".")
-    val signo = if (negativo) "-" else ""
-    return if (decimal == 0) "$signo$enteroFmt"
-           else "$signo$enteroFmt,${decimal.toString().padStart(2, '0')}"
-}
-// formatearNumero(1000.0)  -> "1.000"
-// formatearNumero(1.55)    -> "1,55"
-// formatearNumero(250.0)   -> "250"
-// formatearNumero(-0.56)   -> "-0,56"      (no "0,56")
-// formatearNumero(-1234.56)-> "-1.234,56"
 ```
+// formatearNumero(1000.0)   -> "1.000"
+// formatearNumero(1.55)     -> "1,55"
+// formatearNumero(1.5)      -> "1,5"        (no "1,50": no se rellena)
+// formatearNumero(0.0666666)-> "0,06667"    (los ceros de la izquierda sí se conservan)
+// formatearNumero(250.0)    -> "250"
+// formatearNumero(-0.56)    -> "-0,56"      (no "0,56")
+// formatearNumero(-1234.56) -> "-1.234,56"
+```
+
+**Eran 2 decimales y pasaron a 5.** No fue por precisión abstracta: el que se rompía era el valor
+por gramo. Un saco de 25 kg a $1.700 sale a 0,068 el gramo; guardado como 0,07 y multiplicado por
+los 500 g de una receta da $35 donde son $34 — un 3 % de error metido en el costo de **cada** receta
+que use ese ingrediente. Y hacia abajo era peor: algo a 0,004 por gramo se guardaba como 0,00 y
+salía **gratis**, sin que nada avisara.
+
+**No se rellena con ceros a la derecha, y esa es la parte que hace soportables los 5.** Un precio
+redondo se sigue leyendo "$4.520" y no "$4.520,00000"; los decimales aparecen solo donde de verdad
+hay algo que decir, que es justamente el valor por gramo. Los ceros de la **izquierda** del decimal
+sí se conservan, porque sin ellos 0,06667 se leería "0,6667" y sería diez veces más. El costo
+aceptado es que donde antes decía "1,50" ahora dice "1,5".
+
+Lo que **no** cambió es la regla que sostiene todo esto: *lo que se muestra es exactamente lo que se
+guarda*, así que multiplicar a mano lo que se ve tiene que dar el número que la app muestra debajo.
+Es lo que permite pillar un error mirando la pantalla.
+
+`redondearParaGuardar` —que hasta este cambio se llamaba `redondearADosDecimales`— es la misma
+cuenta, separada para poder aplicarla **antes de guardar** y no solo al mostrar. Lleva una guarda de
+10¹³: más arriba, multiplicar por 100.000 desborda `Long` y `roundToLong` no avisa —se pega al tope
+y devuelve algo sin relación con el original—, así que ahí devuelve lo que llegó y deja que el tope
+del campo lo rechace. Es la misma trampa que ya costó una vez con `toInt()`.
 
 Los negativos importan de verdad acá: `gananciaPorTrozo`, `gananciaFinal` y el resultado de la simulación pueden dar negativos cuando el precio no alcanza a cubrir el costo, y ese es justamente el caso que hay que ver bien.
 
@@ -545,10 +556,10 @@ Vive en `logica/Formato.kt`, sin dependencias de Android — se puede probar con
 | Se escribe | `formatearNumero` | `formatearMientrasSeEscribe` |
 |---|---|---|
 | `1000,` | `1.000` — se come la coma, y entonces nunca se pueden escribir decimales | `1.000,` |
-| `1000,5` | `1.000,50` — inventa un cero que no se escribió | `1.000,5` |
-| `1,555` | `1,56` — redondea antes de que la persona termine | `1,55` |
+| `1000,50` | `1.000,5` — se come el cero que se está escribiendo | `1.000,50` |
+| `1,555555` | `1,55556` — redondea antes de que la persona termine | `1,55555` |
 
-La de escritura agrupa **solo la parte entera** y deja intacto lo que va después de la coma; descarta los puntos que reciba (los pone ella), corta en 2 decimales (los que la app guarda) y descarta el signo menos, porque los campos que la usan no aceptan negativos. Aplicarla sobre su propio resultado no cambia nada, que es lo que permite llamarla en cada tecla.
+La de escritura agrupa **solo la parte entera** y deja intacto lo que va después de la coma; descarta los puntos que reciba (los pone ella), corta en 5 decimales (los que la app guarda) y descarta el signo menos, porque los campos que la usan no aceptan negativos. Aplicarla sobre su propio resultado no cambia nada, que es lo que permite llamarla en cada tecla.
 
 **El cursor hay que moverlo a mano, y no es opcional.** Un campo de texto guarda la posición del cursor como un número, y ese número deja de significar lo mismo cuando el texto cambia de largo: al escribir `1234` el texto pasa a `1.234` —un carácter más— y el cursor, que estaba en la posición 4 (el final), queda entre el `3` y el `4`. Lo que se escriba después entra en medio del número. Esto **pasó de verdad** en la primera versión y no es cosmético: el monto queda mal sin que se note.
 
@@ -867,7 +878,7 @@ Se hace acá y no en la calculadora del celular por una razón concreta: el paso
 
 **La cuenta:** `valorPorGramo = precioPagado ÷ gramosQueTrae`, con un selector de **Kilos / Gramos** para la cantidad. Los dos botones están siempre a la vista, no en un desplegable, justamente porque cuál esté puesto cambia el resultado por mil.
 
-**El resultado se redondea a 2 decimales antes de guardarse**, no solo al mostrarse. Si se guardara `1,6666…` mientras la pantalla dice "1,67", multiplicar por los gramos de una receta no daría el número que se vio, y esa diferencia no tendría explicación visible. La contrapartida está aceptada y es visible: un ingrediente que sale a menos de medio centavo por gramo queda en 0, y ese 0 se ve en la calculadora **antes** de aceptar.
+**El resultado se redondea antes de guardarse**, no solo al mostrarse. Si se guardara `1,666666…` mientras la pantalla muestra el número redondeado, multiplicar por los gramos de una receta no daría lo que se vio, y esa diferencia no tendría explicación visible. Sigue habiendo un piso —lo que baje de 0,00001 por gramo queda en 0— pero con 5 decimales hay que irse a un peso por cada 100 kilos para llegar; con 2 lo alcanzaba cualquier cosa comprada a granel. Y ese 0 se ve en la calculadora **antes** de aceptar.
 
 **"Reemplazar o crear"**, debajo del resultado:
 

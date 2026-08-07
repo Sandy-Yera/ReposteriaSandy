@@ -5,52 +5,101 @@ import kotlin.math.abs
 import kotlin.math.roundToLong
 
 /**
- * Convierte un número al formato de la app: punto para los miles, coma para los
- * decimales, y sin coma cuando no hay decimales.
+ * Cuántos decimales se pueden escribir, que son los que la app después guarda.
  *
- *     1000.0   -> "1.000"
- *     1.55     -> "1,55"
- *     250.0    -> "250"
- *     -0.56    -> "-0,56"
- *     -1234.56 -> "-1.234,56"
+ * **Eran 2 y pasaron a 5**, y no es un capricho de precisión: el que se rompía era el valor
+ * por gramo. Un saco de 25 kg a $1.700 sale a 0,068 por gramo; redondeado a 0,07, multiplicar
+ * por los 500 g de una receta da $35 donde son $34 — un 3 % de error metido en el costo de
+ * **cada** receta que use ese ingrediente, y creciendo hacia abajo: algo a 0,004 por gramo se
+ * redondeaba a 0,00 y salía gratis.
+ *
+ * Con 5 el error queda por debajo del peso en cualquier receta de tamaño real.
+ */
+const val MAXIMO_DECIMALES = 5
+
+/** 10 elevado a [MAXIMO_DECIMALES]. Los dos tienen que moverse juntos. */
+private const val ESCALA_DECIMAL = 100_000L
+
+/**
+ * De dónde en adelante un `Double` ya no tiene decimales que valga la pena redondear.
+ *
+ * Multiplicar por [ESCALA_DECIMAL] un número más grande que esto desborda `Long`, y
+ * `roundToLong` no avisa: se pega al tope y devuelve un número sin ninguna relación con el
+ * original. Es la misma trampa que ya costó una vez con `toInt()` en `esNumeroEntero`. Ningún
+ * precio de repostería llega acá; el que llega es un dedo pegado en el teclado, y ahí lo
+ * correcto es devolver lo que se escribió y dejar que el tope del campo lo rechace.
+ */
+private const val TOPE_PARA_REDONDEAR = 1e13
+
+/**
+ * Redondea a [MAXIMO_DECIMALES], que es la precisión con la que la app guarda y muestra.
+ *
+ * Es la misma cuenta que hace [formatearNumero] antes de armar el texto, separada acá porque
+ * también hace falta **antes de guardar**: un valor por gramo calculado como 1,666666… se
+ * mostraría redondeado y se guardaría entero, y entonces multiplicarlo por los gramos de una
+ * receta no daría lo que la pantalla dejó ver. Guardando lo mismo que se muestra, la cuenta
+ * cierra y un error se puede pillar mirando.
+ *
+ * **Se llamaba `redondearADosDecimales`** y se renombró al pasar a 5: el nombre decía el
+ * número, así que cambiarlo por dentro habría dejado a cada llamador diciendo una mentira.
+ *
+ * Lo usan la calculadora de valor por gramo (7.2), los reescalados de receta (8.3.1) y la
+ * adaptación de una parte traída (8.11.3).
+ */
+fun redondearParaGuardar(valor: Double): Double {
+    if (!valor.isFinite() || abs(valor) >= TOPE_PARA_REDONDEAR) return valor
+    return (valor * ESCALA_DECIMAL).roundToLong() / ESCALA_DECIMAL.toDouble()
+}
+
+/**
+ * Convierte un número al formato de la app: punto para los miles, coma para los decimales.
+ *
+ *     1000.0     -> "1.000"
+ *     1.55       -> "1,55"
+ *     1.5        -> "1,5"
+ *     0.06667    -> "0,06667"
+ *     250.0      -> "250"
+ *     -0.56      -> "-0,56"
+ *     -1234.56   -> "-1.234,56"
+ *
+ * **Muestra hasta [MAXIMO_DECIMALES] y no rellena con ceros.** Esa es la parte que hace
+ * soportables los 5 decimales: un precio redondo se sigue leyendo "$4.520" y no
+ * "$4.520,00000", y los decimales aparecen solo donde de verdad hay algo que decir — que es
+ * justamente el valor por gramo. El costo aceptado es que donde antes decía "1,50" ahora dice
+ * "1,5": rellenar hasta 5 sería ruido en toda la app para ganar un cero en un caso.
+ *
+ * Lo que **no** cambia es la regla: lo que se muestra es exactamente lo que se guarda, así que
+ * multiplicar a mano lo que se ve tiene que dar el número que la app muestra debajo.
  *
  * Ver la sección 6.1 de arquitectura.md.
  */
-/**
- * Redondea a 2 decimales, que es la precisión con la que la app guarda y muestra números.
- *
- * Es la misma cuenta que hace [formatearNumero] antes de armar el texto, separada acá
- * porque también hace falta **antes de guardar**: un valor por gramo calculado como
- * 1,6666… se mostraría como "1,67" y se guardaría como 1,6666…, y entonces multiplicarlo
- * por los gramos de una receta no daría lo que la pantalla dejó ver. Guardando lo mismo
- * que se muestra, la cuenta cierra.
- *
- * Lo usan la calculadora de valor por gramo (7.2) y los reescalados de receta (8.3.1).
- */
-fun redondearADosDecimales(valor: Double): Double = (valor * 100).roundToLong() / 100.0
-
 fun formatearNumero(valor: Double): String {
-    val redondeado = redondearADosDecimales(valor)
+    val redondeado = redondearParaGuardar(valor)
 
     // Se trabaja en positivo y el signo se pega al final. Si se usara redondeado.toLong()
     // directamente, (-0,56) daría 0 y se perdería el "-": una pérdida se vería como ganancia.
     val negativo = redondeado < 0
     val absoluto = abs(redondeado)
-    val entero = absoluto.toLong()
-    val decimal = ((absoluto - entero) * 100).roundToLong().toInt()
+    var entero = absoluto.toLong()
+    var decimal = ((absoluto - entero) * ESCALA_DECIMAL).roundToLong()
+    // La resta de arriba puede quedar un pelo por debajo del entero siguiente y redondear
+    // hasta la escala completa. Sin esto saldría "0,100000", que no es un número.
+    if (decimal >= ESCALA_DECIMAL) {
+        entero++
+        decimal -= ESCALA_DECIMAL
+    }
 
     // Locale.US fija "," como separador de miles para poder cambiarlo por "." de forma
     // predecible. Sin fijarlo se usaría el idioma del celular, donde el separador puede
     // ser otro (un espacio, por ejemplo) y entonces el replace no encontraría nada.
     val enteroFmt = String.format(Locale.US, "%,d", entero).replace(",", ".")
     val signo = if (negativo) "-" else ""
+    // Se rellena a la izquierda para no perder los ceros que van **entre** la coma y el primer
+    // dígito (0,06667), y se recorta a la derecha para no inventar los que sobran.
+    val decimales = decimal.toString().padStart(MAXIMO_DECIMALES, '0').trimEnd('0')
 
-    return if (decimal == 0) "$signo$enteroFmt"
-    else "$signo$enteroFmt,${decimal.toString().padStart(2, '0')}"
+    return if (decimales.isEmpty()) "$signo$enteroFmt" else "$signo$enteroFmt,$decimales"
 }
-
-/** Cuántos decimales se pueden escribir, que son los que la app después guarda. */
-const val MAXIMO_DECIMALES = 2
 
 /**
  * Pone los puntos de mil **mientras se escribe**, sin tocar lo que todavía no está escrito.
@@ -59,11 +108,15 @@ const val MAXIMO_DECIMALES = 2
  * trabaja sobre un número ya terminado, y aplicada tecla por tecla arruina lo que se está
  * escribiendo:
  *
- * | Escrito   | Con `formatearNumero` | Con esta   |
- * |-----------|-----------------------|------------|
- * | `1000,`   | `1.000` (se come la coma, no se pueden escribir decimales) | `1.000,` |
- * | `1000,5`  | `1.000,50` (inventa un cero) | `1.000,5` |
- * | `1,555`   | `1,56` (redondea antes de tiempo) | `1,55` |
+ * | Escrito      | Con `formatearNumero` | Con esta      |
+ * |--------------|-----------------------|---------------|
+ * | `1000,`      | `1.000` (se come la coma, no se pueden escribir decimales) | `1.000,` |
+ * | `1000,50`    | `1.000,5` (se come el cero que se está escribiendo) | `1.000,50` |
+ * | `1,555555`   | `1,55556` (redondea antes de tiempo) | `1,55555` |
+ *
+ * La segunda fila cambió al pasar a 5 decimales y muestra bien por qué son dos funciones:
+ * `formatearNumero` ahora **saca** los ceros de la derecha, que es lo correcto para un número
+ * terminado y lo peor posible mientras se escribe — borraría el cero apenas se teclea.
  *
  * Reglas, todas al servicio de lo mismo — que lo que se ve sea lo que se escribió:
  * - Agrupa **solo la parte entera**. Lo que va después de la coma queda tal cual, con sus

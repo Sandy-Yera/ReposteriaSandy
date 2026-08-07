@@ -13,8 +13,8 @@ class RendimientoTest {
 
     @Test
     fun `el resultado respeta el formato de numeros de la app`() {
-        // 1.000 / 3 = 333,333... -> se muestra redondeado a 2 decimales, con coma
-        assertEquals("333,33", pesoPorTrozo(1000.0, 3))
+        // 1.000 / 3 = 333,333... -> se muestra redondeado a 5 decimales, con coma
+        assertEquals("333,33333", pesoPorTrozo(1000.0, 3))
         // Un peso grande lleva punto de miles
         assertEquals("1.250", pesoPorTrozo(10000.0, 8))
     }

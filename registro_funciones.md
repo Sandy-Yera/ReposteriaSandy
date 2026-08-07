@@ -41,7 +41,7 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 ### formatearNumero ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/formato/Formato.kt
 - Qué hace: convierte un número a texto con el formato de la app — punto para los miles, coma para los decimales, y sin coma cuando no hay decimales.
-- Cómo funciona: recibe un `Double`, redondea a 2 decimales y devuelve `String`. Trabaja sobre el valor absoluto y pega el signo al final, porque `(-0.56).toLong()` da 0 y perdería el "-" (mostraría una pérdida como ganancia). Fija `Locale.US` para que el separador de miles sea predecible y no dependa del idioma del celular. Ej: `1000.0` → `"1.000"`, `-1234.56` → `"-1.234,56"`. Cubierta por `FormatoTest` (9 casos, incluidos negativos y redondeos que llegan a entero).
+- Cómo funciona: recibe un `Double`, redondea a `MAXIMO_DECIMALES` y devuelve `String`. **Muestra hasta 5 decimales y no rellena con ceros a la derecha**, que es lo que hace soportables los 5: un precio redondo se sigue leyendo "4.520" y no "4.520,00000", y los decimales aparecen solo donde hay algo que decir. Los ceros de la **izquierda** sí se conservan, o 0,06667 se leería "0,6667" y sería diez veces más. El costo aceptado es que donde antes decía "1,50" ahora dice "1,5". Trabaja sobre el valor absoluto y pega el signo al final, porque `(-0.56).toLong()` da 0 y perdería el "-" (mostraría una pérdida como ganancia). Fija `Locale.US` para que el separador de miles sea predecible y no dependa del idioma del celular. Ej: `1000.0` → `"1.000"`, `-1234.56` → `"-1.234,56"`. Cubierta por `FormatoTest` (9 casos, incluidos negativos y redondeos que llegan a entero).
 
 ### formatearMientrasSeEscribe ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/formato/Formato.kt
@@ -61,7 +61,7 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 ### MAXIMO_DECIMALES ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/formato/Formato.kt
 - Qué hace: cuántos decimales se pueden escribir en un campo numérico.
-- Cómo funciona: constante `2`, los mismos que guarda `redondearADosDecimales`. Dejar escribir un tercero mostraría una precisión que se va a perder igual al guardar.
+- Cómo funciona: constante `5`, los mismos que guarda `redondearParaGuardar`. Dejar escribir un sexto mostraría una precisión que se va a perder igual al guardar. **Eran 2 y pasaron a 5** porque el que se rompía era el valor por gramo: un saco de 25 kg a $1.700 sale a 0,068 el gramo, redondeado a 0,07 daba $35 donde son $34 en cada receta que lo usara, y algo a 0,004 se redondeaba a 0,00 y salía **gratis**. Va con `ESCALA_DECIMAL` (10⁵) al lado, y las dos se mueven juntas.
 
 ### coincide ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/busqueda/Busqueda.kt
@@ -123,10 +123,10 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Qué hace: cuántos caracteres puede tener cualquier nombre escrito a mano.
 - Cómo funciona: constante `60`. La usan `errorEnNombreEscrito`, `errorEnTituloReceta` y `errorEnNombreSeccion`, y también sirve para poner el tope en el campo de texto de la pantalla.
 
-### redondearADosDecimales ✅ IMPLEMENTADA
+### redondearParaGuardar ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/formato/Formato.kt
-- Qué hace: redondea a 2 decimales, la precisión con la que la app guarda y muestra números.
-- Cómo funciona: recibe `Double` y devuelve `Double` (`(valor * 100).roundToLong() / 100.0`). Es la misma cuenta que hace `formatearNumero` antes de armar el texto, separada porque también hace falta **antes de guardar**: si se guardara 1,6666… y la pantalla mostrara "1,67", multiplicar por los gramos de una receta no daría el número que se vio. La usan `valorPorGramo` (7.2) y los reescalados de receta (8.3.1).
+- Qué hace: redondea a `MAXIMO_DECIMALES`, la precisión con la que la app guarda y muestra números.
+- Cómo funciona: recibe `Double` y devuelve `Double`. Es la misma cuenta que hace `formatearNumero` antes de armar el texto, separada porque también hace falta **antes de guardar**: si se guardara 1,666666… y la pantalla mostrara el número redondeado, multiplicar por los gramos de una receta no daría lo que se vio. La usan `valorPorGramo` (7.2), los reescalados de receta (8.3.1) y `cantidadAdaptada` (8.11.3). **Se llamaba `redondearADosDecimales`** y se renombró al pasar a 5 decimales: el nombre decía el número, así que cambiarlo por dentro habría dejado a cada llamador diciendo una mentira. Lleva una guarda nueva, `TOPE_PARA_REDONDEAR` (10¹³): multiplicar por 100.000 un número más grande desborda `Long` y `roundToLong` **no avisa** —se pega al tope y devuelve algo sin relación con el original—, así que ahí devuelve lo que llegó; es la misma trampa que ya costó una vez con `toInt()` en `esNumeroEntero`. También devuelve tal cual lo que no es finito.
 
 ### valorPorGramo ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/calculadora/ValorPorGramo.kt

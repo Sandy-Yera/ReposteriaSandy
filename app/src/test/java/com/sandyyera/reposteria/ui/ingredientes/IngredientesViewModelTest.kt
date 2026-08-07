@@ -216,7 +216,7 @@ class IngredientesViewModelTest {
 
         val formulario = modelo.estado.value.dialogo as DialogoIngrediente.Formulario
         assertEquals("Harina", formulario.nombre)
-        assertEquals("1.234,50", formulario.valorPorGramo)
+        assertEquals("1.234,5", formulario.valorPorGramo)
         assertNotNull(formulario.editando)
     }
 

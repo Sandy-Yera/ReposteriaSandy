@@ -15,15 +15,18 @@ class FormatoTest {
     }
 
     @Test
-    fun `redondea al segundo decimal mas cercano`() {
-        // "si es 1,546 sea 1,55"
-        assertEquals("1,55", formatearNumero(1.546))
+    fun `redondea al quinto decimal mas cercano`() {
+        // El ejemplo original de la especificación era "si es 1,546 sea 1,55", con 2
+        // decimales. Con 5, el 1,546 ya cabe entero y no hay nada que redondear; lo que se
+        // redondea ahora es el sexto.
+        assertEquals("1,546", formatearNumero(1.546))
         assertEquals("1,55", formatearNumero(1.55))
+        assertEquals("1,55556", formatearNumero(1.5555555))
     }
 
     @Test
     fun `usa punto para miles y coma para decimales`() {
-        assertEquals("1.000,50", formatearNumero(1000.5))
+        assertEquals("1.000,5", formatearNumero(1000.5))
         assertEquals("1.234.567", formatearNumero(1234567.0))
         assertEquals("1.234.567,89", formatearNumero(1234567.89))
     }
@@ -51,34 +54,58 @@ class FormatoTest {
     }
 
     @Test
-    fun `un decimal se completa a dos cifras`() {
-        // 1,5 se muestra como "1,50", no como "1,5"
-        assertEquals("1,50", formatearNumero(1.5))
+    fun `no se rellena con ceros a la derecha`() {
+        // **Lo contrario de lo que hacía con 2 decimales**, donde 1,5 salía "1,50". Es lo que
+        // hace soportables los 5: un precio redondo se sigue leyendo "$4.520" y no
+        // "$4.520,00000". El costo aceptado es este cero que se fue.
+        assertEquals("1,5", formatearNumero(1.5))
+        assertEquals("4.520", formatearNumero(4520.0))
+        // Pero los ceros de la izquierda del decimal **sí** se conservan: sin ellos, 0,06667
+        // se leería "0,6667" y sería diez veces más.
         assertEquals("0,05", formatearNumero(0.05))
+        assertEquals("0,06667", formatearNumero(0.0666666))
+        assertEquals("0,00123", formatearNumero(0.00123))
     }
 
     @Test
     fun `el redondeo que llega a entero no deja coma colgando`() {
-        // 1000,999 redondea a 1.001 exacto: no debe quedar "1.001,00"
-        assertEquals("1.001", formatearNumero(1000.999))
-        assertEquals("1", formatearNumero(0.999))
+        // Con 5 decimales hay que irse al sexto para que suba el entero. El caso importa
+        // porque la resta que separa entero de decimal puede redondear hasta la escala
+        // completa, y sin cuidado saldría "0,100000", que no es un número.
+        assertEquals("1.001", formatearNumero(1000.9999999))
+        assertEquals("1", formatearNumero(0.9999999))
     }
 
     @Test
     fun `montos tipicos de la app`() {
-        assertEquals("12.400", formatearNumero(12400.0))   // costo de una torta
-        assertEquals("1,55", formatearNumero(1.5468))      // valor por gramo
-        assertEquals("40.000", formatearNumero(40000.0))   // ingreso mensual simulado
+        assertEquals("12.400", formatearNumero(12400.0))    // costo de una torta
+        assertEquals("1,5468", formatearNumero(1.5468))     // valor por gramo
+        assertEquals("40.000", formatearNumero(40000.0))    // ingreso mensual simulado
+        // El caso que motivó los 5 decimales: 25 kg a $1.700. Con 2 salía "0,07", y por 500 g
+        // daba $35 donde son $34.
+        assertEquals("0,068", formatearNumero(1700.0 / 25000.0))
     }
 
     // --- Redondeo compartido ---
 
     @Test
-    fun `redondear a dos decimales da el mismo numero que se muestra`() {
-        assertEquals(1.55, redondearADosDecimales(1.5468), 0.0)
-        assertEquals(1.67, redondearADosDecimales(1.6666666), 0.0)
-        assertEquals(1000.0, redondearADosDecimales(1000.0), 0.0)
-        assertEquals(-0.56, redondearADosDecimales(-0.5551), 0.0)
+    fun `redondear para guardar da el mismo numero que se muestra`() {
+        assertEquals(1.5468, redondearParaGuardar(1.5468), 0.0)
+        assertEquals(1.66667, redondearParaGuardar(1.6666666), 0.0)
+        assertEquals(1000.0, redondearParaGuardar(1000.0), 0.0)
+        assertEquals(-0.5551, redondearParaGuardar(-0.5551), 0.0)
+    }
+
+    @Test
+    fun `un numero enorme se devuelve tal cual en vez de desbordar`() {
+        // Multiplicar por 100.000 un número muy grande desborda `Long`, y `roundToLong` no
+        // avisa: se pega al tope y devuelve algo sin ninguna relación con el original. Es la
+        // misma trampa que ya costó una vez con `toInt()`. Ahí no hay decimales que redondear,
+        // así que lo correcto es devolver lo que llegó.
+        assertEquals(1e15, redondearParaGuardar(1e15), 0.0)
+        assertEquals(-1e15, redondearParaGuardar(-1e15), 0.0)
+        assertTrue(redondearParaGuardar(Double.NaN).isNaN())
+        assertEquals(Double.POSITIVE_INFINITY, redondearParaGuardar(Double.POSITIVE_INFINITY), 0.0)
     }
 
     // --- Formato mientras se escribe ---
@@ -118,15 +145,18 @@ class FormatoTest {
     }
 
     @Test
-    fun `corta en dos decimales, que es lo que se guarda`() {
-        assertEquals("1,55", formatearMientrasSeEscribe("1,555"))
-        assertEquals("1,55", formatearMientrasSeEscribe("1,5599999"))
+    fun `corta en cinco decimales, que es lo que se guarda`() {
+        assertEquals("1,55555", formatearMientrasSeEscribe("1,555555"))
+        assertEquals("1,55999", formatearMientrasSeEscribe("1,5599999"))
+        // Y no toca lo que todavía cabe, aunque termine en cero: acá el cero se está
+        // escribiendo, al revés que en `formatearNumero`, que lo saca.
+        assertEquals("1,50", formatearMientrasSeEscribe("1,50"))
     }
 
     @Test
     fun `aplicarla sobre su propio resultado no cambia nada`() {
         // Importa porque se llama en cada tecla sobre el texto que ella misma dejó.
-        for (escrito in listOf("1.000", "1.000,5", "1.000,55", "0,05", "123.456.789", "0,", "")) {
+        for (escrito in listOf("1.000", "1.000,5", "1.000,55555", "0,00123", "123.456.789", "0,", "")) {
             assertEquals(
                 "reformatear '$escrito' debe devolver lo mismo",
                 escrito,
@@ -166,7 +196,17 @@ class FormatoTest {
         assertEquals("1.000,5", aLaVista)
         val numero = com.sandyyera.reposteria.logica.validaciones.textoANumero(aLaVista)
         assertEquals(1000.5, numero!!, 0.0)
-        assertEquals("1.000,50", formatearNumero(numero))
+        assertEquals("1.000,5", formatearNumero(numero))
+    }
+
+    @Test
+    fun `un valor por gramo chico sobrevive el viaje completo`() {
+        // El recorrido que se rompía con 2 decimales: escribir, guardar, y volver a mostrar.
+        val aLaVista = formatearMientrasSeEscribe("0,00123")
+        assertEquals("0,00123", aLaVista)
+        val numero = com.sandyyera.reposteria.logica.validaciones.textoANumero(aLaVista)!!
+        assertEquals(0.00123, numero, 0.0)
+        assertEquals("0,00123", formatearNumero(numero))
     }
 
     // --- Dónde queda el cursor ---

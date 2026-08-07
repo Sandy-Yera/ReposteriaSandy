@@ -304,7 +304,7 @@ class RendimientoRepositorioTest {
     }
 
     @Test
-    fun `las cantidades reescaladas quedan redondeadas a dos decimales`() = runBlocking {
+    fun `las cantidades reescaladas quedan redondeadas como todo lo que se guarda`() = runBlocking {
         // Si se guardara sin redondear, el subtotal que muestra la pantalla no coincidiría
         // con el que suma la base.
         val id = recetaConHarina("Salsa")
@@ -312,7 +312,7 @@ class RendimientoRepositorioTest {
 
         repositorio.reescalarPorPeso(id, "100")   // factor 1/3
 
-        assertEquals(166.67, gramosDe(id), 0.0001)
+        assertEquals(166.66667, gramosDe(id), 0.000001)
     }
 
     @Test

@@ -39,10 +39,10 @@ class AdaptacionTest {
     }
 
     @Test
-    fun `el resultado viene redondeado a dos decimales`() {
+    fun `el resultado viene redondeado como todo lo que se guarda`() {
         // El mismo redondeo que el resto de la app: si se guardara sin redondear, el subtotal
         // que muestra la pantalla no coincidiría con el que suma la base.
-        assertEquals(33.33, cantidadAdaptada(100.0, 300.0, 100.0), 0.001)
+        assertEquals(33.33333, cantidadAdaptada(100.0, 300.0, 100.0), 0.000001)
     }
 
     @Test

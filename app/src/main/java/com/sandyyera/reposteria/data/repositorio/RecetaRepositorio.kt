@@ -11,7 +11,7 @@ import com.sandyyera.reposteria.data.db.entidades.TipoEvento
 import com.sandyyera.reposteria.data.db.entidades.aVigente
 import com.sandyyera.reposteria.data.db.entidades.RecetaRendimiento
 import com.sandyyera.reposteria.logica.formato.formatearNumero
-import com.sandyyera.reposteria.logica.formato.redondearADosDecimales
+import com.sandyyera.reposteria.logica.formato.redondearParaGuardar
 import com.sandyyera.reposteria.logica.duracion.TipoDuracion
 import com.sandyyera.reposteria.logica.duracion.UnidadDuracion
 import com.sandyyera.reposteria.logica.moldes.DimensionesMolde
@@ -632,7 +632,7 @@ class RecetaRepositorio(
         multiplicarIngredientes(recetaId, factor)
         // Sin peso anotado no hay nada que reescalar ni nada que comprobar: la marca se
         // queda apagada en vez de pedir revisar un campo vacío.
-        val pesoReescalado = actual.pesoFinalG?.let { redondearADosDecimales(it * factor) }
+        val pesoReescalado = actual.pesoFinalG?.let { redondearParaGuardar(it * factor) }
         dao.actualizarRendimiento(
             actual.copy(
                 dimensiones = nuevo,
@@ -706,15 +706,15 @@ class RecetaRepositorio(
     }
 
     /**
-     * Multiplica todas las cantidades por [factor], redondeando a 2 decimales.
+     * Multiplica todas las cantidades por [factor], con el redondeo con que se guarda todo.
      *
-     * El redondeo es el mismo que usa el resto de la app (`redondearADosDecimales`): si se
+     * El redondeo es el mismo que usa el resto de la app (`redondearParaGuardar`): si se
      * guardara la cantidad sin redondear, el subtotal que muestra la pantalla no coincidiría
      * con el que suma la base.
      */
     private suspend fun multiplicarIngredientes(recetaId: Long, factor: Double) {
         dao.obtenerTodosLosIngredientes(recetaId).forEach { item ->
-            dao.actualizarCantidad(item.id, redondearADosDecimales(item.cantidadG * factor))
+            dao.actualizarCantidad(item.id, redondearParaGuardar(item.cantidadG * factor))
         }
     }
 
@@ -922,7 +922,7 @@ class RecetaRepositorio(
                 recetaId = recetaId,
                 modo = modo,
                 cantidad = cantidad,
-                precioTotal = redondearADosDecimales(total),
+                precioTotal = redondearParaGuardar(total),
                 etiqueta = etiqueta.trim().ifBlank { null }
             )
         )
@@ -975,7 +975,7 @@ class RecetaRepositorio(
             actual.copy(
                 modo = modo,
                 cantidad = cantidad,
-                precioTotal = redondearADosDecimales(total),
+                precioTotal = redondearParaGuardar(total),
                 etiqueta = etiqueta.trim().ifBlank { null }
             )
         )
