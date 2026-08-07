@@ -68,7 +68,7 @@ class CorteTest {
         // Y con eso ya se puede decir el tamaño del trozo, que era lo que faltaba: 360 / 8.
         assertEquals(
             "porciones de 45°",
-            medidaDelTrozo(rosca, corteEfectivoDe(rosca), trozos = 8, comoNumero)
+            medidaDelTrozo(rosca, corteEfectivoDe(rosca), trozos = 8, formatear = comoNumero)
         )
     }
 
@@ -79,7 +79,7 @@ class CorteTest {
         // El ejemplo de Sandy: un molde de 8 x 6 x 10 en 2 trozos da trozos de 4 x 6 x 10.
         assertEquals(
             "4 × 6 cm, 10 de alto",
-            medidaDelTrozo(rectangulo(8.0, 6.0, 10.0), corte = null, trozos = 2, comoNumero)
+            medidaDelTrozo(rectangulo(8.0, 6.0, 10.0), corte = null, trozos = 2, formatear = comoNumero)
         )
     }
 
@@ -99,18 +99,19 @@ class CorteTest {
 
         assertEquals(
             "2 × 8 cm, 10 de alto",
-            medidaDelTrozo(cortandoElCorto, FormaDelCorte.CUADRICULA, 2, comoNumero)
+            medidaDelTrozo(cortandoElCorto, FormaDelCorte.CUADRICULA, 2, formatear = comoNumero)
         )
     }
 
     @Test
-    fun `sin anotar nada se sigue cortando el largo, que es la suposicion razonable`() {
-        // El otro lado de lo mismo: la suposición se queda como estaba para quien no dice nada.
+    fun `sin anotar nada se reparte lo mas parejo posible`() {
+        // El otro lado de lo mismo: quien no dice nada recibe una suposición, y la suposición
+        // pasó a ser el reparto que deja los trozos más parecidos a un cuadrado.
         val sinDecirNada = rectangulo(8.0, 4.0, 10.0)
 
         assertEquals(
             "4 × 4 cm, 10 de alto",
-            medidaDelTrozo(sinDecirNada, FormaDelCorte.CUADRICULA, 2, comoNumero)
+            medidaDelTrozo(sinDecirNada, FormaDelCorte.CUADRICULA, 2, formatear = comoNumero)
         )
     }
 
@@ -125,8 +126,8 @@ class CorteTest {
         )
 
         assertEquals(
-            medidaDelTrozo(rectangulo(8.0, 4.0, 10.0), FormaDelCorte.CUADRICULA, 2, comoNumero),
-            medidaDelTrozo(confirmando, FormaDelCorte.CUADRICULA, 2, comoNumero)
+            medidaDelTrozo(rectangulo(8.0, 4.0, 10.0), FormaDelCorte.CUADRICULA, 2, formatear = comoNumero),
+            medidaDelTrozo(confirmando, FormaDelCorte.CUADRICULA, 2, formatear = comoNumero)
         )
     }
 
@@ -136,19 +137,76 @@ class CorteTest {
         // depende de cómo lo haya escrito la persona.
         assertEquals(
             "10 × 6 cm, 5 de alto",
-            medidaDelTrozo(rectangulo(6.0, 20.0, 5.0), corte = null, trozos = 2, comoNumero)
+            medidaDelTrozo(rectangulo(6.0, 20.0, 5.0), corte = null, trozos = 2, formatear = comoNumero)
         )
     }
 
     @Test
-    fun `un cuadrado se corta igual, sin tener que decirlo`() {
+    fun `un cuadrado en cuatro da cuatro cuadrados, no cuatro tiras`() {
+        // **Esta prueba decía "5 × 20" hasta que apareció el reparto**, y era justo lo que
+        // Sandy reportó como molesto: partir siempre el lado largo en tantas tiras como trozos
+        // deja tiras de 5 cm de un molde de 20. Dos por dos es lo que uno corta de verdad.
         val cuadrado = DimensionesMolde(
             tipoForma = TipoFormaMolde.CUADRADO, ladoCm = 20.0, alturaMoldeCm = 6.0
         )
 
         assertEquals(
-            "5 × 20 cm, 6 de alto",
-            medidaDelTrozo(cuadrado, corte = null, trozos = 4, comoNumero)
+            "10 × 10 cm, 6 de alto",
+            medidaDelTrozo(cuadrado, corte = null, trozos = 4, formatear = comoNumero)
+        )
+    }
+
+    @Test
+    fun `el molde de Sandy, que es el que motivó el reparto`() {
+        // Un rectángulo de 26 × 25 × 10 en 6 trozos. Partiendo solo el lado largo daba tiras
+        // de 4,33 × 25; el reparto más parejo da 3 × 2, o sea trozos de 8,67 × 12,5.
+        val elDeSandy = rectangulo(26.0, 25.0, 10.0)
+
+        assertEquals(
+            "8.7 × 12.5 cm, 10 de alto",
+            medidaDelTrozo(elDeSandy, corte = null, trozos = 6, formatear = comoNumero)
+        )
+    }
+
+    @Test
+    fun `el reparto elegido a mano manda sobre el mas parejo`() {
+        // Es la misma regla que con el lado que se corta: una instrucción explícita no se
+        // corrige en silencio. Si alguien quiere las seis tiras, se cortan seis tiras.
+        val elDeSandy = rectangulo(26.0, 25.0, 10.0)
+
+        assertEquals(
+            "4.3 × 25 cm, 10 de alto",
+            medidaDelTrozo(elDeSandy, corte = null, trozos = 6, trozosALoLargo = 6, formatear = comoNumero)
+        )
+    }
+
+    @Test
+    fun `con los lados anotados a mano el reparto no se corrige solo`() {
+        // La otra mitad de 9.4.2, y una regresión que esta prueba pilló: al llegar el reparto
+        // parejo, un molde anotado para cortar el lado de 4 terminaba partiendo el de 8 porque
+        // eso dejaba trozos más cuadrados. Anotar los lados **es** la instrucción, y una
+        // instrucción explícita no se corrige en silencio.
+        val cortandoElCorto = rectangulo(8.0, 4.0, 10.0).copy(
+            formaDelCorte = FormaDelCorte.CUADRICULA,
+            largoDeCorteCm = 4.0,
+            anchoDeCorteCm = 8.0
+        )
+
+        assertEquals(
+            "1 × 8 cm, 10 de alto",
+            medidaDelTrozo(cortandoElCorto, FormaDelCorte.CUADRICULA, 4, formatear = comoNumero)
+        )
+    }
+
+    @Test
+    fun `un reparto que ya no divide se descarta en vez de dar un numero falso`() {
+        // La receta pasó de 6 a 8 trozos y el "3 a lo largo" guardado antes ya no reparte
+        // nada: aplicarlo daría 2,67 filas, que no existen. Se vuelve al más parejo.
+        val elDeSandy = rectangulo(26.0, 25.0, 10.0)
+
+        assertEquals(
+            medidaDelTrozo(elDeSandy, corte = null, trozos = 8, formatear = comoNumero),
+            medidaDelTrozo(elDeSandy, corte = null, trozos = 8, trozosALoLargo = 3, formatear = comoNumero)
         )
     }
 
@@ -160,8 +218,8 @@ class CorteTest {
             tipoForma = TipoFormaMolde.CIRCULO, diametroCm = 24.0, alturaMoldeCm = 6.0
         )
 
-        assertEquals("porciones de 45°", medidaDelTrozo(circulo, null, 8, comoNumero))
-        assertEquals("porciones de 60°", medidaDelTrozo(circulo, null, 6, comoNumero))
+        assertEquals("porciones de 45°", medidaDelTrozo(circulo, null, 8, formatear = comoNumero))
+        assertEquals("porciones de 60°", medidaDelTrozo(circulo, null, 6, formatear = comoNumero))
     }
 
     @Test
@@ -169,7 +227,7 @@ class CorteTest {
         val circulo = DimensionesMolde(tipoForma = TipoFormaMolde.CIRCULO, diametroCm = 24.0)
 
         // 360 / 7 = 51,43°
-        assertEquals("porciones de 51°", medidaDelTrozo(circulo, null, 7, comoNumero))
+        assertEquals("porciones de 51°", medidaDelTrozo(circulo, null, 7, formatear = comoNumero))
     }
 
     // --- Lo que hay que preguntar ---
@@ -196,7 +254,7 @@ class CorteTest {
             formaDelCorte = FormaDelCorte.CUNAS
         )
 
-        assertEquals("porciones de 36°", medidaDelTrozo(rosca, rosca.formaDelCorte, 10, comoNumero))
+        assertEquals("porciones de 36°", medidaDelTrozo(rosca, rosca.formaDelCorte, 10, formatear = comoNumero))
     }
 
     @Test
@@ -213,7 +271,7 @@ class CorteTest {
 
         assertEquals(
             "5 × 10 cm, 5 de alto",
-            medidaDelTrozo(triangulo, triangulo.formaDelCorte, 4, comoNumero)
+            medidaDelTrozo(triangulo, triangulo.formaDelCorte, 4, formatear = comoNumero)
         )
     }
 
@@ -228,7 +286,7 @@ class CorteTest {
             formaDelCorte = FormaDelCorte.CUADRICULA
         )
 
-        assertNull(medidaDelTrozo(triangulo, triangulo.formaDelCorte, 4, comoNumero))
+        assertNull(medidaDelTrozo(triangulo, triangulo.formaDelCorte, 4, formatear = comoNumero))
     }
 
     @Test
@@ -241,7 +299,7 @@ class CorteTest {
             formaDelCorte = FormaDelCorte.NO_SE_CORTA
         )
 
-        assertNull(medidaDelTrozo(galletas, galletas.formaDelCorte, 12, comoNumero))
+        assertNull(medidaDelTrozo(galletas, galletas.formaDelCorte, 12, formatear = comoNumero))
     }
 
     @Test
@@ -249,13 +307,13 @@ class CorteTest {
         // Se puede cortar un molde rectangular en porciones si a alguien le da la gana.
         assertEquals(
             "porciones de 90°",
-            medidaDelTrozo(rectangulo(20.0, 20.0, 5.0), FormaDelCorte.CUNAS, 4, comoNumero)
+            medidaDelTrozo(rectangulo(20.0, 20.0, 5.0), FormaDelCorte.CUNAS, 4, formatear = comoNumero)
         )
     }
 
     @Test
     fun `con cero trozos no se calcula nada, en vez de dividir por cero`() {
-        assertNull(medidaDelTrozo(rectangulo(20.0, 10.0, 5.0), null, 0, comoNumero))
+        assertNull(medidaDelTrozo(rectangulo(20.0, 10.0, 5.0), null, 0, formatear = comoNumero))
     }
 
     @Test

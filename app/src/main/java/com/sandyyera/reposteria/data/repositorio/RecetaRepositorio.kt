@@ -660,6 +660,24 @@ class RecetaRepositorio(
      *
      * No registra evento en el historial: no cambió ningún dato de la receta, solo se leyó.
      */
+    /**
+     * Elige en cuántas partes se corta el primer lado del molde (9.4.3).
+     *
+     * `null` vuelve a "no lo elegí", que no es lo mismo que elegir `1`: sin elección la app
+     * reparte lo más parejo que puede, y con `1` se corta el otro lado entero. Los dos son
+     * respuestas válidas y hay que poder dar cualquiera de las dos.
+     *
+     * **No comprueba que divida justo a los trozos**, a propósito: `repartoEfectivo` ya
+     * descarta lo que no divida y vuelve al más parejo, y rechazarlo acá obligaría a borrar el
+     * reparto cada vez que se toca el número de trozos — cuando lo normal es volver a un
+     * número que sí divide y encontrarse la elección donde se dejó.
+     */
+    suspend fun elegirRepartoDelCorte(recetaId: Long, trozosALoLargo: Int?) {
+        val actual = dao.obtenerRendimiento(recetaId) ?: return
+        if (actual.trozosALoLargo == trozosALoLargo) return
+        dao.actualizarRendimiento(actual.copy(trozosALoLargo = trozosALoLargo))
+    }
+
     suspend fun marcarPesoRevisado(recetaId: Long) {
         val actual = dao.obtenerRendimiento(recetaId) ?: return
         if (!actual.pesoReescaladoSinRevisar) return

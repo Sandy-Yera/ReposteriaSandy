@@ -501,13 +501,17 @@ class MoldeDeRecetaViewModelTest {
     }
 
     @Test
-    fun `en las formas obvias no se pregunta`() = probar { modelo ->
-        // Preguntarlo siempre sería pedir que confirmen algo que nadie discute.
+    fun `en las formas obvias tambien se ofrece, pero ya viene contestado`() = probar { modelo ->
+        // **Esta prueba afirmaba lo contrario**: que en un cuadrado no se preguntaba, porque
+        // sería pedir que confirmen algo que nadie discute. Lo pidió Sandy al revés y tiene
+        // razón — la sugerencia puede no acertar, y un molde rectangular cortado en cuñas no
+        // tenía cómo decirse. La diferencia es entre no poder y no tener que: se ofrece, pero
+        // llega pre-elegido, así que quien no tenga nada que corregir no toca nada.
         medirAMano(modelo, TipoFormaMolde.CUADRADO)
 
-        assertFalse("Un cuadrado no se pregunta", cuadro(modelo).hayQuePreguntarElCorte)
+        assertTrue("Se puede elegir", cuadro(modelo).hayQuePreguntarElCorte)
         assertEquals(
-            "Y se supone cuadrícula",
+            "Y viene con la cuadrícula ya puesta",
             FormaDelCorte.CUADRICULA,
             cuadro(modelo).corteEfectivo
         )

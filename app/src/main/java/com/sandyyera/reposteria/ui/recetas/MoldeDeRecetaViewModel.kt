@@ -108,12 +108,17 @@ sealed interface DialogoMoldeDeReceta {
         val corteEfectivo: FormaDelCorte? get() = corte ?: corteSugerido(forma)
 
         /**
-         * Si hay que **preguntar** cómo se corta. Solo midiendo a mano: eligiendo del catálogo,
-         * el corte viene con el molde y volver a preguntarlo sería pedir que confirmen algo ya
+         * Si se ofrece elegir cómo se corta. Solo midiendo a mano: eligiendo del catálogo, el
+         * corte viene con el molde y volver a preguntarlo sería pedir que confirmen algo ya
          * contestado —y peor, dejaría dos respuestas para el mismo molde.
+         *
+         * Dentro del modo prueba **se ofrece en todas las formas**, no solo donde `corteSugerido`
+         * no sabe qué contestar. Es el mismo cambio que en el catálogo y por el mismo motivo: la
+         * sugerencia puede no acertar, y un molde rectangular cortado en cuñas no tenía cómo
+         * decirse. Sandy lo pidió justo desde acá — "pedí prestado un molde", o sea modo prueba.
          */
         val hayQuePreguntarElCorte: Boolean
-            get() = origen == OrigenDelMolde.PRUEBA && forma != null && corteSugerido(forma) == null
+            get() = origen == OrigenDelMolde.PRUEBA && forma != null
 
         /**
          * Si se ofrecen las dos medidas del corte escritas a mano.

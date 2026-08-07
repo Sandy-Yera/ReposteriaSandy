@@ -22,6 +22,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -69,6 +70,7 @@ data class AccionesMoldes(
     val elegirForma: (TipoFormaMolde) -> Unit = {},
     val cambiarMedida: (CampoDeMolde, String) -> Unit = { _, _ -> },
     val elegirCorte: (FormaDelCorte) -> Unit = {},
+    val cambiarTrozosDeLaPrueba: (String) -> Unit = {},
     val cambiarLargoDeCorte: (String) -> Unit = {},
     val cambiarAnchoDeCorte: (String) -> Unit = {},
     val guardar: () -> Unit = {},
@@ -99,6 +101,7 @@ fun ListaMoldesScreen(
             elegirForma = modelo::elegirForma,
             cambiarMedida = modelo::cambiarMedida,
             elegirCorte = modelo::elegirCorte,
+            cambiarTrozosDeLaPrueba = modelo::cambiarTrozosDeLaPrueba,
             cambiarLargoDeCorte = modelo::cambiarLargoDeCorte,
             cambiarAnchoDeCorte = modelo::cambiarAnchoDeCorte,
             guardar = modelo::guardar,
@@ -384,9 +387,11 @@ private fun FormularioMolde(
 
                 // --- Cómo se corta (9.4) ---
                 //
-                // Solo se pregunta en el triángulo y el exótico: en las otras tres la
-                // respuesta es obvia y `corteSugerido` ya la sabe. Preguntarla siempre sería
-                // pedir que confirmen algo que nadie discute.
+                // **Se pregunta siempre**, no solo donde no hay sugerencia. Antes se ofrecía
+                // únicamente en el triángulo y el exótico, con el argumento de que en las otras
+                // tres la respuesta es obvia — cierto salvo por un detalle: la sugerencia puede
+                // no acertar, y un molde rectangular cortado en cuñas no tenía cómo decirse.
+                // Viene pre-elegida, así que quien no tenga nada que corregir no toca nada.
                 if (estado.hayQuePreguntarElCorte) {
                     Text(
                         text = "¿Cómo se corta?",
@@ -436,6 +441,39 @@ private fun FormularioMolde(
                         etiqueta = "Ancho para cortar (cm)",
                         accionDelTeclado = ImeAction.Done
                     )
+                }
+
+                // Cómo quedarían los trozos, **mientras se escribe** (9.4.3). Lo pidió
+                // Sandy: poder verlo "en el mismo acto que escribo, sin siquiera aceptarlo o
+                // ponerlos en una receta". El número de trozos **no se guarda**: cuántos rinde
+                // algo es de la receta y no del molde — el mismo molde da 6 porciones de torta
+                // y 12 de brownie—, así que guardarlo acá sería un segundo lugar donde puede
+                // quedar viejo. Es solo para mirar.
+                if (estado.corteEfectivo != null && estado.corteEfectivo != FormaDelCorte.NO_SE_CORTA) {
+                    HorizontalDivider()
+                    CampoNumerico(
+                        valor = estado.trozosDePrueba,
+                        alCambiar = acciones.cambiarTrozosDeLaPrueba,
+                        etiqueta = "¿En cuántos trozos?",
+                        ayuda = "Solo para ver cómo quedaría. No se guarda con el molde."
+                    )
+                    estado.medidaDeLaPrueba?.let {
+                        Text(
+                            text = "Cada trozo: $it",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    estado.repartosDeLaPrueba.forEach { (reparto, medida) ->
+                        Text(
+                            // Todos los repartos y no solo el que la app elegiría: acá no se
+                            // está decidiendo nada —el reparto se elige en la receta, que es
+                            // donde viven los trozos—, se está mirando qué da este molde.
+                            text = "${reparto.comoSeLee}  ·  $medida",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
 
                 estado.vistaPrevia?.let { (area, volumen) ->

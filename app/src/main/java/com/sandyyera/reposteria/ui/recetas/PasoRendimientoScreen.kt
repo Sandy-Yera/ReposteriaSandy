@@ -14,8 +14,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -46,6 +48,7 @@ import com.sandyyera.reposteria.ui.theme.ReposteriaTheme
 data class AccionesRendimiento(
     val cambiarTrozos: (String) -> Unit = {},
     val cambiarPesoFinal: (String) -> Unit = {},
+    val elegirReparto: (Int?) -> Unit = {},
     val marcarPesoRevisado: () -> Unit = {},
     val abrirReescalarPorPeso: () -> Unit = {},
     val cambiarPesoNuevo: (String) -> Unit = {},
@@ -74,6 +77,7 @@ fun PasoRendimientoScreen(
         AccionesRendimiento(
             cambiarTrozos = modelo::cambiarTrozos,
             cambiarPesoFinal = modelo::cambiarPesoFinal,
+            elegirReparto = modelo::elegirReparto,
             marcarPesoRevisado = modelo::marcarPesoRevisado,
             abrirReescalarPorPeso = modelo::abrirReescalarPorPeso,
             cambiarPesoNuevo = modelo::cambiarPesoNuevo,
@@ -267,6 +271,14 @@ fun PasoRendimiento(
                 }
             }
 
+            // Cómo se reparten los trozos entre los dos lados (9.4.3). Va **debajo de la
+            // tarjeta de cifras y no adentro**: la tarjeta muestra números que salen de una
+            // decisión, y esto **es** la decisión. Aparece solo cuando hay algo que repartir,
+            // así que una receta sin molde o de un solo trozo no ve nada.
+            if (estado.repartosOfrecidos.isNotEmpty()) {
+                RepartoDelCorteElegible(estado.repartosOfrecidos, acciones.elegirReparto)
+            }
+
             if (estado.sePuedeReescalarPorPeso) {
                 // Solo sin molde: con molde, cambiar de tamaño es cambiar de molde, y eso
                 // se hace en el paso anterior.
@@ -283,6 +295,55 @@ fun PasoRendimiento(
     when (dialogo) {
         is DialogoRendimiento.Ninguno -> Unit
         is DialogoRendimiento.ReescalarPorPeso -> CuadroDeReescaladoPorPeso(dialogo, acciones)
+    }
+}
+
+/**
+ * Elegir cómo se reparten los trozos entre los dos lados del molde (9.4.3).
+ *
+ * **Cada opción muestra la medida que deja**, y esa es toda la razón de que esto exista como
+ * lista y no como dos campos numéricos: lo que se está decidiendo no es "3 × 2", es "trozos de
+ * 8,67 × 12,5 o de 4,33 × 25". Con los números al lado, elegir es mirar; sin ellos habría que
+ * hacer dos divisiones de cabeza por opción.
+ *
+ * Se ofrecen **solo los repartos que dan justo**, así que no hay forma de elegir uno que deje
+ * trozos de dos tamaños distintos. Lo pidió Sandy con un molde de 26 × 25 en 6 trozos, donde la
+ * app repartía seis tiras de 4,33 cm sin preguntar.
+ */
+@Composable
+private fun RepartoDelCorteElegible(
+    opciones: List<OpcionDeReparto>,
+    alElegir: (Int?) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(Medidas.chico)) {
+        Text(
+            text = "¿Cómo lo cortas?",
+            style = MaterialTheme.typography.titleMedium
+        )
+        opciones.forEach { opcion ->
+            OutlinedButton(
+                onClick = { alElegir(opcion.reparto.aLoLargo) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = Medidas.objetivoTactil),
+                colors = if (opcion.elegido) {
+                    ButtonDefaults.outlinedButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                } else {
+                    ButtonDefaults.outlinedButtonColors()
+                }
+            ) {
+                // La diferencia entre elegido y no elegido es de **fondo y no de grosor de
+                // letra**, el mismo criterio que la fila de pasos: en un celular al sol, la
+                // negrita no se distingue de un vistazo y el color sí.
+                Text(
+                    text = "${opcion.reparto.comoSeLee}  ·  ${opcion.medida}",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
     }
 }
 

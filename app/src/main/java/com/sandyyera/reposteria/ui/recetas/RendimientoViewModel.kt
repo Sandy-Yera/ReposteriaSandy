@@ -11,7 +11,12 @@ import com.sandyyera.reposteria.logica.formato.formatearMientrasSeEscribe
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.logica.moldes.DimensionesMolde
 import com.sandyyera.reposteria.logica.moldes.corteEfectivoDe
+import com.sandyyera.reposteria.logica.moldes.FormaDelCorte
+import com.sandyyera.reposteria.logica.moldes.RepartoDelCorte
 import com.sandyyera.reposteria.logica.moldes.medidaDelTrozo
+import com.sandyyera.reposteria.logica.moldes.medidaEnCuadricula
+import com.sandyyera.reposteria.logica.moldes.repartoEfectivo
+import com.sandyyera.reposteria.logica.moldes.repartosPosibles
 import com.sandyyera.reposteria.logica.rendimiento.AVISO_PESO_REESCALADO
 import com.sandyyera.reposteria.logica.rendimiento.PESO_NO_ESPECIFICADO
 import com.sandyyera.reposteria.logica.rendimiento.pesoPorTrozo
@@ -53,6 +58,19 @@ sealed interface DialogoRendimiento {
     }
 }
 
+/**
+ * Un reparto ofrecido para cortar en cuadrícula, con la medida que deja (9.4.3).
+ *
+ * Lleva la medida **ya calculada y formateada** y no solo el reparto, porque el número es lo
+ * que se está decidiendo: ofrecer "3 × 2" a secas obliga a hacer la división de cabeza, que es
+ * justo el trabajo que la pantalla existe para ahorrar. Con la medida al lado, elegir es mirar.
+ */
+data class OpcionDeReparto(
+    val reparto: RepartoDelCorte,
+    val medida: String,
+    val elegido: Boolean
+)
+
 /** Lo que el paso de rendimiento necesita para dibujarse. */
 data class EstadoRendimiento(
     val usaMolde: Boolean = false,
@@ -85,6 +103,13 @@ data class EstadoRendimiento(
     val pesoSinRevisar: Boolean = false,
     /** Las medidas del molde, si usa uno. De acá sale el tamaño de cada trozo (9.4). */
     val dimensionesDelMolde: DimensionesMolde? = null,
+    /**
+     * En cuántas partes se corta el primer lado, si alguien lo eligió (9.4.3).
+     *
+     * `null` es "no lo elegí" y no "uno": sin elección se reparte lo más parejo posible, con
+     * `1` se corta el otro lado entero. Son dos respuestas distintas y las dos son válidas.
+     */
+    val trozosALoLargo: Int? = null,
     /**
      * Lo que contestó el repositorio al guardar solo, si rechazó (8.4.1).
      *
@@ -129,8 +154,41 @@ data class EstadoRendimiento(
     val medidaDeCadaTrozo: String?
         get() {
             val d = dimensionesDelMolde ?: return null
-            val cuantos = trozos.toIntOrNull()?.takeIf { it >= 1 } ?: return null
-            return medidaDelTrozo(d, corteEfectivoDe(d), cuantos, ::formatearNumero)
+            val cuantos = cuantosTrozos ?: return null
+            return medidaDelTrozo(d, corteEfectivoDe(d), cuantos, trozosALoLargo, ::formatearNumero)
+        }
+
+    /** Los trozos escritos, si el campo tiene un número usable. */
+    private val cuantosTrozos: Int? get() = trozos.toIntOrNull()?.takeIf { it >= 1 }
+
+    /**
+     * Las formas de repartir los trozos entre los dos lados, con la medida que deja cada una
+     * (9.4.3).
+     *
+     * Se ofrecen **solo los repartos que dan justo** y cada uno con su medida al lado: elegir
+     * "3 × 2" sin ver que eso da 8,67 × 12,5 es elegir a ciegas, y ese número es justamente lo
+     * que se está decidiendo.
+     *
+     * Viene vacía cuando no hay nada que repartir —sin molde, con un corte que no es cuadrícula,
+     * o con un solo trozo—, y ahí la pantalla no dibuja nada en vez de dibujar una sola opción
+     * que no decide nada.
+     */
+    val repartosOfrecidos: List<OpcionDeReparto>
+        get() {
+            val d = dimensionesDelMolde ?: return emptyList()
+            if (corteEfectivoDe(d) != FormaDelCorte.CUADRICULA) return emptyList()
+            val cuantos = cuantosTrozos?.takeIf { it > 1 } ?: return emptyList()
+            val elegido = repartoEfectivo(d, cuantos, trozosALoLargo) ?: return emptyList()
+
+            return repartosPosibles(cuantos).mapNotNull { reparto ->
+                medidaEnCuadricula(d, reparto, ::formatearNumero)?.let { medida ->
+                    OpcionDeReparto(
+                        reparto = reparto,
+                        medida = medida,
+                        elegido = reparto.aLoLargo == elegido.aLoLargo
+                    )
+                }
+            }
         }
 
     /** Cuánto pesa cada trozo, o "No especificado" si no hay peso anotado (8.3). */
@@ -235,6 +293,7 @@ class RendimientoViewModel(
             // Solo si de verdad usa molde: `quitarMolde` conserva las medidas por si fue un
             // error, así que la fila las tiene igual (la misma trampa del paso anterior).
             dimensionesDelMolde = rendimiento?.dimensiones?.takeIf { rendimiento.usaMolde },
+            trozosALoLargo = rendimiento?.trozosALoLargo,
             rechazoAlGuardar = avisos.first,
             mensaje = avisos.second,
             cargando = false
@@ -322,6 +381,17 @@ class RendimientoViewModel(
      * Se escribe en la base y no solo en el estado, porque el aviso tiene que sobrevivir a
      * cerrar la app; y se corta sola si ya estaba apagada, para no escribir en cada foco.
      */
+    /**
+     * Elige en cuántas partes se corta el primer lado del molde (9.4.3).
+     *
+     * Escribe **al instante y no con la espera de medio segundo** de los dos campos de texto:
+     * esto no se teclea, se elige de una lista, y ahí no hay estados intermedios que esperar
+     * — es el mismo criterio que el switch de "no apto" en el paso de duración.
+     */
+    fun elegirReparto(trozosALoLargo: Int?) {
+        viewModelScope.launch { recetas.elegirRepartoDelCorte(recetaId, trozosALoLargo) }
+    }
+
     fun marcarPesoRevisado() {
         if (!estado.value.pesoSinRevisar) return
         viewModelScope.launch {

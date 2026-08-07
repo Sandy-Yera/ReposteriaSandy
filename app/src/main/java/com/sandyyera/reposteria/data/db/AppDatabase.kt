@@ -56,7 +56,7 @@ import com.sandyyera.reposteria.data.db.entidades.RecetaSimulacionVenta
         EmpleadoSimulacionMultipleDetalle::class,
         EventoCambio::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = true
 )
 @TypeConverters(Convertidores::class)
@@ -103,7 +103,9 @@ abstract class AppDatabase : RoomDatabase() {
                 NOMBRE_ARCHIVO
             )
                 .addCallback(SembrarDatosIniciales)
-                .addMigrations(MIGRACION_1_2, MIGRACION_2_3, MIGRACION_3_4, MIGRACION_4_5)
+                .addMigrations(
+                    MIGRACION_1_2, MIGRACION_2_3, MIGRACION_3_4, MIGRACION_4_5, MIGRACION_5_6
+                )
                 .build()
 
         /**
@@ -200,6 +202,25 @@ abstract class AppDatabase : RoomDatabase() {
          * Los índices llevan el nombre con que Room los genera (`index_<tabla>_<columna>`); con
          * otro nombre la comparación falla aunque el índice exista y cubra lo mismo.
          */
+        /**
+         * Agrega el reparto del corte en cuadrícula (9.4.3).
+         *
+         * Una sola columna nullable, que es el caso fácil de SQLite: no necesita `DEFAULT` —el
+         * `null` **significa algo**, "no lo elegí", y ahí la app reparte lo más parejo que
+         * puede—. Es la misma decisión que las tres columnas del corte en la migración 3 → 4.
+         *
+         * **Todas las filas que ya existen quedan en `null`, y eso es lo correcto**: nadie
+         * eligió reparto antes de que se pudiera elegir. Lo que sí cambia para ellas es la
+         * suposición —antes se partía siempre el lado largo en tantas tiras como trozos, ahora
+         * se reparte parejo—, y ese cambio no necesita migración porque el tamaño del trozo
+         * nunca se guardó: se calcula al mostrarlo.
+         */
+        val MIGRACION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE receta_rendimiento ADD COLUMN trozosALoLargo INTEGER")
+            }
+        }
+
         val MIGRACION_4_5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(

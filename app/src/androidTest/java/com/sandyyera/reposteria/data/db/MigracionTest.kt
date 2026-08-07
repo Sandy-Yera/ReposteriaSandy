@@ -295,6 +295,49 @@ class MigracionTest {
         }
     }
 
+    /**
+     * La 5 → 6 agrega el reparto del corte sin tocar el rendimiento que ya estaba (9.4.3).
+     *
+     * Es la migración más simple de todas —una columna nullable, sin `DEFAULT` ni índice ni
+     * clave foránea— y tiene prueba igual por lo mismo que las otras: lo que se comprueba no es
+     * el `ALTER TABLE`, es que **los trozos y el molde de una receta guardada sigan donde
+     * estaban**. Un `DROP TABLE` seguido de un `CREATE TABLE` también valida el esquema.
+     *
+     * El `null` que queda en `trozosALoLargo` es la respuesta correcta: nadie eligió reparto
+     * antes de que se pudiera elegir, y ahí la app reparte lo más parejo que puede.
+     */
+    @Test
+    fun migracion_5_a_6_conserva_el_rendimiento() {
+        ayudante.createDatabase(nombreDeLaBase, 5).use { base ->
+            base.execSQL(
+                "INSERT INTO recetas (id, titulo, pasoPrevio, creadoEn, actualizadoEn) " +
+                    "VALUES (1, 'Torta de manjar', 'No necesita', 1000, 1000)"
+            )
+            base.execSQL(
+                "INSERT INTO receta_rendimiento " +
+                    "(recetaId, usaMolde, moldeOrigenId, pesoFinalG, trozos, " +
+                    "molde_tipoForma, molde_largoCm, molde_anchoCm, molde_alturaMoldeCm, " +
+                    "pesoReescaladoSinRevisar) " +
+                    "VALUES (1, 1, NULL, 1200.0, 6, 'RECTANGULO', 26.0, 25.0, 10.0, 0)"
+            )
+        }
+
+        ayudante.runMigrationsAndValidate(
+            nombreDeLaBase, 6, true, AppDatabase.MIGRACION_5_6
+        ).use { base ->
+            base.query(
+                "SELECT trozos, molde_largoCm, molde_anchoCm, trozosALoLargo " +
+                    "FROM receta_rendimiento WHERE recetaId = 1"
+            ).use { fila ->
+                assertTrue(fila.moveToFirst())
+                assertEquals(6, fila.getInt(0))
+                assertEquals("Las medidas del molde no se tocan", 26.0, fila.getDouble(1), 0.001)
+                assertEquals(25.0, fila.getDouble(2), 0.001)
+                assertTrue("Nadie eligió reparto todavía", fila.isNull(3))
+            }
+        }
+    }
+
     @Test
     fun despues_de_migrar_la_app_puede_abrir_la_base() {
         ayudante.createDatabase(nombreDeLaBase, 1).use { base ->
@@ -308,9 +351,9 @@ class MigracionTest {
         // nueva no calza con la anterior.
         ayudante
             .runMigrationsAndValidate(
-                nombreDeLaBase, 5, true,
+                nombreDeLaBase, 6, true,
                 AppDatabase.MIGRACION_1_2, AppDatabase.MIGRACION_2_3, AppDatabase.MIGRACION_3_4,
-                AppDatabase.MIGRACION_4_5
+                AppDatabase.MIGRACION_4_5, AppDatabase.MIGRACION_5_6
             )
             .close()
 
@@ -318,7 +361,7 @@ class MigracionTest {
         val base = Room.databaseBuilder(contexto, AppDatabase::class.java, nombreDeLaBase)
             .addMigrations(
                 AppDatabase.MIGRACION_1_2, AppDatabase.MIGRACION_2_3, AppDatabase.MIGRACION_3_4,
-                AppDatabase.MIGRACION_4_5
+                AppDatabase.MIGRACION_4_5, AppDatabase.MIGRACION_5_6
             )
             .build()
 

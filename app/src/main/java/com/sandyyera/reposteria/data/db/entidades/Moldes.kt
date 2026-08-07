@@ -71,5 +71,21 @@ data class RecetaRendimiento(
      * cien veces. Un aviso que vive en memoria se pierde justo antes de servir.
      */
     @ColumnInfo(defaultValue = "0")
-    val pesoReescaladoSinRevisar: Boolean = false
+    val pesoReescaladoSinRevisar: Boolean = false,
+
+    /**
+     * En cuántas partes se corta el primer lado del molde, al cortar en cuadrícula (9.4.3).
+     *
+     * `null` significa "no lo elegí": ahí la app reparte lo más parejo que puede. Con un
+     * número, ese manda — es el mismo criterio que los lados de corte anotados a mano.
+     *
+     * **El otro lado no se guarda**: sale de dividir `trozos` por este, así que guardarlo sería
+     * un segundo lugar donde el mismo dato puede quedar mal. Y por lo mismo, un valor que ya no
+     * divida justo a `trozos` (la receta pasó de 6 a 8) se descarta en vez de aplicarse:
+     * `repartoEfectivo` vuelve al más parejo antes que mostrar 2,67 filas.
+     *
+     * **Vive acá y no en `DimensionesMolde`** aunque sea "del corte": depende de `trozos`, que
+     * es de la receta y no del molde. En el molde no habría contra qué dividirlo.
+     */
+    val trozosALoLargo: Int? = null
 )

@@ -12,12 +12,18 @@ import com.sandyyera.reposteria.data.repositorio.ResultadoGuardarMolde
 import com.sandyyera.reposteria.logica.busqueda.filtrarPor
 import com.sandyyera.reposteria.logica.formato.formatearMientrasSeEscribe
 import com.sandyyera.reposteria.logica.formato.formatearNumero
+import com.sandyyera.reposteria.logica.moldes.DimensionesMolde
 import com.sandyyera.reposteria.logica.moldes.FormaDelCorte
+import com.sandyyera.reposteria.logica.moldes.RepartoDelCorte
 import com.sandyyera.reposteria.logica.moldes.corteSugerido
+import com.sandyyera.reposteria.logica.moldes.medidaDelTrozo
+import com.sandyyera.reposteria.logica.moldes.medidaEnCuadricula
+import com.sandyyera.reposteria.logica.moldes.repartosPosibles
 import com.sandyyera.reposteria.logica.moldes.TipoFormaMolde
 import com.sandyyera.reposteria.logica.validaciones.CampoDeMolde
 import com.sandyyera.reposteria.logica.validaciones.ErroresMolde
 import com.sandyyera.reposteria.logica.validaciones.camposDe
+import com.sandyyera.reposteria.logica.validaciones.conElCorte
 import com.sandyyera.reposteria.logica.validaciones.dimensionesDesde
 import com.sandyyera.reposteria.logica.validaciones.revisarMolde
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -75,7 +81,16 @@ sealed interface DialogoMolde {
         /** `null` = el que corresponda a la forma. Solo hay que elegirlo en dos formas. */
         val corte: FormaDelCorte? = null,
         val largoDeCorte: String = "",
-        val anchoDeCorte: String = ""
+        val anchoDeCorte: String = "",
+        /**
+         * En cuántos trozos se está imaginando el corte, **solo para ver cómo quedaría**.
+         *
+         * No se guarda: en cuántos trozos rinde algo es de la receta y no del molde (el mismo
+         * molde da 6 porciones de torta y 12 de brownie). Existe porque Sandy pidió poder ver
+         * los cortes *"en el mismo acto que escribo, sin siquiera aceptarlo"*, y el tamaño del
+         * trozo no se puede calcular sin saber cuántos son.
+         */
+        val trozosDePrueba: String = ""
     ) : DialogoMolde {
 
         /** Las medidas que hay que pedir ahora mismo. Vacía mientras no haya forma elegida. */
@@ -92,14 +107,19 @@ sealed interface DialogoMolde {
         val corteEfectivo: FormaDelCorte? get() = corte ?: corteSugerido(forma)
 
         /**
-         * Si hay que **preguntar** cómo se corta.
+         * Si se ofrece elegir cómo se corta.
          *
-         * En el rectángulo, el cuadrado y el círculo la respuesta es obvia y `corteSugerido`
-         * la sabe; preguntarla sería pedir que confirmen algo que nadie discute. En el
-         * triángulo y el exótico no hay forma de deducirla, y esos son justamente los dos
-         * casos que motivaron todo esto.
+         * **Se ofrece siempre que haya forma elegida**, incluidas las tres donde `corteSugerido`
+         * ya sabe la respuesta. Antes solo aparecía en el triángulo y el exótico, con el
+         * argumento de que preguntar lo obvio es pedir que confirmen algo que nadie discute — y
+         * eso era cierto salvo por un detalle: **la sugerencia no siempre acierta**. Un molde
+         * rectangular que se corta en cuñas existe, y hasta ahora no había forma de decirlo.
+         * Lo pidió Sandy: *"me gustaría elegirlo siempre, incluso en los automáticos"*.
+         *
+         * Sigue viniendo **pre-elegida** la sugerencia, así que quien no tenga nada que
+         * corregir no toca nada: la diferencia es entre no poder y no tener que.
          */
-        val hayQuePreguntarElCorte: Boolean get() = forma != null && corteSugerido(forma) == null
+        val hayQuePreguntarElCorte: Boolean get() = forma != null
 
         /**
          * Si se ofrecen las dos medidas del corte escritas a mano.
@@ -153,6 +173,54 @@ sealed interface DialogoMolde {
          */
         val vistaPrevia: Pair<Double, Double>?
             get() = dimensionesDesde(forma, medidas)?.let { it.areaCm2 to it.volumenCm3 }
+
+        /**
+         * Las dimensiones que van quedando **con el corte ya pegado**, para la vista previa.
+         *
+         * Usa `conElCorte`, la misma función que el guardado, y no un `copy` escrito acá: ese
+         * fue el hueco por el que el corte se perdía al medir un molde dentro de una receta
+         * (9.4.1). Si la previa se armara distinto de lo que se guarda, mostraría un corte y
+         * guardaría otro.
+         */
+        private val dimensionesConCorte: DimensionesMolde?
+            get() = dimensionesDesde(forma, medidas)
+                ?.let { conElCorte(it, corteEfectivo, largoDeCorte, anchoDeCorte) }
+
+        /**
+         * Cómo quedarían los trozos, **mientras se escribe** (9.4.3).
+         *
+         * Lo pidió Sandy: *"al momento de crear los moldes, debería decirme cómo quedarían los
+         * cortes; puedo visualizarlos en el mismo acto que escribo, sin siquiera aceptarlo o
+         * ponerlos en una receta"*. Es el mismo argumento que el área y el volumen en vivo — la
+         * forma de darse cuenta ahí mismo de que el molde no se corta como uno creía.
+         *
+         * Viene vacía mientras falte algo: sin medidas completas, sin un número de trozos
+         * escrito, o con un corte que no es cuadrícula. Con cuñas no hay nada que repartir y el
+         * tamaño sale solo de los trozos, así que eso lo dice [medidaDeLaPrueba].
+         */
+        val repartosDeLaPrueba: List<Pair<RepartoDelCorte, String>>
+            get() {
+                val d = dimensionesConCorte ?: return emptyList()
+                if (corteEfectivo != FormaDelCorte.CUADRICULA) return emptyList()
+                val cuantos = trozosDePrueba.toIntOrNull()?.takeIf { it > 1 } ?: return emptyList()
+                return repartosPosibles(cuantos).mapNotNull { reparto ->
+                    medidaEnCuadricula(d, reparto, ::formatearNumero)?.let { reparto to it }
+                }
+            }
+
+        /**
+         * El tamaño del trozo con lo escrito, para los cortes que no son cuadrícula.
+         *
+         * En cuñas la respuesta es una sola —los grados— y no hay reparto que elegir, así que
+         * mostrar una lista de una opción sería pedir que elijan lo único que hay.
+         */
+        val medidaDeLaPrueba: String?
+            get() {
+                val d = dimensionesConCorte ?: return null
+                if (corteEfectivo == FormaDelCorte.CUADRICULA) return null
+                val cuantos = trozosDePrueba.toIntOrNull()?.takeIf { it >= 1 } ?: return null
+                return medidaDelTrozo(d, corteEfectivo, cuantos, formatear = ::formatearNumero)
+            }
     }
 
     /**
@@ -279,6 +347,19 @@ class MoldesViewModel(
     }
 
     fun elegirCorte(corte: FormaDelCorte) = enFormulario { it.copy(corte = corte, tocado = true) }
+
+    /**
+     * Cambia en cuántos trozos se está imaginando el corte, solo para la vista previa (9.4.3).
+     *
+     * **No se guarda en ninguna parte y es a propósito.** Lo pidió Sandy así: *"puedo
+     * visualizarlos en el mismo acto que escribo, sin siquiera aceptarlo o ponerlos en una
+     * receta"*. En cuántos trozos rinde algo es de la **receta** y no del molde —el mismo
+     * molde da 6 porciones de torta y 12 de brownie—, así que guardarlo acá sería inventar un
+     * segundo lugar donde ese número puede quedar viejo.
+     */
+    fun cambiarTrozosDeLaPrueba(texto: String) = enFormulario {
+        it.copy(trozosDePrueba = texto.filter(Char::isDigit).take(3))
+    }
 
     fun cambiarLargoDeCorte(texto: String) = enFormulario {
         it.copy(largoDeCorte = formatearMientrasSeEscribe(texto), tocado = true)

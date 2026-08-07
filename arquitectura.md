@@ -1967,6 +1967,59 @@ y lo que se guarda tiene que salir de una función compartida.* Es la misma lecc
 dejado `camposDe` (que la pantalla y la validación no puedan discrepar sobre qué medidas se
 piden) y `basesQueFaltanEn` (6.7 y 8.6.1).
 
+#### 9.4.3 En cuántas partes se corta cada lado
+
+Lo reportó Sandy con un rectángulo de 26 × 25 × 10 que rinde 6 trozos: *"me da 3,25 × 25 × 10, y
+eso es molesto… ¿qué pasa si quiero cortarlos de manera uniforme lado y lado?"*. La app partía
+**siempre el lado largo en tantas tiras como trozos**, así que seis trozos eran seis tiras. Eso
+está bien con 2 o 3 y se vuelve absurdo con 6: nadie corta una torta en tiras de 3 cm.
+
+Seis trozos no son una sola cosa. Pueden salir como 6 × 1 (tiras de 4,33 × 25), 3 × 2
+(8,67 × 12,5), 2 × 3 o 1 × 6. **Las cuatro son ciertas y las cuatro son seis trozos**, pero solo
+una es la que se va a cortar. Faltaba decir en cuántas partes se corta *cada* lado, y eso es
+`RepartoDelCorte`.
+
+**Se ofrecen solo los repartos que dan justo**, con la medida que deja cada uno al lado. Un
+reparto que no divide dejaría trozos de dos tamaños distintos, y ahí la medida que se muestra
+dejaría de ser cierta para algunos — peor que no mostrar nada. Y la medida va junto a la opción
+porque *es* lo que se está decidiendo: elegir "3 × 2" sin ver que eso da 8,67 × 12,5 es elegir a
+ciegas.
+
+**Sin elegir, se reparte lo más parejo posible.** No es estética: una tira larga y angosta se
+rompe al levantarla del molde. La suposición sigue siendo suposición y por eso se puede
+contradecir — el mismo criterio de 9.4.2.
+
+**Con los lados anotados a mano manda el orden escrito, no el reparto parejo.** Anotar los lados
+*es* la instrucción de 9.4.2, y repartir parejo ahí la corregiría en silencio: se probó, y un
+molde anotado para cortar el lado de 4 terminaba partiendo el de 8 porque eso dejaba trozos más
+cuadrados. Quien anota los lados y además quiere cuadrícula tiene el selector de reparto al lado.
+
+**Dónde vive.** `trozosALoLargo` es una columna de `receta_rendimiento` y **no de
+`DimensionesMolde`**, aunque sea "del corte": depende de `trozos`, que es de la receta y no del
+molde. En el molde no habría contra qué dividirlo. El otro lado no se guarda —sale de dividir— y
+un valor que ya no divida justo se descarta antes que mostrar 2,67 filas.
+
+#### 9.4.4 El corte se elige siempre, y se ve mientras se escribe
+
+Dos pedidos de Sandy que van juntos:
+
+**"Me gustaría elegirlo siempre, incluso en los automáticos."** El corte se preguntaba solo en el
+triángulo y el exótico, con el argumento de que en las otras tres la respuesta es obvia y
+preguntarla sería pedir que confirmen algo que nadie discute. Era cierto salvo por un detalle:
+**la sugerencia puede no acertar**. Un molde rectangular que se corta en cuñas existe, y no había
+forma de decirlo. Ahora se ofrece en todas las formas, **pre-elegido con la sugerencia**: la
+diferencia es entre no poder y no tener que.
+
+**"Al crear los moldes debería decirme cómo quedarían los cortes; puedo visualizarlos en el mismo
+acto que escribo, sin siquiera aceptarlo o ponerlos en una receta."** El formulario de molde
+muestra ahora, en vivo, de qué porte quedaría cada trozo — con la misma lógica que el área y el
+volumen: la forma de darse cuenta ahí mismo de que el molde no se corta como uno creía.
+
+Para eso hace falta un número de trozos, y ese número **no se guarda**. En cuántos trozos rinde
+algo es de la receta y no del molde: el mismo molde da 6 porciones de torta y 12 de brownie.
+Guardarlo en el molde sería un segundo lugar donde el mismo dato puede quedar viejo. Es un campo
+del cuadro, para mirar, y el texto lo dice con todas las letras.
+
 ## 10. Módulo Empleados
 
 ### 10.1 Cálculo de sueldo por receta
