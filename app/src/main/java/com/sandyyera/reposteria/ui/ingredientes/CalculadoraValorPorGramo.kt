@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -87,10 +88,29 @@ fun CalculadoraValorPorGramo(
                         Icon(Icons.Default.Close, contentDescription = "Cerrar la calculadora")
                     }
                 },
+                // **Confirmar y cancelar viven acá arriba y no al final de la lista.** Lo
+                // pidió Sandy y el motivo es medible: la lista de ingredientes a reemplazar
+                // crece con el catálogo, así que el botón de abajo se aleja un poco más cada
+                // vez que se crea un ingrediente — con veinte hay que recorrer la pantalla
+                // entera para aceptar una cuenta que ya está hecha y visible arriba.
+                //
+                // Fijos en la barra están siempre a la vista, en el mismo lugar, y no dependen
+                // de cuánto haya debajo.
+                actions = {
+                    IconButton(onClick = alTerminar, enabled = estado.puedeTerminar) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            // Dice qué hace y no "aceptar": es lo que lee en voz alta el
+                            // lector de pantalla, y ahí "aceptar" no distingue de cerrar.
+                            contentDescription = "Aplicar el valor calculado"
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 )
             )
         }
@@ -176,36 +196,10 @@ fun CalculadoraValorPorGramo(
                 )
             }
 
+            // El resumen se queda al final y el par de botones se fue arriba: esto no es un
+            // botón sino la frase que dice qué va a pasar, y su lugar es junto a la elección
+            // que la produce.
             item { ResumenDelCambio(estado) }
-
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = Medidas.chico),
-                    horizontalArrangement = Arrangement.spacedBy(Medidas.chico)
-                ) {
-                    OutlinedButton(
-                        onClick = alCerrar,
-                        modifier = Modifier
-                            .weight(1f)
-                            .heightIn(min = Medidas.objetivoTactil)
-                    ) {
-                        Text("Cancelar")
-                    }
-                    Button(
-                        onClick = alTerminar,
-                        // Sin la cuenta hecha no hay nada que aplicar. Que falte elegir a
-                        // quién NO lo deshabilita: ahí el botón tiene que poder avisar.
-                        enabled = estado.puedeTerminar,
-                        modifier = Modifier
-                            .weight(1f)
-                            .heightIn(min = Medidas.objetivoTactil)
-                    ) {
-                        Text("Listo")
-                    }
-                }
-            }
         }
     }
 }

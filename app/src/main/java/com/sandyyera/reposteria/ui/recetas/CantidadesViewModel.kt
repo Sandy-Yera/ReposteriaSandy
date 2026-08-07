@@ -15,9 +15,12 @@ import com.sandyyera.reposteria.data.repositorio.RecetaParaTraer
 import com.sandyyera.reposteria.data.repositorio.RecetaRepositorio
 import com.sandyyera.reposteria.data.repositorio.Resultado
 import com.sandyyera.reposteria.data.repositorio.ResultadoGuardarIngrediente
+import com.sandyyera.reposteria.logica.calculadora.UnidadDeCompra
+import com.sandyyera.reposteria.logica.calculadora.calcularValorPorGramo
 import com.sandyyera.reposteria.logica.formato.formatearMientrasSeEscribe
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.logica.partes.EstadoDelVinculo
+import com.sandyyera.reposteria.logica.validaciones.revisarIngrediente
 import com.sandyyera.reposteria.logica.validaciones.debenMostrarseLosNombresDeSeccion
 import com.sandyyera.reposteria.logica.validaciones.errorEnCantidadEnGramosTexto
 import com.sandyyera.reposteria.logica.validaciones.errorEnNombreSeccion
@@ -118,6 +121,52 @@ sealed interface DialogoCantidades {
             get() = elegido != null &&
                 errorEnCantidadEnGramosTexto(cantidad) == null &&
                 !guardando
+    }
+
+    /**
+     * Crear un ingrediente **con su valor**, sin salir de la receta (7 y 7.2).
+     *
+     * Antes esto no era un cuadro: tocar "Crear «Azúcar flor»" lo creaba en el acto con valor
+     * **0** y avisaba "ponle su precio en Ingredientes". Lo reportó Sandy y tenía razón — el
+     * sentido del alta rápida es no salirse, y así había que salirse igual, ahora además con
+     * un ingrediente a medio hacer suelto en el catálogo y una receta que mientras tanto
+     * costaba de menos sin decirlo.
+     *
+     * Lleva la calculadora adentro porque es de donde sale el número en la vida real: nadie
+     * sabe cuánto vale un gramo, sabe lo que pagó por el paquete. Va **plegada** ([calculando]
+     * arranca en `false`) para no pedir dos datos a quien ya tiene el valor a mano; al abrirla,
+     * lo que se escribe ahí rellena el campo de arriba con `calcularValorPorGramo` — la misma
+     * función que usa la pantalla completa de 7.2, no una copia.
+     *
+     * [seccionId] y [yaEnLaSeccion] viajan por acá para poder **volver** al cuadro de agregar
+     * con el ingrediente recién creado ya elegido, que es donde se estaba.
+     */
+    data class CrearIngrediente(
+        val seccionId: Long,
+        val yaEnLaSeccion: Set<Long>,
+        val nombre: String,
+        val valorPorGramo: String = "",
+        val calculando: Boolean = false,
+        val precioDelPaquete: String = "",
+        val cantidadDelPaquete: String = "",
+        val unidad: UnidadDeCompra = UnidadDeCompra.KILO,
+        val tocado: Boolean = false,
+        val guardando: Boolean = false,
+        /** Lo que contestó el repositorio. Va junto al campo del nombre (8.2). */
+        val rechazo: String? = null
+    ) : DialogoCantidades {
+
+        private val errores get() = revisarIngrediente(nombre, valorPorGramo)
+
+        val errorNombre: String? get() = rechazo ?: errores.nombre.takeIf { tocado }
+
+        val errorValor: String? get() = errores.valorPorGramo.takeIf { tocado }
+
+        /** Lo que da la cuenta del paquete, o `null` si todavía no alcanza. */
+        val resultadoDeLaCuenta: Double?
+            get() = calcularValorPorGramo(precioDelPaquete, cantidadDelPaquete, unidad)
+
+        val puedeGuardar: Boolean get() = errores.sirve && !guardando
     }
 
     /**
@@ -445,28 +494,103 @@ class CantidadesViewModel(
     }
 
     /**
-     * Crea un ingrediente sin salir de la receta y lo deja elegido (7).
+     * Abre el cuadro de crear un ingrediente sin salir de la receta (7).
      *
      * Es el momento que el `ComboBuscable` existe para resolver: darse cuenta a mitad de
      * carga de que falta un ingrediente y no tener que abandonar lo escrito para crearlo.
+     *
+     * **Antes creaba en el acto con valor 0** y mandaba a ponerle el precio en Ingredientes,
+     * que es exactamente salirse — lo mismo que el alta rápida existe para evitar. Ahora
+     * pregunta el valor acá, con la calculadora a mano.
      */
     fun crearIngredienteRapido(nombre: String) {
+        val actual = _dialogo.value as? DialogoCantidades.PonerIngrediente ?: return
+        _dialogo.value = DialogoCantidades.CrearIngrediente(
+            seccionId = actual.seccionId,
+            yaEnLaSeccion = actual.yaEnLaSeccion,
+            nombre = nombre.trim()
+        )
+    }
+
+    // Al escribir el nombre, el rechazo anterior deja de aplicar: era sobre el de antes.
+    fun cambiarNombreDelIngredienteNuevo(texto: String) = enCrearIngrediente {
+        it.copy(nombre = texto, tocado = true, rechazo = null)
+    }
+
+    fun cambiarValorDelIngredienteNuevo(texto: String) = enCrearIngrediente {
+        it.copy(valorPorGramo = formatearMientrasSeEscribe(texto), tocado = true)
+    }
+
+    /**
+     * Abre o cierra la calculadora del paquete.
+     *
+     * Al cerrarla **no se borra lo escrito**, por lo mismo que `elegirForma` no borra las
+     * medidas de las otras formas: quien la abrió para comprobar una cuenta y la cierra no
+     * está diciendo que se equivocó. Y el valor ya calculado se queda arriba, que es el
+     * único dato que se guarda.
+     */
+    fun alternarCalculadoraDelIngrediente() = enCrearIngrediente {
+        it.copy(calculando = !it.calculando)
+    }
+
+    fun cambiarPrecioDelPaquete(texto: String) = enCrearIngrediente {
+        conLaCuentaRehecha(it.copy(precioDelPaquete = formatearMientrasSeEscribe(texto)))
+    }
+
+    fun cambiarCantidadDelPaquete(texto: String) = enCrearIngrediente {
+        conLaCuentaRehecha(it.copy(cantidadDelPaquete = formatearMientrasSeEscribe(texto)))
+    }
+
+    fun cambiarUnidadDelPaquete(unidad: UnidadDeCompra) = enCrearIngrediente {
+        conLaCuentaRehecha(it.copy(unidad = unidad))
+    }
+
+    /**
+     * Baja el resultado de la cuenta al campo del valor, si ya se puede calcular.
+     *
+     * Se escribe en el campo de arriba en vez de guardarse aparte para que **haya un solo
+     * valor**: el que se ve es el que se guarda, y se puede corregir a mano encima. Mientras
+     * la cuenta no alcance no se toca nada, porque borrar lo que alguien escribió a mano por
+     * empezar a teclear un precio sería peor que no ayudar.
+     */
+    private fun conLaCuentaRehecha(
+        estado: DialogoCantidades.CrearIngrediente
+    ): DialogoCantidades.CrearIngrediente {
+        val calculado = estado.resultadoDeLaCuenta ?: return estado
+        return estado.copy(valorPorGramo = formatearNumero(calculado), tocado = true)
+    }
+
+    fun guardarIngredienteNuevo() {
+        val actual = _dialogo.value as? DialogoCantidades.CrearIngrediente ?: return
+        if (!actual.puedeGuardar) return
+        val valor = textoANumero(actual.valorPorGramo) ?: return
+
+        _dialogo.value = actual.copy(guardando = true)
+
         viewModelScope.launch {
-            when (val resultado = ingredientes.crear(nombre, 0.0)) {
+            // Se vuelve al cuadro de agregar con el ingrediente ya elegido, que es donde se
+            // estaba: crear uno es un desvío, no un destino.
+            fun volverCon(elegido: Ingrediente?) {
+                _dialogo.value = DialogoCantidades.PonerIngrediente(
+                    seccionId = actual.seccionId,
+                    elegido = elegido,
+                    yaEnLaSeccion = actual.yaEnLaSeccion
+                )
+            }
+
+            when (val resultado = ingredientes.crear(actual.nombre.trim(), valor)) {
                 is ResultadoGuardarIngrediente.Guardado -> {
-                    val creado = ingredientes.obtener(resultado.id)
-                    enDialogoIngrediente { it.copy(elegido = creado, busqueda = "") }
-                    mensaje.value =
-                        "Se creó '$nombre' con valor 0. Ponle su precio en Ingredientes."
+                    volverCon(ingredientes.obtener(resultado.id))
+                    mensaje.value = "Se creó '${actual.nombre.trim()}'"
                 }
+                // Ya existía: se elige el que hay en vez de crear un repetido, y se dice —
+                // callarlo dejaría pensando que el valor escrito acá se guardó en algún lado.
                 is ResultadoGuardarIngrediente.YaExiste -> {
-                    enDialogoIngrediente {
-                        it.copy(elegido = resultado.existente, busqueda = "")
-                    }
+                    volverCon(resultado.existente)
+                    mensaje.value = "'${resultado.existente.nombre}' ya existía y se eligió ese"
                 }
-                is ResultadoGuardarIngrediente.NoValido -> {
-                    mensaje.value = resultado.motivo
-                }
+                is ResultadoGuardarIngrediente.NoValido ->
+                    enCrearIngrediente { it.copy(guardando = false, rechazo = resultado.motivo) }
             }
         }
     }
@@ -822,6 +946,14 @@ class CantidadesViewModel(
     ) {
         _dialogo.update { actual ->
             if (actual is DialogoCantidades.Seccion) cambio(actual) else actual
+        }
+    }
+
+    private fun enCrearIngrediente(
+        cambio: (DialogoCantidades.CrearIngrediente) -> DialogoCantidades.CrearIngrediente
+    ) {
+        _dialogo.update { actual ->
+            if (actual is DialogoCantidades.CrearIngrediente) cambio(actual) else actual
         }
     }
 

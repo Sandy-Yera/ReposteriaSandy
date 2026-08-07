@@ -24,6 +24,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -56,6 +57,7 @@ import com.sandyyera.reposteria.data.db.entidades.RecetaIngrediente
 import com.sandyyera.reposteria.data.db.entidades.RecetaSeccion
 import com.sandyyera.reposteria.data.repositorio.ParteTraida
 import com.sandyyera.reposteria.data.repositorio.RecetaParaTraer
+import com.sandyyera.reposteria.logica.calculadora.UnidadDeCompra
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.logica.partes.AVISO_AL_DESVINCULAR
 import com.sandyyera.reposteria.logica.partes.AVISO_ORIGINAL_BORRADA
@@ -76,6 +78,14 @@ data class AccionesCantidades(
     val crearIngredienteRapido: (String) -> Unit = {},
     val cambiarCantidadEscrita: (String) -> Unit = {},
     val guardarIngrediente: () -> Unit = {},
+
+    val cambiarNombreDelIngredienteNuevo: (String) -> Unit = {},
+    val cambiarValorDelIngredienteNuevo: (String) -> Unit = {},
+    val alternarCalculadoraDelIngrediente: () -> Unit = {},
+    val cambiarPrecioDelPaquete: (String) -> Unit = {},
+    val cambiarCantidadDelPaquete: (String) -> Unit = {},
+    val cambiarUnidadDelPaquete: (UnidadDeCompra) -> Unit = {},
+    val guardarIngredienteNuevo: () -> Unit = {},
 
     val agregarSeccion: () -> Unit = {},
     val cambiarNombreDeSeccion: (String) -> Unit = {},
@@ -136,6 +146,13 @@ fun PasoCantidadesScreen(
             crearIngredienteRapido = modelo::crearIngredienteRapido,
             cambiarCantidadEscrita = modelo::cambiarCantidadEscrita,
             guardarIngrediente = modelo::guardarIngrediente,
+            cambiarNombreDelIngredienteNuevo = modelo::cambiarNombreDelIngredienteNuevo,
+            cambiarValorDelIngredienteNuevo = modelo::cambiarValorDelIngredienteNuevo,
+            alternarCalculadoraDelIngrediente = modelo::alternarCalculadoraDelIngrediente,
+            cambiarPrecioDelPaquete = modelo::cambiarPrecioDelPaquete,
+            cambiarCantidadDelPaquete = modelo::cambiarCantidadDelPaquete,
+            cambiarUnidadDelPaquete = modelo::cambiarUnidadDelPaquete,
+            guardarIngredienteNuevo = modelo::guardarIngredienteNuevo,
             agregarSeccion = modelo::abrirAgregarSeccion,
             cambiarNombreDeSeccion = modelo::cambiarNombreDeSeccion,
             cambiarNombreDeLaPrimera = modelo::cambiarNombreDeLaPrimera,
@@ -371,6 +388,8 @@ fun PasoCantidades(
                 catalogo = estado.catalogo,
                 acciones = acciones
             )
+
+            is DialogoCantidades.CrearIngrediente -> DialogoCrearIngrediente(dialogo, acciones)
 
             is DialogoCantidades.Seccion -> DialogoSeccionNueva(dialogo, acciones)
 
@@ -922,6 +941,110 @@ private fun DialogoPonerIngrediente(
 }
 
 /**
+ * Crear un ingrediente **con su valor**, sin salir de la receta (7 y 7.2).
+ *
+ * Antes esto no existía: tocar "Crear «Azúcar flor»" lo creaba con valor 0 y mandaba a
+ * Ingredientes a ponerle el precio — o sea, a salirse, que es lo que el alta rápida existe
+ * para evitar. Lo reportó Sandy.
+ *
+ * La calculadora del paquete va **plegada**: quien ya sabe cuánto vale el gramo escribe el
+ * número y listo, y quien no —que es lo normal, porque uno sabe lo que pagó— la abre. Lo que
+ * calcula baja al campo de arriba en vez de guardarse aparte, así hay **un solo valor**: el
+ * que se ve es el que se guarda, y se puede corregir a mano encima.
+ */
+@Composable
+private fun DialogoCrearIngrediente(
+    estado: DialogoCantidades.CrearIngrediente,
+    acciones: AccionesCantidades
+) {
+    AlertDialog(
+        onDismissRequest = acciones.cerrarDialogo,
+        title = { Text("Ingrediente nuevo") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = Medidas.altoMaximoDeLista)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(Medidas.chico)
+            ) {
+                OutlinedTextField(
+                    value = estado.nombre,
+                    onValueChange = acciones.cambiarNombreDelIngredienteNuevo,
+                    label = { Text("Nombre") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    isError = estado.errorNombre != null,
+                    supportingText = { estado.errorNombre?.let { Text(it) } },
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Sentences,
+                        imeAction = ImeAction.Next
+                    )
+                )
+
+                CampoNumerico(
+                    valor = estado.valorPorGramo,
+                    alCambiar = acciones.cambiarValorDelIngredienteNuevo,
+                    etiqueta = "Valor por gramo",
+                    error = estado.errorValor,
+                    // Se dice acá y no al pie: el 0 es un dato válido y hay que poder ponerlo
+                    // a propósito, pero dejarlo por olvido es lo que hace que una receta
+                    // cueste de menos sin avisar.
+                    ayuda = "Puede ser 0 si no lo costeas"
+                )
+
+                TextButton(onClick = acciones.alternarCalculadoraDelIngrediente) {
+                    Text(
+                        if (estado.calculando) "Ocultar la cuenta del paquete"
+                        else "No sé el valor por gramo, sé lo que pagué"
+                    )
+                }
+
+                if (estado.calculando) {
+                    CampoNumerico(
+                        valor = estado.precioDelPaquete,
+                        alCambiar = acciones.cambiarPrecioDelPaquete,
+                        etiqueta = "Lo que pagué"
+                    )
+                    CampoNumerico(
+                        valor = estado.cantidadDelPaquete,
+                        alCambiar = acciones.cambiarCantidadDelPaquete,
+                        etiqueta = "Lo que trae"
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(Medidas.chico)) {
+                        UnidadDeCompra.entries.forEach { unidad ->
+                            FilterChip(
+                                selected = estado.unidad == unidad,
+                                onClick = { acciones.cambiarUnidadDelPaquete(unidad) },
+                                label = { Text(if (unidad == UnidadDeCompra.KILO) "Kilos" else "Gramos") }
+                            )
+                        }
+                    }
+                    // La cuenta se muestra igual que en la calculadora completa: es el número
+                    // que va a quedar arriba, y verlo antes es lo que pilla el cero de más al
+                    // pasar de kilos a gramos.
+                    estado.resultadoDeLaCuenta?.let {
+                        Text(
+                            text = "$${formatearNumero(it)} por gramo",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = acciones.guardarIngredienteNuevo,
+                enabled = estado.puedeGuardar
+            ) { Text("Crear") }
+        },
+        dismissButton = {
+            TextButton(onClick = acciones.cerrarDialogo) { Text("Cancelar") }
+        }
+    )
+}
+
+/**
  * Agregar una sección, bautizando de paso la que era invisible.
  *
  * El campo de arriba solo aparece cuando la receta tenía una sola sección. Es el momento
@@ -1149,6 +1272,45 @@ private fun CantidadesTraerReceta() {
                     RecetaParaTraer(Receta(id = 3, titulo = "Crema pastelera"), null),
                     RecetaParaTraer(Receta(id = 4, titulo = "Mil hojas"), MOTIVO_UN_SOLO_NIVEL)
                 )
+            ),
+            AccionesCantidades()
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "Cantidades - crear ingrediente con su valor")
+@Composable
+private fun CantidadesCrearIngrediente() {
+    ReposteriaTheme {
+        PasoCantidades(
+            "Torta de manjar",
+            recetaSimple,
+            DialogoCantidades.CrearIngrediente(
+                seccionId = 1,
+                yaEnLaSeccion = emptySet(),
+                nombre = "Azúcar flor",
+                valorPorGramo = "1,2"
+            ),
+            AccionesCantidades()
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "Cantidades - crear ingrediente calculando")
+@Composable
+private fun CantidadesCrearIngredienteCalculando() {
+    ReposteriaTheme {
+        PasoCantidades(
+            "Torta de manjar",
+            recetaSimple,
+            DialogoCantidades.CrearIngrediente(
+                seccionId = 1,
+                yaEnLaSeccion = emptySet(),
+                nombre = "Azúcar flor",
+                valorPorGramo = "0,068",
+                calculando = true,
+                precioDelPaquete = "1.700",
+                cantidadDelPaquete = "25"
             ),
             AccionesCantidades()
         )
