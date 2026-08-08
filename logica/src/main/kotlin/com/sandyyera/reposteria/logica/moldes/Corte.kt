@@ -123,12 +123,21 @@ fun repartosPosibles(trozos: Int): List<RepartoDelCorte> {
  */
 fun repartoMasParejo(largo: Double, ancho: Double, trozos: Int): RepartoDelCorte? {
     if (largo <= 0 || ancho <= 0) return null
-    return repartosPosibles(trozos).minByOrNull { reparto ->
-        val ladoA = largo / reparto.aLoLargo
-        val ladoB = ancho / reparto.aLoAncho
-        val proporcion = maxOf(ladoA, ladoB) / minOf(ladoA, ladoB)
-        proporcion
-    }
+    return repartosPosibles(trozos).minWithOrNull(
+        compareBy(
+            { reparto ->
+                val ladoA = largo / reparto.aLoLargo
+                val ladoB = ancho / reparto.aLoAncho
+                maxOf(ladoA, ladoB) / minOf(ladoA, ladoB)
+            },
+            // **Empatados, gana el que más parte el primer lado.** Pasa siempre en un molde
+            // cuadrado —2 trozos son 1 × 2 o 2 × 1 y dan el mismo trozo dado vuelta—, y ahí
+            // elegir el primero de la lista daría "20 × 10" donde se espera "10 × 20". El
+            // primer lado es el que se corta (9.4.2), así que desempatar por él es decir lo
+            // mismo que ya decía la app antes de que existieran los repartos.
+            { reparto -> -reparto.aLoLargo }
+        )
+    )
 }
 
 /**

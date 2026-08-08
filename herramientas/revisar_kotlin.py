@@ -268,6 +268,17 @@ def revisar_esquemas(_rutas):
     hay datos reales adentro.
 
     Room lo genera al compilar; lo que se olvida es versionarlo.
+
+    **Distingue el de la versión actual de los intermedios, y esa diferencia se pagó una
+    vez.** Room exporta **solo el esquema de la versión actual**. Si la base sube dos
+    versiones entre dos compilaciones —pasó con la 5 → 6 → 7—, la del medio nunca llega a
+    compilarse sola y su JSON **no existe ni va a existir**: no es algo que se pueda
+    recuperar volviendo a compilar. Se pierde con él la posibilidad de probar ese salto por
+    separado, que es lo que dice cuál de las dos migraciones rompió algo cuando algo se rompe.
+
+    Por eso el que falta de verdad —el actual— es un error, y un intermedio es un aviso con
+    su explicación. Marcarlo como error dejaría la revisión en rojo para siempre por algo que
+    ya no tiene arreglo, y eso enseña a ignorarla.
     """
     fuente = os.path.join(RAIZ, "app/src/main/java/com/sandyyera/reposteria/data/db/AppDatabase.kt")
     if not os.path.exists(fuente):
@@ -279,11 +290,20 @@ def revisar_esquemas(_rutas):
 
     version = int(version.group(1))
     carpeta = os.path.join(RAIZ, "app/schemas/com.sandyyera.reposteria.data.db.AppDatabase")
-    faltan = [n for n in range(1, version + 1)
-              if not os.path.exists(os.path.join(carpeta, f"{n}.json"))]
-    if faltan:
-        print(f"  la base está en la versión {version} y falta el esquema de: "
-              f"{', '.join(f'{n}.json' for n in faltan)}")
+
+    def hay(n):
+        return os.path.exists(os.path.join(carpeta, f"{n}.json"))
+
+    intermedios = [n for n in range(1, version) if not hay(n)]
+    if intermedios:
+        print(f"  aviso: no está el esquema de {', '.join(f'{n}.json' for n in intermedios)}")
+        print("  Room exporta solo el de la versión actual, así que una versión que no se")
+        print("  compiló sola no tiene JSON y no se puede recuperar. Ese salto solo se puede")
+        print("  probar encadenado. Para que no vuelva a pasar: no subir dos versiones de la")
+        print("  base entre dos compilaciones.")
+
+    if not hay(version):
+        print(f"  la base está en la versión {version} y falta su esquema: {version}.json")
         print("  se genera al compilar (./gradlew :app:assembleDebug) y hay que versionarlo")
         return 1
     return 0

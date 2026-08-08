@@ -169,6 +169,22 @@ class CorteTest {
     }
 
     @Test
+    fun `en un cuadrado empatan dos repartos y gana el que parte el primer lado`() {
+        // En un molde cuadrado, 2 trozos son 1 × 2 o 2 × 1 y dan **el mismo trozo dado vuelta**,
+        // así que la proporción empata. Sin desempate ganaba el primero de la lista y salía
+        // "20 × 10" donde la app decía "10 × 20" desde siempre. El primer lado es el que se
+        // corta (9.4.2), así que desempatar por él conserva lo que ya se leía.
+        val cuadrado = DimensionesMolde(
+            tipoForma = TipoFormaMolde.CUADRADO, ladoCm = 20.0, alturaMoldeCm = 6.0
+        )
+
+        assertEquals(
+            "10 × 20 cm, 6 de alto",
+            medidaDelTrozo(cuadrado, corte = null, trozos = 2, formatear = comoNumero)
+        )
+    }
+
+    @Test
     fun `el reparto elegido a mano manda sobre el mas parejo`() {
         // Es la misma regla que con el lado que se corta: una instrucción explícita no se
         // corrige en silencio. Si alguien quiere las seis tiras, se cortan seis tiras.

@@ -296,18 +296,25 @@ class MigracionTest {
     }
 
     /**
-     * La 5 → 6 agrega el reparto del corte sin tocar el rendimiento que ya estaba (9.4.3).
+     * De la 5 a la 7 de un tirón: el reparto del corte (9.4.3) y la tabla del almacén (14).
      *
-     * Es la migración más simple de todas —una columna nullable, sin `DEFAULT` ni índice ni
-     * clave foránea— y tiene prueba igual por lo mismo que las otras: lo que se comprueba no es
-     * el `ALTER TABLE`, es que **los trozos y el molde de una receta guardada sigan donde
-     * estaban**. Un `DROP TABLE` seguido de un `CREATE TABLE` también valida el esquema.
+     * **Va encadenada y no paso por paso, y eso no fue una elección de diseño sino la única
+     * salida.** `MigrationTestHelper` valida contra el `N.json` de la versión de destino, y
+     * **el 6.json no existe ni va a existir**: Room exporta solo el esquema de la versión
+     * *actual* al compilar, y acá la base subió de 5 a 6 y de 6 a 7 entre dos compilaciones.
+     * La versión 6 nunca llegó a compilarse sola, así que su esquema no se escribió nunca.
      *
-     * El `null` que queda en `trozosALoLargo` es la respuesta correcta: nadie eligió reparto
-     * antes de que se pudiera elegir, y ahí la app reparte lo más parejo que puede.
+     * **La lección, que vale más que esta prueba:** no subir dos versiones de la base entre dos
+     * compilaciones. El intermedio queda sin esquema propio para siempre, y con él se pierde la
+     * posibilidad de probar ese salto por separado — que es justamente lo que dice cuál de las
+     * dos migraciones rompió algo cuando algo se rompe.
+     *
+     * Lo que sí se comprueba sigue siendo lo importante y es lo mismo de siempre: que **lo que
+     * ya estaba guardado siga estando**. Validar el esquema solo dejaría pasar un `DROP TABLE`
+     * seguido de un `CREATE TABLE`, que aprueba y borra todo.
      */
     @Test
-    fun migracion_5_a_6_conserva_el_rendimiento() {
+    fun migracion_5_a_7_conserva_el_rendimiento_y_crea_el_almacen() {
         ayudante.createDatabase(nombreDeLaBase, 5).use { base ->
             base.execSQL(
                 "INSERT INTO recetas (id, titulo, pasoPrevio, creadoEn, actualizadoEn) " +
@@ -323,7 +330,7 @@ class MigracionTest {
         }
 
         ayudante.runMigrationsAndValidate(
-            nombreDeLaBase, 6, true, AppDatabase.MIGRACION_5_6
+            nombreDeLaBase, 7, true, AppDatabase.MIGRACION_5_6, AppDatabase.MIGRACION_6_7
         ).use { base ->
             base.query(
                 "SELECT trozos, molde_largoCm, molde_anchoCm, trozosALoLargo " +
@@ -334,6 +341,14 @@ class MigracionTest {
                 assertEquals("Las medidas del molde no se tocan", 26.0, fila.getDouble(1), 0.001)
                 assertEquals(25.0, fila.getDouble(2), 0.001)
                 assertTrue("Nadie eligió reparto todavía", fila.isNull(3))
+            }
+            // El almacén nace vacío, que es lo correcto: la tabla es nueva y no hay nada que
+            // rellenar. Lo que se comprueba es que **exista y se pueda consultar** — si el
+            // `CREATE TABLE` no calzara letra por letra con el que genera Room, la validación
+            // de arriba ya habría fallado.
+            base.query("SELECT COUNT(*) FROM almacen").use { fila ->
+                assertTrue(fila.moveToFirst())
+                assertEquals(0, fila.getInt(0))
             }
         }
     }
@@ -351,9 +366,9 @@ class MigracionTest {
         // nueva no calza con la anterior.
         ayudante
             .runMigrationsAndValidate(
-                nombreDeLaBase, 6, true,
+                nombreDeLaBase, 7, true,
                 AppDatabase.MIGRACION_1_2, AppDatabase.MIGRACION_2_3, AppDatabase.MIGRACION_3_4,
-                AppDatabase.MIGRACION_4_5, AppDatabase.MIGRACION_5_6
+                AppDatabase.MIGRACION_4_5, AppDatabase.MIGRACION_5_6, AppDatabase.MIGRACION_6_7
             )
             .close()
 
@@ -361,7 +376,7 @@ class MigracionTest {
         val base = Room.databaseBuilder(contexto, AppDatabase::class.java, nombreDeLaBase)
             .addMigrations(
                 AppDatabase.MIGRACION_1_2, AppDatabase.MIGRACION_2_3, AppDatabase.MIGRACION_3_4,
-                AppDatabase.MIGRACION_4_5, AppDatabase.MIGRACION_5_6
+                AppDatabase.MIGRACION_4_5, AppDatabase.MIGRACION_5_6, AppDatabase.MIGRACION_6_7
             )
             .build()
 

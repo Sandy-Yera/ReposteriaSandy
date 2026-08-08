@@ -461,6 +461,24 @@ cada ingrediente sería el mismo dato en dos lugares, listo para desincronizarse
 de sus secciones tiene `recetaOrigenId`; eso ya se puede consultar, y agregar un booleano
 sería una tercera copia del mismo hecho.
 
+### 5.5.2 Una versión de base por compilación
+
+Room exporta **solo el esquema de la versión actual** al compilar. De ahí sale una regla que
+parece de proceso y es de datos: **no subir dos versiones de la base entre dos compilaciones**.
+
+Pasó con la 5 → 6 → 7 —el reparto del corte y el almacén llegaron en dos cambios seguidos y se
+compiló una sola vez, al final— y el `6.json` no se escribió nunca. No es recuperable: volver a
+compilar genera el de la versión actual, no el de una intermedia que ya quedó atrás.
+
+Lo que se pierde no es el archivo sino **poder probar ese salto por separado**.
+`MigrationTestHelper` valida contra el JSON de la versión de destino, así que sin `6.json` la
+migración 5 → 6 solo se puede probar encadenada hasta la 7 — y cuando algo se rompe, encadenada
+no dice cuál de las dos migraciones lo rompió.
+
+`revisar_kotlin.py` lo avisa, y lo avisa **como aviso y no como error**: dejar la revisión en
+rojo para siempre por algo que ya no tiene arreglo es la forma más rápida de enseñar a ignorarla.
+El error queda reservado para lo que sí se arregla compilando: que falte el de la versión actual.
+
 ### 5.6 Índices
 
 Un índice es una lista ordenada que SQLite mantiene aparte para no tener que recorrer la tabla entera cuando buscas por una columna. Acá no son opcionales por dos razones que van más allá de la velocidad:

@@ -334,18 +334,58 @@ class CantidadesViewModelTest {
     }
 
     @Test
-    fun `crear un ingrediente sin salir de la receta lo deja elegido`() = probar { modelo ->
+    fun `crear un ingrediente sin salir de la receta pregunta su valor`() = probar { modelo ->
+        // **Esta prueba afirmaba que nacía en 0** y que se avisaba de ponerle precio en
+        // Ingredientes — o sea, salirse, que es lo que el alta rápida existe para evitar. Lo
+        // reportó Sandy. Ahora el valor se pregunta acá mismo.
         val seccion = modelo.estado.value.secciones.single().seccion.id
         modelo.abrirAgregarIngrediente(seccion)
-
-        modelo.crearIngredienteRapido("Ralladura de naranja")
         advanceUntilIdle()
 
+        modelo.crearIngredienteRapido("Ralladura de naranja")
+
+        val cuadro = modelo.dialogo.value as DialogoCantidades.CrearIngrediente
+        assertEquals("El nombre viene puesto de lo que se escribió al buscar", "Ralladura de naranja", cuadro.nombre)
+        assertEquals("Y la sección se conserva para poder volver", seccion, cuadro.seccionId)
+        assertFalse("Sin valor todavía no se puede crear", cuadro.puedeGuardar)
+    }
+
+    @Test
+    fun `al crearlo se vuelve al cuadro de agregar con el ingrediente elegido`() = probar { modelo ->
+        val seccion = modelo.estado.value.secciones.single().seccion.id
+        modelo.abrirAgregarIngrediente(seccion)
+        advanceUntilIdle()
+        modelo.crearIngredienteRapido("Ralladura de naranja")
+
+        modelo.cambiarValorDelIngredienteNuevo("2,5")
+        modelo.guardarIngredienteNuevo()
+        advanceUntilIdle()
+
+        // Crear uno es un desvío, no un destino: se vuelve a donde se estaba.
         val dialogo = modelo.dialogo.value as DialogoCantidades.PonerIngrediente
         assertEquals("Ralladura de naranja", dialogo.elegido?.nombre)
-        // Nace en 0 y se avisa, para que no pase inadvertido que falta ponerle precio.
-        assertEquals(0.0, dialogo.elegido!!.valorPorGramo, 0.0)
-        assertNotNull(modelo.estado.value.mensaje)
+        assertEquals("Y con el valor que se escribió", 2.5, dialogo.elegido!!.valorPorGramo, 0.0)
+        assertEquals("La sección sigue siendo la misma", seccion, dialogo.seccionId)
+    }
+
+    @Test
+    fun `la calculadora del paquete baja su resultado al campo del valor`() = probar { modelo ->
+        // Uno no sabe cuánto vale un gramo: sabe lo que pagó. Lo que calcula se escribe en el
+        // campo de arriba y no se guarda aparte, así hay **un solo valor**, corregible a mano.
+        val seccion = modelo.estado.value.secciones.single().seccion.id
+        modelo.abrirAgregarIngrediente(seccion)
+        advanceUntilIdle()
+        modelo.crearIngredienteRapido("Harina a granel")
+
+        modelo.alternarCalculadoraDelIngrediente()
+        modelo.cambiarPrecioDelPaquete("1700")
+        modelo.cambiarCantidadDelPaquete("25")
+
+        val cuadro = modelo.dialogo.value as DialogoCantidades.CrearIngrediente
+        // 1.700 / 25 kg = 0,068 por gramo. Con 2 decimales esto daba 0,07, y por 500 g de una
+        // receta, $35 donde son $34.
+        assertEquals("0,068", cuadro.valorPorGramo)
+        assertTrue(cuadro.puedeGuardar)
     }
 
     // --- Secciones (8.2) ---

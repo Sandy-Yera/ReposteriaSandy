@@ -358,18 +358,63 @@ class RendimientoViewModelTest {
 
     @Test
     fun `la medida de cada trozo sale del molde y se mueve con los trozos`() = probar { modelo ->
-        // Un molde cuadrado de 20 en 4 trozos da tiras de 5 x 20. Cambiar los trozos la mueve,
-        // igual que al peso: los dos salen de la misma división.
+        // **La primera aserción decía "5 × 20" hasta que llegó el reparto** (9.4.3), y era
+        // justo lo que Sandy reportó como molesto: partir siempre el lado largo en tantas tiras
+        // como trozos deja tiras de 5 cm de un molde de 20. Cuatro trozos de un cuadrado son
+        // dos por dos, que es lo que uno corta de verdad.
         recetas.definirMolde(recetaId, cuadrado(20.0, 6.0), null)
         advanceUntilIdle()
 
         modelo.cambiarTrozos("4")
         advanceUntilIdle()
-        assertEquals("5 × 20 cm, 6 de alto", modelo.estado.value.medidaDeCadaTrozo)
+        assertEquals("10 × 10 cm, 6 de alto", modelo.estado.value.medidaDeCadaTrozo)
 
+        // Con 2 no cambia nada: los dos repartos posibles dan el mismo trozo dado vuelta, y el
+        // desempate elige el que parte el primer lado, que es el que se corta.
         modelo.cambiarTrozos("2")
         advanceUntilIdle()
         assertEquals("10 × 20 cm, 6 de alto", modelo.estado.value.medidaDeCadaTrozo)
+    }
+
+    @Test
+    fun `el reparto elegido a mano manda, y la lista lo marca`() = probar { modelo ->
+        // Elegir "4 a lo largo" en un cuadrado de 20 vuelve a las tiras: es una decisión, no un
+        // error, y una instrucción explícita no se corrige en silencio (9.4.2).
+        recetas.definirMolde(recetaId, cuadrado(20.0, 6.0), null)
+        modelo.cambiarTrozos("4")
+        advanceUntilIdle()
+
+        modelo.elegirReparto(4)
+        advanceUntilIdle()
+        assertEquals("5 × 20 cm, 6 de alto", modelo.estado.value.medidaDeCadaTrozo)
+
+        val ofrecidos = modelo.estado.value.repartosOfrecidos
+        assertEquals("Los repartos que dan justo: 1x4, 2x2 y 4x1", 3, ofrecidos.size)
+        assertEquals(
+            "Y el marcado es el elegido",
+            4,
+            ofrecidos.single { it.elegido }.reparto.aLoLargo
+        )
+    }
+
+    @Test
+    fun `un reparto que deja de dividir se descarta en vez de dar un numero falso`() = probar { modelo ->
+        // Se elige 4 con 4 trozos y después la receta pasa a 6: "4 a lo largo" ya no reparte
+        // nada. Aplicarlo daría 1,5 filas, que no existen, así que se vuelve al más parejo.
+        recetas.definirMolde(recetaId, cuadrado(20.0, 6.0), null)
+        modelo.cambiarTrozos("4")
+        advanceUntilIdle()
+        modelo.elegirReparto(4)
+        advanceUntilIdle()
+
+        modelo.cambiarTrozos("6")
+        advanceUntilIdle()
+
+        assertEquals(
+            "El mismo que si nadie hubiera elegido nada",
+            "6,66667 × 10 cm, 6 de alto",
+            modelo.estado.value.medidaDeCadaTrozo
+        )
     }
 
     @Test
