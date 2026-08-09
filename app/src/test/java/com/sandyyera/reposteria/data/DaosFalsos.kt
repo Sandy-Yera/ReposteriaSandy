@@ -360,7 +360,10 @@ class RecetaDaoFalso(
         itemsDe(recetaId).sumOf { item ->
             // INNER JOIN: si el ingrediente ya no existe, esa fila simplemente no suma.
             val valor = catalogo.obtener(item.ingredienteId)?.valorPorGramo ?: return@sumOf 0.0
-            item.cantidadG * valor
+            // El mismo `COALESCE(unidades, cantidadG)` de la consulta real: lo que se cuenta por
+            // unidad va con 0 gramos y aun así cuesta (14.5). Si el falso multiplicara por los
+            // gramos, las pruebas dirían que una bolsa sale gratis y la app cobraría por ella.
+            (item.unidades ?: item.cantidadG) * valor
         }
 
     override suspend fun costoDeVariasRecetas(recetaIds: List<Long>): List<CostoDeReceta> =

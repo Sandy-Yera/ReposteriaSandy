@@ -40,6 +40,7 @@ import com.sandyyera.reposteria.logica.partes.sePuedeUsarComoParte
 import com.sandyyera.reposteria.logica.partes.textoDelVinculo
 import com.sandyyera.reposteria.logica.partes.vinculoDesdeTexto
 import com.sandyyera.reposteria.logica.partes.errorAlUsarTitulo
+import com.sandyyera.reposteria.logica.validaciones.debenMostrarseLosNombresDeSeccion
 import com.sandyyera.reposteria.logica.validaciones.elPasoDiceAlgo
 import com.sandyyera.reposteria.logica.validaciones.errorEnTextoDePaso
 import com.sandyyera.reposteria.logica.precios.basesQueFaltanEn
@@ -120,6 +121,43 @@ data class ParteTraida(
      */
     val hayQueAvisar: Boolean
         get() = estado == EstadoDelVinculo.ORIGINAL_BORRADA || cambios.isNotEmpty()
+}
+
+/**
+ * Lo que lleva una sección, para el atajo `:ingredientes:` de los pasos (8.8).
+ *
+ * [nombre] es `null` cuando los nombres de sección no se muestran —una receta de una sola parte,
+ * con el nombre automático—: ahí el cuadro va derecho a la lista, sin un encabezado que repita el
+ * título de la receta.
+ */
+data class IngredientesDeSeccion(
+    val nombre: String?,
+    val lineas: List<LineaDeIngredienteDeSeccion>
+)
+
+/**
+ * Un ingrediente con su cantidad, ya listo para escribirlo dentro de un paso (8.8).
+ *
+ * [comoSeEscribe] es lo que queda en el texto del paso — "600 g de Harina" — y [comoSeLee] lo que
+ * se ve en el menú. Son la misma frase a propósito: lo que se elige y lo que se escribe tienen que
+ * coincidir, o al tocar una fila aparecería otra cosa en el paso.
+ */
+data class LineaDeIngredienteDeSeccion(
+    val nombre: String,
+    val cantidad: Double,
+    val esObjeto: Boolean
+) {
+    val comoSeEscribe: String
+        get() {
+            val cuanto = formatearNumero(cantidad)
+            return if (esObjeto) {
+                "$cuanto ${if (cantidad == 1.0) "unidad" else "unidades"} de $nombre"
+            } else {
+                "$cuanto g de $nombre"
+            }
+        }
+
+    val comoSeLee: String get() = comoSeEscribe
 }
 
 /**
@@ -380,21 +418,46 @@ class RecetaRepositorio(
         dao.obtenerTodosLosIngredientes(recetaId)
 
     /**
-     * Cómo se llama lo que lleva esta receta, ordenado y sin repetidos (8.8).
+     * Lo que lleva esta receta, **con su cantidad y agrupado por sección** (8.8).
      *
      * Lo usa el atajo `:ingredientes:` de los pasos. Se pide **una sola vez al abrir el menú** y
      * no como observador: mientras el menú está abierto esa lista no cambia, y observarla sumaría
      * una fuente que reemite justo mientras se escribe en un campo de texto (12.2.1).
      *
-     * **Sin repetidos** porque el mismo ingrediente en dos secciones es correcto y frecuente —el
-     * azúcar del bizcocho y el del almíbar— pero en este menú serían dos filas idénticas.
+     * **Va por sección y no en una lista sola**, que es lo que pidió Sandy. El mismo ingrediente
+     * puede estar en dos partes con cantidades distintas —600 g de harina en el bizcocho y 50 en
+     * el almíbar— y aplanarlo dejaría dos filas iguales sin decir cuál es cuál, o peor, una sola
+     * con la cantidad equivocada.
+     *
+     * Se devuelven **todas** las secciones, incluso las vacías, para que el cuadro pueda decir
+     * "esta parte todavía no tiene ingredientes" en vez de esconderla y hacer dudar de si falta
+     * o si nunca existió.
      */
-    suspend fun nombresDeIngredientesDe(recetaId: Long): List<String> {
-        val ids = dao.obtenerTodosLosIngredientes(recetaId).map { it.ingredienteId }.distinct()
-        if (ids.isEmpty()) return emptyList()
-        return dao.nombresDeIngredientes(ids)
-            .map { it.nombre }
-            .sortedBy { it.lowercase() }
+    suspend fun ingredientesPorSeccionDe(recetaId: Long): List<IngredientesDeSeccion> {
+        val secciones = dao.obtenerSecciones(recetaId)
+        if (secciones.isEmpty()) return emptyList()
+
+        val filas = dao.obtenerTodosLosIngredientes(recetaId)
+        val nombres = dao.nombresDeIngredientes(filas.map { it.ingredienteId }.distinct())
+            .associate { it.id to it.nombre }
+        val porSeccion = filas.groupBy { it.seccionId }
+        // Los nombres de sección no siempre se muestran: con una sola y con el nombre
+        // automático, escribir "General" arriba de la lista repetiría el título de la receta
+        // (8.2). La regla vive en `logica/` y acá solo se consulta.
+        val conNombre = debenMostrarseLosNombresDeSeccion(secciones.map { it.nombreSeccion })
+
+        return secciones.map { seccion ->
+            IngredientesDeSeccion(
+                nombre = seccion.nombreSeccion.takeIf { conNombre },
+                lineas = porSeccion[seccion.id].orEmpty().map { fila ->
+                    LineaDeIngredienteDeSeccion(
+                        nombre = nombres[fila.ingredienteId] ?: "Ingrediente eliminado",
+                        cantidad = fila.unidades ?: fila.cantidadG,
+                        esObjeto = fila.unidades != null
+                    )
+                }
+            )
+        }
     }
 
     /**

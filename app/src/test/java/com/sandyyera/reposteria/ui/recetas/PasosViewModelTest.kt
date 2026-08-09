@@ -233,10 +233,58 @@ class PasosViewModelTest {
     }
 
     @Test
-    fun `escribir dos puntos ingredientes ofrece los de esta receta`() = probar { modelo ->
-        val seccion = recetas.obtenerSecciones(recetaId).single()
-        recetas.agregarIngrediente(seccion.id, ingredienteLlamado("Harina"), 500.0)
-        recetas.agregarIngrediente(seccion.id, ingredienteLlamado("Azúcar"), 200.0)
+    fun `escribir dos puntos ingredientes ofrece los de esta receta con su cantidad`() =
+        probar { modelo ->
+            val seccion = recetas.obtenerSecciones(recetaId).single()
+            recetas.agregarIngrediente(seccion.id, ingredienteLlamado("Harina"), 500.0)
+            recetas.agregarIngrediente(seccion.id, ingredienteLlamado("Azúcar"), 200.0)
+            advanceUntilIdle()
+            val id = agregar(modelo, "Mezclar")
+
+            val texto = "Mezclar :ingredientes:"
+            modelo.cambiarTexto(id, texto, cursorAlFinal(texto))
+            advanceUntilIdle()
+
+            val cuadro = modelo.dialogo.value as DialogoPasos.ElegirIngrediente
+            val grupo = cuadro.grupos.single()
+            assertNull("Con una sola parte sin nombre no se escribe encabezado", grupo.nombre)
+            assertEquals(
+                listOf("500 g de Harina", "200 g de Azúcar"),
+                grupo.lineas.map { it.comoSeLee }
+            )
+        }
+
+    @Test
+    fun `el mismo ingrediente en dos partes se ve con su cantidad de cada una`() =
+        probar { modelo ->
+            // Es la razón de agrupar por sección: aplanarlo dejaría dos filas iguales sin decir
+            // cuál es cuál, o una sola con la cantidad equivocada.
+            val harina = ingredienteLlamado("Harina")
+            recetas.agregarSeccion(recetaId, "Almíbar", nombreDeLaPrimera = "Bizcocho")
+            advanceUntilIdle()
+            val secciones = recetas.obtenerSecciones(recetaId)
+            recetas.agregarIngrediente(secciones[0].id, harina, 600.0)
+            recetas.agregarIngrediente(secciones[1].id, harina, 50.0)
+            advanceUntilIdle()
+            val id = agregar(modelo, "Mezclar")
+
+            val texto = "Mezclar :ingredientes:"
+            modelo.cambiarTexto(id, texto, cursorAlFinal(texto))
+            advanceUntilIdle()
+
+            val cuadro = modelo.dialogo.value as DialogoPasos.ElegirIngrediente
+            assertEquals(listOf("Bizcocho", "Almíbar"), cuadro.grupos.map { it.nombre })
+            assertEquals("600 g de Harina", cuadro.grupos[0].lineas.single().comoSeLee)
+            assertEquals("50 g de Harina", cuadro.grupos[1].lineas.single().comoSeLee)
+        }
+
+    @Test
+    fun `una parte sin ingredientes aparece igual, dicho`() = probar { modelo ->
+        // Esconderla dejaría dudando entre "no tiene nada" y "se perdió".
+        recetas.agregarSeccion(recetaId, "Almíbar", nombreDeLaPrimera = "Bizcocho")
+        advanceUntilIdle()
+        val secciones = recetas.obtenerSecciones(recetaId)
+        recetas.agregarIngrediente(secciones[0].id, ingredienteLlamado("Harina"), 600.0)
         advanceUntilIdle()
         val id = agregar(modelo, "Mezclar")
 
@@ -245,7 +293,9 @@ class PasosViewModelTest {
         advanceUntilIdle()
 
         val cuadro = modelo.dialogo.value as DialogoPasos.ElegirIngrediente
-        assertEquals(listOf("Azúcar", "Harina"), cuadro.nombres)
+        assertEquals(2, cuadro.grupos.size)
+        assertTrue(cuadro.grupos[1].lineas.isEmpty())
+        assertFalse("Pero el cuadro no está vacío", cuadro.vacio)
     }
 
     @Test
@@ -258,16 +308,67 @@ class PasosViewModelTest {
         modelo.cambiarTexto(id, texto, "Mezclar :ingredientes:".length)
         advanceUntilIdle()
 
-        modelo.elegirIngrediente("Harina")
+        modelo.elegirIngrediente("500 g de Harina")
         advanceUntilIdle()
 
         val paso = modelo.estado.value.bloques.single().pasos.single().paso
-        assertEquals("Mezclar Harina con agua", modelo.estado.value.textoDe(paso))
+        assertEquals("Mezclar 500 g de Harina con agua", modelo.estado.value.textoDe(paso))
         assertEquals(
             "Y el cursor queda después de lo escrito",
-            PosicionDelCursor(id, "Mezclar Harina".length),
+            PosicionDelCursor(id, "Mezclar 500 g de Harina".length),
             modelo.cursorPedido.value
         )
+    }
+
+    @Test
+    fun `crear un titulo desde los pasos bautiza la parte que ya estaba`() = probar { modelo ->
+        // El caso de Sandy: una receta sin partes, donde el menú solo ofrecía el General y la
+        // única salida era irse al paso de cantidades a crear una sección.
+        val id = agregar(modelo, "Batir la crema")
+        val texto = "Batir la crema :titulo:"
+        modelo.cambiarTexto(id, texto, cursorAlFinal(texto))
+        advanceUntilIdle()
+
+        val cuadro = modelo.dialogo.value as DialogoPasos.ElegirTitulo
+        assertEquals("Sin partes, solo estaba el General", listOf(null), cuadro.disponibles)
+
+        modelo.empezarTituloNuevo()
+        advanceUntilIdle()
+        val creando = (modelo.dialogo.value as DialogoPasos.ElegirTitulo).creando!!
+        assertNotNull("Hay que bautizar la que ya estaba", creando.nombreDeLaPrimera)
+
+        modelo.cambiarNombreDelTitulo("Crema")
+        modelo.guardarTituloNuevo()
+        advanceUntilIdle()
+
+        val secciones = recetas.obtenerSecciones(recetaId)
+        assertEquals(2, secciones.size)
+        assertEquals("Crema", secciones.last().nombreSeccion)
+        val paso = modelo.estado.value.bloques.flatMap { it.pasos }.single().paso
+        assertEquals("El paso queda bajo la parte nueva", secciones.last().id, paso.titulo)
+        assertEquals("Y el atajo no se queda escrito", "Batir la crema ",
+            modelo.estado.value.textoDe(paso))
+    }
+
+    @Test
+    fun `un titulo repetido se rechaza dentro del cuadro`() = probar { modelo ->
+        // El aviso va junto al campo y no en la franja de abajo: con el teclado abierto esa
+        // franja queda tapada y el cuadro parece no haber hecho nada (8.2).
+        recetas.agregarSeccion(recetaId, "Crema", nombreDeLaPrimera = "Bizcocho")
+        advanceUntilIdle()
+        val id = agregar(modelo, "Batir")
+
+        modelo.abrirElegirTitulo(id)
+        advanceUntilIdle()
+        modelo.empezarTituloNuevo()
+        advanceUntilIdle()
+        modelo.cambiarNombreDelTitulo("Crema")
+        modelo.guardarTituloNuevo()
+        advanceUntilIdle()
+
+        val creando = (modelo.dialogo.value as DialogoPasos.ElegirTitulo).creando!!
+        assertNotNull("El rechazo se queda en el cuadro", creando.rechazo)
+        assertEquals("Y no se creó nada", 2, recetas.obtenerSecciones(recetaId).size)
     }
 
     @Test

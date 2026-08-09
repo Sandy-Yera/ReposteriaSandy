@@ -46,8 +46,15 @@ data class LineaDeIngrediente(
     val item: RecetaIngrediente,
     val ingrediente: Ingrediente
 ) {
-    /** Lo que aporta esta línea al costo: los mismos gramos × valor que suma la base. */
-    val subtotal: Double get() = item.cantidadG * ingrediente.valorPorGramo
+    /**
+     * Lo que aporta esta línea al costo: la misma cuenta que suma la base.
+     *
+     * Multiplica por [cuanto] y no por los gramos, que es lo que hace que **un objeto también
+     * cueste** (14.5): una bolsa o un sticker se cuentan por unidad y tienen precio, así que
+     * entran al costo como cualquier otro ingrediente. `valorPorGramo` ya guarda el precio en la
+     * unidad que corresponde.
+     */
+    val subtotal: Double get() = cuanto * ingrediente.valorPorGramo
 
     /** Si esto se cuenta por unidad: una caja, una cinta (14.5). */
     val esObjeto: Boolean get() = item.unidades != null
@@ -64,13 +71,13 @@ data class LineaDeIngrediente(
         }
 
     /**
-     * Si esta línea suma algo al costo de la receta.
+     * Cuánto pesa esta línea, que **no es lo mismo que cuánto cuesta**.
      *
-     * Es `false` en los objetos, y **eso hay que decirlo en la línea**: entran con 0 gramos por
-     * decisión de diseño (14.5), así que su precio no llega al total. Descubrirlo comparando
-     * números sería encontrarse con un total que no cuadra y no saber por qué.
+     * Un objeto cuesta pero no pesa: entra con 0 gramos para que reescalar por molde no lo toque
+     * (14.5). De acá sale el peso de la receta, no su costo — confundirlos haría que agregar una
+     * bolsa cambiara el reescalado.
      */
-    val sumaAlCosto: Boolean get() = !esObjeto
+    val gramos: Double get() = item.cantidadG
 }
 
 /** Una sección de la receta con lo que lleva dentro. */
@@ -344,6 +351,21 @@ data class EstadoCantidades(
      */
     fun parteDe(seccionId: Long): ParteTraida? =
         partes.firstOrNull { seccionId in it.seccionIds }
+
+    /**
+     * De qué receta vino esta sección, para escribirlo bajo su nombre. `null` si es propia.
+     *
+     * Va en **todas** las secciones ajenas y no solo en la primera del grupo, que era el hueco
+     * que encontró Sandy: con dos recetas traídas seguidas no había forma de ver dónde termina
+     * una y empieza la otra. El encabezado del grupo sigue existiendo porque ahí va el aviso de
+     * "cambió", que es una decisión y se toma una vez.
+     */
+    fun deDondeViene(seccionId: Long): String? {
+        val parte = parteDe(seccionId) ?: return null
+        // Sin título es porque la receta original se borró. Se dice así y no "de null": el
+        // aviso del grupo es el que explica qué hacer con eso (8.11.4).
+        return parte.tituloDelOrigen?.let { "de '$it'" } ?: "de una receta eliminada"
+    }
 
     /**
      * Si esta sección abre el encabezado de su grupo ("Vienen de Bizcocho").

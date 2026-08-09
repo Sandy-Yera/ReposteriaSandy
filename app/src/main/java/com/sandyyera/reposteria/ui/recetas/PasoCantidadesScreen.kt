@@ -319,6 +319,7 @@ fun PasoCantidades(
                         item(key = "encabezado-${seccion.seccion.id}") {
                             EncabezadoDeSeccion(
                                 seccion = seccion,
+                                vieneDe = estado.deDondeViene(seccion.seccion.id),
                                 mostrarCosto = estado.mostrarCostoPorSeccion,
                                 sePuedeBorrar = estado.secciones.size > 1,
                                 alRenombrar = { acciones.renombrarSeccion(seccion.seccion) },
@@ -529,6 +530,7 @@ private fun CostoTotal(costo: Double, sinIngredientes: Boolean) {
 @Composable
 private fun EncabezadoDeSeccion(
     seccion: SeccionConIngredientes,
+    vieneDe: String?,
     mostrarCosto: Boolean,
     sePuedeBorrar: Boolean,
     alRenombrar: () -> Unit,
@@ -568,6 +570,17 @@ private fun EncabezadoDeSeccion(
                     )
                 }
             }
+        }
+        // **Cada sección ajena lo dice, no solo la primera del grupo** (8.11.2). El encabezado
+        // del grupo sigue arriba porque ahí va el aviso de "cambió", que es una decisión y se
+        // toma una vez; pero con dos recetas traídas seguidas, sin esta línea no habría forma de
+        // ver dónde termina una y empieza la otra.
+        vieneDe?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
         HorizontalDivider()
     }
@@ -853,16 +866,11 @@ private fun FilaDeIngrediente(
                 // Se muestra la cuenta completa y no solo el total: así se entiende de
                 // dónde sale el número, y un valor por gramo mal puesto salta a la vista.
                 //
-                // Un objeto no tiene cuenta que mostrar —entra con 0 gramos y no suma al
-                // costo (14.5)— y entonces se dice eso mismo, con todas las letras. Poner
-                // "= $0" dejaría la duda de si el precio está mal o si es a propósito.
-                text = if (linea.sumaAlCosto) {
-                    "${linea.cuantoDice} × " +
-                        "$${formatearNumero(linea.ingrediente.valorPorGramo)} = " +
-                        "$${formatearNumero(linea.subtotal)}"
-                } else {
-                    "${linea.cuantoDice} · no suma al costo de ingredientes"
-                },
+                // La cuenta es la misma para lo que se pesa y para lo que se cuenta por
+                // unidad: una bolsa y un sticker cuestan de verdad y entran al total (14.5).
+                text = "${linea.cuantoDice} × " +
+                    "$${formatearNumero(linea.ingrediente.valorPorGramo)} = " +
+                    "$${formatearNumero(linea.subtotal)}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -929,12 +937,13 @@ private fun DialogoPonerIngrediente(
                         error = estado.errorCantidad,
                         accionDelTeclado = ImeAction.Done
                     )
-                    // Se avisa acá, antes de guardar, y no al ver el total: un objeto entra a
-                    // la receta con 0 gramos, así que su precio no llega al costo (14.5).
+                    // Lo que sí conviene decir de un objeto es que **no pesa**: su precio
+                    // entra al costo como cualquier otro, pero el peso de la receta —del que
+                    // sale el reescalado por molde— no lo cuenta (14.5).
                     if (elegido.esObjeto) {
                         Text(
-                            text = "Esto se cuenta por unidad y no suma al costo de los " +
-                                "ingredientes.",
+                            text = "Se cuenta por unidad: cuesta como cualquier ingrediente, " +
+                                "pero no suma al peso de la receta.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

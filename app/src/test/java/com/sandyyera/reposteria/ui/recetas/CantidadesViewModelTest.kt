@@ -115,6 +115,60 @@ class CantidadesViewModelTest {
         assertFalse(estado.sinIngredientes)
     }
 
+    @Test
+    fun `lo que se cuenta por unidad cuesta, pero no pesa`() = probar { modelo ->
+        // Lo corrigió Sandy y tenía razón: una bolsa y un sticker cuestan de verdad, y ese
+        // costo tiene que salir en la receta. Lo que no hacen es pesar — de ahí sale el
+        // reescalado por molde, y una bolsa no cambia cuánta masa hay (14.5).
+        catalogo.sembrar(Ingrediente(nombre = "Bolsas", valorPorGramo = 40.0, esObjeto = true))
+        advanceUntilIdle()
+        val bolsas = modelo.estado.value.catalogo.single()
+        val seccion = modelo.estado.value.secciones.single().seccion.id
+
+        modelo.abrirAgregarIngrediente(seccion)
+        modelo.elegirIngrediente(bolsas)
+        modelo.cambiarCantidadEscrita("3")
+        modelo.guardarIngrediente()
+        advanceUntilIdle()
+
+        val estado = modelo.estado.value
+        val linea = estado.secciones.single().lineas.single()
+        assertEquals("Se guardan como unidades", 3.0, linea.item.unidades!!, 0.001)
+        assertEquals("Y sin peso", 0.0, linea.gramos, 0.001)
+        assertEquals("3 unidades", linea.cuantoDice)
+        assertEquals("Tres bolsas a $40", 120.0, linea.subtotal, 0.001)
+        // Y el total viene de la base, que hace la misma cuenta con su propio SQL.
+        assertEquals(120.0, estado.costoTotal, 0.001)
+    }
+
+    @Test
+    fun `editar un objeto edita sus unidades y no sus gramos`() = probar { modelo ->
+        // Los gramos son 0 a propósito. Si el cuadro los editara, escribir "5" dejaría la
+        // línea diciendo "3 unidades" y pesando 5 g.
+        catalogo.sembrar(Ingrediente(nombre = "Bolsas", valorPorGramo = 40.0, esObjeto = true))
+        advanceUntilIdle()
+        val bolsas = modelo.estado.value.catalogo.single()
+        val seccion = modelo.estado.value.secciones.single().seccion.id
+        modelo.abrirAgregarIngrediente(seccion)
+        modelo.elegirIngrediente(bolsas)
+        modelo.cambiarCantidadEscrita("3")
+        modelo.guardarIngrediente()
+        advanceUntilIdle()
+
+        modelo.abrirCambiarCantidad(modelo.estado.value.secciones.single().lineas.single())
+        val cuadro = modelo.dialogo.value as DialogoCantidades.PonerIngrediente
+        assertEquals("Viene puesto lo que se ve, no los gramos", "3", cuadro.cantidad)
+
+        modelo.cambiarCantidadEscrita("5")
+        modelo.guardarIngrediente()
+        advanceUntilIdle()
+
+        val linea = modelo.estado.value.secciones.single().lineas.single()
+        assertEquals(5.0, linea.item.unidades!!, 0.001)
+        assertEquals(0.0, linea.gramos, 0.001)
+        assertEquals(200.0, modelo.estado.value.costoTotal, 0.001)
+    }
+
     // --- El mismo ingrediente dos veces en la misma sección ---
 
     private suspend fun ponerIngrediente(

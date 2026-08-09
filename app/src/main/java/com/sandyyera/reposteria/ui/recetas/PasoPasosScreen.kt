@@ -50,6 +50,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.tooling.preview.Preview
@@ -74,6 +75,11 @@ data class AccionesPasos(
     val abrirAyuda: () -> Unit = {},
     val cerrarAyuda: () -> Unit = {},
     val elegirIngrediente: (String) -> Unit = {},
+    val empezarTituloNuevo: () -> Unit = {},
+    val cancelarTituloNuevo: () -> Unit = {},
+    val cambiarNombreDelTitulo: (String) -> Unit = {},
+    val cambiarNombreDeLaPrimera: (String) -> Unit = {},
+    val guardarTituloNuevo: () -> Unit = {},
     val cursorAplicado: () -> Unit = {},
     val moverPaso: (Long, Boolean) -> Unit = { _, _ -> },
     val pedirBorrado: (PasoParaMostrar) -> Unit = {},
@@ -110,6 +116,11 @@ fun PasoPasosScreen(
             abrirAyuda = modelo::abrirAyuda,
             cerrarAyuda = modelo::cerrarAyuda,
             elegirIngrediente = modelo::elegirIngrediente,
+            empezarTituloNuevo = modelo::empezarTituloNuevo,
+            cancelarTituloNuevo = modelo::cancelarTituloNuevo,
+            cambiarNombreDelTitulo = modelo::cambiarNombreDelTitulo,
+            cambiarNombreDeLaPrimera = modelo::cambiarNombreDeLaPrimera,
+            guardarTituloNuevo = modelo::guardarTituloNuevo,
             cursorAplicado = modelo::cursorAplicado,
             moverPaso = modelo::moverPaso,
             pedirBorrado = modelo::pedirBorrado,
@@ -221,7 +232,11 @@ fun PasoPasos(
             estado.bloques.forEach { bloque ->
                 bloque.encabezado?.let { texto ->
                     item(key = "titulo-${bloque.titulo}-${bloque.pasos.first().paso.id}") {
-                        EncabezadoDeBloque(texto, bloque.esGeneralAnidado)
+                        EncabezadoDeBloque(
+                            texto = texto,
+                            vieneDe = estado.deDondeViene(bloque.titulo),
+                            esGeneralAnidado = bloque.esGeneralAnidado
+                        )
                     }
                 }
                 items(
@@ -281,19 +296,32 @@ private fun TodaviaSinPasos() {
  * torta entera, y aplanarlos los volvería indistinguibles.
  */
 @Composable
-private fun EncabezadoDeBloque(texto: String, esGeneralAnidado: Boolean) {
-    Text(
-        text = texto,
-        style = if (esGeneralAnidado) MaterialTheme.typography.bodyMedium
-        else MaterialTheme.typography.titleMedium,
-        fontWeight = if (esGeneralAnidado) null else FontWeight.Bold,
-        color = if (esGeneralAnidado) MaterialTheme.colorScheme.onSurfaceVariant
-        else MaterialTheme.colorScheme.onSurface,
+private fun EncabezadoDeBloque(texto: String, vieneDe: String?, esGeneralAnidado: Boolean) {
+    Column(
         modifier = Modifier.padding(
             top = Medidas.chico,
             start = if (esGeneralAnidado) Medidas.medio else 0.dp
         )
-    )
+    ) {
+        Text(
+            text = texto,
+            style = if (esGeneralAnidado) MaterialTheme.typography.bodyMedium
+            else MaterialTheme.typography.titleMedium,
+            fontWeight = if (esGeneralAnidado) null else FontWeight.Bold,
+            color = if (esGeneralAnidado) MaterialTheme.colorScheme.onSurfaceVariant
+            else MaterialTheme.colorScheme.onSurface
+        )
+        // **Cada bloque ajeno lo dice** (8.11.2). La sangría del general anidado ya avisa que
+        // vino de algo, pero no de qué; y con dos recetas traídas seguidas eso no alcanza para
+        // ver dónde termina una y empieza la otra.
+        vieneDe?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
 }
 
 /**
@@ -457,7 +485,14 @@ private fun CuadroDeAtajos(acciones: AccionesPasos) {
 }
 
 /**
- * Los ingredientes de esta receta, para escribir uno dentro del paso (8.8).
+ * Los ingredientes de esta receta con su cantidad, agrupados por parte (8.8).
+ *
+ * **Van por sección y no en una lista sola**, que es lo que pidió Sandy: el mismo ingrediente
+ * puede llevar 600 g en el bizcocho y 50 en el almíbar, y aplanarlo dejaría dos filas iguales sin
+ * decir cuál es cuál — o peor, una sola con la cantidad equivocada.
+ *
+ * Lo que se escribe en el paso es **exactamente la frase que se tocó**, no una rehecha acá:
+ * cualquier diferencia entre las dos saldría en el paso y solo se notaría leyéndolo después.
  *
  * Con la receta sin ingredientes se dice eso mismo en vez de mostrar una lista vacía: el cuadro
  * abierto y sin nada dejaría pensando que se rompió algo.
@@ -471,7 +506,7 @@ private fun CuadroDeIngredientes(
         onDismissRequest = acciones.cerrarDialogo,
         title = { Text("¿Cuál?") },
         text = {
-            if (estado.nombres.isEmpty()) {
+            if (estado.vacio) {
                 Text(
                     "Esta receta todavía no tiene ingredientes. Se agregan en el paso de " +
                         "Cantidades."
@@ -481,16 +516,41 @@ private fun CuadroDeIngredientes(
                     modifier = Modifier.verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(Medidas.minimo)
                 ) {
-                    estado.nombres.forEach { nombre ->
-                        Text(
-                            text = nombre,
-                            style = MaterialTheme.typography.bodyLarge,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = Medidas.objetivoTactil)
-                                .clickable { acciones.elegirIngrediente(nombre) }
-                                .padding(vertical = Medidas.chico)
-                        )
+                    estado.grupos.forEach { grupo ->
+                        // El nombre de la sección viene en `null` cuando no hay que mostrarlo
+                        // —una receta de una sola parte, sin nombre propio (8.2)—, y entonces
+                        // la lista va directa, sin un encabezado que repita el título.
+                        grupo.nombre?.let { nombre ->
+                            Text(
+                                text = nombre,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(top = Medidas.chico)
+                            )
+                        }
+                        if (grupo.lineas.isEmpty()) {
+                            // Se dice, en vez de esconder la sección: una parte que no aparece
+                            // deja dudando entre "no tiene nada" y "se perdió".
+                            Text(
+                                text = "Todavía sin ingredientes",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        grupo.lineas.forEach { linea ->
+                            Text(
+                                // Con la cantidad, que es lo que se quiere escribir en el paso.
+                                // El mismo ingrediente puede llevar 600 g en una parte y 50 en
+                                // otra, y sin el número habría que ir a buscarlo.
+                                text = linea.comoSeLee,
+                                style = MaterialTheme.typography.bodyLarge,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = Medidas.objetivoTactil)
+                                    .clickable { acciones.elegirIngrediente(linea.comoSeEscribe) }
+                                    .padding(vertical = Medidas.chico)
+                            )
+                        }
                     }
                 }
             }
@@ -504,32 +564,103 @@ private fun CuadroDeIngredientes(
 /** El menú de títulos. Lo ofrecido sale de `titulosDisponibles`, nunca de una lista propia. */
 @Composable
 private fun CuadroDeTitulo(estado: DialogoPasos.ElegirTitulo, acciones: AccionesPasos) {
+    val creando = estado.creando
     AlertDialog(
         onDismissRequest = acciones.cerrarDialogo,
-        title = { Text("¿De qué parte es este paso?") },
+        title = { Text(if (creando == null) "¿De qué parte es este paso?" else "Parte nueva") },
         text = {
-            Column {
-                Text(
-                    text = "El General es para lo que no pertenece a ninguna parte, y se " +
-                        "puede repetir. Las partes de la receta, una sola vez cada una.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                estado.disponibles.forEach { titulo ->
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(Medidas.chico)
+            ) {
+                if (creando == null) {
                     Text(
-                        text = titulo?.let { estado.nombrePorId[it] } ?: TITULO_GENERAL,
-                        style = MaterialTheme.typography.bodyLarge,
+                        text = "El General es para lo que no pertenece a ninguna parte, y se " +
+                            "puede repetir. Las partes de la receta, una sola vez cada una.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    estado.disponibles.forEach { titulo ->
+                        Text(
+                            text = titulo?.let { estado.nombrePorId[it] } ?: TITULO_GENERAL,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = Medidas.objetivoTactil)
+                                .clickable { acciones.elegirTitulo(titulo) }
+                                .padding(vertical = Medidas.chico)
+                        )
+                    }
+                    // Crear una parte desde acá, sin irse al paso de cantidades: una receta que
+                    // no tenía secciones no tenía de dónde sacar títulos, y decidir que hay
+                    // partes es algo que pasa justamente mientras se escriben los pasos (8.8).
+                    OutlinedButton(
+                        onClick = acciones.empezarTituloNuevo,
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = Medidas.objetivoTactil)
-                            .clickable { acciones.elegirTitulo(titulo) }
-                            .padding(vertical = Medidas.chico)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Text("Crear una parte", modifier = Modifier.padding(start = Medidas.chico))
+                    }
+                } else {
+                    // El bautizo aparece **solo cuando hace falta**: si la receta ya tenía
+                    // partes con nombre propio, no hay nada que renombrar (8.2).
+                    creando.nombreDeLaPrimera?.let { primera ->
+                        Text(
+                            text = "Esta receta tenía una sola parte sin nombre. Al partirla en " +
+                                "dos hay que nombrarla, o quedarían dos encabezados iguales.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        OutlinedTextField(
+                            value = primera,
+                            onValueChange = acciones.cambiarNombreDeLaPrimera,
+                            label = { Text("Cómo se llama la que ya está") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            isError = creando.errorDeLaPrimera != null,
+                            supportingText = { creando.errorDeLaPrimera?.let { Text(it) } },
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.Sentences,
+                                imeAction = ImeAction.Next
+                            )
+                        )
+                    }
+                    OutlinedTextField(
+                        value = creando.nombre,
+                        onValueChange = acciones.cambiarNombreDelTitulo,
+                        label = { Text("Cómo se llama la parte nueva") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        isError = creando.error != null,
+                        supportingText = { creando.error?.let { Text(it) } },
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Sentences
+                        )
+                    )
+                    Text(
+                        text = "Se crea y este paso queda debajo de ella.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
         },
-        confirmButton = {},
-        dismissButton = { TextButton(onClick = acciones.cerrarDialogo) { Text("Cancelar") } }
+        confirmButton = {
+            if (creando != null) {
+                TextButton(
+                    onClick = acciones.guardarTituloNuevo,
+                    enabled = creando.puedeGuardar
+                ) { Text("Crear") }
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = if (creando == null) acciones.cerrarDialogo
+                else acciones.cancelarTituloNuevo
+            ) { Text(if (creando == null) "Cancelar" else "Volver") }
+        }
     )
 }
 

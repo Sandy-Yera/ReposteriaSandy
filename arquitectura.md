@@ -1476,6 +1476,45 @@ adelante y atrás**: equivocarse escribiendo eso es raro, y así el atajo no se 
 al escribir la palabra en medio de una frase. El título elegido se resalta como encabezado,
 no como un paso más.
 
+##### Crear una parte desde acá
+
+El menú de `:titulo:` ofrece también **crear una**. Sandy lo pidió por un caso que el diseño no
+cubría: *"tengo recetas donde simplemente meto todos los ingredientes de una, sin dividir en
+secciones (…) en pasos me gustaría si dividirlos por secciones, pero no puedo crear un titulo."*
+
+Tenía razón y el hueco era real. Un título **es** una sección de la receta, así que sin secciones
+el menú solo ofrecía el General y la única salida era irse al paso de cantidades a crear una —
+justo lo que el atajo existe para evitar. Y decidir que una receta tiene partes es algo que pasa
+mientras se escriben los pasos, no antes.
+
+Crear pasa por las mismas reglas del paso de cantidades, incluida la de bautizar la parte que ya
+estaba: partir en dos una receta que tenía una sola sección con el nombre automático obliga a
+nombrarla, o quedarían dos encabezados iguales (8.2). El cuadro lo pregunta **solo cuando hace
+falta**, y **el paso queda bajo la parte nueva de una vez**: quien escribe `:titulo:` y crea
+"Crema" está diciendo que *este* paso va bajo Crema.
+
+##### Los ingredientes vienen con su cantidad
+
+`:ingredientes:` escribe **"600 g de Harina"** y no solo el nombre, agrupado por parte:
+
+```
+Bizcocho
+  600 g de Harina
+  50 g de Azúcar
+Almíbar
+  50 g de Harina
+  300 g de Azúcar
+```
+
+**Va por sección y no en una lista sola**, y esa es la parte que importa: el mismo ingrediente
+puede llevar 600 g en el bizcocho y 50 en el almíbar, y aplanarlo dejaría dos filas idénticas sin
+decir cuál es cuál — o peor, una sola con la cantidad equivocada.
+
+Las partes vacías **aparecen igual**, diciendo que están vacías. Esconderlas dejaría dudando entre
+"no tiene nada" y "se perdió". Y lo que se escribe en el paso es **exactamente la frase que se
+tocó**: rehacerla al insertarla abriría la puerta a que las dos discrepen, y eso solo se notaría
+leyendo el paso después.
+
 ##### Los atajos, y cómo se recuerdan
 
 Hay tres: `:info:`, `:titulo:` y `:ingredientes:`. Todos se disparan **al terminar de
@@ -1667,6 +1706,17 @@ original **entera** —tiene que serlo, porque *"se agregó una sección"* es un
 exactamente lo mismo, repetido tantas veces como partes se hayan traído. Va una vez, en el
 encabezado que ya las agrupa (8.11.2), y las tres salidas se aplican a todas juntas: son
 decisiones sobre la receta que se trajo, no sobre un pedazo de ella.
+
+**La marca de origen, en cambio, va en todas.** Bajo el nombre de cada parte ajena se lee *"de
+'Bizcocho'"*, y lo mismo bajo cada bloque de pasos traído. Lo pidió Sandy y el argumento es el
+que faltaba: *"¿qué ocurre si traigo una nueva sección? ¿cómo sabré que es de esa y no de la
+anterior?"* Con dos recetas traídas seguidas, un encabezado solo al principio del primer grupo no
+deja ver dónde termina una y empieza la otra.
+
+Las dos cosas conviven porque responden preguntas distintas: **el aviso es una decisión** y se
+toma una vez; **la marca es una etiqueta** y tiene que estar donde se mira. En los pasos, la
+sangría del general anidado ya decía "vino de algo" pero no de qué, que es justamente el dato que
+hace falta cuando hay más de una receta traída.
 
 **"Mantener" no es no hacer nada.** Vuelve a tomar la foto, sin tocar ningún ingrediente. Sin
 eso, el mismo aviso quedaría encendido para siempre y no habría forma de distinguir *"todavía
@@ -2106,19 +2156,27 @@ ingrediente enlazado. Un nombre copiado no se entera de los renombres — la mis
 obligó a rehacer la firma de una receta copiada (8.11.7)— y un precio escrito dos veces deja uno
 viejo.
 
-#### 14.1.1 Un objeto entra a una receta con 0 gramos
+#### 14.1.1 Un objeto cuesta, pero no pesa
 
-Decisión de Sandy, y explícita: *"simplemente se alterará el 'texto'. Así puedo ver que dice '2
-cajas', pero el peso por detrás es 0. Así no hay que hacer grandes cambios."*
+**Cuesta.** Lo corrigió Sandy y tenía razón: *"para mis queques, quizá los envuelvo en algo y les
+pego un sticker encima como «sello». Todo eso tiene un costo real. Y debería salir en la receta
+con su costo."* Una bolsa y un sticker se pagan igual que la harina, y una receta que los ignora
+dice que salen gratis.
 
-La línea guarda `unidades` aparte y `cantidadG` en 0, así que el `JOIN` que calcula el costo da
-cero para esa fila sin que el motor de cálculo —que de punta a punta parte de gramos— tenga que
-aprender otra unidad.
+**No pesa.** La línea guarda `unidades` aparte y `cantidadG` en 0, y de ahí sale el peso de la
+receta — del que dependen el reescalado por molde y la adaptación en proporción. Una bolsa no
+cambia cuánta masa hay.
 
-**Lo que no se hace es callarlo.** La línea dice *"2 unidades · no suma al costo de
-ingredientes"*, y el cuadro lo avisa antes de guardar. Un `= $0` dejaría la duda de si el precio
-está mal o si es a propósito, y descubrirlo comparando totales sería encontrarse con una cuenta
-que no cuadra sin nada que la explique (8.7.1).
+Las dos cosas conviven en una línea de SQL, que es lo que las hace difíciles de desincronizar:
+
+```sql
+SUM(COALESCE(ri.unidades, ri.cantidadG) * i.valorPorGramo)
+```
+
+En una línea normal `unidades` es `NULL` y el `COALESCE` devuelve los gramos, o sea que nada
+cambia para lo que se pesa. En un objeto devuelve las unidades, y `valorPorGramo` ya guarda el
+precio **en esa misma unidad** (14.1). La pantalla hace la misma cuenta para que el subtotal de la
+línea y el total de la base no puedan discrepar.
 
 **Reescalar no los multiplica.** Pasar la receta a otro molde cambia cuánta masa hay, no cuántas
 cajas se usan para llevarla; y multiplicar igual daría "1,5 cajas", que no es una cantidad que
@@ -2126,6 +2184,10 @@ exista. Si hacen falta más, se cambian a mano — eso es una decisión, no una 
 mismo vale para la adaptación en proporción de una receta traída (8.11.3), que compara gramos:
 una caja no tiene. **Copiar una receta sí los copia**, en cambio, o llegarían con 0 gramos y
 ninguna unidad, es decir como una línea vacía.
+
+Lo que la pantalla dice de un objeto es justamente eso: *"se cuenta por unidad: cuesta como
+cualquier ingrediente, pero no suma al peso de la receta"*. Decir solo "es un objeto" dejaría la
+duda de cuál de las dos cosas cambia.
 
 **Lo que todavía no ve la firma.** Una receta traída avisa cuando la original cambia sus
 cantidades (8.11.3), y esa comparación es por gramos: si la original pasa de 2 cajas a 3, la
@@ -2182,6 +2244,25 @@ existe para saber cuánto vale lo que hay, y un artículo sin precio es una fila
 viene a anotar antes de salir a comprar, y hay cosas que se anotan sin saber lo que costaron —un
 regalo, algo que ya estaba— donde obligar a inventar una cifra sería peor que dejarla en cero y
 corregirla después.
+
+#### 14.5.2 Se escribe lo que costó, no el precio por gramo
+
+Lo pidió Sandy: *"en vez de preguntar cuánto cuesta cada gramo, directamente es mejor preguntar
+cuánto costó cada producto. De esta forma, se hará la conversión al gramo."*
+
+Es el número que uno tiene delante al volver de comprar. El precio por gramo, en cambio, hay que
+sacarlo dividiendo, y esa división de cabeza es donde se cuela el error caro — el mismo que ya
+había motivado la calculadora de la sección Ingredientes (7.2). La cuenta es esa misma función,
+reutilizada, no una división escrita otra vez.
+
+La división usa **la cantidad que ya se escribió arriba**, así que no hay un campo más que
+llenar. Y el resultado **se muestra antes de guardar** — *"2.000 entre 2.500 g = $0,8 por
+gramo"*—, por lo mismo que la calculadora del almacén muestra cuánto queda: una cuenta que uno no
+ve es una cuenta que hay que rehacer para confiar en ella (8.7.1).
+
+**Con cantidad 0 no hay división posible**, y eso se dice en vez de dejar el hueco: se guarda en 0
+y se arregla al reponer. Guardar un 0 en silencio haría que la receta costara de menos sin que
+nada lo indicara.
 
 #### 14.5.1 Si el precio no coincide con el que ya había
 
@@ -2241,8 +2322,10 @@ Es "uno básico", como se pidió, y estas ausencias son deliberadas y no olvidos
 - **No costea los envases.** Un objeto entra a la receta con 0 gramos (14.1.1); el día que haga
   falta, eso será un costo fijo por producto y no un peso inventado.
 
-Sacar algo del almacén **no lo saca del catálogo**: dejar de llevarle la cuenta a la harina no es
-dejar de usarla en las recetas. La advertencia lo dice con todas las letras, porque confundirlas
+Sacar algo del almacén **rompe la conexión y nada más**: el ingrediente sigue en el catálogo, en
+las recetas que lo usan y con su precio. Lo único que cambia es que vuelve a aparecer el aviso de
+14.4, que es exactamente lo que corresponde — dejó de haber detalles de almacén para él. Dejar de
+llevarle la cuenta a la harina no es dejar de usarla en las recetas. La advertencia lo dice con todas las letras, porque confundirlas
 haría creer que desde ahí se borra un ingrediente en uso — que además avisaría a qué recetas
 afecta (7.1), cosa que esa pantalla no hace.
 

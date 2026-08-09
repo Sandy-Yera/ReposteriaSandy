@@ -69,14 +69,21 @@ interface RecetaDao {
      * La suma la hace la base en una sola consulta, en vez de recorrer sección por
      * sección desde Kotlin.
      *
-     * El COALESCE es obligatorio: SUM sobre cero filas devuelve NULL en SQLite, no 0, y
-     * una receta recién creada todavía no tiene ingredientes. El JOIN lee el valor del
+     * El COALESCE de afuera es obligatorio: SUM sobre cero filas devuelve NULL en SQLite, no 0,
+     * y una receta recién creada todavía no tiene ingredientes. El JOIN lee el valor del
      * ingrediente en este momento, que es lo que se quiere: los precios nunca quedan
      * congelados en la receta.
+     *
+     * **El `COALESCE(ri.unidades, ri.cantidadG)` es lo que hace que los objetos cuesten** (14.5).
+     * Una bolsa o un sticker se cuentan por unidad y `cantidadG` va en 0 —para que reescalar por
+     * molde no los toque—, así que multiplicar por los gramos daría siempre cero. Lo que hay que
+     * multiplicar es la cantidad **en su unidad**, y `valorPorGramo` ya guarda el precio en esa
+     * misma unidad. En una línea normal `unidades` es `NULL` y el COALESCE devuelve los gramos,
+     * o sea que nada cambia para lo que se pesa.
      */
     @Query(
         """
-        SELECT COALESCE(SUM(ri.cantidadG * i.valorPorGramo), 0)
+        SELECT COALESCE(SUM(COALESCE(ri.unidades, ri.cantidadG) * i.valorPorGramo), 0)
         FROM receta_ingredientes ri
         JOIN receta_secciones rs ON rs.id = ri.seccionId
         JOIN ingredientes i      ON i.id  = ri.ingredienteId
@@ -104,7 +111,7 @@ interface RecetaDao {
      */
     @Query(
         """
-        SELECT COALESCE(SUM(ri.cantidadG * i.valorPorGramo), 0)
+        SELECT COALESCE(SUM(COALESCE(ri.unidades, ri.cantidadG) * i.valorPorGramo), 0)
         FROM receta_ingredientes ri
         JOIN receta_secciones rs ON rs.id = ri.seccionId
         JOIN ingredientes i      ON i.id  = ri.ingredienteId
@@ -122,7 +129,7 @@ interface RecetaDao {
     @Query(
         """
         SELECT rs.recetaId AS recetaId,
-               COALESCE(SUM(ri.cantidadG * i.valorPorGramo), 0) AS costo
+               COALESCE(SUM(COALESCE(ri.unidades, ri.cantidadG) * i.valorPorGramo), 0) AS costo
         FROM receta_ingredientes ri
         JOIN receta_secciones rs ON rs.id = ri.seccionId
         JOIN ingredientes i      ON i.id  = ri.ingredienteId
@@ -154,7 +161,7 @@ interface RecetaDao {
     @Query(
         """
         SELECT rs.recetaId AS recetaId,
-               COALESCE(SUM(ri.cantidadG * i.valorPorGramo), 0) AS costo
+               COALESCE(SUM(COALESCE(ri.unidades, ri.cantidadG) * i.valorPorGramo), 0) AS costo
         FROM receta_ingredientes ri
         JOIN receta_secciones rs ON rs.id = ri.seccionId
         JOIN ingredientes i      ON i.id  = ri.ingredienteId

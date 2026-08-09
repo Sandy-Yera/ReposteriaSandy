@@ -13,6 +13,8 @@ import com.sandyyera.reposteria.data.repositorio.Resultado
 import com.sandyyera.reposteria.logica.almacen.loQueQueda
 import com.sandyyera.reposteria.logica.almacen.seUsoDeMas
 import com.sandyyera.reposteria.logica.busqueda.filtrarPor
+import com.sandyyera.reposteria.logica.calculadora.UnidadDeCompra
+import com.sandyyera.reposteria.logica.calculadora.valorPorGramo
 import com.sandyyera.reposteria.logica.formato.formatearMientrasSeEscribe
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.logica.validaciones.errorEnNombreEscrito
@@ -138,15 +140,60 @@ sealed interface DialogoAlmacen {
         val errorPrecio: String?
             get() = when {
                 !tocado -> null
-                precio.isBlank() -> "Escribe cuánto cuesta cada $unidad"
+                precio.isBlank() -> "Escribe cuánto te costó"
                 textoANumero(precio) == null -> "Eso no es un número"
+                textoANumero(precio)!! < 0 -> "El precio no puede ser negativo"
                 else -> null
+            }
+
+        /**
+         * Lo que cuesta **una unidad de medida**, sacado de lo que costó todo (14.5.2).
+         *
+         * Sandy pidió escribir lo que costó el producto y no el precio por gramo: *"de esta
+         * forma, se hará la conversión al gramo"*. Es la misma cuenta que ya hace la calculadora
+         * de la sección Ingredientes (7.2), reutilizada — no una división escrita otra vez acá.
+         *
+         * Es `null` mientras no se pueda dividir: sin cantidad no hay por cuánto dividir, y con
+         * cantidad 0 la división no existe. Eso **no impide guardar**: anotar algo de lo que no
+         * queda nada es un caso válido, y el precio se completa cuando se reponga.
+         */
+        val valorPorUnidad: Double?
+            get() {
+                val cuanto = textoANumero(cantidad) ?: return null
+                val pagado = textoANumero(precio) ?: return null
+                if (cuanto <= 0 || pagado < 0) return null
+                return valorPorGramo(pagado, cuanto, UnidadDeCompra.GRAMO)
+            }
+
+        /** La cuenta escrita, para verla antes de guardar (8.7.1). `null` si todavía no se puede. */
+        val comoSeLeeLaCuenta: String?
+            get() {
+                val cada = valorPorUnidad ?: return null
+                return "${formatearNumero(textoANumero(precio)!!)} entre " +
+                    "${formatearNumero(textoANumero(cantidad)!!)} $unidad = " +
+                    "$${formatearNumero(cada)} por $unidad"
+            }
+
+        /**
+         * Por qué no se puede sacar el precio por unidad, cuando no se puede.
+         *
+         * Se dice en vez de dejar el hueco: guardar un valor 0 sin explicar por qué haría que la
+         * receta costara de menos sin que nada lo indicara.
+         */
+        val porQueNoHayCuenta: String?
+            get() {
+                if (valorPorUnidad != null) return null
+                val cuanto = textoANumero(cantidad) ?: return null
+                if (cuanto > 0) return null
+                return "Con 0 no puedo sacar el precio por $unidad. Se guarda en 0 y lo " +
+                    "arreglas cuando repongas."
             }
 
         val puedeGuardar: Boolean
             get() = !guardando &&
                 precioEnDisputa == null &&
                 errorEnNombreEscrito(nombre) == null &&
+                errorPrecio == null &&
                 textoANumero(cantidad) != null &&
                 textoANumero(precio) != null
     }
@@ -318,7 +365,10 @@ class AlmacenViewModel(
         if (actual.guardando) return
         if (!reemplazandoElPrecio && !actual.puedeGuardar) return
         val cuanto = textoANumero(actual.cantidad) ?: return
-        val precio = textoANumero(actual.precio) ?: return
+        // Lo que se guarda es el precio **por unidad de medida**, no lo que se pagó: es lo que
+        // multiplica cada receta. Con cantidad 0 no hay división posible y va 0, que es lo que
+        // dice el aviso del cuadro (14.5.2).
+        val precio = actual.valorPorUnidad ?: 0.0
 
         _dialogo.value = actual.copy(guardando = true, precioEnDisputa = null)
 
@@ -332,26 +382,34 @@ class AlmacenViewModel(
                 detalles = actual.detalles,
                 reemplazarElPrecio = reemplazandoElPrecio
             )
-            when (resultado) {
-                is ResultadoAgregarAlAlmacen.Listo -> {
-                    _dialogo.value = DialogoAlmacen.Ninguno
-                    mensaje.value = "Se agregó '${actual.nombre.trim()}' al almacén"
-                }
-                // Dentro del cuadro y no en la franja de abajo: es sobre lo que se acaba de
-                // escribir, y con el teclado abierto esa franja queda tapada (8.2).
-                is ResultadoAgregarAlAlmacen.NoSePudo ->
-                    enAgregar { it.copy(guardando = false, rechazo = resultado.motivo) }
+            terminarDeAgregar(actual, resultado)
+        }
+    }
 
-                is ResultadoAgregarAlAlmacen.PrecioDistinto -> enAgregar {
-                    it.copy(
-                        guardando = false,
-                        precioEnDisputa = PrecioEnDisputa(
-                            existente = resultado.existente,
-                            valorGuardado = resultado.existente.valorPorGramo,
-                            valorEscrito = resultado.nuevoValor
-                        )
+    /** Qué hacer con lo que contestó el repositorio. Lo comparten los dos caminos de guardado. */
+    private fun terminarDeAgregar(
+        actual: DialogoAlmacen.Agregar,
+        resultado: ResultadoAgregarAlAlmacen
+    ) {
+        when (resultado) {
+            is ResultadoAgregarAlAlmacen.Listo -> {
+                _dialogo.value = DialogoAlmacen.Ninguno
+                mensaje.value = "Se agregó '${actual.nombre.trim()}' al almacén"
+            }
+            // Dentro del cuadro y no en la franja de abajo: es sobre lo que se acaba de
+            // escribir, y con el teclado abierto esa franja queda tapada (8.2).
+            is ResultadoAgregarAlAlmacen.NoSePudo ->
+                enAgregar { it.copy(guardando = false, rechazo = resultado.motivo) }
+
+            is ResultadoAgregarAlAlmacen.PrecioDistinto -> enAgregar {
+                it.copy(
+                    guardando = false,
+                    precioEnDisputa = PrecioEnDisputa(
+                        existente = resultado.existente,
+                        valorGuardado = resultado.existente.valorPorGramo,
+                        valorEscrito = resultado.nuevoValor
                     )
-                }
+                )
             }
         }
     }
@@ -359,18 +417,29 @@ class AlmacenViewModel(
     /**
      * Deja el precio que ya estaba y guarda igual lo demás.
      *
-     * Vuelve a llamar con el precio guardado escrito en el campo, en vez de con una bandera de
-     * "no toques el precio": así lo que se manda es lo mismo que quedó a la vista, y no hay dos
-     * caminos por donde el número pueda salir distinto.
+     * **No se puede resolver reescribiendo el campo del precio**, que es lo que hacía antes:
+     * desde 14.5.2 ese campo dice lo que costó *todo*, no lo que cuesta cada unidad, así que
+     * poner ahí el valor guardado escribiría un número que significa otra cosa. Va por su propia
+     * llamada al repositorio, con el valor que ya estaba.
      */
     fun conservarElPrecioGuardado() {
         val actual = _dialogo.value as? DialogoAlmacen.Agregar ?: return
         val disputa = actual.precioEnDisputa ?: return
-        _dialogo.value = actual.copy(
-            precio = formatearNumero(disputa.valorGuardado),
-            precioEnDisputa = null
-        )
-        guardarNuevo()
+        val cuanto = textoANumero(actual.cantidad) ?: return
+
+        _dialogo.value = actual.copy(guardando = true, precioEnDisputa = null)
+
+        viewModelScope.launch {
+            val resultado = almacen.agregar(
+                nombre = actual.nombre,
+                esObjeto = actual.esObjeto,
+                vaEnRecetas = actual.vaEnRecetas,
+                cantidad = cuanto,
+                valor = disputa.valorGuardado,
+                detalles = actual.detalles
+            )
+            terminarDeAgregar(actual, resultado)
+        }
     }
 
     /** Cambia el precio del ingrediente por el escrito. Mueve el costo de todas sus recetas. */

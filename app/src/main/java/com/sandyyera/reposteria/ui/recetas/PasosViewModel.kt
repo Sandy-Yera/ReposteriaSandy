@@ -17,12 +17,16 @@ import com.sandyyera.reposteria.logica.partes.atajoAntesDelCursor
 import com.sandyyera.reposteria.logica.partes.bloquesDePasos
 import com.sandyyera.reposteria.logica.partes.reemplazarAtajo
 import com.sandyyera.reposteria.logica.partes.titulosDisponibles
+import com.sandyyera.reposteria.data.repositorio.IngredientesDeSeccion
+import com.sandyyera.reposteria.data.repositorio.ParteTraida
+import com.sandyyera.reposteria.logica.validaciones.errorEnNombreSeccion
 import com.sandyyera.reposteria.logica.validaciones.errorEnTextoDePaso
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
@@ -42,6 +46,33 @@ data class AtajoEnCurso(val pasoId: Long, val cursor: Int, val atajo: AtajoDePas
  * `formatearMientrasSeEscribe` con `TextoConCursor`.
  */
 data class PosicionDelCursor(val pasoId: Long, val cursor: Int)
+
+/**
+ * Un título que se está creando desde los pasos (8.8).
+ *
+ * Un título **es una sección de la receta**, así que crearlo pasa por las mismas reglas que en el
+ * paso de cantidades — incluido [nombreDeLaPrimera], que es lo que hay que contestar cuando la
+ * receta tenía una sola sección con el nombre automático: partir en dos obliga a bautizar la que
+ * ya estaba, o quedaría un encabezado "General" al lado de "Crema" (8.2).
+ */
+data class TituloNuevo(
+    val nombre: String = "",
+    val nombreDeLaPrimera: String? = null,
+    val tocado: Boolean = false,
+    val guardando: Boolean = false,
+    /** Lo que contestó el repositorio. Va junto al campo y nunca en la franja de abajo (8.2). */
+    val rechazo: String? = null
+) {
+    val error: String? get() = rechazo ?: errorEnNombreSeccion(nombre).takeIf { tocado }
+
+    val errorDeLaPrimera: String?
+        get() = nombreDeLaPrimera?.let { errorEnNombreSeccion(it) }.takeIf { tocado }
+
+    val puedeGuardar: Boolean
+        get() = !guardando &&
+            errorEnNombreSeccion(nombre) == null &&
+            (nombreDeLaPrimera == null || errorEnNombreSeccion(nombreDeLaPrimera) == null)
+}
 
 /** Qué hay abierto encima del paso de pasos. */
 sealed interface DialogoPasos {
@@ -64,7 +95,16 @@ sealed interface DialogoPasos {
         val pasoId: Long,
         val disponibles: List<TituloDePaso>,
         val nombrePorId: Map<Long, String>,
-        val atajo: AtajoEnCurso? = null
+        val atajo: AtajoEnCurso? = null,
+        /**
+         * El título nuevo que se está escribiendo, o `null` si solo se está eligiendo.
+         *
+         * Existe porque una receta sin secciones **no tenía de dónde sacar títulos**: el menú
+         * ofrecía solo el General y la única salida era irse al paso de cantidades a crear una
+         * sección. Sandy lo pidió al revés y tiene razón — un título es una parte de la receta, y
+         * decidir que hay partes es algo que pasa mientras se escriben los pasos.
+         */
+        val creando: TituloNuevo? = null
     ) : DialogoPasos
 
     /**
@@ -76,8 +116,10 @@ sealed interface DialogoPasos {
      */
     data class ElegirIngrediente(
         val atajo: AtajoEnCurso,
-        val nombres: List<String> = emptyList()
-    ) : DialogoPasos
+        val grupos: List<IngredientesDeSeccion> = emptyList()
+    ) : DialogoPasos {
+        val vacio: Boolean get() = grupos.all { it.lineas.isEmpty() }
+    }
 
     /**
      * La lista de atajos que existen.
@@ -106,11 +148,27 @@ data class EstadoPasos(
      * base se entera después.
      */
     val escribiendo: Map<Long, String> = emptyMap(),
+    /** Los grupos de secciones traídas de otra receta (8.11), para señalar sus bloques. */
+    val partes: List<ParteTraida> = emptyList(),
     val mensaje: String? = null,
     val cargando: Boolean = true
 ) {
     /** El texto que hay que dibujar en un paso: lo que se está escribiendo, o lo guardado. */
     fun textoDe(paso: PasoParaMostrar): String = escribiendo[paso.id] ?: paso.texto
+
+    /**
+     * De qué receta vinieron los pasos de este bloque, o `null` si son propios (8.11.2).
+     *
+     * Lo pidió Sandy con el mismo argumento que las secciones del paso de cantidades: sin esto,
+     * un bloque traído se ve igual que uno escrito acá, y con dos recetas traídas seguidas no hay
+     * forma de saber dónde termina una. Un paso general anidado ya se dibuja con sangría, pero
+     * eso dice "vino de algo", no **de qué**.
+     */
+    fun deDondeViene(titulo: TituloDePaso): String? {
+        val seccionId = titulo ?: return null
+        val parte = partes.firstOrNull { seccionId in it.seccionIds } ?: return null
+        return parte.tituloDelOrigen?.let { "de '$it'" } ?: "de una receta eliminada"
+    }
 
     /** Lo que esté mal en ese paso, o `null`. El vacío no es un error: es un paso que se borra. */
     fun errorDe(paso: PasoParaMostrar): String? = errorEnTextoDePaso(textoDe(paso))
@@ -158,13 +216,17 @@ class PasosViewModel(
         recetas.observarPasos(recetaId),
         recetas.observarSecciones(recetaId),
         escribiendo,
+        // Se **observa** y no se pide una vez: traer una receta desde el paso de cantidades
+        // tiene que marcar sus bloques acá sin que nadie se acuerde de refrescar.
+        recetas.observarPartesDe(recetaId),
         mensaje
-    ) { pasos, secciones, enElCampo, mensajeActual ->
+    ) { pasos, secciones, enElCampo, partesTraidas, mensajeActual ->
         val paraTitulo = secciones.map { SeccionParaTitulo(it.id, it.nombreSeccion) }
         EstadoPasos(
             bloques = bloquesDePasos(pasos.map { it.aMostrar() }, paraTitulo),
             secciones = paraTitulo,
             escribiendo = enElCampo,
+            partes = partesTraidas,
             mensaje = mensajeActual,
             cargando = false
         )
@@ -244,22 +306,108 @@ class PasosViewModel(
     private fun abrirElegirIngrediente(enCurso: AtajoEnCurso) {
         _dialogo.value = DialogoPasos.ElegirIngrediente(enCurso)
         viewModelScope.launch {
-            val nombres = recetas.nombresDeIngredientesDe(recetaId)
+            val grupos = recetas.ingredientesPorSeccionDe(recetaId)
             // Se comprueba que siga abierto el mismo: entre pedir la lista y que llegue pudo
             // cerrarse el cuadro o abrirse otro, y rellenar el equivocado mostraría una lista
             // que no corresponde al atajo que la pidió.
             val ahora = _dialogo.value
             if (ahora is DialogoPasos.ElegirIngrediente && ahora.atajo == enCurso) {
-                _dialogo.value = ahora.copy(nombres = nombres)
+                _dialogo.value = ahora.copy(grupos = grupos)
             }
         }
     }
 
-    /** Escribe el ingrediente elegido en lugar del `:ingredientes:`. */
-    fun elegirIngrediente(nombre: String) {
+    /**
+     * Escribe el ingrediente elegido —con su cantidad— en lugar del `:ingredientes:`.
+     *
+     * Recibe la frase ya armada y no el ingrediente, para que lo que se escribe sea exactamente
+     * lo que se tocó: si la frase se rehiciera acá, cualquier diferencia con la del menú saldría
+     * en el paso y solo se notaría leyéndolo después.
+     */
+    fun elegirIngrediente(comoSeEscribe: String) {
         val abierto = _dialogo.value as? DialogoPasos.ElegirIngrediente ?: return
         _dialogo.value = DialogoPasos.Ninguno
-        reemplazar(abierto.atajo, nombre)
+        reemplazar(abierto.atajo, comoSeEscribe)
+    }
+
+    // --- Crear un título sin salir de los pasos (8.8) ---
+
+    /**
+     * Abre el campo para escribir un título nuevo, dentro del mismo cuadro.
+     *
+     * Va a preguntar si hay que bautizar la sección que ya está: partir en dos una receta que
+     * tenía una sola parte con el nombre automático obliga a nombrarla, o quedaría un encabezado
+     * "General" al lado de "Crema" (8.2). La consulta va acá y no en la pantalla porque la
+     * respuesta depende de la base.
+     */
+    fun empezarTituloNuevo() {
+        val abierto = _dialogo.value as? DialogoPasos.ElegirTitulo ?: return
+        _dialogo.value = abierto.copy(creando = TituloNuevo())
+        viewModelScope.launch {
+            val bautizo = recetas.nombreQueFaltaBautizar(recetaId)
+            enTituloNuevo { it.copy(nombreDeLaPrimera = bautizo) }
+        }
+    }
+
+    /** Vuelve del campo a la lista, sin crear nada. */
+    fun cancelarTituloNuevo() = enElegirTitulo { it.copy(creando = null) }
+
+    // Al escribir, el rechazo anterior deja de aplicar: era sobre lo que había antes.
+    fun cambiarNombreDelTitulo(texto: String) = enTituloNuevo {
+        it.copy(nombre = texto, tocado = true, rechazo = null)
+    }
+
+    fun cambiarNombreDeLaPrimera(texto: String) = enTituloNuevo {
+        it.copy(nombreDeLaPrimera = texto, tocado = true, rechazo = null)
+    }
+
+    /**
+     * Crea el título y **se lo pone al paso de una vez**.
+     *
+     * Las dos cosas juntas y no en dos toques: quien escribe `:titulo:` y crea "Crema" está
+     * diciendo que *este* paso va bajo Crema. Dejarlo creado pero sin asignar obligaría a volver
+     * a abrir el menú para elegir lo que se acaba de escribir.
+     */
+    fun guardarTituloNuevo() {
+        val abierto = _dialogo.value as? DialogoPasos.ElegirTitulo ?: return
+        val creando = abierto.creando ?: return
+        if (!creando.puedeGuardar) return
+
+        _dialogo.value = abierto.copy(creando = creando.copy(guardando = true))
+
+        viewModelScope.launch {
+            val resultado = recetas.agregarSeccion(
+                recetaId = recetaId,
+                nombre = creando.nombre,
+                nombreDeLaPrimera = creando.nombreDeLaPrimera
+            )
+            if (resultado is Resultado.NoSePudo) {
+                // Dentro del cuadro: es sobre lo que se acaba de escribir, y con el teclado
+                // abierto la franja de abajo queda tapada (8.2).
+                enTituloNuevo { it.copy(guardando = false, rechazo = resultado.motivo) }
+                return@launch
+            }
+
+            // La sección recién creada es la última de la receta. Se lee de la base y no se
+            // adivina: `agregarSeccion` no devuelve el id, y suponerlo pondría el paso bajo el
+            // título equivocado justo cuando la receta ya tenía otras partes.
+            val nueva = recetas.obtenerSecciones(recetaId).lastOrNull()
+            _dialogo.value = DialogoPasos.Ninguno
+            abierto.atajo?.let { reemplazar(it, "") }
+            if (nueva == null) return@launch
+            val r = recetas.cambiarTituloDePaso(abierto.pasoId, nueva.id)
+            if (r is Resultado.NoSePudo) mensaje.value = r.motivo
+        }
+    }
+
+    private fun enElegirTitulo(cambio: (DialogoPasos.ElegirTitulo) -> DialogoPasos.ElegirTitulo) {
+        _dialogo.update { actual ->
+            if (actual is DialogoPasos.ElegirTitulo) cambio(actual) else actual
+        }
+    }
+
+    private fun enTituloNuevo(cambio: (TituloNuevo) -> TituloNuevo) = enElegirTitulo { abierto ->
+        abierto.creando?.let { abierto.copy(creando = cambio(it)) } ?: abierto
     }
 
     /**

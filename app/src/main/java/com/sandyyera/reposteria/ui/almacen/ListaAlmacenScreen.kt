@@ -386,12 +386,13 @@ private fun DialogoAgregarAlAlmacen(
                     explicacion = "Aparece al agregar ingredientes a una receta."
                 )
 
-                // El aviso va acá y no al descubrirlo comparando totales: un objeto entra a la
-                // receta con 0 gramos, así que no suma al costo (14.5).
+                // Lo que hay que decir de un objeto en una receta es que **no pesa**: su
+                // precio sí entra al costo, pero el peso del que sale el reescalado no lo
+                // cuenta (14.5).
                 if (estado.esObjeto && estado.vaEnRecetas) {
                     Text(
-                        text = "Ojo: lo que se cuenta por unidad entra a la receta sin peso, " +
-                            "así que no suma al costo de los ingredientes.",
+                        text = "En una receta cuesta como cualquier ingrediente, pero no suma " +
+                            "al peso: reescalar por molde no lo multiplica.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -408,10 +409,29 @@ private fun DialogoAgregarAlAlmacen(
                 CampoNumerico(
                     valor = estado.precio,
                     alCambiar = acciones.cambiarPrecioNuevo,
-                    etiqueta = "¿Cuánto cuesta cada ${estado.unidad}?",
+                    // Se pregunta lo que costó **todo** y no el precio por gramo: es el número
+                    // que uno tiene delante al llegar de comprar, y la división la hace la app
+                    // (14.5.2). Hacerla de cabeza es donde se cuela el error caro.
+                    etiqueta = "¿Cuánto te costó en total?",
                     error = estado.errorPrecio,
                     accionDelTeclado = ImeAction.Next
                 )
+                // La cuenta se muestra antes de guardar, no después: es la misma regla de la
+                // calculadora de valor por gramo (8.7.1).
+                estado.comoSeLeeLaCuenta?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                estado.porQueNoHayCuenta?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
 
                 OutlinedTextField(
                     value = estado.detalles,
