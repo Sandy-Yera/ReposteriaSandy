@@ -2766,6 +2766,33 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 
 16 fases (0 a 15), cada una con algo concreto y probable al final. Se prueba en Android Studio, emulador y celular real; la Fase 15 termina en un **APK firmado**.
 
+### 15.1 Cómo se numera la app
+
+`0.<fase>.<actualización>`, y se lee de un vistazo en el menú de la app.
+
+| Parte | Qué dice | Cuándo cambia |
+|---|---|---|
+| `0` | La app todavía no está terminada | Pasa a `1` con las quince fases hechas, no antes |
+| `10` | La fase en curso | Al empezar la fase siguiente |
+| `01` | Qué actualización de esa fase es | En cada compilación que se instala en el celular |
+
+Ejemplos: `0.10.01` → `0.10.02` → … → `0.11.00`. **Al cambiar de fase el último vuelve a `00`**,
+que es lo que hace que el número sirva para lo que fue pedido: saber en qué parte del plan
+estamos sin ir a buscarlo.
+
+**Empieza en `0.10.01` y no antes.** Numerar hacia atrás las compilaciones que nunca mostraron un
+número sería inventar una historia que nadie vivió; la primera versión que se llama a sí misma es
+esta.
+
+**Se declara en un solo lugar**, `app/build.gradle.kts`, y el menú la lee de `BuildConfig`. Es de
+donde la toma también Android para los ajustes del sistema, así que las dos dicen lo mismo por
+construcción. Escribirla además en el código sería una segunda copia, y dos copias de una versión
+se separan a la primera actualización que alguien apure.
+
+**`versionCode` se deriva y no se lleva aparte**: `fase × 1000 + actualización` (10.001 para
+`0.10.01`). Android exige un entero que solo suba —se niega a instalar encima algo con un número
+menor— y esa cuenta lo garantiza mientras las fases avancen.
+
 **Condición de cierre que aplica a todas las fases:** ninguna fase se da por terminada sin haber actualizado `registro_funciones.md` con las funciones y variables de módulo que esa fase agregó, en el formato exacto de `CLAUDE.md`. Este documento ya nombra ~20 funciones (`formatearNumero`, `factorEscala`, `precioDeMenorGanancia`, `calcularSueldo`, `trozoGanador`, `SEMANAS_POR_MES`…) y el registro está vacío, así que el desfase parte en cero y solo crece si no se cierra fase por fase. Es la única forma de que la regla de "revisar el registro antes de escribir algo nuevo" sirva de algo: un registro incompleto es peor que no tenerlo, porque da falsa confianza de que algo no existe.
 
 ### Fase 0 — Validar Google Sign-In + Drive API en un proyecto vacío

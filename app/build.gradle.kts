@@ -13,8 +13,20 @@ android {
         applicationId = "com.sandyyera.reposteria"
         minSdk = 26          // Android 8.0, ver sección 2 de arquitectura.md
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1"
+        // La versión es `0.<fase>.<actualización>` (ver arquitectura.md, sección 15):
+        //
+        // - El **0** de adelante dice que la app todavía no está terminada. Cambia a 1 cuando
+        //   estén las quince fases, no antes.
+        // - El del medio es **la fase en curso**, así que el número dice en qué parte del plan
+        //   estamos sin tener que ir a buscarlo.
+        // - El último cuenta las actualizaciones **dentro** de esa fase, y vuelve a 00 al
+        //   cambiar de fase: 0.10.01 → 0.10.02 → … → 0.11.00.
+        //
+        // `versionCode` tiene que ser un entero que **solo suba** —Android se niega a instalar
+        // encima algo con un número menor—, así que se deriva del nombre y no se lleva aparte:
+        // fase × 1000 + actualización. Dos números que se escriben a mano se separan.
+        versionCode = 10_001
+        versionName = "0.10.01"
         // Necesario para `./gradlew :app:connectedAndroidTest` (la prueba de migración).
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -59,6 +71,10 @@ android {
 
     buildFeatures {
         compose = true
+        // Genera `BuildConfig`, de donde el menú lee la versión. Sin esto habría que escribir
+        // el número una segunda vez en el código, y dos copias de una versión se separan a la
+        // primera actualización que alguien apure.
+        buildConfig = true
     }
 
     // `MigrationTestHelper` lee los esquemas exportados **en el celular**, así que tienen

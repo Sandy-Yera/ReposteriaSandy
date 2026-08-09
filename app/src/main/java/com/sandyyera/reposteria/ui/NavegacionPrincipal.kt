@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.sandyyera.reposteria.AppContainer
+import com.sandyyera.reposteria.BuildConfig
 import com.sandyyera.reposteria.ui.almacen.AlmacenViewModel
 import com.sandyyera.reposteria.ui.almacen.ListaAlmacenScreen
 import com.sandyyera.reposteria.ui.ingredientes.IngredientesViewModel
@@ -295,6 +296,36 @@ fun NavegacionPrincipal(
 }
 
 /**
+ * En qué versión va la app, abajo del menú (sección 15).
+ *
+ * **Va acá y no en una pantalla de configuración**, que todavía no existe: el menú es lo único
+ * que se abre desde cualquier parte, y esto se mira justo cuando uno no sabe dónde está parado.
+ * El día que haya configuración, este es el primer candidato a mudarse.
+ *
+ * El número **sale de `BuildConfig` y no está escrito acá**: la versión se declara una sola vez,
+ * en `build.gradle.kts`, que es de donde también la lee Android para los ajustes del sistema.
+ * Escribirla en el código sería una segunda copia que se separa a la primera actualización que
+ * alguien apure.
+ *
+ * Se lee "0.10.01": todavía no terminada, fase 10, primera actualización de esa fase.
+ */
+@Composable
+private fun VersionDeLaApp() {
+    HorizontalDivider(modifier = Modifier.padding(top = Medidas.chico))
+    Text(
+        text = "Versión ${BuildConfig.VERSION_NAME}",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(
+            start = Medidas.grande,
+            end = Medidas.grande,
+            top = Medidas.chico,
+            bottom = Medidas.medio
+        )
+    )
+}
+
+/**
  * El menú de 3 líneas con las secciones, y la que esté elegida.
  *
  * Va aparte de [NavegacionPrincipal] para no depender de un `return` temprano dentro de un
@@ -340,6 +371,8 @@ private fun MenuDeSecciones(
                         )
                     )
                 }
+
+                VersionDeLaApp()
             }
         }
     ) {
