@@ -46,6 +46,17 @@ class IngredienteDaoFalso : IngredienteDao {
     private val filas = MutableStateFlow<List<Ingrediente>>(emptyList())
     private var siguienteId = 1L
 
+    /**
+     * Qué ingredientes tienen fila en el almacén, para el aviso de 14.4.
+     *
+     * Es un `Flow` que la prueba mueve a mano y no una consulta a un almacén falso, porque
+     * todavía no hay ninguna prueba que necesite las dos tablas de verdad. **Arranca vacío, que
+     * es la respuesta correcta y no un relleno**: sin almacén, ningún ingrediente está en él, y
+     * el aviso tiene que estar encendido en todos. El día que exista un `AlmacenDaoFalso`, esto
+     * pasa a colgar de él.
+     */
+    val enElAlmacen = MutableStateFlow<Set<Long>>(emptySet())
+
     /** Deja ingredientes puestos de entrada, sin pasar por las comprobaciones. */
     fun sembrar(vararg ingredientes: Ingrediente) {
         filas.value = filas.value + ingredientes.map {
@@ -56,6 +67,21 @@ class IngredienteDaoFalso : IngredienteDao {
     private fun ordenados(lista: List<Ingrediente>) = lista.sortedBy { it.nombre.lowercase() }
 
     override fun observarTodos(): Flow<List<Ingrediente>> = filas.map(::ordenados)
+
+    override fun observarParaRecetas(): Flow<List<Ingrediente>> =
+        filas.map { lista -> ordenados(lista.filter { it.vaEnRecetas }) }
+
+    /**
+     * Los que no están en el almacén, imitando el `NOT EXISTS` de la consulta real.
+     *
+     * **Cuelga de [enElAlmacen] además del catálogo**, que es la mitad del punto: agregar algo
+     * al almacén tiene que apagar su aviso sin que nadie lo pida. Un falso que solo mirara el
+     * catálogo dejaría pasar una versión de la app donde el aviso no se apaga nunca.
+     */
+    override fun observarSinAlmacen(): Flow<List<Long>> =
+        combine(filas, enElAlmacen) { ingredientes, guardados ->
+            ingredientes.filter { it.id !in guardados }.map { it.id }
+        }
 
     override suspend fun obtenerTodosUnaVez(): List<Ingrediente> = ordenados(filas.value)
 
@@ -469,9 +495,11 @@ class RecetaDaoFalso(
         return id
     }
 
-    override suspend fun actualizarCantidad(itemId: Long, cantidad: Double) {
+    override suspend fun actualizarCantidad(itemId: Long, cantidad: Double, unidades: Double?) {
         val posicion = items.indexOfFirst { it.id == itemId }
-        if (posicion >= 0) items[posicion] = items[posicion].copy(cantidadG = cantidad)
+        if (posicion >= 0) {
+            items[posicion] = items[posicion].copy(cantidadG = cantidad, unidades = unidades)
+        }
         cambio()
     }
 

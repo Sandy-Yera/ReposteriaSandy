@@ -10,6 +10,7 @@ import com.sandyyera.reposteria.logica.busqueda.sonElMismoTexto
 import com.sandyyera.reposteria.logica.validaciones.errorEnNombreEscrito
 import com.sandyyera.reposteria.logica.validaciones.errorEnValorPorGramo
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
 /**
  * Cómo terminó un intento de guardar un ingrediente.
@@ -37,6 +38,19 @@ class IngredienteRepositorio(
 
     fun observarTodos(): Flow<List<Ingrediente>> = dao.observarTodos()
 
+    /** Los que se ofrecen al armar una receta: los marcados como que van en recetas (14.5). */
+    fun observarParaRecetas(): Flow<List<Ingrediente>> = dao.observarParaRecetas()
+
+    /**
+     * Qué ingredientes **no están en el almacén**, avisando cuando cambie (14.4).
+     *
+     * El aviso no bloquea nada: el ingrediente sirve igual, con o sin él. Está para que crear
+     * uno "para más adelante" siga siendo útil —planear algo que todavía no se hace— sin que se
+     * pierda entre los que sí tienen existencia anotada. **Se apaga solo** cuando aparece su
+     * fila de almacén, porque Room vigila las dos tablas de la consulta.
+     */
+    fun observarSinAlmacen(): Flow<Set<Long>> = dao.observarSinAlmacen().map { it.toSet() }
+
     suspend fun obtener(ingredienteId: Long): Ingrediente? = dao.obtener(ingredienteId)
 
     /**
@@ -61,14 +75,28 @@ class IngredienteRepositorio(
      * a crear un ingrediente —el catálogo y el alta rápida desde una receta— y ambas
      * tienen que comportarse igual.
      */
-    suspend fun crear(nombre: String, valorPorGramo: Double): ResultadoGuardarIngrediente {
+    suspend fun crear(
+        nombre: String,
+        valorPorGramo: Double,
+        // Los dos valores por defecto son los del caso normal —algo que se mide en gramos y se
+        // usa en recetas— así que todo lo que ya llamaba a esta función sigue diciendo lo mismo.
+        esObjeto: Boolean = false,
+        vaEnRecetas: Boolean = true
+    ): ResultadoGuardarIngrediente {
         val limpio = nombre.trim()
 
         errorEnNombreEscrito(limpio)?.let { return ResultadoGuardarIngrediente.NoValido(it) }
         errorEnValorPorGramo(valorPorGramo)?.let { return ResultadoGuardarIngrediente.NoValido(it) }
         buscarParecido(limpio)?.let { return ResultadoGuardarIngrediente.YaExiste(it) }
 
-        val id = dao.insertar(Ingrediente(nombre = limpio, valorPorGramo = valorPorGramo))
+        val id = dao.insertar(
+            Ingrediente(
+                nombre = limpio,
+                valorPorGramo = valorPorGramo,
+                esObjeto = esObjeto,
+                vaEnRecetas = vaEnRecetas
+            )
+        )
         historial.registrar(
             tipo = TipoEvento.CREACION,
             entidad = EntidadEvento.INGREDIENTE,

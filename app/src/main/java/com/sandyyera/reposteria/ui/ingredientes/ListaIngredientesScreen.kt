@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -40,6 +41,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sandyyera.reposteria.data.db.entidades.Ingrediente
+import com.sandyyera.reposteria.data.db.entidades.unidadDeMedida
 import com.sandyyera.reposteria.logica.calculadora.UnidadDeCompra
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.ui.componentes.BarraBusqueda
@@ -306,6 +308,7 @@ private fun Catalogo(
                     items(estado.visibles, key = { it.id }) { ingrediente ->
                         TarjetaIngrediente(
                             ingrediente = ingrediente,
+                            faltaEnElAlmacen = estado.faltaEnElAlmacen(ingrediente),
                             alEditar = { acciones.editar(ingrediente) },
                             alBorrar = { acciones.pedirBorrado(ingrediente) }
                         )
@@ -329,6 +332,7 @@ private fun Catalogo(
 @Composable
 private fun TarjetaIngrediente(
     ingrediente: Ingrediente,
+    faltaEnElAlmacen: Boolean,
     alEditar: () -> Unit,
     alBorrar: () -> Unit,
     modifier: Modifier = Modifier
@@ -357,10 +361,31 @@ private fun TarjetaIngrediente(
                 )
                 Text(
                     // El dinero siempre pasa por formatearNumero, nunca se arma a mano (12.6).
-                    text = "$${formatearNumero(ingrediente.valorPorGramo)} por gramo",
+                    text = "$${formatearNumero(ingrediente.valorPorGramo)} por " +
+                        ingrediente.unidadDeMedida,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+
+                // El aviso del almacén (14.4). **No deshabilita nada** y el ingrediente sirve
+                // igual: está para que crear uno "para más adelante" siga siendo útil sin que se
+                // pierda entre los que sí tienen existencia anotada. Y no se apaga con el
+                // tiempo ni tocándolo — se apaga cuando aparece su fila en el almacén.
+                if (faltaEnElAlmacen) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(end = Medidas.minimo)
+                        )
+                        Text(
+                            text = "Sin detalles en el almacén",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
             }
 
             IconButton(onClick = alBorrar) {

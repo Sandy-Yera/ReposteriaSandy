@@ -409,10 +409,18 @@ class RecetaRepositorio(
      * decidir qué cantidad se conserva. La regla vive acá, y lo de antes se sigue pudiendo
      * ver y corregir a mano.
      */
+    /**
+     * Pone un ingrediente en una sección.
+     *
+     * [unidades] va con valor **solo cuando el ingrediente se cuenta por unidad** (14.5), y
+     * entonces [cantidadG] llega en 0: un objeto no pesa nada para la cuenta del costo, que de
+     * punta a punta parte de gramos. Los dos números se escriben juntos y no por separado.
+     */
     suspend fun agregarIngrediente(
         seccionId: Long,
         ingredienteId: Long,
         cantidadG: Double,
+        unidades: Double? = null,
         orden: Int = 0
     ): Resultado {
         val yaEsta = dao.obtenerIngredientesDeSeccion(seccionId)
@@ -422,8 +430,11 @@ class RecetaRepositorio(
             // elegido a mano, pero pedirlo dejaría que el aviso dijera un nombre y la fila
             // guardada fuera otra.
             val nombre = dao.nombreDeIngrediente(ingredienteId) ?: "Ese ingrediente"
+            val cuanto = yaEsta.unidades
+                ?.let { "${formatearNumero(it)} unidades" }
+                ?: "${formatearNumero(yaEsta.cantidadG)} g"
             return Resultado.NoSePudo(
-                "$nombre ya está en esta sección, con ${formatearNumero(yaEsta.cantidadG)} g. " +
+                "$nombre ya está en esta sección, con $cuanto. " +
                     "Toca esa fila para cambiarle la cantidad."
             )
         }
@@ -432,14 +443,15 @@ class RecetaRepositorio(
                 seccionId = seccionId,
                 ingredienteId = ingredienteId,
                 cantidadG = cantidadG,
+                unidades = unidades,
                 orden = orden
             )
         )
         return Resultado.Listo
     }
 
-    suspend fun cambiarCantidad(itemId: Long, cantidadG: Double) =
-        dao.actualizarCantidad(itemId, cantidadG)
+    suspend fun cambiarCantidad(itemId: Long, cantidadG: Double, unidades: Double? = null) =
+        dao.actualizarCantidad(itemId, cantidadG, unidades)
 
     suspend fun quitarIngrediente(itemId: Long) = dao.eliminarIngrediente(itemId)
 

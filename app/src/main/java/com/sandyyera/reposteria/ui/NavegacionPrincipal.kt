@@ -329,10 +329,7 @@ private fun MenuDeSecciones(
         when (seccionActual) {
             Seccion.ALMACEN -> ListaAlmacenScreen(
                 modelo = viewModel(
-                    factory = AlmacenViewModel.fabrica(
-                        almacen = contenedor.almacen,
-                        ingredientes = contenedor.ingredientes
-                    )
+                    factory = AlmacenViewModel.fabrica(almacen = contenedor.almacen)
                 ),
                 alAbrirMenu = abrirMenu
             )

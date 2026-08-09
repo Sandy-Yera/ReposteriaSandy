@@ -78,13 +78,20 @@ class AppContainer(private val context: Context) {
     /**
      * El inventario (sección 14).
      *
-     * Depende solo de su DAO y del historial: el almacén **lee** el catálogo de ingredientes
-     * —para nombrar y valorar lo que guarda— pero lo hace con un `JOIN` dentro de su propia
-     * consulta, no pidiéndole nada al repositorio de ingredientes. Así no queda un camino de ida
-     * y vuelta entre los dos, que es el mismo cuidado que ya se tuvo con `nombreDeIngrediente`.
+     * **Depende del repositorio de ingredientes**, y esa dependencia llegó con 14.5: agregar algo
+     * al almacén ahora crea su ingrediente si no existía, y eso no es una consulta sino un alta
+     * con todas sus reglas —nombre repetido, valor válido, historial— que ya viven allá. Copiarlas
+     * acá sería tener dos altas de ingrediente que se separan en cuanto una cambie.
+     *
+     * Va en un solo sentido: ingredientes no sabe nada del almacén. Lo que el almacén necesita
+     * **leer** del catálogo sigue saliendo de un `JOIN` en su propia consulta.
      */
     val almacen: AlmacenRepositorio by lazy {
-        AlmacenRepositorio(dao = base.almacenDao(), historial = historial)
+        AlmacenRepositorio(
+            dao = base.almacenDao(),
+            ingredientes = ingredientes,
+            historial = historial
+        )
     }
 
     // El repositorio de empleados se agrega al llegar su fase.

@@ -96,6 +96,17 @@ data class RecetaIngrediente(
     val seccionId: Long,
     val ingredienteId: Long,
     val cantidadG: Double,
+    /**
+     * Cuántas unidades, cuando lo que se puso es un **objeto** (14.5).
+     *
+     * `null` en todo lo que se mide en gramos, que es lo normal. Cuando tiene valor, [cantidadG]
+     * es **0** a propósito: así el `JOIN` del costo lo multiplica por cero y el objeto no suma,
+     * sin tocar ni una línea del motor de cálculo — que de punta a punta parte de gramos.
+     *
+     * Va en una columna aparte y no reusando [cantidadG] porque son dos cosas distintas y el
+     * costo lee esa: guardar "2" ahí haría que dos cajas costaran dos gramos de algo.
+     */
+    val unidades: Double? = null,
     val orden: Int = 0
 )
 

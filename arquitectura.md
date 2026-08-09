@@ -2049,28 +2049,46 @@ tres —el orden es el de lo que hay que tener antes— mirada de más lejos: el
 de verdad, y el catálogo de ingredientes es lo que se *sabe* de eso. Es además la única sección
 que se abre a diario, mientras las otras se llenan una vez y se corrigen de a poco.
 
-### 14.1 Dos clases de cosas, una sola lista
+### 14.1 Una sola lista, con marca de "va en recetas"
 
-Un artículo del almacén puede ser **un ingrediente del catálogo** o **algo suelto**, y esa
-distinción ordena toda la tabla:
+**Todo lo que se anota en el almacén aparece también en Ingredientes.** Lo pidió Sandy así:
+*"cuando crees un producto en almacén, irá automáticamente a ingredientes"*, y *"algunas cosas
+pueden ser utilizadas igual en recetas, así que deberán aparecer en ingredientes igual y poder
+ser utilizados"*.
 
-| | Ingrediente enlazado | Artículo suelto |
-|---|---|---|
-| Qué es | Harina, azúcar: lo que entra en las recetas | Cajas, cintas, velas |
-| Cómo se cuenta | En **gramos**, como todo el resto de la app | En **unidades** |
-| Cuánto vale | Sale de su `valorPorGramo`, sin escribir nada | No tiene valor por gramo |
-| Cómo se llama | Se lee del catálogo | Se escribe acá |
+Hasta acá el almacén tenía dos mitades —lo enlazado a un ingrediente y lo suelto— y lo suelto se
+quedaba fuera del catálogo justamente para que una caja no apareciera en el buscador de "agregar
+ingrediente a la receta". Esa razón sigue siendo buena; lo que cambia es cómo se resuelve. En vez
+de dos clases de fila, **dos marcas en el ingrediente**:
 
-**El nombre de los enlazados no se copia**: se lee del catálogo, así un renombre llega solo. Es
-la misma lección que ya obligó a rehacer la firma de una receta copiada (8.11.7) — un segundo
-nombre guardado aparte es un nombre que se queda viejo.
+| Marca | Qué contesta | Ejemplo de sí | Ejemplo de no |
+|---|---|---|---|
+| `esObjeto` | ¿Se cuenta por unidad o por gramo? | Una caja de torta | La harina |
+| `vaEnRecetas` | ¿Se ofrece al armar una receta? | Una caja de torta | Una vela decorativa |
 
-**Los sueltos no van al catálogo de ingredientes**, aunque sería más simple. Una caja en el
-catálogo aparecería en el buscador de "agregar ingrediente a la receta", que es exactamente donde
-no va, y tendría un valor por gramo que no significa nada.
+**Son dos preguntas distintas y hay que contestarlas por separado.** Encadenarlas —"si es objeto,
+entonces no va en recetas"— se equivoca justo en el caso interesante: la caja de torta se cuenta
+por unidad **y** se anota en la receta. Por eso en la pantalla son dos casillas independientes y
+no dos pestañas.
 
-**La unidad se deduce y no se guarda.** Una columna de unidad abriría la puerta a anotar "3" de
-algo que la receta mide en gramos, y ahí el valor de lo guardado daría cualquier cosa.
+Con esto la tabla de almacén deja de guardar nombre, precio y unidad: los tres salen del
+ingrediente enlazado. Un nombre copiado no se entera de los renombres — la misma lección que ya
+obligó a rehacer la firma de una receta copiada (8.11.7)— y un precio escrito dos veces deja uno
+viejo.
+
+#### 14.1.1 Un objeto entra a una receta con 0 gramos
+
+Decisión de Sandy, y explícita: *"simplemente se alterará el 'texto'. Así puedo ver que dice '2
+cajas', pero el peso por detrás es 0. Así no hay que hacer grandes cambios."*
+
+La línea guarda `unidades` aparte y `cantidadG` en 0, así que el `JOIN` que calcula el costo da
+cero para esa fila sin que el motor de cálculo —que de punta a punta parte de gramos— tenga que
+aprender otra unidad.
+
+**Lo que no se hace es callarlo.** La línea dice *"2 unidades · no suma al costo de
+ingredientes"*, y el cuadro lo avisa antes de guardar. Un `= $0` dejaría la duda de si el precio
+está mal o si es a propósito, y descubrirlo comparando totales sería encontrarse con una cuenta
+que no cuadra sin nada que la explique (8.7.1).
 
 ### 14.2 Lo que se hace todos los días
 
@@ -2088,12 +2106,87 @@ la fecha de la fila cuenta esa historia mejor que doscientos eventos.
 
 ### 14.3 El valor de lo guardado, y lo que queda fuera
 
-Arriba va lo que vale todo el inventario, sumando cantidad × valor por gramo de lo enlazado.
-**Los artículos sueltos no se cuentan como 0: se dicen aparte** — *"no incluye 3 artículos sin
-valor por gramo"*. Un total presentado como "el valor del almacén" que ignora en silencio parte
-de las filas es un número que se cree y está mal.
+Arriba va lo que vale todo el inventario, sumando cantidad × precio por unidad de medida.
+**Lo que no tiene precio no se cuenta como 0: se dice aparte** — *"no incluye 3 artículos sin
+precio"*. Un total presentado como "el valor del almacén" que ignora en silencio parte de las
+filas es un número que se cree y está mal.
 
-### 14.4 Lo que este módulo **no** hace todavía
+### 14.4 El aviso: un ingrediente que no está en el almacén
+
+Sandy lo pidió como *"avisos"*, y las tres condiciones son suyas:
+
+1. **Se ve por fuera y por dentro.** En la lista, el ingrediente lleva su señal; al entrar a
+   editarlo, dice que *no tiene detalles en el almacén*.
+2. **No deshabilita nada.** El ingrediente funciona igual, con aviso o sin él: *"la función de
+   crear ingrediente no se debe ir, es útil para cuando planeo cosas que aun no haré"*.
+3. **No se apaga hasta que se hace la conexión.** No se puede descartar ni posponer.
+
+Que el aviso se apague solo, sin que nadie lo pida, es lo que obliga a que salga de un observador
+(`observarSinAlmacen`) y no de una consulta suelta — la misma regla de siempre: *lo que se muestra
+se observa*.
+
+El aviso es un aviso y no un error: no lleva el color de error ni bloquea el guardado. Lo que
+dice es que falta información, no que algo esté mal.
+
+### 14.5 Anotar algo: cantidad y precio, siempre
+
+Al crear —sea ingrediente de cocina o cualquier otra cosa— se piden **nombre, cantidad y
+precio**, más las dos casillas de 14.1. El precio se pide acá y no después porque el almacén
+existe para saber cuánto vale lo que hay, y un artículo sin precio es una fila que no suma.
+
+**Los dos números aceptan el 0, por motivos distintos**: "no queda nada" es justo el dato que uno
+viene a anotar antes de salir a comprar, y hay cosas que se anotan sin saber lo que costaron —un
+regalo, algo que ya estaba— donde obligar a inventar una cifra sería peor que dejarla en cero y
+corregirla después.
+
+#### 14.5.1 Si el precio no coincide con el que ya había
+
+Cuando el nombre ya existe en el catálogo con **otro** precio, la app **muestra los dos y
+pregunta** antes de reemplazar. Es la respuesta de Sandy —*"muestra los dos y pregunta antes de
+reemplazar"*— y es la misma regla que la calculadora de valor por gramo (7.2): cambiar ese número
+mueve el costo de **todas** las recetas que usan ese ingrediente y no se deshace. Esa pantalla es
+el único momento en que los dos números se pueden comparar antes de que el viejo desaparezca.
+
+La comparación se hace con tolerancia y no con `==`: los valores pasan por redondeos a cinco
+decimales, y preguntar por una diferencia en el sexto decimal sería enseñar a decir que sí sin
+leer.
+
+### 14.6 Los detalles de la compra
+
+Opcional al crear, visible al editar. Lo pidió Sandy para *"poner quizá dónde lo compre, cuándo,
+si era una oferta o cosas así"*.
+
+**Es texto libre y un solo campo**, no tres columnas (lugar, fecha, oferta). Ese "cosas así" es el
+dato: lo que hay que anotar cambia con cada compra, y una columna por cosa obliga a decidir hoy
+cuáles son todas, dejando fuera justo la que aparezca mañana. Nadie consulta por estos datos, se
+leen; así que no hace falta que la base los entienda.
+
+**Editar los detalles no mueve `actualizadoEn`**, al revés que la cantidad: corregir dónde se
+compró algo no es haber revisado cuánto queda, y mover la fecha por eso haría creer que el stock
+está al día cuando lo único que se editó fue una nota.
+
+### 14.7 Editar: a mano o con la calculadora
+
+Dos formas, y ninguna reemplaza a la otra:
+
+- **A mano** — se escribe cuánto queda. Es para cuando uno mira el frasco y estima.
+- **Calculadora** — se escribe **cuánto se usó** y la app resta. Es para cuando se midió lo que
+  se sacó.
+
+El resultado de la calculadora **se muestra antes de guardar**. Una resta que uno no ve es una
+resta que hay que rehacer de cabeza para poder confiar en ella (8.7.1).
+
+Los dos campos se guardan **por separado** en el estado, y no en uno solo que cambie de
+significado según el modo. Compartirlo haría que cambiar de modo reinterpretara lo ya escrito: un
+"500" puesto como "queda" pasaría a leerse como "usé", y el número guardado sería otro sin que
+nadie tocara nada.
+
+**No baja de cero.** Usar más de lo anotado no deja una cantidad negativa: deja cero, porque un
+stock negativo no existe en un estante. Pero **se dice** —*"usaste más de lo anotado, así que
+queda en 0"*— en vez de recortarlo en silencio: que la cuenta no cierre es un dato, o se anotó mal
+antes o se usó de otro paquete, y las dos cosas conviene verlas. El aviso **no impide guardar**.
+
+### 14.8 Lo que este módulo **no** hace todavía
 
 Es "uno básico", como se pidió, y estas ausencias son deliberadas y no olvidos:
 
@@ -2101,8 +2194,8 @@ Es "uno básico", como se pidió, y estas ausencias son deliberadas y no olvidos
   pasa cuando falta stock, y ninguna de las dos preguntas está contestada.
 - **No avisa cuando algo se está acabando.** Un mínimo por artículo es una columna más y una
   decisión por artículo; primero conviene usarlo un tiempo y ver qué mínimos son reales.
-- **No costea los envases.** Una caja no tiene valor por gramo; el día que haga falta, eso será
-  un costo fijo por producto y no un valor por gramo inventado en el almacén.
+- **No costea los envases.** Un objeto entra a la receta con 0 gramos (14.1.1); el día que haga
+  falta, eso será un costo fijo por producto y no un peso inventado.
 
 Sacar algo del almacén **no lo saca del catálogo**: dejar de llevarle la cuenta a la harina no es
 dejar de usarla en las recetas. La advertencia lo dice con todas las letras, porque confundirlas

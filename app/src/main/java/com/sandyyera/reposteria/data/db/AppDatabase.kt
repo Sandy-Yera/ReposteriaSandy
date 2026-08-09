@@ -59,7 +59,7 @@ import com.sandyyera.reposteria.data.db.entidades.RecetaSimulacionVenta
         EventoCambio::class,
         ArticuloDeAlmacen::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = true
 )
 @TypeConverters(Convertidores::class)
@@ -109,7 +109,7 @@ abstract class AppDatabase : RoomDatabase() {
                 .addCallback(SembrarDatosIniciales)
                 .addMigrations(
                     MIGRACION_1_2, MIGRACION_2_3, MIGRACION_3_4, MIGRACION_4_5, MIGRACION_5_6,
-                    MIGRACION_6_7
+                    MIGRACION_6_7, MIGRACION_7_8
                 )
                 .build()
 
@@ -156,6 +156,15 @@ abstract class AppDatabase : RoomDatabase() {
          * agregar una columna `NOT NULL` sin él— y tiene que calzar con el
          * `@ColumnInfo(defaultValue = "0")` de la entidad, o la app no arranca.
          */
+        val MIGRACION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE receta_rendimiento " +
+                        "ADD COLUMN pesoReescaladoSinRevisar INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
         /**
          * 3 → 4: cómo se corta un molde (9.4).
          *
@@ -207,6 +216,33 @@ abstract class AppDatabase : RoomDatabase() {
          * Los índices llevan el nombre con que Room los genera (`index_<tabla>_<columna>`); con
          * otro nombre la comparación falla aunque el índice exista y cubra lo mismo.
          */
+        val MIGRACION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE receta_secciones ADD COLUMN recetaOrigenId INTEGER " +
+                        "REFERENCES recetas(id) ON DELETE SET NULL"
+                )
+                db.execSQL("ALTER TABLE receta_secciones ADD COLUMN firmaDelOrigen TEXT")
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_receta_secciones_recetaOrigenId " +
+                        "ON receta_secciones(recetaOrigenId)"
+                )
+
+                db.execSQL(
+                    "ALTER TABLE receta_pasos ADD COLUMN tituloSeccionId INTEGER " +
+                        "REFERENCES receta_secciones(id) ON DELETE SET NULL"
+                )
+                db.execSQL(
+                    "ALTER TABLE receta_pasos ADD COLUMN esGeneralAnidado INTEGER " +
+                        "NOT NULL DEFAULT 0"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_receta_pasos_tituloSeccionId " +
+                        "ON receta_pasos(tituloSeccionId)"
+                )
+            }
+        }
+
         /**
          * Agrega el reparto del corte en cuadrícula (9.4.3).
          *
@@ -220,6 +256,12 @@ abstract class AppDatabase : RoomDatabase() {
          * se reparte parejo—, y ese cambio no necesita migración porque el tamaño del trozo
          * nunca se guardó: se calcula al mostrarlo.
          */
+        val MIGRACION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE receta_rendimiento ADD COLUMN trozosALoLargo INTEGER")
+            }
+        }
+
         /**
          * Crea la tabla del almacén (sección 14).
          *
@@ -253,44 +295,70 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        val MIGRACION_5_6 = object : Migration(5, 6) {
+        /**
+         * Conecta el almacén con los ingredientes (14.5 y 14.6).
+         *
+         * Tres columnas y ninguna toca lo que ya estaba guardado:
+         *
+         * - `ingredientes.esObjeto` — si se cuenta por unidad. `DEFAULT 0` porque todo lo que
+         *   ya existe se mide en gramos: es lo único que se podía cargar hasta ahora.
+         * - `ingredientes.vaEnRecetas` — `DEFAULT 1`, por lo mismo al revés: todo lo que hay en
+         *   el catálogo se cargó justamente para usarlo en recetas.
+         * - `receta_ingredientes.unidades` — nullable **sin `DEFAULT`**, porque ahí el `null`
+         *   significa algo: "esto se mide en gramos", que es el caso normal.
+         * - `almacen.detalles` — nullable, mismo criterio.
+         *
+         * Los dos `DEFAULT` no son adorno: SQLite exige uno para agregar una columna `NOT NULL`,
+         * y tienen que calzar con el `@ColumnInfo(defaultValue = ...)` de la entidad o Room se
+         * niega a abrir la base en el celular. Es el mismo cuidado de las migraciones 1 → 2,
+         * 2 → 3 y 4 → 5.
+         *
+         * **Y una parte que mueve datos y no solo columnas**: los artículos sueltos que había en
+         * el almacén pasan a tener su ingrediente. Desde 14.5 anotar algo en el almacén lo crea
+         * también en el catálogo, y una fila sin ingrediente ya no tiene forma de mostrarse
+         * completa: no sabría su unidad ni su precio. Se crean como objeto (`esObjeto = 1`) y
+         * fuera de las recetas (`vaEnRecetas = 0`), que es exactamente lo que un artículo suelto
+         * era hasta esta versión — la caja, la cinta, la vela.
+         *
+         * Las tres condiciones de los `WHERE` no son paranoia: el índice de `almacen` es único
+         * por `ingredienteId`, así que enlazar dos filas al mismo ingrediente reventaría la
+         * migración entera y dejaría la app sin abrir. **Si alguna fila no se puede enlazar se
+         * queda como está** —sin ingrediente— y la lista la sigue mostrando con el valor en
+         * blanco: es preferible una fila a medias a una migración que falla o a un borrado.
+         */
+        val MIGRACION_7_8 = object : Migration(7, 8) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE receta_rendimiento ADD COLUMN trozosALoLargo INTEGER")
-            }
-        }
+                db.execSQL("ALTER TABLE ingredientes ADD COLUMN esObjeto INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE ingredientes ADD COLUMN vaEnRecetas INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE receta_ingredientes ADD COLUMN unidades REAL")
+                db.execSQL("ALTER TABLE almacen ADD COLUMN detalles TEXT")
 
-        val MIGRACION_4_5 = object : Migration(4, 5) {
-            override fun migrate(db: SupportSQLiteDatabase) {
+                val ahora = System.currentTimeMillis()
                 db.execSQL(
-                    "ALTER TABLE receta_secciones ADD COLUMN recetaOrigenId INTEGER " +
-                        "REFERENCES recetas(id) ON DELETE SET NULL"
-                )
-                db.execSQL("ALTER TABLE receta_secciones ADD COLUMN firmaDelOrigen TEXT")
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS index_receta_secciones_recetaOrigenId " +
-                        "ON receta_secciones(recetaOrigenId)"
-                )
-
-                db.execSQL(
-                    "ALTER TABLE receta_pasos ADD COLUMN tituloSeccionId INTEGER " +
-                        "REFERENCES receta_secciones(id) ON DELETE SET NULL"
+                    """
+                    INSERT INTO ingredientes
+                        (nombre, valorPorGramo, esObjeto, vaEnRecetas, creadoEn, actualizadoEn)
+                    SELECT a.nombre, 0, 1, 0, $ahora, $ahora
+                    FROM almacen a
+                    WHERE a.ingredienteId IS NULL
+                      AND TRIM(a.nombre) <> ''
+                      AND NOT EXISTS (SELECT 1 FROM ingredientes i WHERE i.nombre = a.nombre)
+                    """.trimIndent()
                 )
                 db.execSQL(
-                    "ALTER TABLE receta_pasos ADD COLUMN esGeneralAnidado INTEGER " +
-                        "NOT NULL DEFAULT 0"
-                )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS index_receta_pasos_tituloSeccionId " +
-                        "ON receta_pasos(tituloSeccionId)"
-                )
-            }
-        }
-
-        val MIGRACION_2_3 = object : Migration(2, 3) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    "ALTER TABLE receta_rendimiento " +
-                        "ADD COLUMN pesoReescaladoSinRevisar INTEGER NOT NULL DEFAULT 0"
+                    """
+                    UPDATE almacen
+                    SET ingredienteId =
+                            (SELECT i.id FROM ingredientes i WHERE i.nombre = almacen.nombre),
+                        nombre = ''
+                    WHERE ingredienteId IS NULL
+                      AND EXISTS (SELECT 1 FROM ingredientes i WHERE i.nombre = almacen.nombre)
+                      AND NOT EXISTS (
+                          SELECT 1 FROM almacen otra
+                          WHERE otra.ingredienteId =
+                              (SELECT i.id FROM ingredientes i WHERE i.nombre = almacen.nombre)
+                      )
+                    """.trimIndent()
                 )
             }
         }

@@ -13,16 +13,26 @@ import kotlinx.coroutines.flow.Flow
  *
  * El cruce se hace **en la consulta y no en memoria**, al revés que en el paso de cantidades de
  * una receta: allá la pantalla ya tenía el catálogo cargado para el buscador, y acá no hay
- * ninguna otra razón para traérselo entero. Con `LEFT JOIN` los artículos sueltos —que no tienen
- * ingrediente— siguen apareciendo, que es la mitad del punto de esta tabla.
+ * ninguna otra razón para traérselo entero.
+ *
+ * Desde 14.5 **todo lo del almacén tiene ingrediente**: anotar algo acá lo crea también en el
+ * catálogo. El `LEFT JOIN` se queda igual por las filas de antes de ese cambio que la migración
+ * no haya podido enlazar — es preferible que una de esas se vea con el valor en blanco a que
+ * desaparezca de la lista sin que nadie se entere.
  */
 data class ArticuloConValor(
     val id: Long,
     val ingredienteId: Long?,
-    /** El nombre del catálogo si está enlazado, y el propio si es suelto. Lo resuelve el SQL. */
+    /** El nombre del catálogo si está enlazado, y el propio si quedó suelto. Lo resuelve el SQL. */
     val nombre: String,
     val cantidad: Double,
     val valorPorGramo: Double?,
+    /** Si se cuenta por unidad. `null` solo en una fila vieja sin ingrediente. */
+    val esObjeto: Boolean?,
+    /** Si se ofrece al armar una receta. `null` solo en una fila vieja sin ingrediente. */
+    val vaEnRecetas: Boolean?,
+    /** Dónde se compró, cuándo, si era oferta (14.6). Se lee al editar, no en la lista. */
+    val detalles: String?,
     val actualizadoEn: Long
 )
 
@@ -50,6 +60,9 @@ interface AlmacenDao {
                COALESCE(i.nombre, a.nombre) AS nombre,
                a.cantidad      AS cantidad,
                i.valorPorGramo AS valorPorGramo,
+               i.esObjeto      AS esObjeto,
+               i.vaEnRecetas   AS vaEnRecetas,
+               a.detalles      AS detalles,
                a.actualizadoEn AS actualizadoEn
         FROM almacen a
         LEFT JOIN ingredientes i ON i.id = a.ingredienteId
@@ -64,10 +77,6 @@ interface AlmacenDao {
     /** Qué ingredientes del catálogo ya están en el almacén, para no ofrecerlos dos veces. */
     @Query("SELECT ingredienteId FROM almacen WHERE ingredienteId IS NOT NULL")
     suspend fun ingredientesYaEnElAlmacen(): List<Long>
-
-    /** Los artículos sueltos, para comprobar que no se repita un nombre. */
-    @Query("SELECT * FROM almacen WHERE ingredienteId IS NULL")
-    suspend fun articulosSueltos(): List<ArticuloDeAlmacen>
 
     @Insert
     suspend fun insertar(articulo: ArticuloDeAlmacen): Long

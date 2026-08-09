@@ -8,22 +8,19 @@ import androidx.room.PrimaryKey
 /**
  * Algo que hay guardado y del que se lleva la cuenta: el inventario (sección 14).
  *
- * **Un artículo puede ser un ingrediente del catálogo o algo suelto**, y esa es la decisión que
- * ordena toda la tabla. Sandy lo pidió como "inventario de todo", y las dos mitades hacen falta
- * por motivos distintos:
+ * **Todo lo que se anota acá tiene su ingrediente en el catálogo** (14.5). Sandy lo pidió así:
+ * *"cuando crees un producto en almacén, irá automáticamente a ingredientes"*. Antes había dos
+ * mitades —lo enlazado y lo suelto— y lo suelto se quedaba fuera del catálogo para que no
+ * apareciera en el buscador de "agregar ingrediente a la receta"; eso ahora lo resuelve
+ * `Ingrediente.vaEnRecetas` sin necesidad de dos clases de fila.
  *
- * - **Un ingrediente enlazado** ([ingredienteId] con valor) sabe cuánto vale lo que queda, sin
- *   que nadie lo escriba: sale de su `valorPorGramo`, que ya se mantiene al día porque de él
- *   dependen todos los costos. Si además se escribiera el valor acá, habría dos números para lo
- *   mismo y uno quedaría viejo.
- * - **Un artículo suelto** ([ingredienteId] en `null`) es la caja, la cinta, la vela: no entra
- *   en ninguna receta y no tiene valor por gramo. Meterlo igual en el catálogo de ingredientes
- *   lo dejaría apareciendo en el buscador de "agregar ingrediente a la receta", que es
- *   exactamente donde no va.
+ * De ese enlace sale todo lo que esta tabla **no** guarda: el nombre, el precio y la unidad. Es a
+ * propósito — si el valor se escribiera también acá habría dos números para lo mismo y uno
+ * quedaría viejo, y el nombre copiado no se enteraría de los renombres. Es la misma lección que
+ * costó rehacer la firma de una receta copiada (8.11.7).
  *
- * **La unidad se deduce y no se guarda**: lo enlazado se cuenta en gramos —como todo el resto de
- * la app— y lo suelto en unidades. Guardar una columna de unidad abriría la puerta a "3" de algo
- * que en la receta se mide en gramos, y ahí la cuenta del valor daría cualquier cosa.
+ * [ingredienteId] sigue siendo nulable **solo por las filas anteriores a 14.5** que la migración
+ * 7 → 8 no haya podido enlazar. Nada nuevo se crea así.
  *
  * La clave foránea es **CASCADE**: borrar un ingrediente del catálogo se lleva su fila de
  * almacén. Es lo correcto y no una pérdida — sin el ingrediente no hay valor por gramo, así que
@@ -44,26 +41,38 @@ data class ArticuloDeAlmacen(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
 
     /**
-     * El ingrediente del catálogo, o `null` si es un artículo suelto.
+     * El ingrediente del catálogo. Solo es `null` en filas anteriores a 14.5.
      *
      * El índice es **único**: un ingrediente no puede tener dos filas de almacén, porque
      * entonces "cuánta harina queda" tendría dos respuestas. SQLite permite varios `NULL` en
-     * un índice único, así que los artículos sueltos no se estorban entre sí — que es
-     * justamente lo que hace falta.
+     * un índice único, así que esas filas viejas no se estorban entre sí mientras existan.
      */
     val ingredienteId: Long? = null,
 
     /**
-     * Cómo se llama, **solo para los artículos sueltos**.
+     * Restos del diseño anterior: el nombre propio de un artículo suelto.
      *
-     * En los enlazados queda vacío a propósito y el nombre se lee del catálogo: copiarlo acá
-     * dejaría un segundo nombre que no se entera de los renombres. Es la misma lección que ya
-     * costó rehacer la firma de una receta copiada (8.11.7).
+     * **Queda vacío en todo lo que se crea desde 14.5** y el nombre se lee siempre del catálogo.
+     * La columna no se borra porque quitarla en SQLite es recrear la tabla entera con sus datos,
+     * y una columna vacía cuesta menos que esa operación.
      */
     val nombre: String = "",
 
-    /** Cuánto queda: gramos si está enlazado, unidades si es suelto. */
+    /** Cuánto queda, en la unidad de medida de su ingrediente: gramos o unidades (14.5). */
     val cantidad: Double = 0.0,
+
+    /**
+     * Lo que quieras acordarte de esta compra: dónde, cuándo, si estaba en oferta (14.6).
+     *
+     * **Texto libre y un solo campo**, y no tres columnas (lugar, fecha, oferta). Sandy lo pidió
+     * como "dónde lo compré, cuándo, si era una oferta o cosas así", y ese "cosas así" es el
+     * dato: lo que hay que anotar cambia con cada compra, y una columna por cosa obliga a
+     * decidir hoy cuáles son todas — dejando fuera justo la que aparezca mañana. Nadie consulta
+     * por estos datos, se leen; así que no hace falta que la base los entienda.
+     *
+     * Es opcional de verdad: `null` es lo normal.
+     */
+    val detalles: String? = null,
 
     /**
      * Cuándo se actualizó por última vez.

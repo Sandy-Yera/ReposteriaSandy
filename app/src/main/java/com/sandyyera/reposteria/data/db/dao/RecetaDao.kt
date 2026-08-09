@@ -381,8 +381,18 @@ interface RecetaDao {
     @Insert
     suspend fun insertarIngrediente(item: RecetaIngrediente): Long
 
-    @Query("UPDATE receta_ingredientes SET cantidadG = :cantidad WHERE id = :itemId")
-    suspend fun actualizarCantidad(itemId: Long, cantidad: Double)
+    /**
+     * Cambia lo que lleva una línea.
+     *
+     * Las dos columnas se escriben **juntas** porque son una sola cantidad contada de dos formas
+     * (14.5): un objeto va con `cantidadG = 0` y sus unidades aparte, y lo que se pesa al revés.
+     * Actualizar solo una dejaría una línea que dice "2 cajas" y pesa 500 g.
+     */
+    @Query(
+        "UPDATE receta_ingredientes SET cantidadG = :cantidad, unidades = :unidades " +
+            "WHERE id = :itemId"
+    )
+    suspend fun actualizarCantidad(itemId: Long, cantidad: Double, unidades: Double?)
 
     @Query("DELETE FROM receta_ingredientes WHERE id = :itemId")
     suspend fun eliminarIngrediente(itemId: Long)

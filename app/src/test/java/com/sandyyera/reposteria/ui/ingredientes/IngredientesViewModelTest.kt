@@ -220,6 +220,49 @@ class IngredientesViewModelTest {
         assertNotNull(formulario.editando)
     }
 
+    // --- El aviso del almacén (14.4) ---
+
+    @Test
+    fun `un ingrediente que no esta en el almacen lleva aviso`() = probar {
+        ingredientes.sembrar(Ingrediente(nombre = "Harina", valorPorGramo = 1.2))
+        advanceUntilIdle()
+
+        val harina = modelo.estado.value.visibles.single()
+        assertTrue("El aviso arranca encendido", modelo.estado.value.faltaEnElAlmacen(harina))
+        assertEquals(1, modelo.estado.value.cuantosFaltanEnElAlmacen)
+    }
+
+    @Test
+    fun `el aviso se apaga solo cuando aparece en el almacen`() = probar {
+        // **No se apaga con el tiempo ni tocando el ingrediente**: se apaga cuando existe su
+        // fila de almacén, y no antes. Es lo que pidió Sandy con esas palabras.
+        ingredientes.sembrar(Ingrediente(nombre = "Harina", valorPorGramo = 1.2))
+        advanceUntilIdle()
+        val harina = modelo.estado.value.visibles.single()
+
+        ingredientes.enElAlmacen.value = setOf(harina.id)
+        advanceUntilIdle()
+
+        assertFalse(modelo.estado.value.faltaEnElAlmacen(harina))
+        assertEquals(0, modelo.estado.value.cuantosFaltanEnElAlmacen)
+    }
+
+    @Test
+    fun `el aviso no deshabilita nada`() = probar {
+        // Crear un ingrediente "para más adelante" tiene que seguir sirviendo: el aviso avisa,
+        // no bloquea. Se comprueba que el ingrediente esté igual de disponible que cualquier
+        // otro — la lista lo muestra y se puede editar.
+        ingredientes.sembrar(Ingrediente(nombre = "Harina", valorPorGramo = 1.2))
+        advanceUntilIdle()
+
+        val harina = modelo.estado.value.visibles.single()
+        modelo.abrirEdicion(harina)
+        advanceUntilIdle()
+
+        assertNotNull(modelo.estado.value.dialogo as? DialogoIngrediente.Formulario)
+        assertTrue("Y al editarlo se dice", modelo.estado.value.alEditarFaltaEnElAlmacen)
+    }
+
     // --- Borrado ---
 
     @Test

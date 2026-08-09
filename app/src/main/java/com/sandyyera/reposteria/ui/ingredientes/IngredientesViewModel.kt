@@ -173,11 +173,39 @@ data class EstadoIngredientes(
     val dialogo: DialogoIngrediente = DialogoIngrediente.Ninguno,
     /** Cuando no es `null`, en vez de la lista se muestra la calculadora (7.2). */
     val calculadora: EstadoCalculadora? = null,
+    /**
+     * Los que **no están en el almacén** todavía (14.4).
+     *
+     * El aviso **no deshabilita nada**: el ingrediente sirve igual, con o sin él. Está para que
+     * crear uno "para más adelante" —planear algo que todavía no se hace, que es para lo que
+     * sirve el alta— siga siendo útil sin que se pierda entre los que sí tienen existencia
+     * anotada. Y **no se apaga solo con el tiempo**: se apaga cuando aparece su fila de almacén,
+     * y no antes.
+     */
+    val sinAlmacen: Set<Long> = emptySet(),
     val mensaje: String? = null,
     val cargando: Boolean = true
 ) {
     /** El catálogo está vacío de verdad, no es que la búsqueda no encontró nada. */
     val catalogoVacio: Boolean get() = !cargando && !hayIngredientes
+
+    /** Si este ingrediente todavía no tiene existencia anotada en el almacén (14.4). */
+    fun faltaEnElAlmacen(ingrediente: Ingrediente): Boolean = ingrediente.id in sinAlmacen
+
+    /**
+     * Si el ingrediente que se está editando no tiene existencia anotada (14.4).
+     *
+     * Va acá y no dentro de `DialogoIngrediente.Formulario` porque el formulario guarda lo que se
+     * escribe y esto viene de la base: es el mismo motivo por el que la lista de candidatos de la
+     * calculadora se resuelve en el `combine` y no dentro del diálogo — así el aviso se apaga en
+     * cuanto el ingrediente aparece en el almacén, incluso con el cuadro abierto.
+     */
+    val alEditarFaltaEnElAlmacen: Boolean
+        get() = (dialogo as? DialogoIngrediente.Formulario)?.editando?.id?.let { it in sinAlmacen }
+            ?: false
+
+    /** Cuántos ingredientes no están en el almacén, para el resumen de arriba. */
+    val cuantosFaltanEnElAlmacen: Int get() = visibles.count { it.id in sinAlmacen }
 
     /** Hay ingredientes, pero ninguno coincide con lo buscado. */
     val busquedaSinResultados: Boolean get() = hayIngredientes && visibles.isEmpty()
@@ -212,8 +240,11 @@ class IngredientesViewModel(
         busqueda,
         dialogo,
         calculadora,
-        mensaje
-    ) { todos, textoBuscado, dialogoActual, calculadoraActual, mensajeActual ->
+        // El aviso del almacén y el mensaje van juntos en un `combine` de a dos porque `combine`
+        // llega hasta cinco flujos y acá hacen falta seis. No cambia cuándo emite nada.
+        combine(mensaje, repositorio.observarSinAlmacen()) { m, faltan -> m to faltan }
+    ) { todos, textoBuscado, dialogoActual, calculadoraActual, mensajeYFaltantes ->
+        val (mensajeActual, faltanEnAlmacen) = mensajeYFaltantes
         EstadoIngredientes(
             visibles = filtrarPor(todos, textoBuscado) { it.nombre },
             hayIngredientes = todos.isNotEmpty(),
@@ -233,6 +264,7 @@ class IngredientesViewModel(
                     }
                 )
             },
+            sinAlmacen = faltanEnAlmacen,
             mensaje = mensajeActual,
             cargando = false
         )

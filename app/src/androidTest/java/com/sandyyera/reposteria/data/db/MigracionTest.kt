@@ -353,6 +353,69 @@ class MigracionTest {
         }
     }
 
+    /**
+     * De la 7 a la 8: el almacén se conecta con los ingredientes (14.5).
+     *
+     * Lo que se comprueba no es que las columnas existan —de eso ya se encarga la validación de
+     * esquema— sino **que los artículos sueltos que había no se queden huérfanos**. Hasta la 7 un
+     * artículo suelto vivía solo en `almacen`, sin ingrediente; desde la 8 todo lo del almacén
+     * tiene el suyo, y una fila sin él no sabría ni su unidad ni su precio.
+     *
+     * Se siembra también un ingrediente enlazado, para comprobar lo contrario: que la migración
+     * **no** le invente un ingrediente nuevo ni le pise el que ya tenía.
+     */
+    @Test
+    fun migracion_7_a_8_le_da_ingrediente_a_los_articulos_sueltos() {
+        ayudante.createDatabase(nombreDeLaBase, 7).use { base ->
+            base.execSQL(
+                "INSERT INTO ingredientes (id, nombre, valorPorGramo, creadoEn, actualizadoEn) " +
+                    "VALUES (1, 'Harina', 1.2, 1000, 1000)"
+            )
+            base.execSQL(
+                "INSERT INTO almacen (id, ingredienteId, nombre, cantidad, actualizadoEn) " +
+                    "VALUES (1, 1, '', 2500.0, 1000)"
+            )
+            base.execSQL(
+                "INSERT INTO almacen (id, ingredienteId, nombre, cantidad, actualizadoEn) " +
+                    "VALUES (2, NULL, 'Cajas de torta', 12.0, 1000)"
+            )
+        }
+
+        ayudante.runMigrationsAndValidate(
+            nombreDeLaBase, 8, true, AppDatabase.MIGRACION_7_8
+        ).use { base ->
+            base.query(
+                "SELECT a.ingredienteId, i.nombre, i.esObjeto, i.vaEnRecetas, a.cantidad " +
+                    "FROM almacen a JOIN ingredientes i ON i.id = a.ingredienteId " +
+                    "WHERE a.id = 2"
+            ).use { fila ->
+                assertTrue("La caja quedó enlazada a un ingrediente", fila.moveToFirst())
+                assertEquals("Cajas de torta", fila.getString(1))
+                assertEquals("Un artículo suelto se contaba por unidad", 1, fila.getInt(2))
+                assertEquals("Y no iba en ninguna receta", 0, fila.getInt(3))
+                assertEquals("La cantidad guardada no se toca", 12.0, fila.getDouble(4), 0.001)
+            }
+            // Lo enlazado se queda como estaba: ni ingrediente nuevo ni marcas cambiadas.
+            base.query(
+                "SELECT ingredienteId FROM almacen WHERE id = 1"
+            ).use { fila ->
+                assertTrue(fila.moveToFirst())
+                assertEquals(1, fila.getInt(0))
+            }
+            base.query("SELECT COUNT(*) FROM ingredientes").use { fila ->
+                assertTrue(fila.moveToFirst())
+                assertEquals("Solo se agregó el de la caja", 2, fila.getInt(0))
+            }
+            base.query(
+                "SELECT esObjeto, vaEnRecetas FROM ingredientes WHERE id = 1"
+            ).use { fila ->
+                assertTrue(fila.moveToFirst())
+                assertEquals("La harina se sigue midiendo en gramos", 0, fila.getInt(0))
+                assertEquals("Y sigue yendo en recetas", 1, fila.getInt(1))
+            }
+        }
+    }
+
     @Test
     fun despues_de_migrar_la_app_puede_abrir_la_base() {
         ayudante.createDatabase(nombreDeLaBase, 1).use { base ->
@@ -366,9 +429,10 @@ class MigracionTest {
         // nueva no calza con la anterior.
         ayudante
             .runMigrationsAndValidate(
-                nombreDeLaBase, 7, true,
+                nombreDeLaBase, 8, true,
                 AppDatabase.MIGRACION_1_2, AppDatabase.MIGRACION_2_3, AppDatabase.MIGRACION_3_4,
-                AppDatabase.MIGRACION_4_5, AppDatabase.MIGRACION_5_6, AppDatabase.MIGRACION_6_7
+                AppDatabase.MIGRACION_4_5, AppDatabase.MIGRACION_5_6, AppDatabase.MIGRACION_6_7,
+                AppDatabase.MIGRACION_7_8
             )
             .close()
 
@@ -376,7 +440,8 @@ class MigracionTest {
         val base = Room.databaseBuilder(contexto, AppDatabase::class.java, nombreDeLaBase)
             .addMigrations(
                 AppDatabase.MIGRACION_1_2, AppDatabase.MIGRACION_2_3, AppDatabase.MIGRACION_3_4,
-                AppDatabase.MIGRACION_4_5, AppDatabase.MIGRACION_5_6, AppDatabase.MIGRACION_6_7
+                AppDatabase.MIGRACION_4_5, AppDatabase.MIGRACION_5_6, AppDatabase.MIGRACION_6_7,
+                AppDatabase.MIGRACION_7_8
             )
             .build()
 

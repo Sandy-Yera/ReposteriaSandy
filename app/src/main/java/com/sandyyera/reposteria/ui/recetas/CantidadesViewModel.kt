@@ -48,6 +48,29 @@ data class LineaDeIngrediente(
 ) {
     /** Lo que aporta esta línea al costo: los mismos gramos × valor que suma la base. */
     val subtotal: Double get() = item.cantidadG * ingrediente.valorPorGramo
+
+    /** Si esto se cuenta por unidad: una caja, una cinta (14.5). */
+    val esObjeto: Boolean get() = item.unidades != null
+
+    /** El número que se escribió, sea en gramos o en unidades. Es el que se edita. */
+    val cuanto: Double get() = item.unidades ?: item.cantidadG
+
+    /** "2 unidades" o "500 g", que es como se lee la línea en la pantalla. */
+    val cuantoDice: String
+        get() = if (esObjeto) {
+            "${formatearNumero(cuanto)} ${if (cuanto == 1.0) "unidad" else "unidades"}"
+        } else {
+            "${formatearNumero(cuanto)} g"
+        }
+
+    /**
+     * Si esta línea suma algo al costo de la receta.
+     *
+     * Es `false` en los objetos, y **eso hay que decirlo en la línea**: entran con 0 gramos por
+     * decisión de diseño (14.5), así que su precio no llega al total. Descubrirlo comparando
+     * números sería encontrarse con un total que no cuadra y no saber por qué.
+     */
+    val sumaAlCosto: Boolean get() = !esObjeto
 }
 
 /** Una sección de la receta con lo que lleva dentro. */
@@ -403,7 +426,9 @@ class CantidadesViewModel(
         // El catálogo, el costo y las partes van juntos en un `combine` anidado porque `combine`
         // llega hasta cinco flujos y acá hacen falta siete. No cambia cuándo emite nada.
         combine(
-            ingredientes.observarTodos(),
+            // Solo los que van en recetas: el almacén también guarda cosas que no entran en
+            // ninguna —velas, bolsas— y ofrecerlas acá llenaría el buscador de ruido (14.5).
+            ingredientes.observarParaRecetas(),
             recetas.observarCosto(recetaId),
             recetas.observarPartesDe(recetaId)
         ) { c, k, p -> Triple(c, k, p) },
@@ -477,8 +502,9 @@ class CantidadesViewModel(
             editando = linea.item,
             elegido = linea.ingrediente,
             // Se muestra con el formato de la app, que es el mismo que `textoANumero`
-            // sabe leer de vuelta al guardar.
-            cantidad = formatearNumero(linea.item.cantidadG),
+            // sabe leer de vuelta al guardar. En un objeto lo que se edita son sus unidades,
+            // no los gramos —que son 0 a propósito—, y de eso se encarga `cuanto`.
+            cantidad = formatearNumero(linea.cuanto),
             tocado = true
         )
     }
@@ -599,7 +625,14 @@ class CantidadesViewModel(
         val actual = _dialogo.value as? DialogoCantidades.PonerIngrediente ?: return
         if (!actual.puedeGuardar) return
         val elegido = actual.elegido ?: return
-        val gramos = textoANumero(actual.cantidad) ?: return
+        val escrito = textoANumero(actual.cantidad) ?: return
+
+        // Un objeto se guarda con **0 gramos y sus unidades aparte** (14.5): así la línea puede
+        // decir "2 cajas" sin que el motor de cálculo —que de punta a punta parte de gramos—
+        // tenga que aprender otra unidad. El precio del objeto no llega al costo, y la pantalla
+        // lo dice en la línea en vez de dejar que se descubra comparando totales.
+        val gramos = if (elegido.esObjeto) 0.0 else escrito
+        val unidades = escrito.takeIf { elegido.esObjeto }
 
         _dialogo.value = actual.copy(guardando = true)
 
@@ -609,7 +642,8 @@ class CantidadesViewModel(
                 when (val r = recetas.agregarIngrediente(
                     seccionId = actual.seccionId,
                     ingredienteId = elegido.id,
-                    cantidadG = gramos
+                    cantidadG = gramos,
+                    unidades = unidades
                 )) {
                     is Resultado.Listo -> _dialogo.value = DialogoCantidades.Ninguno
                     // El rechazo se queda **dentro del cuadro**, como el de las secciones: es
@@ -619,7 +653,7 @@ class CantidadesViewModel(
                         actual.copy(guardando = false, rechazo = r.motivo)
                 }
             } else {
-                recetas.cambiarCantidad(enEdicion.id, gramos)
+                recetas.cambiarCantidad(enEdicion.id, gramos, unidades)
                 _dialogo.value = DialogoCantidades.Ninguno
             }
         }

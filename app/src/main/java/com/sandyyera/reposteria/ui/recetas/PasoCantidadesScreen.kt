@@ -55,6 +55,7 @@ import com.sandyyera.reposteria.data.db.entidades.Ingrediente
 import com.sandyyera.reposteria.data.db.entidades.Receta
 import com.sandyyera.reposteria.data.db.entidades.RecetaIngrediente
 import com.sandyyera.reposteria.data.db.entidades.RecetaSeccion
+import com.sandyyera.reposteria.data.db.entidades.unidadDeMedida
 import com.sandyyera.reposteria.data.repositorio.ParteTraida
 import com.sandyyera.reposteria.data.repositorio.RecetaParaTraer
 import com.sandyyera.reposteria.logica.calculadora.UnidadDeCompra
@@ -851,9 +852,17 @@ private fun FilaDeIngrediente(
             Text(
                 // Se muestra la cuenta completa y no solo el total: así se entiende de
                 // dónde sale el número, y un valor por gramo mal puesto salta a la vista.
-                text = "${formatearNumero(linea.item.cantidadG)} g × " +
-                    "$${formatearNumero(linea.ingrediente.valorPorGramo)} = " +
-                    "$${formatearNumero(linea.subtotal)}",
+                //
+                // Un objeto no tiene cuenta que mostrar —entra con 0 gramos y no suma al
+                // costo (14.5)— y entonces se dice eso mismo, con todas las letras. Poner
+                // "= $0" dejaría la duda de si el precio está mal o si es a propósito.
+                text = if (linea.sumaAlCosto) {
+                    "${linea.cuantoDice} × " +
+                        "$${formatearNumero(linea.ingrediente.valorPorGramo)} = " +
+                        "$${formatearNumero(linea.subtotal)}"
+                } else {
+                    "${linea.cuantoDice} · no suma al costo de ingredientes"
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -904,17 +913,32 @@ private fun DialogoPonerIngrediente(
                 } else {
                     Text(text = elegido.nombre, style = MaterialTheme.typography.titleMedium)
                     Text(
-                        text = "$${formatearNumero(elegido.valorPorGramo)} por gramo",
+                        text = "$${formatearNumero(elegido.valorPorGramo)} " +
+                            "por ${elegido.unidadDeMedida}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     CampoNumerico(
                         valor = estado.cantidad,
                         alCambiar = acciones.cambiarCantidadEscrita,
-                        etiqueta = "Cuántos gramos lleva",
+                        etiqueta = if (elegido.esObjeto) {
+                            "Cuántas lleva"
+                        } else {
+                            "Cuántos gramos lleva"
+                        },
                         error = estado.errorCantidad,
                         accionDelTeclado = ImeAction.Done
                     )
+                    // Se avisa acá, antes de guardar, y no al ver el total: un objeto entra a
+                    // la receta con 0 gramos, así que su precio no llega al costo (14.5).
+                    if (elegido.esObjeto) {
+                        Text(
+                            text = "Esto se cuenta por unidad y no suma al costo de los " +
+                                "ingredientes.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
 
                 // El rechazo del repositorio, dentro del cuadro y no en la franja de abajo:

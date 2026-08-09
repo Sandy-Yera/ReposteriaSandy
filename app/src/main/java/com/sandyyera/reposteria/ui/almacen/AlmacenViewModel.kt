@@ -8,8 +8,10 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.sandyyera.reposteria.data.db.dao.ArticuloConValor
 import com.sandyyera.reposteria.data.db.entidades.Ingrediente
 import com.sandyyera.reposteria.data.repositorio.AlmacenRepositorio
-import com.sandyyera.reposteria.data.repositorio.IngredienteRepositorio
+import com.sandyyera.reposteria.data.repositorio.ResultadoAgregarAlAlmacen
 import com.sandyyera.reposteria.data.repositorio.Resultado
+import com.sandyyera.reposteria.logica.almacen.loQueQueda
+import com.sandyyera.reposteria.logica.almacen.seUsoDeMas
 import com.sandyyera.reposteria.logica.busqueda.filtrarPor
 import com.sandyyera.reposteria.logica.formato.formatearMientrasSeEscribe
 import com.sandyyera.reposteria.logica.formato.formatearNumero
@@ -19,7 +21,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -28,36 +29,57 @@ import kotlinx.coroutines.launch
  * Una fila del almacén lista para dibujarse (sección 14).
  *
  * Envuelve lo que devuelve la consulta y le agrega **cómo se lee**, que es lo único que la
- * pantalla necesita decidir y no debería decidir ella: la unidad y el valor salen de si el
- * artículo está enlazado a un ingrediente o no, y esa regla tiene que estar en un solo lugar.
+ * pantalla necesita decidir y no debería decidir ella: la unidad y el valor salen del ingrediente
+ * enlazado, y esa regla tiene que estar en un solo lugar.
  */
 data class FilaDeAlmacen(val articulo: ArticuloConValor) {
 
     val id: Long get() = articulo.id
     val nombre: String get() = articulo.nombre
+    val cantidad: Double get() = articulo.cantidad
+    val detalles: String? get() = articulo.detalles
 
-    /** Si viene del catálogo de ingredientes. De eso dependen la unidad y el valor. */
-    val esIngrediente: Boolean get() = articulo.ingredienteId != null
+    /**
+     * Si se cuenta por unidad en vez de por gramo.
+     *
+     * Una fila vieja sin ingrediente (ver la migración 7 → 8) cuenta como objeto: eso era
+     * exactamente lo que un artículo suelto significaba antes de 14.5.
+     */
+    val esObjeto: Boolean get() = articulo.esObjeto ?: true
 
-    /** "2.500 g" o "3 unidades". La unidad se deduce, no se guarda (ver `ArticuloDeAlmacen`). */
+    /** "g" o "unidad", para escribirlo al lado de una cantidad. */
+    val unidad: String get() = if (esObjeto) "unidad" else "g"
+
+    /** "2.500 g" o "3 unidades". La unidad sale del ingrediente, no se guarda acá. */
     val cuantoQueda: String
-        get() = if (esIngrediente) {
-            "${formatearNumero(articulo.cantidad)} g"
-        } else {
-            val cuantas = formatearNumero(articulo.cantidad)
-            "$cuantas ${if (articulo.cantidad == 1.0) "unidad" else "unidades"}"
+        get() {
+            val cuanto = formatearNumero(articulo.cantidad)
+            return if (esObjeto) {
+                "$cuanto ${if (articulo.cantidad == 1.0) "unidad" else "unidades"}"
+            } else {
+                "$cuanto g"
+            }
         }
 
     /**
      * Lo que vale lo que queda, o `null` si no se puede saber.
      *
-     * Es `null` en los artículos sueltos y **eso no es un hueco**: una caja no tiene valor por
-     * gramo, y poner un 0 diría que no vale nada, que es otra cosa. La pantalla muestra la
-     * cantidad igual; lo único que falta es el peso.
+     * Es `null` en las filas viejas que quedaron sin ingrediente, y **eso no es un hueco**: sin
+     * precio por unidad no hay nada que multiplicar, y poner un 0 diría que no vale nada, que es
+     * otra cosa. La pantalla muestra la cantidad igual; lo único que falta es el peso.
      */
     val valor: Double?
         get() = articulo.valorPorGramo?.let { it * articulo.cantidad }
 }
+
+/**
+ * Cómo se está editando la cantidad de algo (14.7).
+ *
+ * Las dos formas existen porque responden a dos situaciones distintas y ninguna reemplaza a la
+ * otra: [MANUAL] es para cuando uno mira el frasco y estima cuánto queda; [CALCULADORA] para
+ * cuando se sabe **cuánto se usó** y la resta la hace la app.
+ */
+enum class ModoDeEdicion { MANUAL, CALCULADORA }
 
 /** Qué hay abierto encima del almacén. */
 sealed interface DialogoAlmacen {
@@ -65,63 +87,107 @@ sealed interface DialogoAlmacen {
     data object Ninguno : DialogoAlmacen
 
     /**
-     * Agregar algo al almacén: un ingrediente del catálogo o un artículo suelto.
+     * Anotar algo que hay: un ingrediente de cocina o cualquier otra cosa (14.5 y 14.6).
      *
-     * Los dos caminos van en **un solo cuadro con dos pestañas** y no en dos botones distintos,
-     * porque desde afuera son la misma acción —"anotar algo que tengo"— y cuál de los dos
-     * corresponde se sabe recién al buscarlo: uno va a poner "Harina", no la encuentra entre los
-     * ingredientes, y ahí se da cuenta de que era un artículo suelto. Con dos botones habría que
-     * cerrar y volver a empezar.
+     * **Es un solo cuadro y no dos caminos**, porque desde afuera es una sola acción y cuál de
+     * los dos casos es se sabe recién al escribir el nombre. Lo que antes eran dos pestañas
+     * ("un ingrediente" / "otra cosa") ahora son dos casillas que se pueden marcar por separado:
+     * una caja de torta es un objeto y **sí** va en recetas; una vela decorativa es un objeto y
+     * no. Con pestañas esas dos cosas caían en el mismo cajón.
+     *
+     * [existente] es el ingrediente del catálogo que se llama igual, cuando lo hay. No bloquea:
+     * anotar en el almacén algo que ya está en ingredientes es el caso normal — es la mitad del
+     * punto de conectar las dos secciones.
      */
     data class Agregar(
-        val suelto: Boolean = false,
-        val busqueda: String = "",
-        val candidatos: List<Ingrediente> = emptyList(),
-        val yaGuardados: Set<Long> = emptySet(),
-        val elegido: Ingrediente? = null,
-        val nombreSuelto: String = "",
+        val nombre: String = "",
+        val esObjeto: Boolean = false,
+        val vaEnRecetas: Boolean = true,
         val cantidad: String = "",
+        val precio: String = "",
+        val detalles: String = "",
         val tocado: Boolean = false,
         val guardando: Boolean = false,
-        val rechazo: String? = null
+        val rechazo: String? = null,
+        val precioEnDisputa: PrecioEnDisputa? = null
     ) : DialogoAlmacen {
 
-        val visibles: List<Ingrediente>
-            get() = filtrarPor(candidatos, busqueda) { it.nombre }
-
-        /** Por qué no se puede elegir este ingrediente, o `null`. Lo pinta `ComboBuscable`. */
-        fun motivoNoDisponible(ingrediente: Ingrediente): String? =
-            if (ingrediente.id in yaGuardados) "Ya está en el almacén" else null
+        val unidad: String get() = if (esObjeto) "unidad" else "g"
 
         val errorNombre: String?
-            get() = rechazo ?: errorEnNombreEscrito(nombreSuelto).takeIf { suelto && tocado }
+            get() = rechazo ?: errorEnNombreEscrito(nombre).takeIf { tocado }
 
         /**
-         * La cantidad **acepta el 0 a propósito**: "no queda nada" es justo el dato que uno
-         * viene a anotar antes de salir a comprar, y rechazarlo obligaría a borrar la fila para
+         * La cantidad **acepta el 0 a propósito**: "no queda nada" es justo el dato que uno viene
+         * a anotar antes de salir a comprar, y rechazarlo obligaría a borrar la fila para
          * decirlo — perdiendo de paso que ese artículo existe.
          */
         val errorCantidad: String?
             get() = when {
                 !tocado -> null
-                cantidad.isBlank() -> "Escribe cuánto queda"
+                cantidad.isBlank() -> "Escribe cuánto tienes"
                 textoANumero(cantidad) == null -> "Eso no es un número"
+                else -> null
+            }
+
+        /**
+         * El precio también acepta el 0, y por un motivo distinto al de la cantidad: hay cosas
+         * que uno anota sin saber lo que costaron —un regalo, algo que ya estaba— y obligar a
+         * inventar una cifra sería peor que dejarla en cero y arreglarla después.
+         */
+        val errorPrecio: String?
+            get() = when {
+                !tocado -> null
+                precio.isBlank() -> "Escribe cuánto cuesta cada $unidad"
+                textoANumero(precio) == null -> "Eso no es un número"
                 else -> null
             }
 
         val puedeGuardar: Boolean
             get() = !guardando &&
+                precioEnDisputa == null &&
+                errorEnNombreEscrito(nombre) == null &&
                 textoANumero(cantidad) != null &&
-                if (suelto) errorEnNombreEscrito(nombreSuelto) == null else elegido != null
+                textoANumero(precio) != null
     }
 
-    /** Cambiar cuánto queda de algo. Es lo que se hace todos los días. */
+    /**
+     * Cambiar cuánto queda de algo. Es lo que se hace todos los días (14.7).
+     *
+     * Guarda **los dos campos por separado** —[cantidad] para el modo manual y [seUso] para la
+     * calculadora— y no uno solo que cambia de significado. Compartirlo haría que cambiar de modo
+     * reinterpretara lo ya escrito: un "500" puesto como "queda" se leería de golpe como "usé",
+     * y el número que se guarda sería otro sin que nadie tocara nada.
+     */
     data class CambiarCantidad(
         val fila: FilaDeAlmacen,
+        val modo: ModoDeEdicion = ModoDeEdicion.MANUAL,
         val cantidad: String,
+        val seUso: String = "",
+        val detalles: String,
         val guardando: Boolean = false
     ) : DialogoAlmacen {
-        val puedeGuardar: Boolean get() = textoANumero(cantidad) != null && !guardando
+
+        /** Lo que se va a guardar, venga del modo que venga. `null` si todavía no es un número. */
+        val resultado: Double?
+            get() = when (modo) {
+                ModoDeEdicion.MANUAL -> textoANumero(cantidad)
+                ModoDeEdicion.CALCULADORA ->
+                    textoANumero(seUso)?.let { loQueQueda(fila.cantidad, it) }
+            }
+
+        /**
+         * Si en la calculadora se usó más de lo que había anotado.
+         *
+         * **No impide guardar**: la cuenta queda en cero igual, que es lo que de verdad hay en el
+         * estante. Se avisa para que no parezca un error de la app — o se anotó mal antes, o se
+         * usó de otro paquete, y las dos cosas son datos que conviene ver.
+         */
+        val seFueDeRango: Boolean
+            get() = modo == ModoDeEdicion.CALCULADORA &&
+                textoANumero(seUso)?.let { seUsoDeMas(fila.cantidad, it) } == true
+
+        val puedeGuardar: Boolean get() = resultado != null && !guardando
     }
 
     /** La advertencia antes de sacar algo del almacén (6.3). */
@@ -130,6 +196,19 @@ sealed interface DialogoAlmacen {
         val borrando: Boolean = false
     ) : DialogoAlmacen
 }
+
+/**
+ * El precio escrito no coincide con el que ya tenía el ingrediente (7.2 y 14.5).
+ *
+ * Se muestran **los dos** y se pregunta antes de reemplazar, como pidió Sandy, porque cambiarlo
+ * mueve el costo de **todas** las recetas que usan ese ingrediente y no se deshace. Esta es la
+ * única pantalla donde los dos números se pueden comparar antes de que el viejo desaparezca.
+ */
+data class PrecioEnDisputa(
+    val existente: Ingrediente,
+    val valorGuardado: Double,
+    val valorEscrito: Double
+)
 
 /** Lo que la pantalla del almacén necesita para dibujarse. */
 data class EstadoAlmacen(
@@ -145,9 +224,9 @@ data class EstadoAlmacen(
     /**
      * Lo que vale todo lo que hay guardado.
      *
-     * Suma **solo lo que tiene valor**: los artículos sueltos no aportan, y eso se dice al lado
-     * en vez de contarlos como 0. Un total que se presenta como "el valor del almacén" mientras
-     * ignora en silencio la mitad de las filas es un número que se cree y está mal.
+     * Suma **solo lo que tiene valor**, y eso se dice al lado en vez de contar el resto como 0.
+     * Un total que se presenta como "el valor del almacén" mientras ignora en silencio algunas
+     * filas es un número que se cree y está mal.
      */
     val valorTotal: Double get() = visibles.sumOf { it.valor ?: 0.0 }
 
@@ -159,12 +238,11 @@ data class EstadoAlmacen(
  * El cerebro del almacén (sección 14).
  *
  * Mismo patrón que las otras secciones: `combine` de tres fuentes, `WhileSubscribed(5s)` y el
- * diálogo por su propio canal (12.2.1), que acá pesa porque el cuadro de agregar tiene campos de
- * texto y un buscador.
+ * diálogo por su propio canal (12.2.1), que acá pesa porque los dos cuadros son casi todos campos
+ * de texto.
  */
 class AlmacenViewModel(
-    private val almacen: AlmacenRepositorio,
-    private val ingredientes: IngredienteRepositorio
+    private val almacen: AlmacenRepositorio
 ) : ViewModel() {
 
     private val busqueda = MutableStateFlow("")
@@ -196,103 +274,172 @@ class AlmacenViewModel(
         busqueda.value = texto
     }
 
-    /**
-     * Abre el cuadro de agregar y va a buscar el catálogo.
-     *
-     * Las dos consultas van acá y no en la pantalla porque dependen de lo que hay en la base,
-     * no de lo que se esté viendo. El cuadro se abre al instante y se rellena cuando vuelven.
-     */
+    // --- Agregar (14.5 y 14.6) ---
+
     fun abrirAgregar() {
         _dialogo.value = DialogoAlmacen.Agregar()
-        viewModelScope.launch {
-            // `first()` sobre el flujo del catálogo y no un observador: mientras el cuadro
-            // está abierto esa lista no cambia —crear un ingrediente desde acá no se puede— así
-            // que observarla solo agregaría una fuente que reemite justo mientras se escribe en
-            // un campo de texto, que es lo que 12.2.1 pide evitar.
-            val catalogo = ingredientes.observarTodos().first()
-            val guardados = almacen.ingredientesYaGuardados()
-            enAgregar { it.copy(candidatos = catalogo, yaGuardados = guardados) }
-        }
     }
 
-    /** Cambia entre "un ingrediente" y "otra cosa" sin cerrar el cuadro. */
-    fun cambiarTipoDeArticulo(suelto: Boolean) = enAgregar {
-        it.copy(suelto = suelto, rechazo = null)
+    fun cambiarNombre(texto: String) = enAgregar {
+        it.copy(nombre = texto, tocado = true, rechazo = null)
     }
 
-    fun buscarIngrediente(texto: String) = enAgregar { it.copy(busqueda = texto) }
+    /**
+     * Marca que esto se cuenta por unidad.
+     *
+     * **Desmarcar "va en recetas" no viene de regalo**: son dos preguntas y el usuario contesta
+     * las dos. Encadenarlas dejaría a la caja de torta —objeto que sí va en una receta— fuera del
+     * buscador sin que nadie lo pidiera.
+     */
+    fun cambiarEsObjeto(esObjeto: Boolean) = enAgregar { it.copy(esObjeto = esObjeto) }
 
-    fun elegirIngrediente(ingrediente: Ingrediente) = enAgregar {
-        it.copy(elegido = ingrediente, rechazo = null)
+    fun cambiarVaEnRecetas(vaEnRecetas: Boolean) = enAgregar {
+        it.copy(vaEnRecetas = vaEnRecetas)
     }
 
-    fun cambiarNombreSuelto(texto: String) = enAgregar {
-        it.copy(nombreSuelto = texto, tocado = true, rechazo = null)
-    }
-
-    fun cambiarCantidadEscrita(texto: String) = enAgregar {
+    fun cambiarCantidadNueva(texto: String) = enAgregar {
         it.copy(cantidad = formatearMientrasSeEscribe(texto), tocado = true)
     }
 
-    fun guardarNuevo() {
+    fun cambiarPrecioNuevo(texto: String) = enAgregar {
+        it.copy(precio = formatearMientrasSeEscribe(texto), tocado = true)
+    }
+
+    fun cambiarDetallesNuevos(texto: String) = enAgregar { it.copy(detalles = texto) }
+
+    /**
+     * Guarda lo nuevo, o se detiene a preguntar por el precio.
+     *
+     * [reemplazandoElPrecio] llega en `true` solo desde el aviso de precio distinto: es la
+     * respuesta explícita a esa pregunta, y no un atajo para saltársela.
+     */
+    fun guardarNuevo(reemplazandoElPrecio: Boolean = false) {
         val actual = _dialogo.value as? DialogoAlmacen.Agregar ?: return
-        if (!actual.puedeGuardar) return
+        if (actual.guardando) return
+        if (!reemplazandoElPrecio && !actual.puedeGuardar) return
         val cuanto = textoANumero(actual.cantidad) ?: return
+        val precio = textoANumero(actual.precio) ?: return
+
+        _dialogo.value = actual.copy(guardando = true, precioEnDisputa = null)
+
+        viewModelScope.launch {
+            val resultado = almacen.agregar(
+                nombre = actual.nombre,
+                esObjeto = actual.esObjeto,
+                vaEnRecetas = actual.vaEnRecetas,
+                cantidad = cuanto,
+                valor = precio,
+                detalles = actual.detalles,
+                reemplazarElPrecio = reemplazandoElPrecio
+            )
+            when (resultado) {
+                is ResultadoAgregarAlAlmacen.Listo -> {
+                    _dialogo.value = DialogoAlmacen.Ninguno
+                    mensaje.value = "Se agregó '${actual.nombre.trim()}' al almacén"
+                }
+                // Dentro del cuadro y no en la franja de abajo: es sobre lo que se acaba de
+                // escribir, y con el teclado abierto esa franja queda tapada (8.2).
+                is ResultadoAgregarAlAlmacen.NoSePudo ->
+                    enAgregar { it.copy(guardando = false, rechazo = resultado.motivo) }
+
+                is ResultadoAgregarAlAlmacen.PrecioDistinto -> enAgregar {
+                    it.copy(
+                        guardando = false,
+                        precioEnDisputa = PrecioEnDisputa(
+                            existente = resultado.existente,
+                            valorGuardado = resultado.existente.valorPorGramo,
+                            valorEscrito = resultado.nuevoValor
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Deja el precio que ya estaba y guarda igual lo demás.
+     *
+     * Vuelve a llamar con el precio guardado escrito en el campo, en vez de con una bandera de
+     * "no toques el precio": así lo que se manda es lo mismo que quedó a la vista, y no hay dos
+     * caminos por donde el número pueda salir distinto.
+     */
+    fun conservarElPrecioGuardado() {
+        val actual = _dialogo.value as? DialogoAlmacen.Agregar ?: return
+        val disputa = actual.precioEnDisputa ?: return
+        _dialogo.value = actual.copy(
+            precio = formatearNumero(disputa.valorGuardado),
+            precioEnDisputa = null
+        )
+        guardarNuevo()
+    }
+
+    /** Cambia el precio del ingrediente por el escrito. Mueve el costo de todas sus recetas. */
+    fun reemplazarElPrecio() {
+        if (_dialogo.value !is DialogoAlmacen.Agregar) return
+        guardarNuevo(reemplazandoElPrecio = true)
+    }
+
+    fun cerrarLaDisputaDePrecio() = enAgregar { it.copy(precioEnDisputa = null) }
+
+    // --- Editar lo que ya está (14.7) ---
+
+    /**
+     * Abre el cuadro de editar, con lo que hay puesto.
+     *
+     * El campo manual viene relleno y no vacío a propósito: lo normal es corregir —"quedaban 2
+     * kilos, ahora 1,5"— y no anotar desde cero. El de la calculadora, al revés, arranca vacío
+     * porque lo que se escribe ahí es lo que se acaba de usar y eso no lo sabe nadie más.
+     */
+    fun abrirEdicion(fila: FilaDeAlmacen) {
+        _dialogo.value = DialogoAlmacen.CambiarCantidad(
+            fila = fila,
+            cantidad = formatearNumero(fila.cantidad),
+            detalles = fila.detalles.orEmpty()
+        )
+    }
+
+    fun cambiarModoDeEdicion(modo: ModoDeEdicion) = enEdicion { it.copy(modo = modo) }
+
+    fun cambiarCantidadEnEdicion(texto: String) = enEdicion {
+        it.copy(cantidad = formatearMientrasSeEscribe(texto))
+    }
+
+    fun cambiarLoQueSeUso(texto: String) = enEdicion {
+        it.copy(seUso = formatearMientrasSeEscribe(texto))
+    }
+
+    fun cambiarDetallesEnEdicion(texto: String) = enEdicion { it.copy(detalles = texto) }
+
+    /**
+     * Guarda la cantidad y los detalles de una vez.
+     *
+     * Son dos escrituras y no una porque tocan cosas distintas —una mueve la fecha de revisión y
+     * la otra no—, pero desde afuera es un solo botón: quien corrige "eran 2 kilos" y de paso
+     * anota "estaba en oferta" hizo una sola cosa.
+     */
+    fun guardarEdicion() {
+        val actual = _dialogo.value as? DialogoAlmacen.CambiarCantidad ?: return
+        if (!actual.puedeGuardar) return
+        val cuanto = actual.resultado ?: return
 
         _dialogo.value = actual.copy(guardando = true)
 
         viewModelScope.launch {
-            val resultado = if (actual.suelto) {
-                almacen.agregarArticuloSuelto(actual.nombreSuelto, cuanto)
-            } else {
-                almacen.agregarIngrediente(actual.elegido ?: return@launch, cuanto)
+            val cambio = almacen.cambiarCantidad(actual.fila.id, cuanto)
+            if (cambio is Resultado.NoSePudo) {
+                mensaje.value = cambio.motivo
+                _dialogo.value = DialogoAlmacen.Ninguno
+                return@launch
             }
-            when (resultado) {
-                is Resultado.Listo -> _dialogo.value = DialogoAlmacen.Ninguno
-                // Dentro del cuadro y no en la franja de abajo: es sobre lo que se acaba de
-                // elegir o escribir, y con el teclado abierto esa franja queda tapada (8.2).
-                is Resultado.NoSePudo ->
-                    enAgregar { it.copy(guardando = false, rechazo = resultado.motivo) }
-            }
-        }
-    }
-
-    /**
-     * Abre el cuadro de cambiar la cantidad, con lo que hay puesto.
-     *
-     * Viene relleno y no vacío a propósito: lo normal es corregir —"quedaban 2 kilos, ahora
-     * 1,5"— y no anotar desde cero. Con el campo vacío habría que recordar cuánto había.
-     */
-    fun abrirCambiarCantidad(fila: FilaDeAlmacen) {
-        _dialogo.value = DialogoAlmacen.CambiarCantidad(
-            fila = fila,
-            cantidad = formatearNumero(fila.articulo.cantidad)
-        )
-    }
-
-    fun cambiarCantidadEnEdicion(texto: String) {
-        _dialogo.update { actual ->
-            if (actual is DialogoAlmacen.CambiarCantidad) {
-                actual.copy(cantidad = formatearMientrasSeEscribe(texto))
-            } else {
-                actual
-            }
-        }
-    }
-
-    fun guardarCantidad() {
-        val actual = _dialogo.value as? DialogoAlmacen.CambiarCantidad ?: return
-        if (!actual.puedeGuardar) return
-        val cuanto = textoANumero(actual.cantidad) ?: return
-
-        viewModelScope.launch {
-            when (val r = almacen.cambiarCantidad(actual.fila.id, cuanto)) {
-                is Resultado.Listo -> Unit
-                is Resultado.NoSePudo -> mensaje.value = r.motivo
+            if (actual.detalles.trim() != actual.fila.detalles.orEmpty().trim()) {
+                val notas = almacen.guardarDetalles(actual.fila.id, actual.detalles)
+                if (notas is Resultado.NoSePudo) mensaje.value = notas.motivo
             }
             _dialogo.value = DialogoAlmacen.Ninguno
         }
     }
+
+    // --- Sacar del almacén ---
 
     fun pedirBorrado(fila: FilaDeAlmacen) {
         _dialogo.value = DialogoAlmacen.ConfirmarBorrado(fila)
@@ -325,12 +472,17 @@ class AlmacenViewModel(
         }
     }
 
+    private fun enEdicion(
+        cambio: (DialogoAlmacen.CambiarCantidad) -> DialogoAlmacen.CambiarCantidad
+    ) {
+        _dialogo.update { actual ->
+            if (actual is DialogoAlmacen.CambiarCantidad) cambio(actual) else actual
+        }
+    }
+
     companion object {
-        fun fabrica(
-            almacen: AlmacenRepositorio,
-            ingredientes: IngredienteRepositorio
-        ): ViewModelProvider.Factory = viewModelFactory {
-            initializer { AlmacenViewModel(almacen, ingredientes) }
+        fun fabrica(almacen: AlmacenRepositorio): ViewModelProvider.Factory = viewModelFactory {
+            initializer { AlmacenViewModel(almacen) }
         }
     }
 }
