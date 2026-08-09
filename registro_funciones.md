@@ -676,7 +676,7 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 ### RecetaIngrediente.unidades ✅ IMPLEMENTADA
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/data/db/entidades/Recetas.kt
 - Qué hace: cuántas unidades lleva una línea de receta, cuando el ingrediente se cuenta por unidad (14.5).
-- Cómo funciona: nullable, y el `null` **significa algo**: "esto se mide en gramos", que es el caso normal. Cuando tiene valor, `cantidadG` va en 0 y entonces el `JOIN` del costo da cero para esa línea — así la línea puede decir "2 cajas" sin que el motor de cálculo tenga que aprender otra unidad. `RecetaDao.actualizarCantidad` escribe **las dos columnas juntas** porque son una sola cantidad contada de dos formas; actualizar solo una dejaría una línea que dice "2 cajas" y pesa 500 g.
+- Cómo funciona: nullable, y el `null` **significa algo**: "esto se mide en gramos", que es el caso normal. Cuando tiene valor, `cantidadG` va en 0 y entonces el `JOIN` del costo da cero para esa línea — así la línea puede decir "2 cajas" sin que el motor de cálculo tenga que aprender otra unidad. `RecetaDao.actualizarCantidad` escribe **las dos columnas juntas** porque son una sola cantidad contada de dos formas; actualizar solo una dejaría una línea que dice "2 cajas" y pesa 500 g. **Reescalar y adaptar no tocan los objetos**: pasar la receta a otro molde cambia cuánta masa hay, no cuántas cajas se usan para llevarla, y multiplicar igual daría "1,5 cajas", que no es una cantidad que exista. Copiar una receta traída **sí** los copia, o llegarían con 0 gramos y ninguna unidad, o sea como una línea vacía.
 
 ### MIGRACION_7_8 ✅ IMPLEMENTADA
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/data/db/AppDatabase.kt

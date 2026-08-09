@@ -2120,6 +2120,20 @@ ingredientes"*, y el cuadro lo avisa antes de guardar. Un `= $0` dejaría la dud
 está mal o si es a propósito, y descubrirlo comparando totales sería encontrarse con una cuenta
 que no cuadra sin nada que la explique (8.7.1).
 
+**Reescalar no los multiplica.** Pasar la receta a otro molde cambia cuánta masa hay, no cuántas
+cajas se usan para llevarla; y multiplicar igual daría "1,5 cajas", que no es una cantidad que
+exista. Si hacen falta más, se cambian a mano — eso es una decisión, no una regla de tres. Lo
+mismo vale para la adaptación en proporción de una receta traída (8.11.3), que compara gramos:
+una caja no tiene. **Copiar una receta sí los copia**, en cambio, o llegarían con 0 gramos y
+ninguna unidad, es decir como una línea vacía.
+
+**Lo que todavía no ve la firma.** Una receta traída avisa cuando la original cambia sus
+cantidades (8.11.3), y esa comparación es por gramos: si la original pasa de 2 cajas a 3, la
+copia no se entera. El formato de la firma ya tiene línea de versión justamente para arreglos
+así (5.5.1); no está hecho todavía porque hacerlo descarta las firmas guardadas —las secciones
+traídas dejan de avisar hasta volver a traerlas— y ningún dato existente puede caer en este caso,
+que nació con esta versión.
+
 ### 14.2 Lo que se hace todos los días
 
 Tocar una fila cambia la cantidad, y **el 0 es un dato válido**: "no queda nada" es justo lo que

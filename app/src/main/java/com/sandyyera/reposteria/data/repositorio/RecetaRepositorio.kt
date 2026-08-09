@@ -759,10 +759,20 @@ class RecetaRepositorio(
      * El redondeo es el mismo que usa el resto de la app (`redondearParaGuardar`): si se
      * guardara la cantidad sin redondear, el subtotal que muestra la pantalla no coincidiría
      * con el que suma la base.
+     *
+     * **Lo que se cuenta por unidad no se multiplica** (14.5). Reescalar es pasar la receta a
+     * otro molde: cambia cuánta masa hay, no cuántas cajas se usan para llevarla. Y multiplicar
+     * igual daría "1,5 cajas", que no es una cantidad que exista. Si hacen falta más, se cambian
+     * a mano — que es una decisión, no una regla de tres.
      */
     private suspend fun multiplicarIngredientes(recetaId: Long, factor: Double) {
         dao.obtenerTodosLosIngredientes(recetaId).forEach { item ->
-            dao.actualizarCantidad(item.id, redondearParaGuardar(item.cantidadG * factor))
+            if (item.unidades != null) return@forEach
+            dao.actualizarCantidad(
+                itemId = item.id,
+                cantidad = redondearParaGuardar(item.cantidadG * factor),
+                unidades = null
+            )
         }
     }
 
@@ -1357,6 +1367,9 @@ class RecetaRepositorio(
                         seccionId = nuevaId,
                         ingredienteId = fila.ingredienteId,
                         cantidadG = fila.cantidadG,
+                        // Se copia también, o una caja llegaría a la copia como 0 gramos y
+                        // ninguna unidad — o sea, como una línea vacía (14.5).
+                        unidades = fila.unidades,
                         orden = fila.orden
                     )
                 )
@@ -1631,10 +1644,14 @@ class RecetaRepositorio(
             )
 
             emparejadas.juntos.forEach { (aca, alla) ->
+                // Lo que se cuenta por unidad no se adapta, por lo mismo que no se reescala
+                // (14.5): la proporción es entre gramos, y una caja no tiene.
+                if (aca.unidades != null) return@forEach
                 val antes = vinculo.firma.linea(alla.id)?.gramos ?: return@forEach
                 dao.actualizarCantidad(
-                    aca.id,
-                    cantidadAdaptada(aca.cantidadG, antes, alla.cantidadG)
+                    itemId = aca.id,
+                    cantidad = cantidadAdaptada(aca.cantidadG, antes, alla.cantidadG),
+                    unidades = null
                 )
             }
             emparejadas.soloEnLaCopia.forEach { aca ->
@@ -1647,6 +1664,7 @@ class RecetaRepositorio(
                         seccionId = seccion.id,
                         ingredienteId = alla.ingredienteId,
                         cantidadG = alla.cantidadG,
+                        unidades = alla.unidades,
                         orden = alla.orden
                     )
                 )

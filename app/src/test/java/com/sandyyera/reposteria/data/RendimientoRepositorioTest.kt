@@ -186,6 +186,31 @@ class RendimientoRepositorioTest {
     }
 
     @Test
+    fun `reescalar no multiplica lo que se cuenta por unidad`() = runBlocking {
+        // Pasar la receta a otro molde cambia cuánta masa hay, no cuántas cajas se usan para
+        // llevarla. Y multiplicar igual daría "1,5 cajas", que no es una cantidad que exista.
+        val id = recetaConHarina()
+        catalogo.sembrar(
+            Ingrediente(nombre = "Cajas", valorPorGramo = 350.0, esObjeto = true)
+        )
+        val cajas = catalogo.obtenerTodosUnaVez().first { it.nombre == "Cajas" }
+        val seccion = repositorio.obtenerSecciones(id).single()
+        repositorio.agregarIngrediente(seccion.id, cajas.id, cantidadG = 0.0, unidades = 1.0)
+        repositorio.definirMolde(id, cuadrado(10.0, 5.0), null)
+
+        repositorio.reescalarPorMolde(
+            id, cuadrado(10.0, 10.0), ModoReescalado.CAPACIDAD, moldeOrigenId = null
+        )
+
+        val lineas = repositorio.obtenerIngredientes(id)
+        val laHarina = lineas.first { it.ingredienteId != cajas.id }
+        val lasCajas = lineas.first { it.ingredienteId == cajas.id }
+        assertEquals("La harina sí se dobla", 1000.0, laHarina.cantidadG, 0.001)
+        assertEquals("Las cajas siguen siendo una", 1.0, lasCajas.unidades!!, 0.001)
+        assertEquals("Y sin peso, como entraron", 0.0, lasCajas.cantidadG, 0.001)
+    }
+
+    @Test
     fun `modo altura multiplica por la razon de areas`() = runBlocking {
         val id = recetaConHarina()
         repositorio.definirMolde(id, cuadrado(10.0, 5.0), null)   // área 100
