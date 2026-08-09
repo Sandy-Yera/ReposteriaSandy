@@ -1,5 +1,6 @@
 package com.sandyyera.reposteria.logica.partes
 
+import com.sandyyera.reposteria.logica.formato.cantidadConUnidad
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 
 /**
@@ -201,14 +202,7 @@ private data class CambioDeCantidad(
     val esObjeto: Boolean
 ) {
     /** "3 unidades" o "500 g". Sin esto la frase diría "3 g" de algo que se cuenta por unidad. */
-    fun comoSeLee(cuanto: Double): String {
-        val numero = formatearNumero(cuanto)
-        return if (esObjeto) {
-            "$numero ${if (cuanto == 1.0) "unidad" else "unidades"}"
-        } else {
-            "$numero g"
-        }
-    }
+    fun comoSeLee(cuanto: Double): String = cantidadConUnidad(cuanto, esObjeto)
 }
 
 /**

@@ -15,6 +15,7 @@ import com.sandyyera.reposteria.logica.almacen.seUsoDeMas
 import com.sandyyera.reposteria.logica.busqueda.filtrarPor
 import com.sandyyera.reposteria.logica.calculadora.UnidadDeCompra
 import com.sandyyera.reposteria.logica.calculadora.valorPorGramo
+import com.sandyyera.reposteria.logica.formato.cantidadConUnidad
 import com.sandyyera.reposteria.logica.formato.formatearMientrasSeEscribe
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.logica.validaciones.errorEnNombreEscrito
@@ -53,15 +54,7 @@ data class FilaDeAlmacen(val articulo: ArticuloConValor) {
     val unidad: String get() = if (esObjeto) "unidad" else "g"
 
     /** "2.500 g" o "3 unidades". La unidad sale del ingrediente, no se guarda acá. */
-    val cuantoQueda: String
-        get() {
-            val cuanto = formatearNumero(articulo.cantidad)
-            return if (esObjeto) {
-                "$cuanto ${if (articulo.cantidad == 1.0) "unidad" else "unidades"}"
-            } else {
-                "$cuanto g"
-            }
-        }
+    val cuantoQueda: String get() = cantidadConUnidad(articulo.cantidad, esObjeto)
 
     /**
      * Lo que vale lo que queda, o `null` si no se puede saber.
@@ -260,6 +253,15 @@ data class PrecioEnDisputa(
 /** Lo que la pantalla del almacén necesita para dibujarse. */
 data class EstadoAlmacen(
     val visibles: List<FilaDeAlmacen> = emptyList(),
+    /**
+     * Todo lo guardado, **sin filtrar por el buscador**.
+     *
+     * Existe porque el valor del almacén se sacaba de [visibles], y eso lo hacía cambiar al
+     * escribir en el buscador: la tarjeta dice "Valor de lo guardado" y mostraba el de lo que
+     * quedó a la vista. Un número que se mueve al buscar es un número que no se puede creer, y es
+     * el mismo error que el total ya evitaba por otro lado al decir cuántas filas no incluye.
+     */
+    val todo: List<FilaDeAlmacen> = emptyList(),
     val hayArticulos: Boolean = false,
     val busqueda: String = "",
     val mensaje: String? = null,
@@ -275,10 +277,10 @@ data class EstadoAlmacen(
      * Un total que se presenta como "el valor del almacén" mientras ignora en silencio algunas
      * filas es un número que se cree y está mal.
      */
-    val valorTotal: Double get() = visibles.sumOf { it.valor ?: 0.0 }
+    val valorTotal: Double get() = todo.sumOf { it.valor ?: 0.0 }
 
     /** Cuántas filas quedaron fuera del total por no tener valor. */
-    val sinValor: Int get() = visibles.count { it.valor == null }
+    val sinValor: Int get() = todo.count { it.valor == null }
 }
 
 /**
@@ -306,6 +308,7 @@ class AlmacenViewModel(
         val filas = articulos.map { FilaDeAlmacen(it) }
         EstadoAlmacen(
             visibles = filtrarPor(filas, textoBuscado) { it.nombre },
+            todo = filas,
             hayArticulos = filas.isNotEmpty(),
             busqueda = textoBuscado,
             mensaje = mensajeActual,

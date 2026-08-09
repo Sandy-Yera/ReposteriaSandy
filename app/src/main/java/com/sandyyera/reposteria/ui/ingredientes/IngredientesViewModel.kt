@@ -204,9 +204,6 @@ data class EstadoIngredientes(
         get() = (dialogo as? DialogoIngrediente.Formulario)?.editando?.id?.let { it in sinAlmacen }
             ?: false
 
-    /** Cuántos ingredientes no están en el almacén, para el resumen de arriba. */
-    val cuantosFaltanEnElAlmacen: Int get() = visibles.count { it.id in sinAlmacen }
-
     /** Hay ingredientes, pero ninguno coincide con lo buscado. */
     val busquedaSinResultados: Boolean get() = hayIngredientes && visibles.isEmpty()
 }

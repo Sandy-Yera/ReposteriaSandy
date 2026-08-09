@@ -229,7 +229,6 @@ class IngredientesViewModelTest {
 
         val harina = modelo.estado.value.visibles.single()
         assertTrue("El aviso arranca encendido", modelo.estado.value.faltaEnElAlmacen(harina))
-        assertEquals(1, modelo.estado.value.cuantosFaltanEnElAlmacen)
     }
 
     @Test
@@ -244,7 +243,6 @@ class IngredientesViewModelTest {
         advanceUntilIdle()
 
         assertFalse(modelo.estado.value.faltaEnElAlmacen(harina))
-        assertEquals(0, modelo.estado.value.cuantosFaltanEnElAlmacen)
     }
 
     @Test

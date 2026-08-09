@@ -17,6 +17,7 @@ import com.sandyyera.reposteria.data.repositorio.Resultado
 import com.sandyyera.reposteria.data.repositorio.ResultadoGuardarIngrediente
 import com.sandyyera.reposteria.logica.calculadora.UnidadDeCompra
 import com.sandyyera.reposteria.logica.calculadora.calcularValorPorGramo
+import com.sandyyera.reposteria.logica.formato.cantidadConUnidad
 import com.sandyyera.reposteria.logica.formato.formatearMientrasSeEscribe
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.logica.partes.EstadoDelVinculo
@@ -63,12 +64,7 @@ data class LineaDeIngrediente(
     val cuanto: Double get() = item.unidades ?: item.cantidadG
 
     /** "2 unidades" o "500 g", que es como se lee la línea en la pantalla. */
-    val cuantoDice: String
-        get() = if (esObjeto) {
-            "${formatearNumero(cuanto)} ${if (cuanto == 1.0) "unidad" else "unidades"}"
-        } else {
-            "${formatearNumero(cuanto)} g"
-        }
+    val cuantoDice: String get() = cantidadConUnidad(cuanto, esObjeto)
 
     /**
      * Cuánto pesa esta línea, que **no es lo mismo que cuánto cuesta**.
@@ -360,12 +356,7 @@ data class EstadoCantidades(
      * una y empieza la otra. El encabezado del grupo sigue existiendo porque ahí va el aviso de
      * "cambió", que es una decisión y se toma una vez.
      */
-    fun deDondeViene(seccionId: Long): String? {
-        val parte = parteDe(seccionId) ?: return null
-        // Sin título es porque la receta original se borró. Se dice así y no "de null": el
-        // aviso del grupo es el que explica qué hacer con eso (8.11.4).
-        return parte.tituloDelOrigen?.let { "de '$it'" } ?: "de una receta eliminada"
-    }
+    fun deDondeViene(seccionId: Long): String? = parteDe(seccionId)?.comoSeNombraElOrigen
 
     /**
      * Si esta sección abre el encabezado de su grupo ("Vienen de Bizcocho").

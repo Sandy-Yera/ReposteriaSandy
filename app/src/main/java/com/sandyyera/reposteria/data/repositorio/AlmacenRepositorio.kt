@@ -27,12 +27,13 @@ class AlmacenRepositorio(
     /**
      * Qué ingredientes del catálogo ya están en el almacén.
      *
-     * La pantalla la usa para **no ofrecerlos otra vez** en vez de dejar elegirlos y rechazarlos
-     * al confirmar: es la misma regla que `titulosDisponibles` y que el ingrediente ya puesto en
-     * una sección — lo que se ofrece y lo que se acepta no pueden discrepar. El índice único de
-     * la tabla lo hace cumplir de verdad; esto es para que no se llegue a chocar.
+     * **Es privada**: desde 14.5 el cuadro de agregar no elige de una lista sino que escribe un
+     * nombre, así que no hay nada que "dejar de ofrecer" — la comprobación pasó a ser un rechazo
+     * al guardar. El índice único de la tabla lo hace cumplir de verdad; esto es para poder
+     * explicarlo con una frase en vez de reventar.
      */
-    suspend fun ingredientesYaGuardados(): Set<Long> = dao.ingredientesYaEnElAlmacen().toSet()
+    private suspend fun ingredientesYaGuardados(): Set<Long> =
+        dao.ingredientesYaEnElAlmacen().toSet()
 
     /**
      * Agrega algo al almacén, **creando su ingrediente si no existía** (14.5).
@@ -50,6 +51,13 @@ class AlmacenRepositorio(
      * valor mueve el costo de **todas** las recetas que lo usan y no se deshace, así que es la
      * misma confirmación que ya pide la calculadora de valor por gramo (7.2). Con
      * [reemplazarElPrecio] en `true` se vuelve a llamar y ahí sí se escribe.
+     *
+     * **Todo lo que puede fallar se revisa antes de escribir nada**, que es la regla de todos los
+     * repositorios de esta app. El orden importa y ya se había roto acá: comprobar "ya está en el
+     * almacén" *después* de resolver el precio hacía dos cosas mal — preguntaba por un precio para
+     * una operación que iba a fallar igual, y con [reemplazarElPrecio] llegaba a **escribir el
+     * precio nuevo** en el catálogo antes de devolver el rechazo, moviendo el costo de todas las
+     * recetas por una acción que la app decía que no se hizo.
      */
     suspend fun agregar(
         nombre: String,
@@ -66,7 +74,15 @@ class AlmacenRepositorio(
             return ResultadoAgregarAlAlmacen.NoSePudo("No puede quedar una cantidad negativa")
         }
 
+        // Antes que nada: si ya está en el almacén no hay nada que hacer, y preguntar por el
+        // precio primero sería preguntar por una operación que va a fallar igual.
         val existente = ingredientes.buscarParecido(limpio)
+        if (existente != null && existente.id in ingredientesYaGuardados()) {
+            return ResultadoAgregarAlAlmacen.NoSePudo(
+                "'${existente.nombre}' ya está en el almacén. Tócalo para cambiar la cantidad."
+            )
+        }
+
         val ingredienteId = when {
             existente == null -> {
                 when (val creado = ingredientes.crear(limpio, valor, esObjeto, vaEnRecetas)) {
@@ -88,12 +104,6 @@ class AlmacenRepositorio(
                 }
                 existente.id
             }
-        }
-
-        if (ingredienteId in ingredientesYaGuardados()) {
-            return ResultadoAgregarAlAlmacen.NoSePudo(
-                "'$limpio' ya está en el almacén. Tócalo para cambiar la cantidad."
-            )
         }
 
         dao.insertar(

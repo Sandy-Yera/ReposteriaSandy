@@ -73,6 +73,25 @@ fun redondearParaGuardar(valor: Double): Double {
  *
  * Ver la sección 6.1 de arquitectura.md.
  */
+/**
+ * Una cantidad con su unidad: "500 g", "3 unidades", "1 unidad" (14.1.1).
+ *
+ * **Existe porque esta frase estaba escrita seis veces** — en la línea de una receta, en la fila
+ * del almacén, en el menú de `:ingredientes:`, en el resumen, en la firma y en el aviso de
+ * "ya está en esta sección"—. Seis copias del mismo `if` es seis lugares donde alguien va a
+ * escribir "1 unidades", y solo se nota leyéndolo.
+ *
+ * La concordancia del singular no es un detalle: "1 unidades" hace dudar de si el número está
+ * bien, que es lo último que se quiere de una cifra que sale de una regla de negocio.
+ *
+ * [esObjeto] decide la unidad. En gramos no hay singular que cuidar: "1 g" se lee igual.
+ */
+fun cantidadConUnidad(cantidad: Double, esObjeto: Boolean): String {
+    val numero = formatearNumero(cantidad)
+    if (!esObjeto) return "$numero g"
+    return "$numero ${if (cantidad == 1.0) "unidad" else "unidades"}"
+}
+
 fun formatearNumero(valor: Double): String {
     val redondeado = redondearParaGuardar(valor)
 

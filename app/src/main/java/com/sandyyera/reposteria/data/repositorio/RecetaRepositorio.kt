@@ -10,6 +10,7 @@ import com.sandyyera.reposteria.data.db.entidades.RecetaSeccion
 import com.sandyyera.reposteria.data.db.entidades.TipoEvento
 import com.sandyyera.reposteria.data.db.entidades.aVigente
 import com.sandyyera.reposteria.data.db.entidades.RecetaRendimiento
+import com.sandyyera.reposteria.logica.formato.cantidadConUnidad
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.logica.formato.redondearParaGuardar
 import com.sandyyera.reposteria.logica.duracion.TipoDuracion
@@ -21,6 +22,7 @@ import com.sandyyera.reposteria.logica.precios.DatosCalculoReceta
 import com.sandyyera.reposteria.data.db.dao.LineaConIngrediente
 import com.sandyyera.reposteria.logica.duracion.describirDuracion
 import com.sandyyera.reposteria.logica.duracion.nombreDelTipoDeDuracion
+import com.sandyyera.reposteria.logica.moldes.corteEfectivoDe
 import com.sandyyera.reposteria.logica.moldes.medidaDelTrozo
 import com.sandyyera.reposteria.logica.moldes.medidasEnTexto
 import com.sandyyera.reposteria.logica.partes.PasoParaMostrar
@@ -130,6 +132,20 @@ data class ParteTraida(
      */
     val hayQueAvisar: Boolean
         get() = estado == EstadoDelVinculo.ORIGINAL_BORRADA || cambios.isNotEmpty()
+
+    /**
+     * Cómo se nombra el origen bajo cada parte ajena: "de 'Bizcocho'" (8.11.2).
+     *
+     * Vive acá, que es donde vive el dato, y no en cada pantalla. Estaba escrito tres veces —el
+     * paso de cantidades, el de pasos y el resumen— y las tres tienen que decir exactamente lo
+     * mismo: si una dijera "viene de X" y otra "de X", la misma parte se leería distinto según
+     * desde dónde se mire.
+     *
+     * Sin título es porque la receta original se borró. Se dice así y no "de null": el aviso del
+     * grupo es el que explica qué hacer con eso (8.11.4).
+     */
+    val comoSeNombraElOrigen: String
+        get() = tituloDelOrigen?.let { "de '$it'" } ?: "de una receta eliminada"
 }
 
 /**
@@ -156,15 +172,7 @@ data class LineaDeIngredienteDeSeccion(
     val cantidad: Double,
     val esObjeto: Boolean
 ) {
-    val comoSeEscribe: String
-        get() {
-            val cuanto = formatearNumero(cantidad)
-            return if (esObjeto) {
-                "$cuanto ${if (cantidad == 1.0) "unidad" else "unidades"} de $nombre"
-            } else {
-                "$cuanto g de $nombre"
-            }
-        }
+    val comoSeEscribe: String get() = "${cantidadConUnidad(cantidad, esObjeto)} de $nombre"
 
     val comoSeLee: String get() = comoSeEscribe
 }
@@ -201,11 +209,9 @@ data class ResumenDeReceta(
     /** Si alguna parte traída tiene un aviso pendiente. Lo muestra el encabezado del resumen. */
     val hayAvisoDePartes: Boolean get() = partes.any { it.hayQueAvisar }
 
-    /** De qué receta vino esta parte, o `null` si es propia. Mismo texto que en cantidades. */
-    fun deDondeViene(seccionId: Long): String? {
-        val parte = partes.firstOrNull { seccionId in it.seccionIds } ?: return null
-        return parte.tituloDelOrigen?.let { "de '$it'" } ?: "de una receta eliminada"
-    }
+    /** De qué receta vino esta parte, o `null` si es propia. La frase la arma `ParteTraida`. */
+    fun deDondeViene(seccionId: Long): String? =
+        partes.firstOrNull { seccionId in it.seccionIds }?.comoSeNombraElOrigen
 }
 
 /** Una parte de la receta con lo que lleva, ya escrito. */
@@ -595,9 +601,10 @@ class RecetaRepositorio(
             // elegido a mano, pero pedirlo dejaría que el aviso dijera un nombre y la fila
             // guardada fuera otra.
             val nombre = dao.nombreDeIngrediente(ingredienteId) ?: "Ese ingrediente"
-            val cuanto = yaEsta.unidades
-                ?.let { "${formatearNumero(it)} unidades" }
-                ?: "${formatearNumero(yaEsta.cantidadG)} g"
+            val cuanto = cantidadConUnidad(
+                cantidad = yaEsta.unidades ?: yaEsta.cantidadG,
+                esObjeto = yaEsta.unidades != null
+            )
             return Resultado.NoSePudo(
                 "$nombre ya está en esta sección, con $cuanto. " +
                     "Toca esa fila para cambiarle la cantidad."
@@ -1025,7 +1032,7 @@ class RecetaRepositorio(
                 recetaId = id,
                 titulo = receta.titulo,
                 costoTotal = costos[id] ?: 0.0,
-                trozos = trozos[id] ?: 1,
+                trozos = trozosSeguros(trozos[id]),
                 precios = precios[id].orEmpty().map { it.aVigente() }
             )
         }.toMap()
@@ -1066,7 +1073,7 @@ class RecetaRepositorio(
                 recetaId = it.id,
                 titulo = it.titulo,
                 costoTotal = costo,
-                trozos = rendimiento?.trozos ?: 1,
+                trozos = trozosSeguros(rendimiento?.trozos),
                 precios = precios.map { precio -> precio.aVigente() }
             )
         }
@@ -1676,6 +1683,20 @@ class RecetaRepositorio(
      * receta. Por eso se cuelga de [RecetaDao.latidoDePartes] además de las secciones — sin él,
      * cambiar los gramos del bizcocho no movería nada en la torta hasta reabrirla.
      */
+    /**
+     * Los trozos de una receta, nunca menos de 1.
+     *
+     * `DatosCalculoReceta` **lanza excepción** con menos de 1 —y hace bien, porque dividir el
+     * costo entre 0 trozos no significa nada— pero esa excepción se construye dentro de un `Flow`
+     * que alimenta pantallas: una fila con 0 mataría el observador y dejaría la receta sin abrir,
+     * sin forma de arreglarla desde la app. La app no guarda ceros (`revisarRendimiento` los
+     * rechaza), pero un respaldo viejo o restaurado sí puede traerlos.
+     *
+     * Es la misma decisión que en `bloquesDePasos` con un título que ya no existe: una fila rara
+     * se muestra como se pueda, no hace desaparecer el trabajo de nadie.
+     */
+    private fun trozosSeguros(trozos: Int?): Int = (trozos ?: 1).coerceAtLeast(1)
+
     // --- El resumen de la receta (8.12) ---
 
     /**
@@ -1758,12 +1779,7 @@ class RecetaRepositorio(
             // `JOIN` de la consulta es INNER, igual que el del costo (8.2).
             val lineas = porSeccion[seccion.id].orEmpty().map { fila ->
                 LineaDelResumen(
-                    cuanto = if (fila.esObjeto) {
-                        "${formatearNumero(fila.cuanto)} " +
-                            if (fila.cuanto == 1.0) "unidad" else "unidades"
-                    } else {
-                        "${formatearNumero(fila.cuanto)} g"
-                    },
+                    cuanto = cantidadConUnidad(fila.cuanto, fila.esObjeto),
                     nombre = fila.nombre,
                     subtotal = fila.subtotal
                 )
@@ -1782,7 +1798,7 @@ class RecetaRepositorio(
             recetaId = receta.id,
             titulo = receta.titulo,
             costoTotal = deIngredientes.costo,
-            trozos = rendimiento?.trozos ?: 1,
+            trozos = trozosSeguros(rendimiento?.trozos),
             precios = deCifras.precios.map { it.aVigente() }
         )
 
@@ -1814,12 +1830,16 @@ class RecetaRepositorio(
                 },
             molde = dimensiones?.let { medidasEnTexto(it, ::formatearNumero) },
             rendimiento = RendimientoDelResumen(
-                trozos = rendimiento?.trozos ?: 1,
+                trozos = trozosSeguros(rendimiento?.trozos),
                 pesoFinalG = rendimiento?.pesoFinalG,
                 medidaDelTrozo = dimensiones?.let {
                     medidaDelTrozo(
                         dimensiones = it,
-                        corte = it.formaDelCorte,
+                        // `corteEfectivoDe` y no `formaDelCorte` a secas: la regla de "el corte
+                        // que corresponda a la forma cuando nadie eligió" vive ahí, y el paso
+                        // de rendimiento la usa igual. Escribir el `?:` por segunda vez es como
+                        // se separan dos copias de la misma regla.
+                        corte = corteEfectivoDe(it),
                         trozos = rendimiento.trozos,
                         trozosALoLargo = rendimiento.trozosALoLargo,
                         formatear = ::formatearNumero

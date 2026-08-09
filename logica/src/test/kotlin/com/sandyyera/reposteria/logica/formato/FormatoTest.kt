@@ -6,6 +6,35 @@ import org.junit.Test
 
 class FormatoTest {
 
+    // --- La cantidad con su unidad (14.1.1) ---
+
+    @Test
+    fun `lo que se pesa va en gramos`() {
+        assertEquals("500 g", cantidadConUnidad(500.0, esObjeto = false))
+        assertEquals("Un gramo se lee igual", "1 g", cantidadConUnidad(1.0, esObjeto = false))
+        assertEquals("2.500 g", cantidadConUnidad(2500.0, esObjeto = false))
+    }
+
+    @Test
+    fun `lo que se cuenta por unidad concuerda en singular`() {
+        // "1 unidades" hace dudar de si el número está bien, que es lo último que se quiere de
+        // una cifra que sale de una regla de negocio.
+        assertEquals("1 unidad", cantidadConUnidad(1.0, esObjeto = true))
+        assertEquals("3 unidades", cantidadConUnidad(3.0, esObjeto = true))
+        assertEquals("0 unidades", cantidadConUnidad(0.0, esObjeto = true))
+    }
+
+    @Test
+    fun `usa el mismo formato de numero que el resto de la app`() {
+        // Si armara el número por su cuenta, la misma cantidad se leería distinto según qué
+        // pantalla la muestre.
+        assertEquals(
+            "${formatearNumero(1234.5)} g",
+            cantidadConUnidad(1234.5, esObjeto = false)
+        )
+    }
+
+
     // --- Los ejemplos exactos de la especificación original ---
 
     @Test

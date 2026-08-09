@@ -2002,6 +2002,37 @@ casos deja dudando entre "no lo llené" y "no hace falta".
 Cuando la receta se borra desde otra pantalla mientras esta está abierta, el resumen **lo dice y
 no dibuja cifras**: media receta a medio llegar se lee como una receta incompleta.
 
+### 8.13 Lo que se revisó de rendimiento, y por qué casi nada cambió
+
+Una pasada completa buscando índices, consultas repetidas y funciones reinventadas. Lo que se
+encontró, para no volver a buscarlo:
+
+**Los índices están completos.** Cada clave foránea tiene el suyo —propio o por ser clave
+primaria—, que es lo que importa: sin él, borrar una receta recorre entera cada tabla que cuelga
+de ella. Room lo avisaría al compilar, y no avisa.
+
+**Lo que falta a propósito.** `recetas.titulo` y `moldes.nombre` se ordenan sin índice. Con
+decenas de filas la diferencia no se mide, y agregarlos costaría **una versión más de base**: una
+migración, un esquema nuevo y una instalación, a cambio de nada observable. Se anota acá para
+cuando alguna de esas tablas crezca de verdad, que no va a pasar en una repostería.
+
+**Tres observadores viven mientras la receta está abierta** aunque su paso no se vea
+(`RendimientoViewModel` ×2, `SimulacionViewModel` ×1): son `collect` sueltos en `viewModelScope`,
+no `WhileSubscribed`. **No es una fuga**: `ModelosDeLaReceta` los suelta al cerrar la receta, que
+es el dueño que 6.7 pide. Existen porque re-siembran campos de texto cuando lo guardado cambia
+desde otro paso, y eso tiene que pasar aunque su pantalla no esté visible.
+
+**`latidoDePartes` cuenta filas de dos tablas enteras** en cada cambio de ingredientes o pasos.
+Es un `COUNT` sin `WHERE`, así que crece con toda la base y no con la receta abierta. Hoy son
+cientos de filas y no se nota; es el primer lugar donde mirar si alguna vez se pone lenta al
+escribir.
+
+**Lo que sí se arregló** fue duplicación, no rendimiento: la frase "500 g / 3 unidades" estaba
+escrita seis veces (ahora `cantidadConUnidad`), "de 'Bizcocho'" tres veces (ahora
+`ParteTraida.comoSeNombraElOrigen`), y el resumen se saltaba `corteEfectivoDe` escribiendo su
+propio `?:`. Ninguna hacía la app más lenta; todas eran un lugar más donde una regla puede
+separarse de su copia sin que nadie lo note.
+
 ## 9. Módulo Moldes (nuevo)
 
 ### 9.1 Medir el molde (paso 1 de cualquier reescalado)

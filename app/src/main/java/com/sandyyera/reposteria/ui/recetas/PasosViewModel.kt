@@ -166,8 +166,7 @@ data class EstadoPasos(
      */
     fun deDondeViene(titulo: TituloDePaso): String? {
         val seccionId = titulo ?: return null
-        val parte = partes.firstOrNull { seccionId in it.seccionIds } ?: return null
-        return parte.tituloDelOrigen?.let { "de '$it'" } ?: "de una receta eliminada"
+        return partes.firstOrNull { seccionId in it.seccionIds }?.comoSeNombraElOrigen
     }
 
     /** Lo que esté mal en ese paso, o `null`. El vacío no es un error: es un paso que se borra. */
@@ -292,16 +291,13 @@ class PasosViewModel(
     }
 
     /**
-     * Cierra la ayuda y, si se llegó escribiendo `:info:`, lo saca del texto.
+     * Cierra la ayuda. Es [cerrarDialogo] con otro nombre, para que la pantalla se lea.
      *
-     * Dejarlo escrito convertiría un atajo en basura dentro de la receta: `:info:` no es algo que
-     * uno quiera leer al seguir los pasos.
+     * No hace nada distinto **a propósito**: cuando eran dos comportamientos, `:info:` se borraba
+     * al cerrar y `:titulo:` no al cancelar. Dos funciones que hacen lo mismo son mejores que dos
+     * que casi lo hacen.
      */
-    fun cerrarAyuda() {
-        val abierto = _dialogo.value as? DialogoPasos.Ayuda
-        _dialogo.value = DialogoPasos.Ninguno
-        abierto?.atajo?.let { reemplazar(it, "") }
-    }
+    fun cerrarAyuda() = cerrarDialogo()
 
     private fun abrirElegirIngrediente(enCurso: AtajoEnCurso) {
         _dialogo.value = DialogoPasos.ElegirIngrediente(enCurso)
@@ -514,8 +510,29 @@ class PasosViewModel(
         }
     }
 
+    /**
+     * Cierra lo que esté abierto **y saca el atajo del texto si lo hubo**.
+     *
+     * Lo segundo no es de más: hasta acá `:info:` desaparecía al cerrar su ayuda pero `:titulo:`
+     * y `:ingredientes:` se quedaban escritos al cancelar, así que el mismo gesto —salir sin
+     * elegir— dejaba basura en unos casos y no en otros. Peor: ese `:titulo:` sobrante se guarda
+     * dentro del paso y vuelve a abrir el menú apenas se borre una letra.
+     *
+     * Cancelar significa "no quiero esto", y lo que se escribió era la forma de pedirlo, no algo
+     * que uno quiera leer después al seguir la receta.
+     */
     fun cerrarDialogo() {
+        val enCurso = atajoDelDialogoAbierto()
         _dialogo.value = DialogoPasos.Ninguno
+        enCurso?.let { reemplazar(it, "") }
+    }
+
+    /** El atajo que abrió el cuadro que está abierto, si es que lo abrió uno. */
+    private fun atajoDelDialogoAbierto(): AtajoEnCurso? = when (val abierto = _dialogo.value) {
+        is DialogoPasos.Ayuda -> abierto.atajo
+        is DialogoPasos.ElegirTitulo -> abierto.atajo
+        is DialogoPasos.ElegirIngrediente -> abierto.atajo
+        else -> null
     }
 
     fun mensajeMostrado() {
