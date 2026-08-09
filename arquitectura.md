@@ -1476,6 +1476,36 @@ adelante y atrás**: equivocarse escribiendo eso es raro, y así el atajo no se 
 al escribir la palabra en medio de una frase. El título elegido se resalta como encabezado,
 no como un paso más.
 
+##### Los atajos, y cómo se recuerdan
+
+Hay tres: `:info:`, `:titulo:` y `:ingredientes:`. Todos se disparan **al terminar de
+escribirlos, justo antes del cursor** — no porque la palabra aparezca en otro renglón que ya se
+resolvió hace rato— y **se borran solos** al elegir: `:titulo:` y `:info:` desaparecen sin dejar
+nada, y `:ingredientes:` deja en su lugar el nombre elegido. Un atajo que se quedara escrito
+sería basura dentro de la receta.
+
+Recordarlos tiene dos salidas, y hacen falta las dos porque resuelven momentos distintos:
+
+- **Un botón arriba del todo**, que muestra la lista. Sirve al empezar, cuando todavía no hay
+  nada escrito y se está mirando la pantalla entera.
+- **`:info:`**, que muestra esa misma lista sin moverse de donde uno está. Sandy lo pidió para el
+  otro momento: *"cuando este muy abajo y no recuerde los comandos, simplemente hago :info: y
+  podré ver el aviso"*. Un botón que hay que ir a buscar arriba, en una receta de veinte pasos,
+  es justamente el que no se usa.
+
+`:info:` va **primero en la lista** por lo mismo: es el único que hay que recordar, porque desde
+él se llega a los otros dos.
+
+**La lista de la ayuda sale del enum `AtajoDePaso`**, con su escritura y su explicación, y no de
+un texto escrito en la pantalla. Un atajo nuevo aparece ahí sin que nadie se acuerde de
+agregarlo — que es exactamente la clase de olvido que deja una ayuda mintiendo.
+
+**El campo de texto de un paso trabaja con cursor y no solo con texto.** Es lo que permite saber
+*dónde* se escribió el atajo, y es lo que hace falta para reemplazar la aparición correcta: en un
+paso que ya usó `:ingredientes:` dos veces, buscar la primera cambiaría la equivocada. Al
+reemplazar, el largo del texto cambia, así que la posición del cursor viaja de vuelta a la
+pantalla — el mismo problema que ya resolvió `formatearMientrasSeEscribe` con `TextoConCursor`.
+
 **El General no es un nombre, es la ausencia de sección.** En los datos, el título de un paso
 es el id de su sección y `null` es el General (5.5.1). Parece un detalle y no lo es:
 **bautizar una sección "General" se puede** (8.2), y si el General fuera un nombre reservado

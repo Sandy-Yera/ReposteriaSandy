@@ -13,11 +13,13 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
@@ -47,9 +49,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.sandyyera.reposteria.logica.partes.AtajoDePaso
 import com.sandyyera.reposteria.logica.partes.BloqueDePasos
 import com.sandyyera.reposteria.logica.partes.PasoNumerado
 import com.sandyyera.reposteria.logica.partes.PasoParaMostrar
@@ -61,11 +66,15 @@ import com.sandyyera.reposteria.ui.theme.ReposteriaTheme
 /** Todo lo que se puede pedir desde el paso "Pasos". */
 data class AccionesPasos(
     val agregarPaso: () -> Unit = {},
-    val cambiarTexto: (Long, String) -> Unit = { _, _ -> },
+    val cambiarTexto: (Long, String, Int) -> Unit = { _, _, _ -> },
     val guardarPaso: (Long) -> Unit = {},
     val guardarTodoLoPendiente: () -> Unit = {},
     val abrirElegirTitulo: (Long) -> Unit = {},
     val elegirTitulo: (TituloDePaso) -> Unit = {},
+    val abrirAyuda: () -> Unit = {},
+    val cerrarAyuda: () -> Unit = {},
+    val elegirIngrediente: (String) -> Unit = {},
+    val cursorAplicado: () -> Unit = {},
     val moverPaso: (Long, Boolean) -> Unit = { _, _ -> },
     val pedirBorrado: (PasoParaMostrar) -> Unit = {},
     val confirmarBorrado: () -> Unit = {},
@@ -88,6 +97,7 @@ fun PasoPasosScreen(
 ) {
     val estado by modelo.estado.collectAsStateWithLifecycle()
     val dialogo by modelo.dialogo.collectAsStateWithLifecycle()
+    val cursorPedido by modelo.cursorPedido.collectAsStateWithLifecycle()
 
     val acciones = remember(modelo, alElegirPaso, alCerrarReceta) {
         AccionesPasos(
@@ -95,8 +105,12 @@ fun PasoPasosScreen(
             cambiarTexto = modelo::cambiarTexto,
             guardarPaso = modelo::guardarPaso,
             guardarTodoLoPendiente = modelo::guardarTodoLoPendiente,
-            abrirElegirTitulo = modelo::abrirElegirTitulo,
+            abrirElegirTitulo = { modelo.abrirElegirTitulo(it) },
             elegirTitulo = modelo::elegirTitulo,
+            abrirAyuda = modelo::abrirAyuda,
+            cerrarAyuda = modelo::cerrarAyuda,
+            elegirIngrediente = modelo::elegirIngrediente,
+            cursorAplicado = modelo::cursorAplicado,
             moverPaso = modelo::moverPaso,
             pedirBorrado = modelo::pedirBorrado,
             confirmarBorrado = modelo::confirmarBorrado,
@@ -111,6 +125,7 @@ fun PasoPasosScreen(
         tituloReceta = tituloReceta,
         estado = estado,
         dialogo = dialogo,
+        cursorPedido = cursorPedido,
         acciones = acciones,
         pasoActual = pasoActual,
         modifier = modifier,
@@ -136,6 +151,7 @@ fun PasoPasos(
     estado: EstadoPasos,
     dialogo: DialogoPasos,
     acciones: AccionesPasos,
+    cursorPedido: PosicionDelCursor? = null,
     pasoActual: PasoDeReceta = PasoDeReceta.PASOS,
     modifier: Modifier = Modifier,
     desplazamientoDePasos: ScrollState = rememberScrollState()
@@ -196,6 +212,8 @@ fun PasoPasos(
             contentPadding = PaddingValues(Medidas.medio),
             verticalArrangement = Arrangement.spacedBy(Medidas.chico)
         ) {
+            item { BotonDeAtajos(acciones.abrirAyuda) }
+
             if (!estado.cargando && estado.vacio) {
                 item { TodaviaSinPasos() }
             }
@@ -214,6 +232,7 @@ fun PasoPasos(
                         numerado = bloque.pasos[i],
                         conSangria = bloque.esGeneralAnidado,
                         estado = estado,
+                        cursorPedido = cursorPedido,
                         acciones = acciones
                     )
                 }
@@ -237,6 +256,8 @@ fun PasoPasos(
     when (dialogo) {
         is DialogoPasos.Ninguno -> Unit
         is DialogoPasos.ElegirTitulo -> CuadroDeTitulo(dialogo, acciones)
+        is DialogoPasos.ElegirIngrediente -> CuadroDeIngredientes(dialogo, acciones)
+        is DialogoPasos.Ayuda -> CuadroDeAtajos(acciones)
         is DialogoPasos.ConfirmarBorrado -> ConfirmarBorrarPaso(dialogo, acciones)
     }
 }
@@ -290,6 +311,7 @@ private fun FilaDeUnPaso(
     numerado: PasoNumerado,
     conSangria: Boolean,
     estado: EstadoPasos,
+    cursorPedido: PosicionDelCursor?,
     acciones: AccionesPasos
 ) {
     val paso = numerado.paso
@@ -298,6 +320,26 @@ private fun FilaDeUnPaso(
     // tenerlo. Con un `remember { false }` a secas el valor se reponía en cada redibujado y el
     // guardado no se disparaba nunca.
     var teniaFoco by remember { mutableStateOf(false) }
+
+    // El campo trabaja con `TextFieldValue` y no con `String` porque los atajos necesitan saber
+    // **dónde está el cursor** (8.8): `:ingredientes:` se dispara al terminar de escribirlo ahí
+    // donde está la mano, no porque la palabra aparezca en otro renglón. Es el mismo recurso que
+    // usa `CampoNumerico` para no mandar el cursor al final en cada tecla.
+    val texto = estado.textoDe(paso)
+    var recordado by remember { mutableStateOf(TextFieldValue(texto, TextRange(texto.length))) }
+    val campo = if (recordado.text == texto) recordado else TextFieldValue(texto, TextRange(texto.length))
+
+    // Cuando un atajo se reemplaza, el largo del texto cambia y el cursor tiene que ir donde
+    // quedó lo insertado. Se avisa de vuelta para que esto no se repita en cada dibujado.
+    LaunchedEffect(cursorPedido) {
+        val pedido = cursorPedido ?: return@LaunchedEffect
+        if (pedido.pasoId != paso.id) return@LaunchedEffect
+        recordado = TextFieldValue(
+            text = estado.textoDe(paso),
+            selection = TextRange(pedido.cursor.coerceIn(0, estado.textoDe(paso).length))
+        )
+        acciones.cursorAplicado()
+    }
 
     Row(
         modifier = Modifier
@@ -315,8 +357,11 @@ private fun FilaDeUnPaso(
                 .padding(top = Medidas.medio, end = Medidas.chico)
         )
         OutlinedTextField(
-            value = estado.textoDe(paso),
-            onValueChange = { acciones.cambiarTexto(paso.id, it) },
+            value = campo,
+            onValueChange = {
+                recordado = it
+                acciones.cambiarTexto(paso.id, it.text, it.selection.end)
+            },
             placeholder = { Text("Qué se hace en este paso") },
             supportingText = estado.errorDe(paso)?.let { { Text(it) } },
             isError = estado.errorDe(paso) != null,
@@ -346,6 +391,114 @@ private fun FilaDeUnPaso(
             }
         }
     }
+}
+
+/**
+ * El botón que muestra los atajos, arriba del todo (8.8).
+ *
+ * Lo pidió Sandy: *"en pasos, quiero que arriba del todo haya un botón que al presionarlo muestre
+ * todas esas opciones que existen"*. Va **dentro de la lista y no fijo en la barra** porque se usa
+ * al empezar, cuando todavía no hay nada escrito; una vez abajo, lo que sirve es `:info:`, que
+ * está justamente para no tener que volver a subir.
+ */
+@Composable
+private fun BotonDeAtajos(alTocar: () -> Unit) {
+    OutlinedButton(
+        onClick = alTocar,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = Medidas.objetivoTactil)
+            .padding(bottom = Medidas.chico)
+    ) {
+        Icon(Icons.Default.Info, contentDescription = null)
+        Text("Atajos que puedes escribir", modifier = Modifier.padding(start = Medidas.chico))
+    }
+}
+
+/**
+ * La lista de atajos que existen.
+ *
+ * **Sale del enum `AtajoDePaso` y no de una lista escrita acá**, con su `escritura` y su
+ * `queHace`. Un atajo nuevo aparece en esta ayuda sin que nadie se acuerde de agregarlo — que es
+ * exactamente la clase de olvido que deja una ayuda mintiendo.
+ */
+@Composable
+private fun CuadroDeAtajos(acciones: AccionesPasos) {
+    AlertDialog(
+        onDismissRequest = acciones.cerrarAyuda,
+        title = { Text("Atajos") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Medidas.chico)) {
+                Text(
+                    text = "Escríbelos dentro de un paso, con los dos puntos incluidos. " +
+                        "Se borran solos al elegir.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                AtajoDePaso.entries.forEach { atajo ->
+                    Column {
+                        Text(
+                            text = atajo.escritura,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = atajo.queHace,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = acciones.cerrarAyuda) { Text("Entendido") }
+        }
+    )
+}
+
+/**
+ * Los ingredientes de esta receta, para escribir uno dentro del paso (8.8).
+ *
+ * Con la receta sin ingredientes se dice eso mismo en vez de mostrar una lista vacía: el cuadro
+ * abierto y sin nada dejaría pensando que se rompió algo.
+ */
+@Composable
+private fun CuadroDeIngredientes(
+    estado: DialogoPasos.ElegirIngrediente,
+    acciones: AccionesPasos
+) {
+    AlertDialog(
+        onDismissRequest = acciones.cerrarDialogo,
+        title = { Text("¿Cuál?") },
+        text = {
+            if (estado.nombres.isEmpty()) {
+                Text(
+                    "Esta receta todavía no tiene ingredientes. Se agregan en el paso de " +
+                        "Cantidades."
+                )
+            } else {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(Medidas.minimo)
+                ) {
+                    estado.nombres.forEach { nombre ->
+                        Text(
+                            text = nombre,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = Medidas.objetivoTactil)
+                                .clickable { acciones.elegirIngrediente(nombre) }
+                                .padding(vertical = Medidas.chico)
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = acciones.cerrarDialogo) { Text("Cancelar") }
+        }
+    )
 }
 
 /** El menú de títulos. Lo ofrecido sale de `titulosDisponibles`, nunca de una lista propia. */

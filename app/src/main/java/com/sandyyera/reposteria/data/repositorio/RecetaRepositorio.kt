@@ -380,6 +380,24 @@ class RecetaRepositorio(
         dao.obtenerTodosLosIngredientes(recetaId)
 
     /**
+     * Cómo se llama lo que lleva esta receta, ordenado y sin repetidos (8.8).
+     *
+     * Lo usa el atajo `:ingredientes:` de los pasos. Se pide **una sola vez al abrir el menú** y
+     * no como observador: mientras el menú está abierto esa lista no cambia, y observarla sumaría
+     * una fuente que reemite justo mientras se escribe en un campo de texto (12.2.1).
+     *
+     * **Sin repetidos** porque el mismo ingrediente en dos secciones es correcto y frecuente —el
+     * azúcar del bizcocho y el del almíbar— pero en este menú serían dos filas idénticas.
+     */
+    suspend fun nombresDeIngredientesDe(recetaId: Long): List<String> {
+        val ids = dao.obtenerTodosLosIngredientes(recetaId).map { it.ingredienteId }.distinct()
+        if (ids.isEmpty()) return emptyList()
+        return dao.nombresDeIngredientes(ids)
+            .map { it.nombre }
+            .sortedBy { it.lowercase() }
+    }
+
+    /**
      * Los ingredientes que ya están puestos en una sección.
      *
      * La pantalla la usa para no ofrecer dos veces el mismo (8.2). Es por sección y no por

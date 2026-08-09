@@ -3,6 +3,7 @@ package com.sandyyera.reposteria.ui.recetas
 import com.sandyyera.reposteria.data.HistorialDaoFalso
 import com.sandyyera.reposteria.data.IngredienteDaoFalso
 import com.sandyyera.reposteria.data.RecetaDaoFalso
+import com.sandyyera.reposteria.data.db.entidades.Ingrediente
 import com.sandyyera.reposteria.data.repositorio.HistorialRepositorio
 import com.sandyyera.reposteria.data.repositorio.RecetaRepositorio
 import com.sandyyera.reposteria.data.repositorio.ResultadoCrearReceta
@@ -37,6 +38,7 @@ class PasosViewModelTest {
 
     private val despachador = StandardTestDispatcher()
 
+    private lateinit var catalogo: IngredienteDaoFalso
     private lateinit var recetaDao: RecetaDaoFalso
     private lateinit var recetas: RecetaRepositorio
     private var recetaId: Long = 0
@@ -44,7 +46,8 @@ class PasosViewModelTest {
     @Before
     fun prepararTodo() {
         Dispatchers.setMain(despachador)
-        recetaDao = RecetaDaoFalso(IngredienteDaoFalso())
+        catalogo = IngredienteDaoFalso()
+        recetaDao = RecetaDaoFalso(catalogo)
         recetas = RecetaRepositorio(recetaDao, HistorialRepositorio(HistorialDaoFalso()))
     }
 
@@ -64,12 +67,27 @@ class PasosViewModelTest {
             cuerpo(modelo)
         }
 
+    /** Deja un ingrediente en el catálogo y devuelve su id, para poder ponerlo en la receta. */
+    private suspend fun ingredienteLlamado(nombre: String): Long {
+        catalogo.sembrar(Ingrediente(nombre = nombre, valorPorGramo = 1.0))
+        return catalogo.obtenerTodosUnaVez().first { it.nombre == nombre }.id
+    }
+
+    /**
+     * El cursor donde queda al terminar de escribir, que es de donde salen los atajos (8.8).
+     *
+     * Existe para que cada llamada diga **dónde estaba la mano**, y no para ahorrar letras:
+     * `cambiarTexto` mira si hay un atajo justo antes del cursor, así que pasar cualquier
+     * posición cambiaría lo que la prueba está probando.
+     */
+    private fun cursorAlFinal(texto: String) = texto.length
+
     /** Agrega un paso y devuelve su id, que es lo que las acciones piden. */
     private suspend fun TestScope.agregar(modelo: PasosViewModel, texto: String): Long {
         modelo.agregarPaso()
         advanceUntilIdle()
         val id = recetaDao.obtenerPasos(recetaId).last().id
-        modelo.cambiarTexto(id, texto)
+        modelo.cambiarTexto(id, texto, cursorAlFinal(texto))
         modelo.guardarPaso(id)
         advanceUntilIdle()
         return id
@@ -112,7 +130,7 @@ class PasosViewModelTest {
         advanceUntilIdle()
         val id = recetaDao.obtenerPasos(recetaId).single().id
 
-        modelo.cambiarTexto(id, "a medio escribir")
+        modelo.cambiarTexto(id, "a medio escribir", cursorAlFinal("a medio escribir"))
         advanceUntilIdle()
 
         assertEquals("En la base sigue vacío", "", recetaDao.obtenerPaso(id)!!.contenido)
@@ -126,7 +144,7 @@ class PasosViewModelTest {
         // Una fila vacía correría todos los números de abajo por un paso fantasma.
         val id = agregar(modelo, "Algo")
 
-        modelo.cambiarTexto(id, "   ")
+        modelo.cambiarTexto(id, "   ", cursorAlFinal("   "))
         modelo.guardarPaso(id)
         advanceUntilIdle()
 
@@ -138,7 +156,7 @@ class PasosViewModelTest {
     fun `un paso demasiado largo se avisa y no se guarda`() = probar { modelo ->
         val id = agregar(modelo, "Corto")
 
-        modelo.cambiarTexto(id, "a".repeat(1001))
+        modelo.cambiarTexto(id, "a".repeat(1001), cursorAlFinal("a".repeat(1001)))
         modelo.guardarPaso(id)
         advanceUntilIdle()
 
@@ -154,12 +172,154 @@ class PasosViewModelTest {
         modelo.agregarPaso()
         advanceUntilIdle()
         val id = recetaDao.obtenerPasos(recetaId).single().id
-        modelo.cambiarTexto(id, "Escrito y sin confirmar")
+        modelo.cambiarTexto(id, "Escrito y sin confirmar", cursorAlFinal("Escrito y sin confirmar"))
 
         modelo.guardarTodoLoPendiente()
         advanceUntilIdle()
 
         assertEquals("Escrito y sin confirmar", recetaDao.obtenerPaso(id)!!.contenido)
+    }
+
+    // --- Los atajos (8.8) ---
+
+    @Test
+    fun `escribir dos puntos info abre la ayuda`() = probar { modelo ->
+        val id = agregar(modelo, "Batir")
+
+        val texto = "Batir :info:"
+        modelo.cambiarTexto(id, texto, cursorAlFinal(texto))
+        advanceUntilIdle()
+
+        assertTrue(
+            "El atajo abre la ayuda en el momento, sin esperar a guardar",
+            modelo.dialogo.value is DialogoPasos.Ayuda
+        )
+    }
+
+    @Test
+    fun `cerrar la ayuda saca el dos puntos info del texto`() = probar { modelo ->
+        // Si se quedara escrito, un atajo se convertiría en basura dentro de la receta: nadie
+        // quiere leer ":info:" al seguir los pasos.
+        val id = agregar(modelo, "Batir")
+        val texto = "Batir :info:"
+        modelo.cambiarTexto(id, texto, cursorAlFinal(texto))
+        advanceUntilIdle()
+
+        modelo.cerrarAyuda()
+        advanceUntilIdle()
+
+        val paso = modelo.estado.value.bloques.single().pasos.single().paso
+        assertEquals("Batir ", modelo.estado.value.textoDe(paso))
+        assertTrue(modelo.dialogo.value is DialogoPasos.Ninguno)
+    }
+
+    @Test
+    fun `el boton de arriba abre la misma ayuda y no borra nada`() = probar { modelo ->
+        // Se llega sin haber escrito ningún atajo, así que no hay nada que sacar del texto.
+        val id = agregar(modelo, "Batir todo")
+
+        modelo.abrirAyuda()
+        advanceUntilIdle()
+        assertTrue(modelo.dialogo.value is DialogoPasos.Ayuda)
+
+        modelo.cerrarAyuda()
+        advanceUntilIdle()
+
+        val paso = modelo.estado.value.bloques.single().pasos.single().paso
+        assertEquals("Batir todo", modelo.estado.value.textoDe(paso))
+        assertEquals("Y no se pide mover ningún cursor", null, modelo.cursorPedido.value)
+        // El id se usa para leer el paso; queda acá para que la prueba diga sobre cuál habla.
+        assertEquals(id, paso.id)
+    }
+
+    @Test
+    fun `escribir dos puntos ingredientes ofrece los de esta receta`() = probar { modelo ->
+        val seccion = recetas.obtenerSecciones(recetaId).single()
+        recetas.agregarIngrediente(seccion.id, ingredienteLlamado("Harina"), 500.0)
+        recetas.agregarIngrediente(seccion.id, ingredienteLlamado("Azúcar"), 200.0)
+        advanceUntilIdle()
+        val id = agregar(modelo, "Mezclar")
+
+        val texto = "Mezclar :ingredientes:"
+        modelo.cambiarTexto(id, texto, cursorAlFinal(texto))
+        advanceUntilIdle()
+
+        val cuadro = modelo.dialogo.value as DialogoPasos.ElegirIngrediente
+        assertEquals(listOf("Azúcar", "Harina"), cuadro.nombres)
+    }
+
+    @Test
+    fun `elegir un ingrediente lo escribe en el lugar del atajo`() = probar { modelo ->
+        val seccion = recetas.obtenerSecciones(recetaId).single()
+        recetas.agregarIngrediente(seccion.id, ingredienteLlamado("Harina"), 500.0)
+        advanceUntilIdle()
+        val id = agregar(modelo, "Mezclar")
+        val texto = "Mezclar :ingredientes: con agua"
+        modelo.cambiarTexto(id, texto, "Mezclar :ingredientes:".length)
+        advanceUntilIdle()
+
+        modelo.elegirIngrediente("Harina")
+        advanceUntilIdle()
+
+        val paso = modelo.estado.value.bloques.single().pasos.single().paso
+        assertEquals("Mezclar Harina con agua", modelo.estado.value.textoDe(paso))
+        assertEquals(
+            "Y el cursor queda después de lo escrito",
+            PosicionDelCursor(id, "Mezclar Harina".length),
+            modelo.cursorPedido.value
+        )
+    }
+
+    @Test
+    fun `escribir dos puntos titulo abre el menu de titulos y lo saca del texto`() =
+        probar { modelo ->
+            recetas.agregarSeccion(recetaId, "Crema", "Bizcocho")
+            advanceUntilIdle()
+            val id = agregar(modelo, "Batir")
+            val texto = "Batir :titulo:"
+            modelo.cambiarTexto(id, texto, cursorAlFinal(texto))
+            advanceUntilIdle()
+
+            val cuadro = modelo.dialogo.value as DialogoPasos.ElegirTitulo
+            assertNotNull("Viene marcado como venido de un atajo", cuadro.atajo)
+
+            modelo.elegirTitulo(cuadro.disponibles.first { it != null })
+            advanceUntilIdle()
+
+            val paso = modelo.estado.value.bloques.flatMap { it.pasos }.single().paso
+            assertEquals("El atajo no se queda escrito", "Batir ", modelo.estado.value.textoDe(paso))
+        }
+
+    @Test
+    fun `tocar el numero abre el mismo menu sin tocar el texto`() = probar { modelo ->
+        // Se llega sin atajo escrito, así que elegir no puede borrarle nada al paso.
+        recetas.agregarSeccion(recetaId, "Crema", "Bizcocho")
+        advanceUntilIdle()
+        val id = agregar(modelo, "Batir la crema")
+
+        modelo.abrirElegirTitulo(id)
+        advanceUntilIdle()
+
+        val cuadro = modelo.dialogo.value as DialogoPasos.ElegirTitulo
+        assertNull("Sin atajo de por medio", cuadro.atajo)
+
+        modelo.elegirTitulo(cuadro.disponibles.first { it != null })
+        advanceUntilIdle()
+
+        val paso = modelo.estado.value.bloques.flatMap { it.pasos }.single().paso
+        assertEquals("Batir la crema", modelo.estado.value.textoDe(paso))
+    }
+
+    @Test
+    fun `la palabra suelta no dispara nada`() = probar { modelo ->
+        // La misma regla que en `logica/`, comprobada desde acá: el atajo necesita sus dos
+        // puntos, o escribir "el titulo lleva crema" abriría un menú a mitad de la frase.
+        val id = agregar(modelo, "Batir")
+        val texto = "Ahora el titulo se decora"
+        modelo.cambiarTexto(id, texto, cursorAlFinal(texto))
+        advanceUntilIdle()
+
+        assertTrue(modelo.dialogo.value is DialogoPasos.Ninguno)
     }
 
     // --- Los títulos (8.8) ---

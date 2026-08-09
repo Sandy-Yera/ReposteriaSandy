@@ -7,12 +7,22 @@ package com.sandyyera.reposteria.logica.partes
  * equivocarse escribiendo eso es raro, y así el atajo no se dispara solo al escribir la
  * palabra en medio de una frase. "Ahora el titulo se decora" no abre ninguna lista.
  */
-enum class AtajoDePaso(val escritura: String) {
+enum class AtajoDePaso(val escritura: String, val queHace: String) {
+    /**
+     * La ayuda: muestra esta misma lista.
+     *
+     * **Va primero a propósito.** Sandy lo pidió para el momento en que ya no se ve el botón de
+     * arriba: *"cuando este muy abajo y no recuerde los comandos, simplemente hago :info: y podré
+     * ver el aviso"*. Un atajo que solo sirve si te acuerdas de los atajos sería inútil, así que
+     * este es el único que hay que recordar.
+     */
+    INFO(":info:", "Muestra esta lista de atajos"),
+
     /** Elegir bajo qué título va este paso: una sección de la receta, o "General". */
-    TITULO(":titulo:"),
+    TITULO(":titulo:", "Elige bajo qué título va este paso"),
 
     /** Insertar un ingrediente de la receta dentro del texto del paso. */
-    INGREDIENTES(":ingredientes:")
+    INGREDIENTES(":ingredientes:", "Escribe un ingrediente de la receta")
 }
 
 /**

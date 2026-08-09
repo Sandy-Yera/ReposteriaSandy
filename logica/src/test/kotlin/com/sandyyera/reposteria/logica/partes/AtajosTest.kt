@@ -2,9 +2,10 @@ package com.sandyyera.reposteria.logica.partes
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Los atajos `:titulo:` y `:ingredientes:` que se escriben dentro de un paso (8.8). */
+/** Los atajos `:info:`, `:titulo:` y `:ingredientes:` que se escriben dentro de un paso (8.8). */
 class AtajosTest {
 
     @Test
@@ -61,6 +62,37 @@ class AtajosTest {
         val resultado = reemplazarAtajo(texto, texto.length, AtajoDePaso.INGREDIENTES, "azúcar")
 
         assertEquals(":ingredientes: y después azúcar", resultado.texto)
+    }
+
+    @Test
+    fun `la ayuda tambien es un atajo, y va primera`() {
+        // Sandy lo pidió para el momento en que ya no se ve el botón de arriba. Que vaya primera
+        // no es cosmético: es lo que hace que aparezca arriba en la lista de la ayuda, donde se
+        // busca cuando uno no recuerda ninguno de los otros.
+        val texto = "Batir todo :info:"
+        assertEquals(AtajoDePaso.INFO, atajoAntesDelCursor(texto, texto.length))
+        assertEquals(AtajoDePaso.INFO, AtajoDePaso.entries.first())
+    }
+
+    @Test
+    fun `cada atajo dice que hace, para que la ayuda salga sola`() {
+        // La ayuda de la pantalla se arma recorriendo el enum. Si alguna entrada quedara sin
+        // explicación, esa ayuda mostraría un atajo mudo — y nadie se enteraría hasta verlo.
+        AtajoDePaso.entries.forEach { atajo ->
+            assertTrue("${atajo.name} sin escritura", atajo.escritura.isNotBlank())
+            assertTrue("${atajo.name} sin explicación", atajo.queHace.isNotBlank())
+        }
+    }
+
+    @Test
+    fun `sacar el atajo sin poner nada deja el texto limpio`() {
+        // Es lo que pasa con `:info:` y con `:titulo:`: se escriben para pedir algo, no para
+        // leerse después dentro de la receta.
+        val texto = "Batir la mezcla :info:"
+        val resultado = reemplazarAtajo(texto, texto.length, AtajoDePaso.INFO, "")
+
+        assertEquals("Batir la mezcla ", resultado.texto)
+        assertEquals("El cursor queda donde estaba el atajo", 16, resultado.cursor)
     }
 
     @Test
