@@ -139,7 +139,7 @@ class AdaptacionTest {
     // --- Emparejar la copia con la original (8.11.3) ---
 
     /** Una fila de ingrediente cualquiera: lo único que importa acá es a qué ingrediente apunta. */
-    private data class Fila(val id: Long, val ingredienteId: Long, val gramos: Double)
+    private data class Fila(val id: Long, val ingredienteId: Long, val cantidad: Double)
 
     private fun emparejar(copia: List<Fila>, original: List<Fila>) =
         emparejarPorIngrediente(copia, original, { it.ingredienteId }, { it.ingredienteId })
@@ -154,7 +154,7 @@ class AdaptacionTest {
         assertEquals(2, resultado.juntos.size)
         assertTrue(resultado.soloEnLaCopia.isEmpty())
         assertTrue(resultado.soloEnLaOriginal.isEmpty())
-        assertEquals(550.0, resultado.juntos.first { it.first.id == 1L }.second.gramos, 0.001)
+        assertEquals(550.0, resultado.juntos.first { it.first.id == 1L }.second.cantidad, 0.001)
     }
 
     @Test
@@ -166,8 +166,8 @@ class AdaptacionTest {
         val original = listOf(Fila(50, 100, 550.0), Fila(51, 101, 200.0))
 
         val resultado = emparejar(copia, original)
-        assertEquals(550.0, resultado.juntos.first { it.first.ingredienteId == 100L }.second.gramos, 0.001)
-        assertEquals(200.0, resultado.juntos.first { it.first.ingredienteId == 101L }.second.gramos, 0.001)
+        assertEquals(550.0, resultado.juntos.first { it.first.ingredienteId == 100L }.second.cantidad, 0.001)
+        assertEquals(200.0, resultado.juntos.first { it.first.ingredienteId == 101L }.second.cantidad, 0.001)
     }
 
     @Test
@@ -195,8 +195,8 @@ class AdaptacionTest {
         assertEquals(2, resultado.juntos.size)
         assertTrue(resultado.soloEnLaCopia.isEmpty())
         assertTrue(resultado.soloEnLaOriginal.isEmpty())
-        assertEquals(800.0, resultado.juntos[0].second.gramos, 0.001)
-        assertEquals(300.0, resultado.juntos[1].second.gramos, 0.001)
+        assertEquals(800.0, resultado.juntos[0].second.cantidad, 0.001)
+        assertEquals(300.0, resultado.juntos[1].second.cantidad, 0.001)
     }
 
     @Test

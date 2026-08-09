@@ -42,6 +42,8 @@ import com.sandyyera.reposteria.ui.recetas.DuracionViewModel
 import com.sandyyera.reposteria.ui.recetas.MoldeDeRecetaViewModel
 import com.sandyyera.reposteria.ui.recetas.PasoCantidadesScreen
 import com.sandyyera.reposteria.ui.recetas.PasoDeReceta
+import com.sandyyera.reposteria.ui.recetas.PasoResumenScreen
+import com.sandyyera.reposteria.ui.recetas.ResumenViewModel
 import com.sandyyera.reposteria.ui.recetas.PasoDuracionScreen
 import com.sandyyera.reposteria.ui.recetas.PasoGastosScreen
 import com.sandyyera.reposteria.ui.recetas.PasoMoldeScreen
@@ -103,7 +105,7 @@ fun NavegacionPrincipal(
 
     // En qué paso de la receta se está. También en rememberSaveable, por lo mismo: girar
     // el teléfono en Rendimiento no puede devolver a Cantidades.
-    var pasoActual by rememberSaveable { mutableStateOf(PasoDeReceta.CANTIDADES) }
+    var pasoActual by rememberSaveable { mutableStateOf(PasoDeReceta.RESUMEN) }
 
     // Una receta abierta se ve a pantalla completa, sin el menú de secciones: es un paso
     // dentro de la receta, no una sección de la app.
@@ -157,6 +159,22 @@ fun NavegacionPrincipal(
         val desplazamientoDePasos = rememberScrollState()
 
         when (pasoActual) {
+            PasoDeReceta.RESUMEN -> PasoResumenScreen(
+                tituloReceta = tituloReceta,
+                desplazamientoDePasos = desplazamientoDePasos,
+                modelo = viewModel(
+                    viewModelStoreOwner = modelosDeReceta.de(idAbierta),
+                    factory = ResumenViewModel.fabrica(
+                        recetaId = idAbierta,
+                        recetas = contenedor.recetas
+                    )
+                ),
+                pasoActual = pasoActual,
+                alElegirPaso = elegirPaso,
+                alCerrarReceta = cerrarReceta,
+                modifier = modifier
+            )
+
             PasoDeReceta.CANTIDADES -> PasoCantidadesScreen(
                 tituloReceta = tituloReceta,
                 desplazamientoDePasos = desplazamientoDePasos,
@@ -266,9 +284,10 @@ fun NavegacionPrincipal(
             alElegirSeccion = { seccionActual = it },
             alAbrirReceta = {
                 recetaAbierta = it
-                // Cada receta que se abre empieza por el primer paso: quedarse en el paso
-                // donde se dejó la anterior confundiría más de lo que ahorra.
-                pasoActual = PasoDeReceta.CANTIDADES
+                // Cada receta que se abre empieza por el resumen: quedarse en el paso donde se
+                // dejó la anterior confundiría más de lo que ahorra, y el resumen es lo que
+                // contesta la pregunta con que uno abre una receta — qué lleva (8.12).
+                pasoActual = PasoDeReceta.RESUMEN
             },
             modifier = modifier
         )

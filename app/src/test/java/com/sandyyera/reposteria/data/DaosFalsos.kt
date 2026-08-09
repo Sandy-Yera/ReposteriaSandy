@@ -3,6 +3,7 @@ package com.sandyyera.reposteria.data
 import com.sandyyera.reposteria.data.db.dao.CostoDeReceta
 import com.sandyyera.reposteria.data.db.dao.HistorialDao
 import com.sandyyera.reposteria.data.db.dao.IngredienteDao
+import com.sandyyera.reposteria.data.db.dao.LineaConIngrediente
 import com.sandyyera.reposteria.data.db.dao.MoldeDao
 import com.sandyyera.reposteria.data.db.dao.NombreDeIngrediente
 import com.sandyyera.reposteria.data.db.dao.RecetaDao
@@ -319,6 +320,33 @@ class RecetaDaoFalso(
     override fun observarIngredientesDeReceta(recetaId: Long): Flow<List<RecetaIngrediente>> =
         cambios.map { itemsDe(recetaId) }
 
+    /**
+     * Las líneas ya cruzadas con el catálogo, imitando el `JOIN` de la consulta real.
+     *
+     * **El `JOIN` es INNER y acá también**: una fila cuyo ingrediente se borró no aparece, igual
+     * que no suma al costo. Un falso que la dejara pasar aprobaría una versión del resumen que
+     * dibuja renglones sin nombre ni precio.
+     *
+     * Cuelga además de `catalogo.observarTodos()` por lo mismo que el costo: renombrar o cambiarle
+     * el precio a un ingrediente tiene que llegar al resumen sin que nadie lo pida.
+     */
+    override fun observarLineasConIngrediente(recetaId: Long): Flow<List<LineaConIngrediente>> =
+        combine(cambios, catalogo.observarTodos()) { _, fichas ->
+            val porId = fichas.associateBy { it.id }
+            itemsDe(recetaId).mapNotNull { fila ->
+                val ficha = porId[fila.ingredienteId] ?: return@mapNotNull null
+                LineaConIngrediente(
+                    id = fila.id,
+                    seccionId = fila.seccionId,
+                    ingredienteId = fila.ingredienteId,
+                    cantidadG = fila.cantidadG,
+                    unidades = fila.unidades,
+                    nombre = ficha.nombre,
+                    valorPorGramo = ficha.valorPorGramo
+                )
+            }
+        }
+
     override fun observarRendimiento(recetaId: Long): Flow<RecetaRendimiento?> =
         cambios.map { rendimientos.firstOrNull { it.recetaId == recetaId } }
 
@@ -543,6 +571,9 @@ class RecetaDaoFalso(
 
     override suspend fun obtenerDuraciones(recetaId: Long): List<RecetaDuracion> =
         duraciones.filter { it.recetaId == recetaId }
+
+    override fun observarDuraciones(recetaId: Long): Flow<List<RecetaDuracion>> =
+        cambios.map { duraciones.filter { fila -> fila.recetaId == recetaId } }
 
     override suspend fun guardarDuracion(duracion: RecetaDuracion) {
         // El REPLACE real se apoya en la clave primaria (recetaId, tipo): volver a guardar

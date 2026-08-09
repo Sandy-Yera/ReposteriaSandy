@@ -30,13 +30,13 @@ class FirmaTest {
             SeccionDeFirma(
                 seccionId = 1, nombre = nombreDelBizcocho,
                 lineas = listOf(
-                    LineaDeFirma(lineaId = 10, ingredienteId = 100, nombre = nombreDeLaHarina, gramos = harina),
-                    LineaDeFirma(lineaId = 11, ingredienteId = 101, nombre = "Azúcar", gramos = 200.0)
+                    LineaDeFirma(lineaId = 10, ingredienteId = 100, nombre = nombreDeLaHarina, cantidad = harina),
+                    LineaDeFirma(lineaId = 11, ingredienteId = 101, nombre = "Azúcar", cantidad = 200.0)
                 )
             ),
             SeccionDeFirma(
                 seccionId = 2, nombre = "Crema",
-                lineas = listOf(LineaDeFirma(lineaId = 12, ingredienteId = 102, nombre = "Crema de leche", gramos = 300.0))
+                lineas = listOf(LineaDeFirma(lineaId = 12, ingredienteId = 102, nombre = "Crema de leche", cantidad = 300.0))
             )
         ),
         titulos = listOf(TituloDeFirma(seccionId = 1, nombre = nombreDelBizcocho, cuantosPasos = pasos)),
@@ -60,7 +60,7 @@ class FirmaTest {
     fun `se puede buscar una linea por su id, mire en la seccion que mire`() {
         // Es lo que necesita la adaptación en proporción: dado el id de la línea, de cuánto
         // era antes.
-        assertEquals(300.0, bizcocho().linea(12)!!.gramos, 0.001)
+        assertEquals(300.0, bizcocho().linea(12)!!.cantidad, 0.001)
         assertNull(bizcocho().linea(99))
     }
 
@@ -121,24 +121,113 @@ class FirmaTest {
         assertNull(firmaDesdeTexto(""))
         assertNull(firmaDesdeTexto("cualquier cosa"))
         assertNull("Otra versión del formato", firmaDesdeTexto("v9\nG|0"))
-        assertNull("Una línea que no se entiende", firmaDesdeTexto("v2\nX|algo"))
-        assertNull("Un id que no es número", firmaDesdeTexto("v2\nS|uno|Bizcocho\nG|0"))
-        assertNull("Un gramaje que no es número", firmaDesdeTexto("v2\nS|1|A\nI|1|2|3|Harina|mucho"))
-        assertNull("Campos de menos", firmaDesdeTexto("v2\nS|1"))
+        // Van con la versión **actual** a propósito: con una vieja pasarían por el motivo
+        // equivocado —la versión— y dejarían de probar lo que dicen probar.
+        assertNull("Una línea que no se entiende", firmaDesdeTexto("v3\nX|algo"))
+        assertNull("Un id que no es número", firmaDesdeTexto("v3\nS|uno|Bizcocho\nG|0"))
+        assertNull(
+            "Una cantidad que no es número",
+            firmaDesdeTexto("v3\nS|1|A\nI|1|2|3|Harina|mucho|0")
+        )
+        assertNull("Campos de menos", firmaDesdeTexto("v3\nS|1"))
         assertNull(
             "Un ingrediente cuya sección no vino antes",
-            firmaDesdeTexto("v2\nI|9|2|3|Harina|100.0\nG|0")
+            firmaDesdeTexto("v3\nI|9|2|3|Harina|100.0|0\nG|0")
         )
     }
 
     @Test
-    fun `una firma de la version vieja se descarta entera, no se lee a medias`() {
+    fun `una firma de una version vieja se descarta entera, no se lee a medias`() {
         // La `v1` no llevaba el id del ingrediente del catálogo, que es lo único con que se
         // empareja una fila de la copia con la suya en la original. Leerla igual dejaría a la
         // adaptación emparejando a ciegas: perder el aviso es reversible volviendo a traer la
         // receta; pisar las cantidades contra el ingrediente equivocado, no.
         assertNull(firmaDesdeTexto("v1\nS|1|Bizcocho\nI|1|10|Harina|550.0\nG|0"))
+        // La `v2` no decía si la línea se cuenta por unidad, y sin eso una bolsa guardaba 0
+        // —sus gramos son 0 a propósito— y pasar de 2 a 3 bolsas no se notaba (14.1.1).
+        assertNull(firmaDesdeTexto("v2\nS|1|Bizcocho\nI|1|10|7|Harina|550.0\nG|0"))
     }
+
+    @Test
+    fun `lo que se cuenta por unidad se guarda con su cantidad y vuelve igual`() {
+        // Es el arreglo que pidió Sandy: antes la firma guardaba los gramos, que en una bolsa
+        // son 0 a propósito, y el cambio de 2 a 3 bolsas pasaba desapercibido.
+        val conBolsas = FirmaDeReceta(
+            secciones = listOf(
+                SeccionDeFirma(
+                    seccionId = 1,
+                    nombre = "General",
+                    lineas = listOf(
+                        LineaDeFirma(10, 100, "Harina", cantidad = 500.0),
+                        LineaDeFirma(11, 101, "Bolsas", cantidad = 2.0, esObjeto = true)
+                    )
+                )
+            ),
+            titulos = emptyList(),
+            pasosGenerales = 0
+        )
+        assertEquals(conBolsas, firmaDesdeTexto(textoDeFirma(conBolsas)))
+    }
+
+    @Test
+    fun `cambiar las unidades de un material avisa, y lo dice en unidades`() {
+        val antes = conBolsas(2.0)
+        val ahora = conBolsas(3.0)
+
+        val frases = compararFirmas(antes, ahora).map { it.frase }
+
+        assertEquals(listOf("'Bolsas' pasó de 2 a 3 unidades"), frases)
+    }
+
+    @Test
+    fun `una sola bolsa se nombra en singular`() {
+        val frases = compararFirmas(conBolsas(3.0), conBolsas(1.0)).map { it.frase }
+
+        assertEquals(listOf("'Bolsas' pasó de 3 a 1 unidad"), frases)
+    }
+
+    @Test
+    fun `con un material por unidad en el medio no se resume como reescalado`() {
+        // Reescalar por molde **no toca** lo que se cuenta por unidad (14.1.1), así que si una
+        // bolsa cambió lo que pasó no fue un reescalado. Resumirlo como tal contaría mal la
+        // noticia, que es justo lo que ese resumen existe para evitar.
+        fun receta(factor: Double) = FirmaDeReceta(
+            secciones = listOf(
+                SeccionDeFirma(
+                    seccionId = 1,
+                    nombre = "General",
+                    lineas = listOf(
+                        LineaDeFirma(10, 100, "Harina", cantidad = 100.0 * factor),
+                        LineaDeFirma(11, 101, "Azúcar", cantidad = 50.0 * factor),
+                        LineaDeFirma(12, 102, "Bolsas", cantidad = 1.0 * factor, esObjeto = true)
+                    )
+                )
+            ),
+            titulos = emptyList(),
+            pasosGenerales = 0
+        )
+
+        val frases = compararFirmas(receta(1.0), receta(2.0)).map { it.frase }
+
+        assertEquals(3, frases.size)
+        assertTrue(
+            "La bolsa se cuenta en unidades y no en gramos",
+            frases.any { it == "'Bolsas' pasó de 1 a 2 unidades" }
+        )
+    }
+
+    /** Una receta de una sola bolsa, para mover solo ese número. */
+    private fun conBolsas(cuantas: Double) = FirmaDeReceta(
+        secciones = listOf(
+            SeccionDeFirma(
+                seccionId = 1,
+                nombre = "General",
+                lineas = listOf(LineaDeFirma(11, 101, "Bolsas", cuantas, esObjeto = true))
+            )
+        ),
+        titulos = emptyList(),
+        pasosGenerales = 0
+    )
 
     @Test
     fun `una receta vacia tambien tiene firma`() {
@@ -191,8 +280,8 @@ class FirmaTest {
                 SeccionDeFirma(
                     seccionId = 1, nombre = "Bizcocho",
                     lineas = listOf(
-                        LineaDeFirma(lineaId = 10, ingredienteId = 100, nombre = "Harina", gramos = 400.0),
-                        LineaDeFirma(lineaId = 11, ingredienteId = 100, nombre = "Harina", gramos = 150.0)
+                        LineaDeFirma(lineaId = 10, ingredienteId = 100, nombre = "Harina", cantidad = 400.0),
+                        LineaDeFirma(lineaId = 11, ingredienteId = 100, nombre = "Harina", cantidad = 150.0)
                     )
                 )
             ),
@@ -330,7 +419,7 @@ class FirmaTest {
     /** La misma receta con **todas** sus cantidades multiplicadas por [factor]. */
     private fun reescalada(factor: Double, sobre: FirmaDeReceta = bizcocho()) = sobre.copy(
         secciones = sobre.secciones.map { seccion ->
-            seccion.copy(lineas = seccion.lineas.map { it.copy(gramos = redondear(it.gramos * factor)) })
+            seccion.copy(lineas = seccion.lineas.map { it.copy(cantidad = redondear(it.cantidad * factor)) })
         }
     )
 
@@ -381,7 +470,7 @@ class FirmaTest {
         val ahora = reescalada(2.0).let { r ->
             r.copy(
                 secciones = r.secciones.mapIndexed { i, s ->
-                    if (i == 1) s.copy(lineas = s.lineas.map { it.copy(gramos = 999.0) }) else s
+                    if (i == 1) s.copy(lineas = s.lineas.map { it.copy(cantidad = 999.0) }) else s
                 }
             )
         }

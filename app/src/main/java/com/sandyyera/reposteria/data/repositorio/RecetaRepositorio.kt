@@ -18,6 +18,15 @@ import com.sandyyera.reposteria.logica.moldes.DimensionesMolde
 import com.sandyyera.reposteria.logica.moldes.ModoReescalado
 import com.sandyyera.reposteria.logica.moldes.factorEscala
 import com.sandyyera.reposteria.logica.precios.DatosCalculoReceta
+import com.sandyyera.reposteria.data.db.dao.LineaConIngrediente
+import com.sandyyera.reposteria.logica.duracion.describirDuracion
+import com.sandyyera.reposteria.logica.duracion.nombreDelTipoDeDuracion
+import com.sandyyera.reposteria.logica.moldes.medidaDelTrozo
+import com.sandyyera.reposteria.logica.moldes.medidasEnTexto
+import com.sandyyera.reposteria.logica.partes.PasoParaMostrar
+import com.sandyyera.reposteria.logica.partes.SeccionParaTitulo
+import com.sandyyera.reposteria.logica.partes.bloquesDePasos
+import com.sandyyera.reposteria.logica.precios.gananciaPorTrozoDe
 import com.sandyyera.reposteria.logica.precios.ModoPrecio
 import com.sandyyera.reposteria.logica.busqueda.sonElMismoTexto
 import com.sandyyera.reposteria.logica.busqueda.marcarRepetidos
@@ -159,6 +168,81 @@ data class LineaDeIngredienteDeSeccion(
 
     val comoSeLee: String get() = comoSeEscribe
 }
+
+/**
+ * La receta entera lista para leerse de un vistazo (8.12).
+ *
+ * **Es un resumen y no otra copia del modelo.** Cada parte trae lo que se muestra ya resuelto —
+ * los textos, las cuentas— para que la pantalla no tenga que volver a decidir cómo se lee nada:
+ * esa decisión ya la toma cada paso, y tomarla dos veces es cómo dos pantallas terminan diciendo
+ * cosas distintas del mismo dato.
+ *
+ * Lo que **no** trae es cómo editar. Editar sigue viviendo en el paso que corresponde, y desde acá
+ * se salta a él: duplicar los formularios dejaría dos lugares donde arreglar cada error.
+ */
+data class ResumenDeReceta(
+    val titulo: String,
+    val pasoPrevio: String,
+    val secciones: List<SeccionDelResumen>,
+    val costoTotal: Double,
+    val duraciones: List<String>,
+    val molde: String?,
+    val rendimiento: RendimientoDelResumen,
+    val precios: List<PrecioDelResumen>,
+    val simulacion: String?,
+    val bloquesDePasos: List<BloqueDelResumen>,
+    /** Los grupos traídos de otra receta, para marcar sus partes y mostrar si hay aviso (8.11). */
+    val partes: List<ParteTraida>
+) {
+    val sinIngredientes: Boolean get() = secciones.all { it.lineas.isEmpty() }
+    val sinPasos: Boolean get() = bloquesDePasos.isEmpty()
+    val sinPrecios: Boolean get() = precios.isEmpty()
+
+    /** Si alguna parte traída tiene un aviso pendiente. Lo muestra el encabezado del resumen. */
+    val hayAvisoDePartes: Boolean get() = partes.any { it.hayQueAvisar }
+
+    /** De qué receta vino esta parte, o `null` si es propia. Mismo texto que en cantidades. */
+    fun deDondeViene(seccionId: Long): String? {
+        val parte = partes.firstOrNull { seccionId in it.seccionIds } ?: return null
+        return parte.tituloDelOrigen?.let { "de '$it'" } ?: "de una receta eliminada"
+    }
+}
+
+/** Una parte de la receta con lo que lleva, ya escrito. */
+data class SeccionDelResumen(
+    val id: Long,
+    /** `null` cuando los nombres de sección no se muestran (8.2). */
+    val nombre: String?,
+    val lineas: List<LineaDelResumen>,
+    val costo: Double
+)
+
+/** Una línea de ingrediente tal como se lee: "500 g de Harina · $600". */
+data class LineaDelResumen(val cuanto: String, val nombre: String, val subtotal: Double)
+
+/** El rendimiento, con lo que hace falta para leerlo sin abrir el paso. */
+data class RendimientoDelResumen(
+    val trozos: Int,
+    val pesoFinalG: Double?,
+    val medidaDelTrozo: String?,
+    /** El peso quedó de un reescalado y nadie lo revisó todavía (9.3). Se dice, no se esconde. */
+    val pesoSinRevisar: Boolean
+)
+
+/** Un precio con su ganancia por trozo, que es lo que se mira. */
+data class PrecioDelResumen(
+    val comoSeLee: String,
+    val gananciaPorTrozo: Double,
+    val esReferencia: Boolean
+)
+
+/** Un bloque de pasos con su encabezado y sus renglones numerados. */
+data class BloqueDelResumen(
+    val encabezado: String?,
+    val vieneDe: String?,
+    val esGeneralAnidado: Boolean,
+    val pasos: List<String>
+)
 
 /**
  * Todo lo que se hace con una receta y sus partes.
@@ -1552,7 +1636,11 @@ class RecetaRepositorio(
                                 // Un ingrediente borrado del catálogo deja su fila sin nombre;
                                 // la firma se arma igual, porque lo que compara son cantidades.
                                 nombre = nombres[fila.ingredienteId] ?: "Ese ingrediente",
-                                gramos = fila.cantidadG
+                                // La cantidad **en su unidad**: los gramos de una bolsa son 0 a
+                                // propósito (14.1.1), y guardarlos dejaría la firma sin notar
+                                // que se pasó de 2 a 3 bolsas.
+                                cantidad = fila.unidades ?: fila.cantidadG,
+                                esObjeto = fila.unidades != null
                             )
                         }
                     )
@@ -1588,6 +1676,188 @@ class RecetaRepositorio(
      * receta. Por eso se cuelga de [RecetaDao.latidoDePartes] además de las secciones — sin él,
      * cambiar los gramos del bizcocho no movería nada en la torta hasta reabrirla.
      */
+    // --- El resumen de la receta (8.12) ---
+
+    /**
+     * La receta entera, lista para leerse de un vistazo y avisando cuando cambie (8.12).
+     *
+     * **Es un solo observador y no siete pantallas suscritas cada una a lo suyo.** El resumen
+     * muestra todo a la vez, así que necesita todo a la vez; armarlo en la pantalla con siete
+     * `collectAsState` daría siete recomposiciones distintas por cada cambio, y el primer instante
+     * de cada uno en blanco — que es exactamente el parpadeo que ya costó centralizar el título.
+     *
+     * `combine` llega hasta cinco flujos y acá hacen falta nueve, así que van anidados en dos
+     * grupos. No cambia cuándo emite nada: sigue emitiendo cuando cambia cualquiera.
+     *
+     * Devuelve `null` cuando la receta ya no existe, que pasa de verdad: borrarla desde otra
+     * pantalla mientras esta está abierta. La pantalla lo usa para cerrarse sola en vez de
+     * quedarse mostrando una receta que no está.
+     */
+    fun observarResumen(recetaId: Long): Flow<ResumenDeReceta?> = combine(
+        combine(
+            dao.observarReceta(recetaId),
+            dao.observarSecciones(recetaId),
+            dao.observarLineasConIngrediente(recetaId),
+            observarCosto(recetaId)
+        ) { receta, secciones, lineas, costo ->
+            LoDeLosIngredientes(receta, secciones, lineas, costo)
+        },
+        combine(
+            dao.observarRendimiento(recetaId),
+            dao.observarDuraciones(recetaId),
+            dao.observarPrecios(recetaId),
+            dao.observarSimulacionVenta(recetaId),
+            dao.observarPasos(recetaId)
+        ) { rendimiento, duraciones, precios, simulacion, pasos ->
+            LoDeLasCifras(rendimiento, duraciones, precios, simulacion, pasos)
+        },
+        observarPartesDe(recetaId)
+    ) { ingredientes, cifras, partes ->
+        val receta = ingredientes.receta ?: return@combine null
+        armarResumen(receta, ingredientes, cifras, partes)
+    }
+
+    /** Las cinco fuentes del primer grupo, juntas para que quepan en un `combine`. */
+    private data class LoDeLosIngredientes(
+        val receta: Receta?,
+        val secciones: List<RecetaSeccion>,
+        val lineas: List<LineaConIngrediente>,
+        val costo: Double
+    )
+
+    /** Las cinco del segundo grupo. */
+    private data class LoDeLasCifras(
+        val rendimiento: RecetaRendimiento?,
+        val duraciones: List<RecetaDuracion>,
+        val precios: List<RecetaPrecio>,
+        val simulacion: RecetaSimulacionVenta?,
+        val pasos: List<RecetaPaso>
+    )
+
+    /**
+     * Convierte lo que devuelve la base en el resumen que se dibuja.
+     *
+     * **Todos los textos se arman acá y no en la pantalla**, con las mismas funciones de
+     * `logica/` que usa cada paso: `describirDuracion`, `medidasEnTexto`, `medidaDelTrozo`,
+     * `descripcionDePromocion`, `bloquesDePasos`. Si el resumen escribiera sus propias frases,
+     * tarde o temprano diría de un molde algo distinto que el paso del molde.
+     */
+    private fun armarResumen(
+        receta: Receta,
+        deIngredientes: LoDeLosIngredientes,
+        deCifras: LoDeLasCifras,
+        partes: List<ParteTraida>
+    ): ResumenDeReceta {
+        val porSeccion = deIngredientes.lineas.groupBy { it.seccionId }
+        val conNombre = debenMostrarseLosNombresDeSeccion(
+            deIngredientes.secciones.map { it.nombreSeccion }
+        )
+
+        val secciones = deIngredientes.secciones.map { seccion ->
+            // Las filas cuyo ingrediente ya no está en el catálogo no llegan hasta acá: el
+            // `JOIN` de la consulta es INNER, igual que el del costo (8.2).
+            val lineas = porSeccion[seccion.id].orEmpty().map { fila ->
+                LineaDelResumen(
+                    cuanto = if (fila.esObjeto) {
+                        "${formatearNumero(fila.cuanto)} " +
+                            if (fila.cuanto == 1.0) "unidad" else "unidades"
+                    } else {
+                        "${formatearNumero(fila.cuanto)} g"
+                    },
+                    nombre = fila.nombre,
+                    subtotal = fila.subtotal
+                )
+            }
+            SeccionDelResumen(
+                id = seccion.id,
+                nombre = seccion.nombreSeccion.takeIf { conNombre },
+                lineas = lineas,
+                costo = lineas.sumOf { it.subtotal }
+            )
+        }
+
+        val rendimiento = deCifras.rendimiento
+        val dimensiones = rendimiento?.dimensiones
+        val datos = DatosCalculoReceta(
+            recetaId = receta.id,
+            titulo = receta.titulo,
+            costoTotal = deIngredientes.costo,
+            trozos = rendimiento?.trozos ?: 1,
+            precios = deCifras.precios.map { it.aVigente() }
+        )
+
+        val bloques = bloquesDePasos(
+            pasos = deCifras.pasos.map {
+                PasoParaMostrar(
+                    id = it.id,
+                    texto = it.contenido,
+                    titulo = it.tituloSeccionId,
+                    esGeneralAnidado = it.esGeneralAnidado,
+                    orden = it.orden
+                )
+            },
+            seccionesDeLaReceta = deIngredientes.secciones.map {
+                SeccionParaTitulo(it.id, it.nombreSeccion)
+            }
+        )
+
+        val resumen = ResumenDeReceta(
+            titulo = receta.titulo,
+            pasoPrevio = receta.pasoPrevio,
+            secciones = secciones,
+            costoTotal = deIngredientes.costo,
+            duraciones = deCifras.duraciones
+                .sortedBy { it.tipo.ordinal }
+                .map {
+                    "${nombreDelTipoDeDuracion(it.tipo)}: " +
+                        describirDuracion(it.apto, it.cantidad, it.unidad)
+                },
+            molde = dimensiones?.let { medidasEnTexto(it, ::formatearNumero) },
+            rendimiento = RendimientoDelResumen(
+                trozos = rendimiento?.trozos ?: 1,
+                pesoFinalG = rendimiento?.pesoFinalG,
+                medidaDelTrozo = dimensiones?.let {
+                    medidaDelTrozo(
+                        dimensiones = it,
+                        corte = it.formaDelCorte,
+                        trozos = rendimiento.trozos,
+                        trozosALoLargo = rendimiento.trozosALoLargo,
+                        formatear = ::formatearNumero
+                    )
+                },
+                pesoSinRevisar = rendimiento?.pesoReescaladoSinRevisar == true
+            ),
+            precios = datos.precios.map {
+                PrecioDelResumen(
+                    comoSeLee = "${descripcionDePromocion(it)} · " +
+                        "$${formatearNumero(it.precioTotal)}",
+                    gananciaPorTrozo = gananciaPorTrozoDe(it, datos),
+                    esReferencia = it.esReferencia
+                )
+            },
+            // Sin precio no hay nada que proyectar, y decir "0 al mes" sería inventar una
+            // cifra: la simulación se muestra solo cuando las dos mitades existen (8.7).
+            simulacion = deCifras.simulacion?.takeIf { datos.tienePrecio }?.let {
+                "${it.unidadesPorDia} por día, ${it.diasPorSemana} días a la semana"
+            },
+            bloquesDePasos = emptyList(),
+            partes = partes
+        )
+
+        // Los bloques se arman después para poder preguntarle al resumen de dónde viene cada
+        // uno: la regla de "de qué receta vino esta parte" vive en un solo lugar.
+        return resumen.copy(
+            bloquesDePasos = bloques.map { bloque ->
+                BloqueDelResumen(
+                    encabezado = bloque.encabezado,
+                    vieneDe = bloque.titulo?.let { resumen.deDondeViene(it) },
+                    esGeneralAnidado = bloque.esGeneralAnidado,
+                    pasos = bloque.pasos.map { "${it.numero}. ${it.paso.texto}" }
+                )
+            }
+        )
+    }
+
     fun observarPartesDe(recetaId: Long): Flow<List<ParteTraida>> =
         combine(dao.observarSecciones(recetaId), dao.latidoDePartes()) { secciones, _ ->
             armarPartes(secciones.filter { it.esTraida })
@@ -1710,7 +1980,7 @@ class RecetaRepositorio(
                 // Lo que se cuenta por unidad no se adapta, por lo mismo que no se reescala
                 // (14.5): la proporción es entre gramos, y una caja no tiene.
                 if (aca.unidades != null) return@forEach
-                val antes = vinculo.firma.linea(alla.id)?.gramos ?: return@forEach
+                val antes = vinculo.firma.linea(alla.id)?.cantidad ?: return@forEach
                 dao.actualizarCantidad(
                     itemId = aca.id,
                     cantidad = cantidadAdaptada(aca.cantidadG, antes, alla.cantidadG),

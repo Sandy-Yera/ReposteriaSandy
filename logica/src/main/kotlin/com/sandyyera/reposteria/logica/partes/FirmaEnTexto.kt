@@ -13,28 +13,35 @@ package com.sandyyera.reposteria.logica.partes
  * base:
  *
  * ```
- * v2
+ * v3
  * S|12|Bizcocho
- * I|12|34|7|Harina|550.0
- * I|12|35|9|Azúcar|200.0
+ * I|12|34|7|Harina|550.0|0
+ * I|12|36|9|Bolsas|2.0|1
  * T|12|Bizcocho|3
  * G|2
  * ```
  *
  * `S` es una sección (id y nombre), `I` un ingrediente dentro de ella (sección, id de la fila,
- * id del ingrediente del catálogo, nombre y gramos), `T` cuántos pasos van bajo un título y `G`
- * cuántos pasos generales hay. **Las claves son números y los nombres van escapados**, así que
+ * id del ingrediente del catálogo, nombre, cantidad y si se cuenta por unidad), `T` cuántos
+ * pasos van bajo un título y `G` cuántos pasos generales hay. **Las claves son números y los nombres van escapados**, así que
  * un nombre raro puede ensuciar lo que se lee pero nunca puede partir un campo en dos.
  *
  * La versión de la primera línea es lo que permite cambiar el formato más adelante sin romper lo
  * ya guardado: una firma que no se entienda se descarta y la sección deja de avisar, que es
- * mucho mejor que reventar al abrir una receta. **Ya se usó**: la `v2` agrega el id del
- * ingrediente del catálogo, que es lo único que permite emparejar una fila de la copia con la
- * suya en la original (ver [LineaDeFirma]). Una `v1` guardada se descarta entera en vez de
- * leerse a medias — perder el aviso es reversible volviendo a traer la receta; emparejar mal
- * las cantidades, no.
+ * mucho mejor que reventar al abrir una receta. **Ya se usó dos veces**:
+ *
+ * - La `v2` agregó el id del ingrediente del catálogo, que es lo único que permite emparejar una
+ *   fila de la copia con la suya en la original (ver [LineaDeFirma]).
+ * - La `v3` agrega **si la línea se cuenta por unidad**, y con eso la cantidad pasó a ser la de
+ *   su unidad y no los gramos. Sin el cambio, una bolsa guardaba 0 —sus gramos son 0 a propósito
+ *   (14.1.1)— y pasar de 2 a 3 bolsas no se notaba, aunque cueste dinero.
+ *
+ * Una firma de versión vieja **se descarta entera** en vez de leerse a medias: perder el aviso es
+ * reversible volviendo a traer la receta; emparejar mal las cantidades, no. En la práctica las
+ * secciones ya traídas dejan de avisar una vez, hasta que se vuelvan a traer o se toque
+ * "Mantener", que es lo que vuelve a tomar la foto.
  */
-private const val VERSION_DE_LA_FIRMA = "v2"
+private const val VERSION_DE_LA_FIRMA = "v3"
 
 /**
  * Convierte una firma a texto, escapando lo que podría partir el formato.
@@ -50,7 +57,7 @@ fun textoDeFirma(firma: FirmaDeReceta): String {
         lineas += "S|${seccion.seccionId}|${escapar(seccion.nombre)}"
         seccion.lineas.forEach { linea ->
             lineas += "I|${seccion.seccionId}|${linea.lineaId}|${linea.ingredienteId}|" +
-                "${escapar(linea.nombre)}|${linea.gramos}"
+                "${escapar(linea.nombre)}|${linea.cantidad}|${if (linea.esObjeto) 1 else 0}"
         }
     }
     firma.titulos.forEach {
@@ -91,7 +98,7 @@ fun firmaDesdeTexto(texto: String?): FirmaDeReceta? {
                 contenido[id] = mutableListOf()
             }
             "I" -> {
-                if (campos.size != 6) return null
+                if (campos.size != 7) return null
                 val seccionId = campos[1].toLongOrNull() ?: return null
                 // Un ingrediente cuya sección no vino antes es una firma rota, no una a la
                 // que le falte un dato: descartarla entera es más honesto que inventar.
@@ -100,7 +107,8 @@ fun firmaDesdeTexto(texto: String?): FirmaDeReceta? {
                     lineaId = campos[2].toLongOrNull() ?: return null,
                     ingredienteId = campos[3].toLongOrNull() ?: return null,
                     nombre = desescapar(campos[4]),
-                    gramos = campos[5].toDoubleOrNull() ?: return null
+                    cantidad = campos[5].toDoubleOrNull() ?: return null,
+                    esObjeto = campos[6] == "1"
                 )
             }
             "T" -> {

@@ -1931,6 +1931,77 @@ que si después se renombra o se quita ese ingrediente, el paso sigue diciendo l
 lo mismo que ya pasa con cualquier cosa escrita a mano en un paso, y arreglarlo obligaría a
 que los pasos dejaran de ser texto libre.
 
+### 8.12 El resumen: la receta entera de un vistazo
+
+Una receta **se arma una vez y se lee muchas**, y hasta acá solo existía la mitad de eso. Los
+siete pasos son un formulario: sirven para llenarla. Para leerla —qué lleva, cuánto rinde, qué
+cuesta, cómo se hace— había que recorrerlos uno por uno acordándose del anterior.
+
+El resumen es esa otra mitad, y **es donde se abre una receta** desde la lista.
+
+#### 8.12.1 Un acordeón, y por qué no todo desplegado
+
+Cada parte de la receta es un panel con **una línea de resumen que se ve siempre**, abierto o
+cerrado:
+
+```
+Cantidades          $1.150 en ingredientes
+Duración            2 anotadas
+Molde               26 × 25 × 10 cm
+Rendimiento         6 trozos
+Gastos y ganancias  2 precios
+Ganancias simuladas 2 por día, 4 días a la semana
+Pasos               8 pasos
+```
+
+Con todo cerrado, esas siete líneas ya contestan en qué estado está la receta: qué falta, qué
+cuesta, cuánto rinde. **Esa es la pantalla, no un paso previo a abrir algo.**
+
+**Una parte abierta a la vez.** Con todas abiertas esto sería la receta desplegada en una tira
+larguísima, que es exactamente lo que ya se puede ver recorriendo los pasos — y entonces el
+resumen dejaría de resumir. Tocar la que está abierta la cierra, para poder volver al índice sin
+tener que abrir otra.
+
+#### 8.12.2 No edita: lleva a editar
+
+Cada parte abierta tiene su botón que abre el paso correspondiente. **Los formularios no se
+copian acá**, y esa es la decisión de fondo de esta pantalla.
+
+Duplicarlos dejaría dos lugares donde arreglar cada error, y los pasos ya tienen resueltos sus
+casos raros: el peso que viene de un reescalado y nadie revisó (9.3), el bautizo de la primera
+sección al partirla en dos (8.2), la promoción que no cabe en los trozos (6.2), el aviso de que
+la receta traída cambió (8.11.3). Una segunda copia de esos formularios empezaría sin ninguna de
+esas reglas y las iría reencontrando de a una, en producción.
+
+Lo que sí hace el resumen es **decir dónde se resuelve cada cosa**: el aviso de una parte traída
+se ve arriba y dice que se revisa en Cantidades, porque ahí están las tres salidas. Un aviso que
+se ve pero no se puede tocar manda a buscarlo, y normalmente a la parte equivocada.
+
+#### 8.12.3 Un solo observador para toda la receta
+
+El resumen muestra las siete partes a la vez, así que las necesita a la vez. Suscribirse por
+separado a cada una daría **siete recomposiciones por cada cambio** y siete primeros instantes en
+blanco — el mismo parpadeo que ya obligó a centralizar el título de la receta.
+
+Por eso el armado vive en `observarResumen` del repositorio, que es donde están las consultas, y
+el ViewModel solo agrega qué panel está abierto. `combine` llega hasta cinco flujos y acá hacen
+falta nueve, así que van en dos grupos anidados; no cambia cuándo emite nada.
+
+**Todos los textos se arman con las mismas funciones que usa cada paso** —`describirDuracion`,
+`medidasEnTexto`, `medidaDelTrozo`, `descripcionDePromocion`, `bloquesDePasos`—. Si el resumen
+escribiera sus propias frases, tarde o temprano diría de un molde algo distinto que el paso del
+molde, y no habría forma de saber cuál de los dos está bien.
+
+#### 8.12.4 Lo vacío se dice, y se dice por qué
+
+Una parte sin llenar no muestra "sin anotar" a secas: dice **si eso está bien o qué falta**. En
+esta app no es lo mismo — la duración es opcional y hay recetas que se saben de memoria; el
+precio no lo es, y sin él la simulación no tiene nada que proyectar. Un mismo texto para los dos
+casos deja dudando entre "no lo llené" y "no hace falta".
+
+Cuando la receta se borra desde otra pantalla mientras esta está abierta, el resumen **lo dice y
+no dibuja cifras**: media receta a medio llegar se lee como una receta incompleta.
+
 ## 9. Módulo Moldes (nuevo)
 
 ### 9.1 Medir el molde (paso 1 de cualquier reescalado)
@@ -2189,12 +2260,16 @@ Lo que la pantalla dice de un objeto es justamente eso: *"se cuenta por unidad: 
 cualquier ingrediente, pero no suma al peso de la receta"*. Decir solo "es un objeto" dejaría la
 duda de cuál de las dos cosas cambia.
 
-**Lo que todavía no ve la firma.** Una receta traída avisa cuando la original cambia sus
-cantidades (8.11.3), y esa comparación es por gramos: si la original pasa de 2 cajas a 3, la
-copia no se entera. El formato de la firma ya tiene línea de versión justamente para arreglos
-así (5.5.1); no está hecho todavía porque hacerlo descarta las firmas guardadas —las secciones
-traídas dejan de avisar hasta volver a traerlas— y ningún dato existente puede caer en este caso,
-que nació con esta versión.
+**La firma también los ve.** Una receta traída avisa cuando la original cambia sus cantidades
+(8.11.3), y esa comparación pasó a ser por la cantidad **en su unidad**: si la original pasa de 2
+bolsas a 3, la copia se entera y lo dice en unidades. Antes comparaba gramos y una bolsa guardaba
+0, así que ese cambio no se notaba aunque cueste dinero. El formato de la firma subió a `v3` por
+esto, y **las firmas guardadas antes se descartan**: las secciones ya traídas dejan de avisar una
+vez, hasta volver a traerlas o tocar "Mantener", que es lo que vuelve a tomar la foto.
+
+Un reescalado, en cambio, **descarta el resumen de "todas se multiplicaron por X"** si entre las
+cantidades que cambiaron hay un objeto: reescalar no los toca, así que si una bolsa se movió lo
+que pasó no fue un reescalado, y contarlo como tal sería contar mal la noticia.
 
 ### 14.2 Lo que se hace todos los días
 
@@ -2899,8 +2974,10 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 
 ### Fase 10 — Vista final de receta + lista
 
-- **Construyes:** `DetalleRecetaScreen` (acordeón editable) + `ListaRecetasScreen` (botón fijo, buscador, listado), borrado de receta con confirmación (6.3) y cascada a empleados.
-- **Hecho cuando:** cualquier receta de fases 3–9 se ve y edita sección por sección sin perder datos, aparece bien en la lista con buscador funcional, y borrar una receta con sueldos de empleado asignados avisa a cuáles afecta antes de confirmar y luego los quita sin dejar datos huérfanos.
+- **Construyes:** el resumen de la receta (8.12) como acordeón + `ListaRecetasScreen` (botón fijo, buscador, listado), borrado de receta con confirmación (6.3) y cascada a empleados.
+- **Hecho cuando:** cualquier receta de fases 3–9 se ve entera de un vistazo y se llega a editar cualquier parte sin perder datos, aparece bien en la lista con buscador funcional, y borrar una receta con sueldos de empleado asignados avisa a cuáles afecta antes de confirmar y luego los quita sin dejar datos huérfanos.
+- **El acordeón muestra y no edita**, que es lo que cambió respecto del plan original: los siete pasos ya tienen los formularios y sus casos raros resueltos —el peso sin revisar, el bautizo de la primera sección, la promoción que no cabe—, y una segunda copia empezaría sin ninguna de esas reglas. Cada parte lleva a su paso en un toque, que es lo que el plan quería lograr: llegar a cualquier sección sin recorrer el asistente entero. Ver 8.12.2.
+- **La cascada a empleados no se comprueba todavía**, porque el módulo Empleados es la Fase 11. Lo que sí está es la cascada declarada en la entidad y el aviso de a qué recetas afecta borrar una (8.11.4).
 
 ### Fase 11 — Módulo Empleados completo
 

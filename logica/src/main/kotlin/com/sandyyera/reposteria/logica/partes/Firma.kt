@@ -36,7 +36,18 @@ data class LineaDeFirma(
     val lineaId: Long,
     val ingredienteId: Long,
     val nombre: String,
-    val gramos: Double
+    /**
+     * Cuánto lleva, **en su unidad**: gramos, o unidades si [esObjeto] (14.1.1).
+     *
+     * Se llamaba `gramos` y el nombre mentía en un caso: una bolsa se cuenta por unidad y sus
+     * gramos son 0 a propósito, así que la firma guardaba 0 para todas y **un cambio de 2 a 3
+     * bolsas no se notaba**. Lo pidió Sandy — *"los materiales hechos por unidad también
+     * deberían ser avisados"*— y tenía razón: esos materiales cuestan, así que cambiarlos
+     * cambia la receta.
+     */
+    val cantidad: Double,
+    /** Si se cuenta por unidad. Solo cambia **cómo se lee** la frase: "3 unidades", no "3 g". */
+    val esObjeto: Boolean = false
 )
 
 /** Una sección de la receta original, con lo que llevaba al momento de copiarla. */
@@ -151,8 +162,9 @@ fun compararFirmas(antes: FirmaDeReceta, ahora: FirmaDeReceta): List<CambioDetec
             val nuevo = deAhora.getValue(lineaId)
             cantidades += CambioDeCantidad(
                 nombre = nuevo.nombre,
-                antes = deAntes.getValue(lineaId).gramos,
-                ahora = nuevo.gramos
+                antes = deAntes.getValue(lineaId).cantidad,
+                ahora = nuevo.cantidad,
+                esObjeto = nuevo.esObjeto
             )
         }
     }
@@ -182,7 +194,22 @@ fun compararFirmas(antes: FirmaDeReceta, ahora: FirmaDeReceta): List<CambioDetec
 }
 
 /** Una cantidad que puede haber cambiado, mientras se decide cómo contarla. */
-private data class CambioDeCantidad(val nombre: String, val antes: Double, val ahora: Double)
+private data class CambioDeCantidad(
+    val nombre: String,
+    val antes: Double,
+    val ahora: Double,
+    val esObjeto: Boolean
+) {
+    /** "3 unidades" o "500 g". Sin esto la frase diría "3 g" de algo que se cuenta por unidad. */
+    fun comoSeLee(cuanto: Double): String {
+        val numero = formatearNumero(cuanto)
+        return if (esObjeto) {
+            "$numero ${if (cuanto == 1.0) "unidad" else "unidades"}"
+        } else {
+            "$numero g"
+        }
+    }
+}
 
 /**
  * Desde cuántos ingredientes conviene resumir un reescalado en una sola frase.
@@ -211,14 +238,26 @@ const val MINIMO_PARA_RESUMIR_REESCALADO = 3
  * proporción —es el mismo caso que `cantidadAdaptada` resuelve devolviendo la cantidad nueva—,
  * así que no se puede afirmar que sigan el factor de las demás. Es un caso raro y ahí se
  * prefiere el detalle, que nunca miente.
+ *
+ * **Lo que se cuenta por unidad también lo descarta**, y por una razón distinta: reescalar no lo
+ * toca (14.1.1), así que si una bolsa cambió de 2 a 3 lo que pasó no fue un reescalado. Decir
+ * "todas las cantidades se multiplicaron por 1,5" con un objeto en el medio sería contar mal la
+ * noticia, que es justo lo que este resumen existe para evitar.
  */
 private fun frasesDeCantidades(cambios: List<CambioDeCantidad>): List<String> {
     val detalle = cambios.filter { !sonElMismoGramaje(it.antes, it.ahora) }.map {
-        "'${it.nombre}' pasó de ${formatearNumero(it.antes)} a ${formatearNumero(it.ahora)} g"
+        // La unidad va **solo en el segundo número**: "de 550 a 500 g" se lee como se habla,
+        // y repetirla en los dos suena a formulario. El plural sale del segundo, que es el que
+        // la lleva: "de 3 a 1 unidad".
+        "'${it.nombre}' pasó de ${formatearNumero(it.antes)} a ${it.comoSeLee(it.ahora)}"
     }
     if (cambios.size < MINIMO_PARA_RESUMIR_REESCALADO) return detalle
     if (detalle.size != cambios.size) return detalle
     if (cambios.any { it.antes <= 0.0 }) return detalle
+    // Un reescalado **no toca lo que se cuenta por unidad** (14.1.1): reescalar por molde
+    // cambia cuánta masa hay, no cuántas bolsas se usan. Si entre las que cambiaron hay un
+    // objeto, lo que pasó no fue un reescalado, y resumirlo como tal sería contarlo mal.
+    if (cambios.any { it.esObjeto }) return detalle
 
     val factor = cambios.first().let { it.ahora / it.antes }
     if (!cambios.all { sigueElFactor(it.antes, it.ahora, factor) }) return detalle

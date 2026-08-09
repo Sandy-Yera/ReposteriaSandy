@@ -105,8 +105,8 @@ class VinculoTest {
         assertNull(vinculoDesdeTexto(null))
         assertNull(vinculoDesdeTexto(""))
         assertNull("Sin el envoltorio", vinculoDesdeTexto(textoDeFirma(vinculo.firma)))
-        assertNull("Un id que no es número", vinculoDesdeTexto("P|doce\nv2\nG|0"))
-        assertNull("Un envoltorio desconocido", vinculoDesdeTexto("Z|12\nv2\nG|0"))
+        assertNull("Un id que no es número", vinculoDesdeTexto("P|doce\nv3\nG|0"))
+        assertNull("Un envoltorio desconocido", vinculoDesdeTexto("Z|12\nv3\nG|0"))
         assertNull("La firma rota, aunque el envoltorio esté bien", vinculoDesdeTexto("P|12\nv1\nG|0"))
     }
 }

@@ -32,6 +32,31 @@ data class TrozosDeReceta(val recetaId: Long, val trozos: Int)
  */
 data class NombreDeIngrediente(val id: Long, val nombre: String)
 
+/**
+ * Una línea de receta con el nombre y el precio de su ingrediente (8.12).
+ *
+ * Existe para el resumen, que muestra todas las líneas de una vez y no necesita el catálogo para
+ * nada más. Trae [unidades] junto a [cantidadG] porque son **una sola cantidad contada de dos
+ * formas**: leer una sin la otra deja una bolsa en 0 g, que es exactamente lo que no se quiere
+ * mostrar (14.1.1).
+ */
+data class LineaConIngrediente(
+    val id: Long,
+    val seccionId: Long,
+    val ingredienteId: Long,
+    val cantidadG: Double,
+    val unidades: Double?,
+    val nombre: String,
+    val valorPorGramo: Double
+) {
+    /** La cantidad en su unidad, que es la que multiplica el costo. */
+    val cuanto: Double get() = unidades ?: cantidadG
+
+    val esObjeto: Boolean get() = unidades != null
+
+    val subtotal: Double get() = cuanto * valorPorGramo
+}
+
 @Dao
 interface RecetaDao {
 
@@ -339,6 +364,35 @@ interface RecetaDao {
     )
     fun observarIngredientesDeReceta(recetaId: Long): Flow<List<RecetaIngrediente>>
 
+    /**
+     * Lo mismo pero **ya cruzado con el catálogo**, para el resumen de la receta (8.12).
+     *
+     * El cruce va en la consulta y no en memoria, al revés que en el paso de cantidades: allá la
+     * pantalla ya tiene el catálogo cargado para el buscador, y acá no hay ninguna otra razón
+     * para traérselo entero — es la misma decisión que en el almacén.
+     *
+     * El `JOIN` es **INNER a propósito**: una fila cuyo ingrediente se borró del catálogo no
+     * aparece, igual que no suma al costo (8.2). Dibujarla a medias mostraría un renglón sin
+     * nombre ni precio, y sumarla como 0 mentiría sobre el total.
+     */
+    @Query(
+        """
+        SELECT ri.id            AS id,
+               ri.seccionId     AS seccionId,
+               ri.ingredienteId AS ingredienteId,
+               ri.cantidadG     AS cantidadG,
+               ri.unidades      AS unidades,
+               i.nombre         AS nombre,
+               i.valorPorGramo  AS valorPorGramo
+        FROM receta_ingredientes ri
+        JOIN receta_secciones rs ON rs.id = ri.seccionId
+        JOIN ingredientes i      ON i.id  = ri.ingredienteId
+        WHERE rs.recetaId = :recetaId
+        ORDER BY rs.orden, ri.orden
+        """
+    )
+    fun observarLineasConIngrediente(recetaId: Long): Flow<List<LineaConIngrediente>>
+
     /** Cuántos gramos suma una receta. Distinto de [costoTotalReceta]: eso suma dinero. */
     @Query(
         """
@@ -457,6 +511,17 @@ interface RecetaDao {
      */
     @Query("SELECT * FROM receta_duracion WHERE recetaId = :recetaId")
     suspend fun obtenerDuraciones(recetaId: Long): List<RecetaDuracion>
+
+    /**
+     * Lo mismo, avisando cuando cambie. La usa el resumen de la receta (8.12).
+     *
+     * Existe además de la de una vez y no en su lugar: el paso de duración lee una foto para
+     * rellenar sus campos —y ahí observar rompería el campo de texto (12.2.1)—, mientras que el
+     * resumen **muestra** lo anotado y tiene que enterarse solo. *Lo que se muestra se observa;
+     * la foto de un momento es para calcular.*
+     */
+    @Query("SELECT * FROM receta_duracion WHERE recetaId = :recetaId")
+    fun observarDuraciones(recetaId: Long): Flow<List<RecetaDuracion>>
 
     /**
      * Guarda o reemplaza una duración.

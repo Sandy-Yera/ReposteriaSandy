@@ -35,6 +35,18 @@ import com.sandyyera.reposteria.ui.theme.ReposteriaTheme
  * decirle igual, y dos listas de textos paralelas se desincronizan sin que nadie lo note.
  */
 enum class PasoDeReceta(val titulo: String) {
+    /**
+     * La receta entera de un vistazo (8.12). **Va primera y es donde se abre una receta.**
+     *
+     * Una receta se arma una vez y se lee muchas. Entrando por Cantidades, leerla obligaba a
+     * recorrer los siete pasos acordándose del anterior; entrando por acá, lo primero que se ve
+     * es de qué está hecha y desde ahí se llega a cualquier parte.
+     *
+     * **No edita nada**, y por eso puede ser un paso más de la fila sin romper la regla de que
+     * cada paso es un formulario: este es el índice de los otros seis.
+     */
+    RESUMEN("Resumen"),
+
     CANTIDADES("Cantidades"),
 
     /**
