@@ -900,10 +900,10 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Qué hace: ajusta las cantidades de una receta **con molde** al pasarla a un molde distinto, conservando el grosor o la capacidad según el modo elegido.
 - Cómo funciona: `suspend`, recibe `recetaId`, las `DimensionesMolde` nuevas, el `ModoReescalado` y el `moldeOrigenId` nuevo (o `null` si fue modo prueba). Aplica `factorEscala` a cada ingrediente y después guarda medidas y vínculo con `actualizarDimensionesYVinculoMolde`. **Lanza excepción si la receta todavía no tiene molde**: definir el molde por primera vez no es reescalar, ahí no hay original con qué comparar y solo se asigna.
 
-### simulacionMultiple
+### EmpleadoRepositorio.simulacionMultiple (pendiente — Fase 11)
 - Ubicación: data/repositorio/EmpleadoRepositorio.kt
-- Qué hace: suma lo que un empleado vendería y ganaría con **todas** sus recetas asignadas a la vez, no receta por receta.
-- Cómo funciona: `suspend`, recibe `empleadoId` y devuelve `SimulacionMultipleResultado`. Hace toda la lectura al principio —días, detalle, sueldos y `obtenerDatosCalculo` en lote— y el bucle ya no toca la base. Las recetas sin precio guardado se saltan y se devuelven en `omitidas`, para que una receta a medio configurar no voltee el total. Ojo: usa el `diasPorSemana` **compartido** del empleado, que es distinto del que tiene cada `EmpleadoRecetaSueldo` por separado.
+- Qué hace: lee de la base lo que necesita la simulación de un empleado y se la pasa a la función pura.
+- Cómo funciona: `suspend`, recibe `empleadoId`. Hace **toda** la lectura al principio —días, detalle, sueldos y `obtenerDatosCalculo` en lote— arma la lista de `RecetaEnLaSimulacion` y llama a `simulacionMultiple` de `logica/sueldos`, que es donde vive la cuenta y ya está construida y probada. Acá no va ninguna regla: si el bucle se escribiera de nuevo, habría dos versiones de lo mismo y solo una con pruebas. Ojo: usa el `diasPorSemana` **compartido** del empleado, que es distinto del que tiene cada `EmpleadoRecetaSueldo` por separado.
 
 ### HistorialRepositorio.registrar ✅ IMPLEMENTADA
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/HistorialRepositorio.kt
@@ -1315,20 +1315,25 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Qué hace: el resultado de `trozoGanador` — qué número de trozo cubre el costo, cuánto se gana ahí, y si ese trozo existe de verdad.
 - Cómo funciona: `data class` con `numero: Int`, `ganancia: Double` y `alcanzable: Boolean`. El tercer campo evita mostrar "trozo ganador: 11" en una receta que solo rinde 8.
 
-### Sueldo ✅ IMPLEMENTADA
+### Sueldo y calcularSueldo ✅ IMPLEMENTADAS
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/sueldos/Sueldos.kt
-- Qué hace: el reparto del ingreso de una receta entre el dueño y el empleado.
-- Cómo funciona: `data class` con `ingresoBruto`, `yoMeLlevo` y `gananciaEmpleado`. `yoMeLlevo` incluye el costo total más la parte de la ganancia que no se lleva el empleado.
+- Qué hacen: el reparto del ingreso de una receta entre el dueño y el empleado (10.1).
+- Cómo funcionan: `Sueldo` es un `data class` con `ingresoBruto`, `yoMeLlevo` y `gananciaEmpleado`; `yoMeLlevo` incluye el costo total más la parte de la ganancia que no se lleva el empleado. `calcularSueldo` usa `ingresoBruto` de precios y **no una segunda fórmula para lo mismo**. Revisa **primero y aparte** que la ganancia total no sea negativa: si lo fuera, el rango `0.0..gananciaTotal` queda vacío en Kotlin y el `in` daría false hasta para 0.0, fallando siempre con un mensaje que no explica el problema real. El tope de `gananciaEmpleado` es la ganancia total, que es otra forma de decir que el dueño nunca baja del costo.
 
 ### SimulacionResultado ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/simulacion/Simulacion.kt
 - Qué hace: las 6 cifras que devuelve una simulación de ventas: ingreso, costo y ganancia, en versión semanal y mensual.
 - Cómo funciona: `data class` de 6 `Double`. Lo mensual ya viene multiplicado por `SEMANAS_POR_MES`, no hay que volver a hacerlo al mostrarlo.
 
-### SimulacionMultipleResultado
-- Ubicación: logica/Sueldos.kt
-- Qué hace: el total de una simulación con varias recetas a la vez, en versión diaria, semanal y mensual, más la lista de las que quedaron fuera.
-- Cómo funciona: `data class` que guarda solo las 3 cifras **diarias** más `diasPorSemana` y `omitidas: List<String>` (títulos de recetas sin precio). Las 6 cifras semanales y mensuales son propiedades calculadas: guardar las tres versiones permitiría que quedaran desincronizadas entre sí.
+### SimulacionMultipleResultado, RecetaEnLaSimulacion, RecetaOmitida y MotivoDeOmision ✅ IMPLEMENTADAS
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/sueldos/SimulacionMultiple.kt
+- Qué hacen: los tipos de la simulación de varias recetas de un mismo empleado (10.3).
+- Cómo funcionan: `SimulacionMultipleResultado` guarda solo las 3 cifras **diarias** más `diasPorSemana` y `omitidas`; las 6 semanales y mensuales son propiedades calculadas, porque guardar las tres versiones permitiría que quedaran desincronizadas y nadie revisa eso hasta que un número no cuadra. `hayOmitidas` y `todasOmitidas` existen para que la pantalla distinga "no vende nada" de "ninguna se puede proyectar todavía" — un cero a secas es una conclusión, no un dato faltante. `RecetaEnLaSimulacion` es **una foto y no una consulta** (6.4): trae el `DatosCalculoReceta` ya leído, y por eso el agregado se prueba sin base de datos. Los **días no están en la fila** a propósito: son uno solo compartido por todas las recetas del empleado, y ponerlos por fila abriría la puerta a cuatro respuestas para una pregunta. `RecetaOmitida` lleva **el motivo y no solo el título**, que es una diferencia con el diseño original: con dos motivos posibles, la frase "sin precio definido" mentiría en la mitad de los casos y mandaría a arreglar lo que no está roto.
+
+### simulacionMultiple ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/sueldos/SimulacionMultiple.kt
+- Qué hace: suma lo que dejan al día todas las recetas de un empleado y lo proyecta a la semana y al mes (10.3).
+- Cómo funciona: recorre las filas ya leídas y acumula ingreso, lo del dueño y lo del empleado, multiplicando por `unidadesPorDia`. **Las recetas que no se pueden calcular se saltan y salen en `omitidas`** en vez de hacer fallar el total: con diez asignadas y una a medio configurar, lanzar dejaría al empleado sin ninguna cifra. `porQueNoSePuedeCalcular` comprueba **exactamente lo que `calcularSueldo` exige** —tener precio, y que el ingreso cubra el costo—: revisar de menos deja caer la excepción igual, revisar de más deja fuera recetas que sí se podían calcular. La ganancia pedida por encima de la total **sigue lanzando**: eso no es una receta a medio configurar sino un sueldo mal asignado, y esconderlo dejaría un total silenciosamente menor. `diasPorSemana` se acota a 1 porque proyectar con 0 daría cero en todo y se leería como "no gana nada". No reasigna sueldos: solo lee lo configurado en 10.1.
 
 ### ErroresIngrediente ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Validaciones.kt

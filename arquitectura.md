@@ -2517,7 +2517,15 @@ suspend fun simulacionMultiple(empleadoId: Long): SimulacionMultipleResultado {
 
 No se reasigna sueldo aquí — solo se lee lo ya configurado en 10.1, agregado por día/semana/mes.
 
-**Una receta a medio configurar no puede voltear la simulación completa.** `precioDeMenorGanancia` (8.5) lanza error si la receta no tiene ningún precio guardado. Eso está bien en la pantalla de esa receta —ahí quieres saberlo—, pero acá haría fallar el total de las 10 recetas por culpa de una. Por eso el bucle revisa `d.precios.isEmpty()` **antes** de calcular: esas recetas se saltan y se devuelven en `omitidas`, para que la pantalla las liste aparte como *"sin precio definido, no se incluyeron"*. Es un chequeo barato precisamente porque los precios ya vienen dentro del snapshot.
+**Una receta a medio configurar no puede voltear la simulación completa.** `precioDeMenorGanancia` (8.5) lanza error si la receta no tiene ningún precio guardado. Eso está bien en la pantalla de esa receta —ahí quieres saberlo—, pero acá haría fallar el total de las 10 recetas por culpa de una. Por eso el bucle revisa **antes** de calcular: esas recetas se saltan y se devuelven en `omitidas`, para que la pantalla las liste aparte. Es un chequeo barato precisamente porque los precios ya vienen dentro del snapshot.
+
+**Son dos motivos y no uno, y esto se descubrió al construirlo.** El diseño original solo miraba `precios.isEmpty()`, pero `calcularSueldo` lanza también cuando **el ingreso no cubre el costo** —no hay ganancia que repartir—, y esa excepción se llevaba por delante el total exactamente igual. La comprobación tiene que cubrir **lo que `calcularSueldo` exige, ni más ni menos**: revisando de menos la excepción cae igual; revisando de más quedan fuera recetas que sí se podían calcular.
+
+Por eso `omitidas` lleva **el motivo y no solo el título**: con dos casos posibles, la frase *"sin precio definido"* mentiría en la mitad de ellos y mandaría a ponerle precio a algo que ya lo tiene. Se arreglan distinto, así que se dicen distinto.
+
+**Lo que sigue lanzando es la ganancia mal asignada.** Pedirle al empleado más de lo que la receta gana no es una receta a medio configurar sino un sueldo mal puesto, y esconderlo en `omitidas` dejaría al empleado con un total silenciosamente menor. Esa es la única que interrumpe.
+
+**La cuenta es pura y vive en `logica/sueldos`**, no en el repositorio: recibe las filas ya leídas (`RecetaEnLaSimulacion`) y devuelve el total. El repositorio solo hace las cuatro consultas del principio y llama. Es lo que permite probar los tres o más recetas, las omitidas y los bordes **sin base de datos ni celular**, que es la condición de cierre de la Fase 11.
 
 **Ojo, son dos "días" independientes:** el `diasPorSemana` de `EmpleadoRecetaSueldo` (10.1) es propio de cada receta individual y no tiene relación con `EmpleadoSimulacionMultiple.diasPorSemana` (`obtenerDiasCompartidos`) usado acá — este último es **uno solo, compartido entre todas las recetas** de ese empleado, tal como en el ejemplo original ("venderé 4 días, y esos 4 días serán 2 bizcochos, 1 torta, 5 chocolates por día"). Cambiar uno no afecta al otro.
 
@@ -3041,6 +3049,10 @@ menor— y esa cuenta lo garantiza mientras las fases avancen.
 
 - **Construyes:** genérico + específicos, `calcularSueldo`, simulación individual y múltiple (con la carga en lote de 6.4).
 - **Hecho cuando:** el ejemplo de sueldo (10.000/3.000/7.000/3.000 → 7.000) funciona **en un test JUnit puro, armando el `DatosCalculoReceta` a mano y sin base de datos**; el tope se respeta; la simulación múltiple con 3+ recetas suma bien; y una receta sin precio queda listada en `omitidas` en vez de voltear el total.
+- **La lógica pura ya está construida y probada** (22 pruebas), por lo mismo que en la Fase 9: es lo único de esta fase que se verifica sin celular, y hacerla primero es lo que dejó ver que faltaba un motivo de omisión (10.3).
+  - `Sueldo` y `calcularSueldo` — el reparto de 10.1, con el ejemplo de la especificación y sus dos topes.
+  - `SimulacionMultipleResultado`, `RecetaEnLaSimulacion`, `RecetaOmitida`, `MotivoDeOmision` y `simulacionMultiple` — el agregado de 10.3.
+  Lo que queda —las entidades, el repositorio y las pantallas— se apoya encima y solo se comprueba compilando.
 
 ### Fase 12 — Historial de cambios / notificaciones
 
