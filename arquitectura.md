@@ -2473,6 +2473,18 @@ Simulación día/semana/mes idéntica a 8.7, usando `diasPorSemana`/`unidadesPor
 - Empleados específicos: título editable, se agregan y se eliminan libremente.
 - Desplegable de recetas por empleado para ir asignando `gananciaEmpleado`. Solo lista recetas que aún existen (las eliminadas ya no aparecen, por la cascada de 5.4).
 
+#### 10.1.1 El tope se mide contra la ganancia de ahora
+
+`guardarSueldo` compara lo escrito con la ganancia de esa receta **en el momento de guardar**, no
+con un tope guardado junto al sueldo. Los precios y los costos se mueven —basta que suba la
+harina— y un tope congelado dejaría pasar un reparto que ya no cabe.
+
+La otra mitad de esa decisión es qué pasa con lo **ya guardado** cuando el costo sube: no se
+borra ni se corrige solo. La fila se muestra igual, con su nombre y **sin reparto**, para que
+alguien pueda arreglarla. `calcularSueldo` ahí lanza con razón, así que la lista lo envuelve en
+un `runCatching` en vez de repetir la condición al lado — lo que se quiere es exactamente "lo que
+`calcularSueldo` acepta", y una segunda copia de esa regla se separa de la primera.
+
 ### 10.3 Simulación múltiple
 
 Este es el caso donde más se nota el snapshot de 6.4: **toda la lectura ocurre en las tres primeras líneas**, y el bucle no vuelve a tocar la base de datos.
@@ -3049,10 +3061,12 @@ menor— y esa cuenta lo garantiza mientras las fases avancen.
 
 - **Construyes:** genérico + específicos, `calcularSueldo`, simulación individual y múltiple (con la carga en lote de 6.4).
 - **Hecho cuando:** el ejemplo de sueldo (10.000/3.000/7.000/3.000 → 7.000) funciona **en un test JUnit puro, armando el `DatosCalculoReceta` a mano y sin base de datos**; el tope se respeta; la simulación múltiple con 3+ recetas suma bien; y una receta sin precio queda listada en `omitidas` en vez de voltear el total.
-- **La lógica pura ya está construida y probada** (22 pruebas), por lo mismo que en la Fase 9: es lo único de esta fase que se verifica sin celular, y hacerla primero es lo que dejó ver que faltaba un motivo de omisión (10.3).
+- **La lógica pura está construida y probada** (33 pruebas), por lo mismo que en la Fase 9: es lo único de esta fase que se verifica sin celular, y hacerla primero es lo que dejó ver que faltaba un motivo de omisión (10.3).
   - `Sueldo` y `calcularSueldo` — el reparto de 10.1, con el ejemplo de la especificación y sus dos topes.
   - `SimulacionMultipleResultado`, `RecetaEnLaSimulacion`, `RecetaOmitida`, `MotivoDeOmision` y `simulacionMultiple` — el agregado de 10.3.
-  Lo que queda —las entidades, el repositorio y las pantallas— se apoya encima y solo se comprueba compilando.
+  - `errorEnGananciaDelEmpleado` y `motivoParaNoTocarAlEmpleado` — lo que se puede escribir, dicho **antes** de intentar guardar: `calcularSueldo` lo exige con un `require`, y una excepción no sirve como aviso bajo un campo de texto.
+- **El `EmpleadoRepositorio` está construido**, con 21 pruebas sobre DAO falsos. El falso imita las tres cosas que la base hace sola —el índice único con `REPLACE`, las cascadas y la condición `esGenerico = 0` del `DELETE`—, porque sin eso una prueba aprobaría una versión que deja sueldos huérfanos o dos sueldos para la misma receta.
+- **Lo que queda son las pantallas**, y solo se comprueba compilando.
 
 ### Fase 12 — Historial de cambios / notificaciones
 

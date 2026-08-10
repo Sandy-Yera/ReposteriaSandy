@@ -63,6 +63,16 @@ interface RecetaDao {
     @Query("SELECT * FROM recetas ORDER BY titulo COLLATE NOCASE")
     fun observarTodas(): Flow<List<Receta>>
 
+    /**
+     * Todas las recetas, una sola vez.
+     *
+     * Es la foto de un momento y por eso no es `Flow`: la usa el cuadro de "asignarle una receta
+     * a un empleado", que mientras está abierto no puede ver aparecer recetas nuevas — es la misma
+     * decisión que el catálogo de ingredientes en el cuadro del almacén (12.2.1).
+     */
+    @Query("SELECT * FROM recetas ORDER BY titulo COLLATE NOCASE")
+    suspend fun obtenerTodasUnaVez(): List<Receta>
+
     @Query("SELECT * FROM recetas WHERE id = :recetaId")
     suspend fun obtener(recetaId: Long): Receta?
 

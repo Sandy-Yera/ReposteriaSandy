@@ -277,6 +277,9 @@ class RecetaRepositorio(
 
     suspend fun obtener(recetaId: Long): Receta? = dao.obtener(recetaId)
 
+    /** Todas, una sola vez. Para los cuadros que necesitan la lista y no verla cambiar. */
+    suspend fun obtenerTodasUnaVez(): List<Receta> = dao.obtenerTodasUnaVez()
+
     /**
      * Busca una receta que se llame igual que [titulo], ignorando tildes y mayúsculas.
      *

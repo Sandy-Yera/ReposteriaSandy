@@ -1,6 +1,7 @@
 package com.sandyyera.reposteria.data
 
 import com.sandyyera.reposteria.data.db.dao.CostoDeReceta
+import com.sandyyera.reposteria.data.db.dao.EmpleadoDao
 import com.sandyyera.reposteria.data.db.dao.HistorialDao
 import com.sandyyera.reposteria.data.db.dao.IngredienteDao
 import com.sandyyera.reposteria.data.db.dao.LineaConIngrediente
@@ -8,6 +9,10 @@ import com.sandyyera.reposteria.data.db.dao.MoldeDao
 import com.sandyyera.reposteria.data.db.dao.NombreDeIngrediente
 import com.sandyyera.reposteria.data.db.dao.RecetaDao
 import com.sandyyera.reposteria.data.db.dao.TrozosDeReceta
+import com.sandyyera.reposteria.data.db.entidades.Empleado
+import com.sandyyera.reposteria.data.db.entidades.EmpleadoRecetaSueldo
+import com.sandyyera.reposteria.data.db.entidades.EmpleadoSimulacionMultiple
+import com.sandyyera.reposteria.data.db.entidades.EmpleadoSimulacionMultipleDetalle
 import com.sandyyera.reposteria.data.db.entidades.EventoCambio
 import com.sandyyera.reposteria.data.db.entidades.Ingrediente
 import com.sandyyera.reposteria.data.db.entidades.Molde
@@ -748,8 +753,149 @@ class RecetaDaoFalso(
             "algo vacío para salir del paso, porque entonces la prueba no probaría nada."
     )
 
+    override suspend fun obtenerTodasUnaVez(): List<Receta> =
+        recetas.value.sortedBy { it.titulo.lowercase() }
+
     override suspend fun obtenerRecetasConMoldeOrigen(moldeId: Long): List<Receta> {
         val ids = rendimientos.filter { it.moldeOrigenId == moldeId }.map { it.recetaId }.toSet()
         return recetas.value.filter { it.id in ids }.sortedBy { it.titulo.lowercase() }
+    }
+}
+
+/**
+ * El falso de `EmpleadoDao`: los empleados y sus sueldos en memoria.
+ *
+ * Lo que sí hay que imitar de verdad son **las tres cosas que la base hace sola** y que una
+ * prueba podría dar por buenas sin que nadie las escriba:
+ *
+ * 1. **El índice único sobre (empleadoId, recetaId)** con `REPLACE`: guardar dos veces el sueldo
+ *    de la misma receta pisa el anterior en vez de dejar dos. Sin esto, una prueba de "cambiar el
+ *    sueldo" pasaría aunque quedaran dos filas y las consultas devolvieran cualquiera.
+ * 2. **Las cascadas**: borrar un empleado se lleva sus sueldos, su simulación y su detalle. Si el
+ *    falso los dejara, la prueba de borrado aprobaría una versión de la app que deja huérfanos.
+ * 3. **La condición `esGenerico = 0` del DELETE**, que es la última red del empleado estándar.
+ *
+ * El genérico se siembra en el constructor, igual que hace `SembrarDatosIniciales` al crear la
+ * base: sin él, la garantía de "siempre presente" sería falsa desde la primera prueba.
+ */
+class EmpleadoDaoFalso : EmpleadoDao {
+
+    private val filas = MutableStateFlow<List<Empleado>>(emptyList())
+    private val sueldos = mutableListOf<EmpleadoRecetaSueldo>()
+    private val simulaciones = mutableListOf<EmpleadoSimulacionMultiple>()
+    private val detalles = mutableListOf<EmpleadoSimulacionMultipleDetalle>()
+    private var siguienteId = 1L
+
+    /** Lo que hace que las escrituras vuelvan a emitir, igual que en `RecetaDaoFalso`. */
+    private val cambios = MutableStateFlow(0)
+
+    private fun cambio() {
+        cambios.value++
+    }
+
+    init {
+        filas.value = listOf(Empleado(id = siguienteId++, nombre = "Estándar", esGenerico = true))
+    }
+
+    /** El genérico sembrado, que las pruebas necesitan a mano. */
+    val generico: Empleado get() = filas.value.first { it.esGenerico }
+
+    override fun observarTodos(): Flow<List<Empleado>> = filas.map { lista ->
+        lista.sortedWith(compareByDescending<Empleado> { it.esGenerico }.thenBy { it.nombre.lowercase() })
+    }
+
+    override suspend fun obtener(empleadoId: Long): Empleado? =
+        filas.value.firstOrNull { it.id == empleadoId }
+
+    override suspend fun obtenerGenerico(): Empleado? = filas.value.firstOrNull { it.esGenerico }
+
+    override suspend fun buscarPorNombre(nombre: String): Empleado? =
+        filas.value.firstOrNull { it.nombre.equals(nombre, ignoreCase = true) }
+
+    override suspend fun insertar(empleado: Empleado): Long {
+        val id = siguienteId++
+        filas.value = filas.value + empleado.copy(id = id)
+        return id
+    }
+
+    override suspend fun actualizar(empleado: Empleado) {
+        filas.value = filas.value.map { if (it.id == empleado.id) empleado else it }
+    }
+
+    override suspend fun eliminarPorId(empleadoId: Long) {
+        // La condición del DELETE real: al genérico no se le puede ni por error.
+        val victima = filas.value.firstOrNull { it.id == empleadoId && !it.esGenerico } ?: return
+        filas.value = filas.value - victima
+        // Las cascadas de las tres tablas que cuelgan de él.
+        sueldos.removeAll { it.empleadoId == empleadoId }
+        detalles.removeAll { it.empleadoId == empleadoId }
+        simulaciones.removeAll { it.empleadoId == empleadoId }
+        cambio()
+    }
+
+    /** Imita la cascada de borrar una **receta**, que se lleva sus sueldos y sus detalles (5.4). */
+    fun alBorrarLaReceta(recetaId: Long) {
+        sueldos.removeAll { it.recetaId == recetaId }
+        detalles.removeAll { it.recetaId == recetaId }
+        cambio()
+    }
+
+    override suspend fun obtenerSueldos(empleadoId: Long): List<EmpleadoRecetaSueldo> =
+        sueldos.filter { it.empleadoId == empleadoId }
+
+    override fun observarSueldos(empleadoId: Long): Flow<List<EmpleadoRecetaSueldo>> =
+        cambios.map { sueldos.filter { fila -> fila.empleadoId == empleadoId } }
+
+    override suspend fun obtenerSueldo(empleadoId: Long, recetaId: Long): EmpleadoRecetaSueldo? =
+        sueldos.firstOrNull { it.empleadoId == empleadoId && it.recetaId == recetaId }
+
+    override suspend fun guardarSueldo(sueldo: EmpleadoRecetaSueldo): Long {
+        // El índice único con REPLACE: el par (empleado, receta) manda, no el id.
+        sueldos.removeAll { it.empleadoId == sueldo.empleadoId && it.recetaId == sueldo.recetaId }
+        val id = if (sueldo.id == 0L) siguienteId++ else sueldo.id
+        sueldos += sueldo.copy(id = id)
+        cambio()
+        return id
+    }
+
+    override suspend fun eliminarSueldo(sueldoId: Long) {
+        sueldos.removeAll { it.id == sueldoId }
+        cambio()
+    }
+
+    override suspend fun obtenerSimulacionMultiple(empleadoId: Long): EmpleadoSimulacionMultiple? =
+        simulaciones.firstOrNull { it.empleadoId == empleadoId }
+
+    override suspend fun obtenerDiasCompartidos(empleadoId: Long): Int? =
+        obtenerSimulacionMultiple(empleadoId)?.diasPorSemana
+
+    override suspend fun guardarSimulacionMultiple(simulacion: EmpleadoSimulacionMultiple) {
+        simulaciones.removeAll { it.empleadoId == simulacion.empleadoId }
+        simulaciones += simulacion
+        cambio()
+    }
+
+    override suspend fun obtenerDetalle(empleadoId: Long): List<EmpleadoSimulacionMultipleDetalle> =
+        detalles.filter { it.empleadoId == empleadoId }
+
+    override fun observarDetalle(empleadoId: Long): Flow<List<EmpleadoSimulacionMultipleDetalle>> =
+        cambios.map { detalles.filter { fila -> fila.empleadoId == empleadoId } }
+
+    override suspend fun guardarDetalle(detalle: EmpleadoSimulacionMultipleDetalle): Long {
+        // La clave foránea real apunta a la fila de días, no al empleado: sin ella, la base
+        // rechazaría el detalle. Acá se comprueba igual para que la prueba lo note.
+        require(simulaciones.any { it.empleadoId == detalle.empleadoId }) {
+            "FOREIGN KEY constraint failed: falta la fila de empleado_simulacion_multiple"
+        }
+        detalles.removeAll { it.empleadoId == detalle.empleadoId && it.recetaId == detalle.recetaId }
+        val id = if (detalle.id == 0L) siguienteId++ else detalle.id
+        detalles += detalle.copy(id = id)
+        cambio()
+        return id
+    }
+
+    override suspend fun eliminarDetalle(detalleId: Long) {
+        detalles.removeAll { it.id == detalleId }
+        cambio()
     }
 }

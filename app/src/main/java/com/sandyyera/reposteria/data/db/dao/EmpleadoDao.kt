@@ -28,6 +28,16 @@ interface EmpleadoDao {
     @Query("SELECT * FROM empleados WHERE esGenerico = 1 LIMIT 1")
     suspend fun obtenerGenerico(): Empleado?
 
+    /**
+     * Un empleado con ese nombre, ignorando mayúsculas. Para no crear dos iguales.
+     *
+     * La tabla **no tiene índice único sobre el nombre**, a diferencia de ingredientes: dos
+     * personas pueden llamarse igual y eso no es un error de datos. Lo que sí conviene es
+     * preguntar antes, que es lo que hace el repositorio con esto.
+     */
+    @Query("SELECT * FROM empleados WHERE nombre = :nombre COLLATE NOCASE LIMIT 1")
+    suspend fun buscarPorNombre(nombre: String): Empleado?
+
     @Insert
     suspend fun insertar(empleado: Empleado): Long
 
@@ -48,6 +58,17 @@ interface EmpleadoDao {
 
     @Query("SELECT * FROM empleado_receta_sueldo WHERE empleadoId = :empleadoId")
     suspend fun obtenerSueldos(empleadoId: Long): List<EmpleadoRecetaSueldo>
+
+    /**
+     * Lo mismo, avisando cuando cambie. **La que usa la pantalla del empleado.**
+     *
+     * La de una vez se queda para el cálculo, que es una foto de un momento (6.4). La regla es la
+     * de siempre: *lo que se muestra se observa*. Acá se paga con las cascadas — borrar una receta
+     * se lleva su fila de sueldo, y la lista del empleado tiene que enterarse sin que nadie se
+     * acuerde de refrescarla.
+     */
+    @Query("SELECT * FROM empleado_receta_sueldo WHERE empleadoId = :empleadoId")
+    fun observarSueldos(empleadoId: Long): Flow<List<EmpleadoRecetaSueldo>>
 
     @Query(
         """
@@ -89,6 +110,10 @@ interface EmpleadoDao {
 
     @Query("SELECT * FROM empleado_simulacion_multiple_detalle WHERE empleadoId = :empleadoId")
     suspend fun obtenerDetalle(empleadoId: Long): List<EmpleadoSimulacionMultipleDetalle>
+
+    /** Lo mismo observando, por lo mismo que [observarSueldos]. */
+    @Query("SELECT * FROM empleado_simulacion_multiple_detalle WHERE empleadoId = :empleadoId")
+    fun observarDetalle(empleadoId: Long): Flow<List<EmpleadoSimulacionMultipleDetalle>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun guardarDetalle(detalle: EmpleadoSimulacionMultipleDetalle): Long

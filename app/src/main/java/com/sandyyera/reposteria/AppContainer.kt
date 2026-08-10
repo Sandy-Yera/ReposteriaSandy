@@ -3,6 +3,7 @@ package com.sandyyera.reposteria
 import android.content.Context
 import com.sandyyera.reposteria.data.db.AppDatabase
 import com.sandyyera.reposteria.data.repositorio.AlmacenRepositorio
+import com.sandyyera.reposteria.data.repositorio.EmpleadoRepositorio
 import com.sandyyera.reposteria.data.repositorio.HistorialRepositorio
 import com.sandyyera.reposteria.data.repositorio.IngredienteRepositorio
 import com.sandyyera.reposteria.data.repositorio.MoldeRepositorio
@@ -94,5 +95,22 @@ class AppContainer(private val context: Context) {
         )
     }
 
-    // El repositorio de empleados se agrega al llegar su fase.
+    /**
+     * Los empleados y sus sueldos (sección 10).
+     *
+     * Depende de `recetas` por lo mismo que el almacén depende de `ingredientes`: lo que necesita
+     * no es una consulta suelta sino el snapshot completo de una receta —costo, trozos y precios—
+     * con las reglas que ya viven allá. Armarlo acá sería una segunda versión de `obtenerDatosCalculo`
+     * para separarse de la primera.
+     *
+     * Va en un solo sentido: recetas no sabe nada de empleados. Lo que pasa al borrar una receta
+     * lo resuelven las cascadas de la base, no una llamada de vuelta.
+     */
+    val empleados: EmpleadoRepositorio by lazy {
+        EmpleadoRepositorio(
+            dao = base.empleadoDao(),
+            recetas = recetas,
+            historial = historial
+        )
+    }
 }
