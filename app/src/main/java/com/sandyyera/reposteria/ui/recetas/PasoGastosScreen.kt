@@ -55,6 +55,8 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sandyyera.reposteria.data.db.entidades.RecetaPrecio
+import com.sandyyera.reposteria.logica.formato.AVISO_MONTOS_REDONDEADOS
+import com.sandyyera.reposteria.logica.formato.formatearMonto
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.logica.precios.DatosCalculoReceta
 import com.sandyyera.reposteria.logica.precios.ModoPrecio
@@ -377,7 +379,7 @@ private fun TarjetaDeCifras(estado: EstadoGastos) {
                 if (ganador.alcanzable) {
                     Text(
                         text = "Desde el trozo ${ganador.numero} empiezas a ganar " +
-                            "($${formatearNumero(ganador.ganancia)} ahí).",
+                            "($${formatearMonto(ganador.ganancia)} ahí).",
                         style = MaterialTheme.typography.bodyMedium
                     )
                 } else {
@@ -402,6 +404,14 @@ private fun TarjetaDeCifras(estado: EstadoGastos) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+
+            // La otra mitad del redondeo (15.2). Sin esto, una suma que no cuadra por un peso
+            // se lee como un error de la app en vez de como lo que es.
+            Text(
+                text = AVISO_MONTOS_REDONDEADOS,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
@@ -419,7 +429,7 @@ private fun Cifra(nombre: String, valor: Double?, destacada: Boolean = false) {
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
-            text = valor?.let { "$${formatearNumero(it)}" } ?: "—",
+            text = valor?.let { "$${formatearMonto(it)}" } ?: "—",
             style = if (destacada) MaterialTheme.typography.titleMedium
             else MaterialTheme.typography.bodyMedium,
             fontWeight = if (destacada) FontWeight.Bold else null,
@@ -529,16 +539,16 @@ private fun FilaDeUnPrecio(fila: FilaDePrecio, acciones: AccionesGastos) {
                     }
                 }
                 Text(
-                    text = "$${formatearNumero(fila.precio.precioTotal)} · " +
-                        "$${formatearNumero(fila.precioPorTrozo)} el trozo",
+                    text = "$${formatearMonto(fila.precio.precioTotal)} · " +
+                        "$${formatearMonto(fila.precioPorTrozo)} el trozo",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
                     text = if (fila.pierdePlata) {
-                        "Pierdes $${formatearNumero(-fila.gananciaPorTrozo)} por trozo"
+                        "Pierdes $${formatearMonto(-fila.gananciaPorTrozo)} por trozo"
                     } else {
-                        "Ganas $${formatearNumero(fila.gananciaPorTrozo)} por trozo"
+                        "Ganas $${formatearMonto(fila.gananciaPorTrozo)} por trozo"
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (fila.pierdePlata) MaterialTheme.colorScheme.error

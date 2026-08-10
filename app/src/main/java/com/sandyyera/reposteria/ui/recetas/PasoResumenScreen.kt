@@ -46,6 +46,8 @@ import com.sandyyera.reposteria.data.repositorio.RendimientoDelResumen
 import com.sandyyera.reposteria.data.repositorio.ResumenDeReceta
 import com.sandyyera.reposteria.data.repositorio.SimulacionDelResumen
 import com.sandyyera.reposteria.data.repositorio.SeccionDelResumen
+import com.sandyyera.reposteria.logica.formato.AVISO_MONTOS_REDONDEADOS
+import com.sandyyera.reposteria.logica.formato.formatearMonto
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.ui.theme.Medidas
 import com.sandyyera.reposteria.ui.theme.ReposteriaTheme
@@ -161,7 +163,7 @@ fun PasoResumen(
                 ParteDelResumen(
                     parte = PasoDeReceta.CANTIDADES,
                     resumida = if (resumen.sinIngredientes) "Todavía sin ingredientes"
-                    else "$${formatearNumero(resumen.costoTotal)} en ingredientes",
+                    else "$${formatearMonto(resumen.costoTotal)} en ingredientes",
                     estado = estado,
                     acciones = acciones
                 ) { Ingredientes(resumen) }
@@ -221,7 +223,7 @@ fun PasoResumen(
                 ParteDelResumen(
                     parte = PasoDeReceta.SIMULACION,
                     resumida = resumen.simulacion
-                        ?.let { "$${formatearNumero(it.gananciaMensual)} al mes" }
+                        ?.let { "$${formatearMonto(it.gananciaMensual)} al mes" }
                         ?: "Sin simular",
                     estado = estado,
                     acciones = acciones
@@ -242,11 +244,11 @@ fun PasoResumen(
                         Renglon(resumen.simulacion.cuanto)
                         Renglon(
                             "Ganancia semanal: " +
-                                "$${formatearNumero(resumen.simulacion.gananciaSemanal)}"
+                                "$${formatearMonto(resumen.simulacion.gananciaSemanal)}"
                         )
                         Renglon(
                             "Ganancia mensual: " +
-                                "$${formatearNumero(resumen.simulacion.gananciaMensual)}"
+                                "$${formatearMonto(resumen.simulacion.gananciaMensual)}"
                         )
                     }
                 }
@@ -281,13 +283,19 @@ private fun EncabezadoDelResumen(resumen: ResumenDeReceta) {
         ) {
             Text("Costo de los ingredientes", style = MaterialTheme.typography.bodySmall)
             Text(
-                text = "$${formatearNumero(resumen.costoTotal)}",
+                text = "$${formatearMonto(resumen.costoTotal)}",
                 style = MaterialTheme.typography.headlineMedium
             )
             // "Paso previo" es lo que hay que tener hecho **antes** de empezar, así que va arriba
             // de todo y no entre los pasos (8.8).
             Text(
                 text = "Antes de empezar: ${resumen.pasoPrevio}",
+                style = MaterialTheme.typography.bodySmall
+            )
+            // El aviso del redondeo va en el encabezado y no repetido en cada panel: el resumen
+            // muestra montos en casi todos, y decirlo cinco veces es ruido (15.2).
+            Text(
+                text = AVISO_MONTOS_REDONDEADOS,
                 style = MaterialTheme.typography.bodySmall
             )
             // **Se listan los cambios y no solo se avisa que los hay.** Decir "revísalo en
@@ -411,7 +419,7 @@ private fun Ingredientes(resumen: ResumenDeReceta) {
     resumen.secciones.forEach { seccion ->
         NombreDeParte(seccion, resumen.deDondeViene(seccion.id), resumen.secciones.size > 1)
         seccion.lineas.forEach { linea ->
-            Renglon("${linea.cuanto} de ${linea.nombre} · $${formatearNumero(linea.subtotal)}")
+            Renglon("${linea.cuanto} de ${linea.nombre} · $${formatearMonto(linea.subtotal)}")
         }
         if (seccion.lineas.isEmpty()) Renglon("Todavía sin ingredientes")
     }
@@ -426,7 +434,7 @@ private fun NombreDeParte(
 ) {
     val nombre = seccion.nombre ?: return
     Text(
-        text = if (mostrarCosto) "$nombre · $${formatearNumero(seccion.costo)}" else nombre,
+        text = if (mostrarCosto) "$nombre · $${formatearMonto(seccion.costo)}" else nombre,
         style = MaterialTheme.typography.titleSmall,
         color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.padding(top = Medidas.chico)
@@ -464,7 +472,7 @@ private fun Precios(resumen: ResumenDeReceta) {
     }
     resumen.precios.forEach { precio ->
         Renglon(
-            texto = precio.comoSeLee + " · gana $${formatearNumero(precio.gananciaPorTrozo)}" +
+            texto = precio.comoSeLee + " · gana $${formatearMonto(precio.gananciaPorTrozo)}" +
                 " por trozo" + if (precio.esReferencia) " (referencia)" else "",
             // La ganancia negativa se pinta: vender bajo el costo es lo que esta pantalla
             // tiene que dejar ver de un vistazo (8.5).

@@ -334,4 +334,31 @@ class FormatoTest {
         // Y borrar el punto en sí no debe borrar un dígito.
         assertEquals("1.000", formatearMientrasSeEscribe("1000"))
     }
+
+    // --- Montos redondeados para mostrar (15.2) ---
+
+    @Test
+    fun `un monto se muestra sin centavos, al peso mas cercano`() {
+        assertEquals("$4.520", "$" + formatearMonto(4520.33333))
+        assertEquals("Sube cuando pasa la mitad", "$4.521", "$" + formatearMonto(4520.5))
+        assertEquals("$1.667", "$" + formatearMonto(1666.66667))
+    }
+
+    @Test
+    fun `una perdida redondeada sigue siendo una perdida`() {
+        // El signo es lo primero que se mira en una ganancia: perderlo al redondear
+        // convertiria una perdida en un cero inofensivo.
+        assertEquals("-1.235", formatearMonto(-1234.56))
+        assertEquals("-1", formatearMonto(-0.7))
+    }
+
+    @Test
+    fun `redondear es solo para mostrar y no toca lo que se guarda`() {
+        // La regla que separa las dos funciones: `redondearParaGuardar` sigue en 5 decimales,
+        // que es lo que multiplica cada receta. Si el redondeo visual entrara ahi, un
+        // ingrediente por gramo se iria a cero y la receta pareceria gratis.
+        assertEquals(0.06667, redondearParaGuardar(0.0666666), 0.0000001)
+        assertEquals("0,06667", formatearNumero(0.0666666))
+        assertEquals("Y por eso los montos no se usan para eso", "0", formatearMonto(0.0666666))
+    }
 }

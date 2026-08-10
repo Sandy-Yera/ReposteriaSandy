@@ -49,6 +49,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sandyyera.reposteria.data.db.entidades.Receta
+import com.sandyyera.reposteria.logica.formato.formatearMonto
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.ui.componentes.BarraBusqueda
 import com.sandyyera.reposteria.ui.theme.Medidas
@@ -327,7 +328,7 @@ private fun TarjetaReceta(
                         // pero no estaba vacía. Decirle "todavía sin ingredientes" a algo
                         // que sí los tiene manda a buscar un problema que no existe.
                         text = if (fila.tieneIngredientes) {
-                            "Cuesta $${formatearNumero(fila.costoTotal)} hacerla"
+                            "Cuesta $${formatearMonto(fila.costoTotal)} hacerla"
                         } else {
                             "Todavía sin ingredientes"
                         },

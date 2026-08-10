@@ -39,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.sandyyera.reposteria.logica.formato.formatearMonto
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.ui.componentes.CampoNumerico
 import com.sandyyera.reposteria.ui.theme.Medidas
@@ -253,7 +254,7 @@ fun PasoRendimiento(
                     Column {
                         Text("Cada trozo cuesta", style = MaterialTheme.typography.bodySmall)
                         Text(
-                            text = "$${formatearNumero(estado.costoDeCadaTrozo)}",
+                            text = "$${formatearMonto(estado.costoDeCadaTrozo)}",
                             style = MaterialTheme.typography.headlineMedium
                         )
                         Text(
@@ -338,10 +339,21 @@ private fun RepartoDelCorteElegible(
                 // La diferencia entre elegido y no elegido es de **fondo y no de grosor de
                 // letra**, el mismo criterio que la fila de pasos: en un celular al sol, la
                 // negrita no se distingue de un vistazo y el color sí.
-                Text(
-                    text = "${opcion.reparto.comoSeLee}  ·  ${opcion.medida}",
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                //
+                // **La frase en palabras arriba y el "3 × 2" abajo**, y no al revés: en un
+                // molde de 26 × 20 partido en 5 las dos opciones se rotulaban `1 × 5` y `5 × 1`,
+                // que se leen como el mismo número dado vuelta. Lo que distingue una de otra es
+                // qué lado se parte, así que eso es lo que va primero.
+                Column {
+                    Text(
+                        text = opcion.comoSeCorta,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = "${opcion.reparto.comoSeLee}  ·  cada trozo ${opcion.medida}",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
             }
         }
     }

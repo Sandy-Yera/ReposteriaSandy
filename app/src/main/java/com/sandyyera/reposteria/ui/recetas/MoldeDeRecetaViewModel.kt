@@ -21,6 +21,8 @@ import com.sandyyera.reposteria.logica.validaciones.camposDe
 import com.sandyyera.reposteria.logica.moldes.FormaDelCorte
 import com.sandyyera.reposteria.logica.moldes.corteEfectivoDe
 import com.sandyyera.reposteria.logica.moldes.corteSugerido
+import com.sandyyera.reposteria.logica.moldes.avisoDeMedidasDeCorteAjenas
+import com.sandyyera.reposteria.logica.moldes.queHacenLasMedidasDeCorte
 import com.sandyyera.reposteria.logica.moldes.nombreDelCorte
 import com.sandyyera.reposteria.logica.validaciones.conElCorte
 import com.sandyyera.reposteria.logica.validaciones.dimensionesDesde
@@ -169,6 +171,20 @@ sealed interface DialogoMoldeDeReceta {
             get() = if (origen == OrigenDelMolde.GUARDADO) elegido?.id else null
 
         val puedeGuardar: Boolean get() = dimensiones != null && !guardando
+
+        /**
+         * Qué está haciendo el par de medidas de corte anotadas, o `null` si no hay ninguna.
+         *
+         * La misma frase que en el catálogo, por la misma razón: el campo cambia el reparto y
+         * hasta ahora no lo decía. Se lee de [dimensiones] y no de los textos crudos, así que
+         * un molde elegido del catálogo también la muestra.
+         */
+        val explicacionDelCorte: String?
+            get() = dimensiones?.let { queHacenLasMedidasDeCorte(it, ::formatearNumero) }
+
+        /** El aviso de que lo anotado para cortar no son los lados de este molde (9.4.4). */
+        val avisoDelCorte: String?
+            get() = dimensiones?.let { avisoDeMedidasDeCorteAjenas(it, ::formatearNumero) }
     }
 
     /** La confirmación antes de dejar de usar molde. */

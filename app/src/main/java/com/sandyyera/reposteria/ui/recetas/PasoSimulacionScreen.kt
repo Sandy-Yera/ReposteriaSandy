@@ -36,6 +36,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.sandyyera.reposteria.logica.formato.AVISO_MONTOS_REDONDEADOS
+import com.sandyyera.reposteria.logica.formato.formatearMonto
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.logica.precios.DatosCalculoReceta
 import com.sandyyera.reposteria.logica.precios.ModoPrecio
@@ -316,6 +318,12 @@ private fun TarjetaDeLaProyeccion(estado: EstadoSimulacion) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = Medidas.chico)
             )
+            // La aclaración del redondeo (15.2), pegada a las cifras que redondea.
+            Text(
+                text = AVISO_MONTOS_REDONDEADOS,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
@@ -332,7 +340,7 @@ private fun Cifra(nombre: String, valor: Double, destacada: Boolean = false) {
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
-            text = "$${formatearNumero(valor)}",
+            text = "$${formatearMonto(valor)}",
             style = if (destacada) MaterialTheme.typography.titleMedium
             else MaterialTheme.typography.bodyMedium,
             fontWeight = if (destacada) FontWeight.Bold else null,

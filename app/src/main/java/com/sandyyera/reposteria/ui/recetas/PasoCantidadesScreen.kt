@@ -59,6 +59,8 @@ import com.sandyyera.reposteria.data.db.entidades.unidadDeMedida
 import com.sandyyera.reposteria.data.repositorio.ParteTraida
 import com.sandyyera.reposteria.data.repositorio.RecetaParaTraer
 import com.sandyyera.reposteria.logica.calculadora.UnidadDeCompra
+import com.sandyyera.reposteria.logica.formato.AVISO_MONTOS_REDONDEADOS
+import com.sandyyera.reposteria.logica.formato.formatearMonto
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.logica.partes.AVISO_AL_DESVINCULAR
 import com.sandyyera.reposteria.logica.partes.AVISO_ORIGINAL_BORRADA
@@ -497,12 +499,19 @@ private fun CostoTotal(costo: Double, sinIngredientes: Boolean) {
         Column(modifier = Modifier.padding(Medidas.medio)) {
             Text(text = "Cuesta hacerla", style = MaterialTheme.typography.bodySmall)
             Text(
-                text = "$${formatearNumero(costo)}",
+                text = "$${formatearMonto(costo)}",
                 style = MaterialTheme.typography.headlineMedium
             )
             if (sinIngredientes) {
                 Text(
                     text = "Agrega ingredientes y el costo se va armando solo.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            } else {
+                // El aviso del redondeo (15.2). Va acá y no bajo cada línea: es la misma
+                // aclaración para todos los subtotales de la pantalla.
+                Text(
+                    text = AVISO_MONTOS_REDONDEADOS,
                     style = MaterialTheme.typography.bodySmall
                 )
             }
@@ -555,7 +564,7 @@ private fun EncabezadoDeSeccion(
             )
             if (mostrarCosto) {
                 Text(
-                    text = "$${formatearNumero(seccion.costo)}",
+                    text = "$${formatearMonto(seccion.costo)}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(end = Medidas.chico)
@@ -870,7 +879,7 @@ private fun FilaDeIngrediente(
                 // unidad: una bolsa y un sticker cuestan de verdad y entran al total (14.5).
                 text = "${linea.cuantoDice} × " +
                     "$${formatearNumero(linea.ingrediente.valorPorGramo)} = " +
-                    "$${formatearNumero(linea.subtotal)}",
+                    "$${formatearMonto(linea.subtotal)}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

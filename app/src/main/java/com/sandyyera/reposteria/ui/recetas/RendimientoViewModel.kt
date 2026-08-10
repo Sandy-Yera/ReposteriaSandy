@@ -10,13 +10,10 @@ import com.sandyyera.reposteria.data.repositorio.Resultado
 import com.sandyyera.reposteria.logica.formato.formatearMientrasSeEscribe
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.logica.moldes.DimensionesMolde
+import com.sandyyera.reposteria.logica.moldes.OpcionDeReparto
 import com.sandyyera.reposteria.logica.moldes.corteEfectivoDe
-import com.sandyyera.reposteria.logica.moldes.FormaDelCorte
-import com.sandyyera.reposteria.logica.moldes.RepartoDelCorte
 import com.sandyyera.reposteria.logica.moldes.medidaDelTrozo
-import com.sandyyera.reposteria.logica.moldes.medidaEnCuadricula
-import com.sandyyera.reposteria.logica.moldes.repartoEfectivo
-import com.sandyyera.reposteria.logica.moldes.repartosPosibles
+import com.sandyyera.reposteria.logica.moldes.opcionesDeReparto
 import com.sandyyera.reposteria.logica.rendimiento.AVISO_PESO_REESCALADO
 import com.sandyyera.reposteria.logica.rendimiento.PESO_NO_ESPECIFICADO
 import com.sandyyera.reposteria.logica.rendimiento.pesoPorTrozo
@@ -57,19 +54,6 @@ sealed interface DialogoRendimiento {
         val puedeGuardar: Boolean get() = pesoNuevo.isNotBlank() && !guardando
     }
 }
-
-/**
- * Un reparto ofrecido para cortar en cuadrícula, con la medida que deja (9.4.3).
- *
- * Lleva la medida **ya calculada y formateada** y no solo el reparto, porque el número es lo
- * que se está decidiendo: ofrecer "3 × 2" a secas obliga a hacer la división de cabeza, que es
- * justo el trabajo que la pantalla existe para ahorrar. Con la medida al lado, elegir es mirar.
- */
-data class OpcionDeReparto(
-    val reparto: RepartoDelCorte,
-    val medida: String,
-    val elegido: Boolean
-)
 
 /** Lo que el paso de rendimiento necesita para dibujarse. */
 data class EstadoRendimiento(
@@ -176,19 +160,8 @@ data class EstadoRendimiento(
     val repartosOfrecidos: List<OpcionDeReparto>
         get() {
             val d = dimensionesDelMolde ?: return emptyList()
-            if (corteEfectivoDe(d) != FormaDelCorte.CUADRICULA) return emptyList()
-            val cuantos = cuantosTrozos?.takeIf { it > 1 } ?: return emptyList()
-            val elegido = repartoEfectivo(d, cuantos, trozosALoLargo) ?: return emptyList()
-
-            return repartosPosibles(cuantos).mapNotNull { reparto ->
-                medidaEnCuadricula(d, reparto, ::formatearNumero)?.let { medida ->
-                    OpcionDeReparto(
-                        reparto = reparto,
-                        medida = medida,
-                        elegido = reparto.aLoLargo == elegido.aLoLargo
-                    )
-                }
-            }
+            val cuantos = cuantosTrozos ?: return emptyList()
+            return opcionesDeReparto(d, cuantos, trozosALoLargo, ::formatearNumero)
         }
 
     /** Cuánto pesa cada trozo, o "No especificado" si no hay peso anotado (8.3). */

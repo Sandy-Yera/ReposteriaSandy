@@ -332,6 +332,132 @@ class CorteTest {
         assertNull(medidaDelTrozo(rectangulo(20.0, 10.0, 5.0), null, 0, formatear = comoNumero))
     }
 
+    // --- Decir en palabras lo que el rótulo "1 × 5" no decía (9.4.4) ---
+
+    @Test
+    fun `el molde de 26 por 20 en 5, que es el que motivó las palabras`() {
+        // Lo que Sandy vio y no pudo elegir: dos opciones rotuladas `1 × 5` y `5 × 1`, que se
+        // leen como el mismo número dado vuelta. Son cortes distintos —tiras de 26 × 4 contra
+        // tiras de 5,2 × 20— y la frase es la que lo dice sin tener que adivinar.
+        val elDeSandy = rectangulo(26.0, 20.0, 8.0)
+
+        assertEquals(
+            "el lado de 26 entero, el de 20 en 5",
+            comoSeCortanLosLados(elDeSandy, RepartoDelCorte(1, 5), comoNumero)
+        )
+        assertEquals(
+            "el lado de 26 en 5, el de 20 entero",
+            comoSeCortanLosLados(elDeSandy, RepartoDelCorte(5, 1), comoNumero)
+        )
+    }
+
+    @Test
+    fun `con una cuadricula de verdad se nombran los dos cortes`() {
+        assertEquals(
+            "el lado de 26 en 3, el de 25 en 2",
+            comoSeCortanLosLados(rectangulo(26.0, 25.0, 10.0), RepartoDelCorte(3, 2), comoNumero)
+        )
+    }
+
+    @Test
+    fun `sin lados que nombrar no se inventa la frase`() {
+        // Mismo criterio que `medidaEnCuadricula`: de un exótico sin medidas de corte no se
+        // puede afirmar cuál lado se parte, así que no se dice nada.
+        val exotico = DimensionesMolde(
+            tipoForma = TipoFormaMolde.EXOTICO, volumenExoticoCm3 = 1000.0, alturaMoldeCm = 5.0
+        )
+
+        assertNull(comoSeCortanLosLados(exotico, RepartoDelCorte(2, 1), comoNumero))
+    }
+
+    @Test
+    fun `la lista ofrecida trae medida, palabras y cuál gana`() {
+        // La lista que ven las dos pantallas. Se arma una sola vez: escrita en cada ViewModel,
+        // la frase en palabras habría quedado en una de las dos.
+        val elDeSandy = rectangulo(26.0, 20.0, 8.0)
+
+        val opciones = opcionesDeReparto(elDeSandy, trozos = 5, trozosALoLargo = null, comoNumero)
+
+        assertEquals("5 es primo: 1×5 y 5×1", 2, opciones.size)
+        assertEquals("el lado de 26 entero, el de 20 en 5", opciones[0].comoSeCorta)
+        assertEquals("26 × 4 cm, 8 de alto", opciones[0].medida)
+        // Sin nada anotado gana el más parejo: 5,2 × 20 (proporción 3,85) contra 26 × 4
+        // (proporción 6,5). O sea que la app parte el lado de 26, no el de 20.
+        assertEquals(5, opciones.single { it.elegido }.reparto.aLoLargo)
+        assertEquals("el lado de 26 en 5, el de 20 entero", opciones[1].comoSeCorta)
+    }
+
+    @Test
+    fun `sin nada que elegir la lista viene vacía`() {
+        val redondo = DimensionesMolde(
+            tipoForma = TipoFormaMolde.CIRCULO, diametroCm = 20.0, alturaMoldeCm = 6.0
+        )
+
+        assertEquals("En cuñas no hay lados que repartir", emptyList<OpcionDeReparto>(), opcionesDeReparto(redondo, 6, null, comoNumero))
+        assertEquals("Y con un solo trozo no se elige nada", emptyList<OpcionDeReparto>(), opcionesDeReparto(rectangulo(26.0, 20.0, 8.0), 1, null, comoNumero))
+    }
+
+    @Test
+    fun `las medidas de corte anotadas explican que hacen`() {
+        // El campo no es neutro: escribirlo apaga el reparto más parejo. Eso tiene que estar
+        // dicho al lado del campo, que es donde Sandy no sabía qué poner.
+        val anotado = rectangulo(26.0, 20.0, 8.0)
+            .copy(largoDeCorteCm = 26.0, anchoDeCorteCm = 20.0)
+
+        val frase = queHacenLasMedidasDeCorte(anotado, comoNumero)
+        assertEquals(
+            "Con esto anotado se parte el lado de 26 y el de 20 queda entero. Déjalos vacíos y " +
+                "la app reparte los trozos lo más parejo posible.",
+            frase
+        )
+        assertNull("Sin nada anotado no hay nada que explicar", queHacenLasMedidasDeCorte(rectangulo(26.0, 20.0, 8.0), comoNumero))
+    }
+
+    @Test
+    fun `anotar los lados del propio molde no dispara ningun aviso`() {
+        // Es el uso previsto: los mismos lados, en el orden en que se cortan. Avisar acá sería
+        // retar por hacer justo lo que el campo pide.
+        val comoEsta = rectangulo(26.0, 20.0, 8.0)
+            .copy(largoDeCorteCm = 26.0, anchoDeCorteCm = 20.0)
+        val alReves = rectangulo(26.0, 20.0, 8.0)
+            .copy(largoDeCorteCm = 20.0, anchoDeCorteCm = 26.0)
+
+        assertNull(avisoDeMedidasDeCorteAjenas(comoEsta, comoNumero))
+        assertNull(avisoDeMedidasDeCorteAjenas(alReves, comoNumero))
+    }
+
+    @Test
+    fun `unas medidas de corte que no son las del molde se avisan sin bloquear`() {
+        // La pregunta literal de Sandy: "¿qué pasa si pongo un número menor al del molde?".
+        // Pasa que los trozos se miden sobre esa parte, y eso es legítimo —hay bordes que no
+        // se cortan— pero no puede pasar callado.
+        val recortado = rectangulo(26.0, 20.0, 8.0)
+            .copy(largoDeCorteCm = 20.0, anchoDeCorteCm = 15.0)
+
+        assertEquals(
+            "Este molde mide 26 × 20 y para cortar anotaste 20 × 15: los trozos se van a medir " +
+                "sobre esa parte y no sobre el molde entero.",
+            avisoDeMedidasDeCorteAjenas(recortado, comoNumero)
+        )
+        // Y sigue midiendo sobre lo anotado, que es de lo que avisa.
+        assertEquals(
+            "4 × 15 cm, 8 de alto",
+            medidaDelTrozo(recortado, FormaDelCorte.CUADRICULA, 5, formatear = comoNumero)
+        )
+    }
+
+    @Test
+    fun `en un triangulo no hay contra que comparar y no se avisa`() {
+        // Ahí las medidas de corte son la única fuente que existe: no hay lados propios.
+        val triangulo = DimensionesMolde(
+            tipoForma = TipoFormaMolde.TRIANGULO, baseTrianguloCm = 20.0,
+            alturaTrianguloCm = 15.0, alturaMoldeCm = 5.0,
+            largoDeCorteCm = 8.0, anchoDeCorteCm = 4.0
+        )
+
+        assertNull(avisoDeMedidasDeCorteAjenas(triangulo, comoNumero))
+    }
+
     @Test
     fun `el corte no toca el area ni el volumen`() {
         // La razón de que el corte exista como concepto aparte. Si describir un corte

@@ -187,6 +187,157 @@ fun medidaEnCuadricula(
 }
 
 /**
+ * Un reparto ofrecido en pantalla, con todo lo que hace falta para elegirlo mirando.
+ *
+ * Lleva la medida y la frase **ya calculadas**, y no solo el reparto: ofrecer `3 × 2` a secas
+ * obliga a hacer dos divisiones de cabeza para saber qué se está eligiendo, que es justo el
+ * trabajo que la pantalla existe para ahorrar.
+ *
+ * [elegido] marca el que la app usaría si nadie toca nada. En el paso de la receta es el que
+ * está seleccionado; en el catálogo de moldes, donde no se decide nada, es igual de útil —dice
+ * cuál de todos los ofrecidos va a salir de verdad.
+ */
+data class OpcionDeReparto(
+    val reparto: RepartoDelCorte,
+    val medida: String,
+    val comoSeCorta: String,
+    val elegido: Boolean
+)
+
+/**
+ * Todos los repartos que se le pueden ofrecer a un molde partido en [trozos].
+ *
+ * Existe como una sola función porque **son dos las pantallas que la necesitan** —el paso del
+ * molde en la receta y el catálogo, que muestra la misma lista como vista previa— y las dos la
+ * tenían escrita por su cuenta, con el mismo bucle y un campo de diferencia. Dos copias de una
+ * lista se separan en cuanto una gane una columna, y ya pasó: la frase en palabras habría
+ * quedado en una sola de las dos.
+ *
+ * Viene vacía cuando no hay nada que elegir: sin cuadrícula, con un solo trozo, o sin lados con
+ * los que medir. Una lista de una sola opción es pedir que elijan lo único que hay.
+ */
+fun opcionesDeReparto(
+    dimensiones: DimensionesMolde,
+    trozos: Int,
+    trozosALoLargo: Int?,
+    formatear: (Double) -> String
+): List<OpcionDeReparto> {
+    if (corteEfectivoDe(dimensiones) != FormaDelCorte.CUADRICULA) return emptyList()
+    if (trozos <= 1) return emptyList()
+    val queGana = repartoEfectivo(dimensiones, trozos, trozosALoLargo) ?: return emptyList()
+    return repartosPosibles(trozos).mapNotNull { reparto ->
+        val medida = medidaEnCuadricula(dimensiones, reparto, formatear) ?: return@mapNotNull null
+        val palabras = comoSeCortanLosLados(dimensiones, reparto, formatear)
+            ?: return@mapNotNull null
+        OpcionDeReparto(
+            reparto = reparto,
+            medida = medida,
+            comoSeCorta = palabras,
+            elegido = reparto.aLoLargo == queGana.aLoLargo
+        )
+    }
+}
+
+/**
+ * Qué le pasa a **cada lado del molde** con este reparto, dicho con los números del molde.
+ *
+ * Es la respuesta a lo que Sandy no entendía de la lista de repartos: en un molde de 26 × 20
+ * partido en 5, la app ofrecía `1 × 5` y `5 × 1`, que se leen como el mismo número dado vuelta.
+ * Son cortes distintos —uno deja tiras de 26 × 4 y el otro de 5,2 × 20— pero **el rótulo no
+ * decía qué contaba cada número**, y un rótulo que hay que adivinar no se puede elegir.
+ *
+ * Acá no hay nada que adivinar porque se nombran los lados: *"el lado de 26 entero, el de 20
+ * en 5"*. El orden es el mismo de [RepartoDelCorte] —primero el que se parte— así que las dos
+ * frases dicen lo mismo, una en números y otra en palabras.
+ *
+ * Devuelve `null` cuando no se sabe de qué lados se habla, exactamente igual que
+ * [medidaEnCuadricula]: sin lados no hay frase honesta posible.
+ */
+fun comoSeCortanLosLados(
+    dimensiones: DimensionesMolde,
+    reparto: RepartoDelCorte,
+    formatear: (Double) -> String
+): String? {
+    val lados = ladosParaCortar(dimensiones) ?: return null
+    if (reparto.aLoLargo < 1 || reparto.aLoAncho < 1) return null
+    fun frase(medida: Double, en: Int, primero: Boolean): String {
+        val nombre = if (primero) "el lado de ${formatear(medida)}" else "el de ${formatear(medida)}"
+        return if (en == 1) "$nombre entero" else "$nombre en $en"
+    }
+    return frase(lados.largo, reparto.aLoLargo, primero = true) + ", " +
+        frase(lados.ancho, reparto.aLoAncho, primero = false)
+}
+
+/**
+ * Qué está haciendo de verdad el par de medidas de corte anotadas a mano, en una frase.
+ *
+ * La otra mitad de la misma confusión: Sandy anotó los dos lados del molde ahí porque no sabía
+ * qué se le estaba pidiendo —*"prácticamente porque no entiendo qué va allí"*— sin saber que
+ * eso **no es neutro**. Escribirlos apaga el reparto más parejo y deja mandando el orden: se
+ * parte el primero y el segundo queda entero (ver [repartoEfectivo]). Un campo que cambia el
+ * resultado tiene que decir qué cambia.
+ *
+ * Devuelve `null` cuando no hay nada anotado, que es cuando no hay nada que explicar.
+ */
+fun queHacenLasMedidasDeCorte(
+    dimensiones: DimensionesMolde,
+    formatear: (Double) -> String
+): String? {
+    val largo = dimensiones.largoDeCorteCm ?: return null
+    val ancho = dimensiones.anchoDeCorteCm ?: return null
+    return "Con esto anotado se parte el lado de ${formatear(largo)} y el de " +
+        "${formatear(ancho)} queda entero. Déjalos vacíos y la app reparte los trozos lo más " +
+        "parejo posible."
+}
+
+/**
+ * El aviso de que las medidas de corte no son las del molde, o `null` si no corresponde.
+ *
+ * Responde la pregunta literal de Sandy —*"¿qué pasa si pongo un número menor al del molde? ¿o
+ * superior?"*— en el único lugar donde la respuesta sirve: al lado de los campos.
+ *
+ * Lo que pasa es que **los trozos se miden sobre lo que se escribió**, no sobre el molde: con un
+ * molde de 26 × 20 y un corte anotado de 20 × 15, un reparto de 5 da trozos de 4 × 15, que
+ * describen un pedazo del molde y no el molde. Eso es legítimo —hay bordes que no se cortan— y
+ * por eso **no se bloquea**, pero no puede pasar callado.
+ *
+ * Solo aplica al rectángulo y al cuadrado, que son los que traen sus propios lados. En un
+ * triángulo o un molde exótico las medidas de corte son la única fuente que hay y no hay contra
+ * qué compararlas.
+ */
+fun avisoDeMedidasDeCorteAjenas(
+    dimensiones: DimensionesMolde,
+    formatear: (Double) -> String
+): String? {
+    val largo = dimensiones.largoDeCorteCm ?: return null
+    val ancho = dimensiones.anchoDeCorteCm ?: return null
+    val propios = when (dimensiones.tipoForma) {
+        TipoFormaMolde.RECTANGULO ->
+            (dimensiones.largoCm ?: return null) to (dimensiones.anchoCm ?: return null)
+        TipoFormaMolde.CUADRADO -> (dimensiones.ladoCm ?: return null).let { it to it }
+        else -> return null
+    }
+    // Como par sin orden: escribirlos al revés **es** el uso previsto de estos campos, así que
+    // avisar ahí sería retar por hacer justo lo que se pedía.
+    val sonLosMismos = (mismaMedida(largo, propios.first) && mismaMedida(ancho, propios.second)) ||
+        (mismaMedida(largo, propios.second) && mismaMedida(ancho, propios.first))
+    if (sonLosMismos) return null
+    return "Este molde mide ${formatear(propios.first)} × ${formatear(propios.second)} y para " +
+        "cortar anotaste ${formatear(largo)} × ${formatear(ancho)}: los trozos se van a medir " +
+        "sobre esa parte y no sobre el molde entero."
+}
+
+/**
+ * Si dos medidas de molde son la misma.
+ *
+ * Con tolerancia y no con `==` por lo de siempre: los centímetros pasan por texto y por
+ * redondeos, y un aviso que salta por una diferencia en el quinto decimal es un aviso que se
+ * aprende a ignorar.
+ */
+private fun mismaMedida(uno: Double, otro: Double): Boolean =
+    kotlin.math.abs(uno - otro) < 0.005
+
+/**
  * De qué tamaño queda cada trozo, o `null` si no se puede decir con lo que hay.
  *
  * Devolver `null` es una respuesta legítima y frecuente: un molde con forma de persona no se

@@ -419,11 +419,18 @@ private fun FormularioMolde(
                         // Dos textos porque son dos cosas distintas: en un triángulo sin esto
                         // la app no puede decir nada, y en un rectángulo es la manera de
                         // mandar sobre la suposición del lado más largo.
+                        //
+                        // **Empieza diciendo que se puede dejar vacío.** Sandy los llenó con
+                        // las medidas del propio molde "prácticamente porque no entiendo qué va
+                        // ahí": un campo opcional que no dice que es opcional se contesta igual,
+                        // y acá contestarlo cambia el reparto.
                         text = if (estado.laFormaYaDaLosLados) {
-                            "Se corta el lado más largo. Si cortas el otro, escribe los dos " +
-                                "lados acá en el orden que los cortas:"
+                            "Opcional. Déjalos vacíos y la app corta el lado más largo. " +
+                                "Son los dos lados de este mismo molde, escritos en el orden " +
+                                "en que los cortas: primero el que se parte."
                         } else {
-                            "De qué tamaño es la parte que se corta, si la sabes:"
+                            "De qué tamaño es la parte que se corta, si la sabes. Primero el " +
+                                "lado que se parte."
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -431,16 +438,32 @@ private fun FormularioMolde(
                     CampoNumerico(
                         valor = estado.largoDeCorte,
                         alCambiar = acciones.cambiarLargoDeCorte,
-                        etiqueta = "Largo para cortar (cm)",
+                        etiqueta = "Lado que se parte (cm)",
                         error = estado.errorCorte,
                         accionDelTeclado = ImeAction.Next
                     )
                     CampoNumerico(
                         valor = estado.anchoDeCorte,
                         alCambiar = acciones.cambiarAnchoDeCorte,
-                        etiqueta = "Ancho para cortar (cm)",
+                        etiqueta = "El otro lado (cm)",
                         accionDelTeclado = ImeAction.Done
                     )
+                    // Qué hace lo que se acaba de escribir, en vivo. Es la mitad que faltaba:
+                    // el texto de arriba dice qué escribir y este dice qué pasó al escribirlo.
+                    estado.explicacionDelCorte?.let {
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    estado.avisoDelCorte?.let {
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
 
                 // Cómo quedarían los trozos, **mientras se escribe** (9.4.3). Lo pidió
@@ -464,14 +487,21 @@ private fun FormularioMolde(
                             color = MaterialTheme.colorScheme.primary
                         )
                     }
-                    estado.repartosDeLaPrueba.forEach { (reparto, medida) ->
+                    estado.repartosDeLaPrueba.forEach { opcion ->
                         Text(
                             // Todos los repartos y no solo el que la app elegiría: acá no se
                             // está decidiendo nada —el reparto se elige en la receta, que es
-                            // donde viven los trozos—, se está mirando qué da este molde.
-                            text = "${reparto.comoSeLee}  ·  $medida",
+                            // donde viven los trozos—, se está mirando qué da este molde. Pero
+                            // sí se marca cuál sale por defecto, que antes había que adivinar.
+                            //
+                            // **En palabras y no solo "1 × 5"**: en un molde de 26 × 20 partido
+                            // en 5, la app ofrecía `1 × 5` y `5 × 1` — dos cortes distintos con
+                            // rótulos que se leen igual dados vuelta. Lo reportó Sandy.
+                            text = opcion.comoSeCorta + "  ·  " + opcion.medida +
+                                if (opcion.elegido) "  (la que usa la app)" else "",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = if (opcion.elegido) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }

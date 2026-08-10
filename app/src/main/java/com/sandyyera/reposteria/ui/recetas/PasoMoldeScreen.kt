@@ -475,12 +475,17 @@ private fun CuadroDeMolde(
 
                         if (estado.pideMedidasDeCorte) {
                             Text(
-                                // Los mismos dos textos que el catálogo: es la misma pregunta.
+                                // Los mismos textos que el catálogo: es la misma pregunta, y
+                                // dos redacciones distintas para lo mismo confunden más que
+                                // ayudar.
                                 text = if (estado.laFormaYaDaLosLados) {
-                                    "Se corta el lado más largo. Si cortas el otro, escribe " +
-                                        "los dos lados acá en el orden que los cortas:"
+                                    "Opcional. Déjalos vacíos y la app corta el lado más " +
+                                        "largo. Son los dos lados de este mismo molde, " +
+                                        "escritos en el orden en que los cortas: primero el " +
+                                        "que se parte."
                                 } else {
-                                    "De qué tamaño es la parte que se corta, si la sabes:"
+                                    "De qué tamaño es la parte que se corta, si la sabes. " +
+                                        "Primero el lado que se parte."
                                 },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -488,16 +493,30 @@ private fun CuadroDeMolde(
                             CampoNumerico(
                                 valor = estado.largoDeCorte,
                                 alCambiar = acciones.cambiarLargoDeCorte,
-                                etiqueta = "Largo para cortar (cm)",
+                                etiqueta = "Lado que se parte (cm)",
                                 error = estado.errorCorte,
                                 accionDelTeclado = ImeAction.Next
                             )
                             CampoNumerico(
                                 valor = estado.anchoDeCorte,
                                 alCambiar = acciones.cambiarAnchoDeCorte,
-                                etiqueta = "Ancho para cortar (cm)",
+                                etiqueta = "El otro lado (cm)",
                                 accionDelTeclado = ImeAction.Done
                             )
+                            estado.explicacionDelCorte?.let {
+                                Text(
+                                    text = it,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            estado.avisoDelCorte?.let {
+                                Text(
+                                    text = it,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
                         }
                     }
                 }

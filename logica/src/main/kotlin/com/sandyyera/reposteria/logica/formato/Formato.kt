@@ -92,6 +92,42 @@ fun cantidadConUnidad(cantidad: Double, esObjeto: Boolean): String {
     return "$numero ${if (cantidad == 1.0) "unidad" else "unidades"}"
 }
 
+/**
+ * Lo que se aclara al pie de toda pantalla que muestre montos con [formatearMonto].
+ *
+ * Es la mitad obligatoria del redondeo. Un número redondeado sin avisar es un número falso; con
+ * el aviso es una comodidad. Va escrito una sola vez porque son varias las pantallas que lo
+ * muestran y tienen que decir exactamente lo mismo.
+ */
+const val AVISO_MONTOS_REDONDEADOS =
+    "Los montos se muestran redondeados al peso más cercano. Las cuentas se hacen con el " +
+        "valor exacto."
+
+/**
+ * Un monto de plata para mostrar: **redondeado al peso más cercano** (15.2).
+ *
+ * Lo pidió Sandy para las cifras de gastos y ganancias: *"visualmente debe redondearse para
+ * verse como número entero… pero por detrás todo seguirá siendo calculado con exactitud"*. Y
+ * eso es exactamente lo que hace — es una función de **presentación**, no toca lo guardado ni
+ * lo calculado. Lo que se guarda lo decide [redondearParaGuardar], que sigue en 5 decimales.
+ *
+ * **No sirve para un precio por gramo**, y esa es la línea que no hay que cruzar: un
+ * ingrediente a $0,06667 el gramo se convertiría en "$0" y la receta parecería gratis. Se usa
+ * para totales —lo que cuesta, lo que entra, lo que se gana— y ahí los centavos no son
+ * información, son ruido: nadie cobra $4.520,33333.
+ *
+ * Al redondear, la suma de las partes puede no dar el total que se muestra. Por eso toda
+ * pantalla que lo use tiene que mostrar además [AVISO_MONTOS_REDONDEADOS]: la aproximación se
+ * declara, no se descubre.
+ */
+fun formatearMonto(valor: Double): String {
+    if (!valor.isFinite()) return formatearNumero(valor)
+    // `roundToLong` sobre el valor completo y no sobre las partes: redondear el entero y el
+    // decimal por separado es lo que hace `formatearNumero`, y ahí un 0,6 se iría a "0,6" en
+    // vez de subir al 1.
+    return formatearNumero(valor.roundToLong().toDouble())
+}
+
 fun formatearNumero(valor: Double): String {
     val redondeado = redondearParaGuardar(valor)
 

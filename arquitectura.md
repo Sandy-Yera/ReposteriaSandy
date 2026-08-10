@@ -2470,6 +2470,31 @@ llevarle la cuenta a la harina no es dejar de usarla en las recetas. La adverten
 haría creer que desde ahí se borra un ingrediente en uso — que además avisaría a qué recetas
 afecta (7.1), cosa que esa pantalla no hace.
 
+#### 9.4.4 Decir qué lado se corta, no solo cuántos trozos
+
+Un molde de 26 × 20 partido en 5 ofrecía dos opciones rotuladas **`1 × 5`** y **`5 × 1`**. Son
+cortes distintos —el primero deja tiras de 26 × 4 y el segundo de 5,2 × 20— pero los dos rótulos
+se leen como el mismo número dado vuelta, y el reportante lo dijo sin rodeos: *"y no entiendo por
+qué"*. **Un rótulo que hay que adivinar no se puede elegir.**
+
+La corrección no fue quitar opciones sino nombrarlas: cada reparto se lee ahora *"el lado de 26
+entero, el de 20 en 5"*, con los números del molde. El `3 × 2` sigue estando, en chico y al lado
+de la medida del trozo, para quien ya sabe leerlo.
+
+**El par de medidas de corte tenía el mismo problema, al revés.** Son opcionales y sirven para
+mandar sobre la suposición de "se corta el lado más largo" (9.4.2), pero el formulario no decía
+que se podían dejar vacías, así que se llenaron con las medidas del propio molde *"prácticamente
+porque no entiendo qué va ahí"*. Y eso **no es neutro**: escribirlas apaga el reparto más parejo
+y deja mandando el orden. Tres cambios:
+
+1. Los campos se llaman **"Lado que se parte"** y **"El otro lado"**, que es lo que son.
+2. El texto empieza por *"Opcional. Déjalos vacíos y la app corta el lado más largo"*.
+3. Debajo, **en vivo**, se dice qué está haciendo lo escrito, y si lo escrito no son los lados
+   de este molde se avisa que los trozos se van a medir sobre esa parte. **No se bloquea** —hay
+   bordes que no se cortan— pero tampoco pasa callado.
+
+La lista de repartos marca además **cuál usa la app** si nadie elige. Antes había que deducirlo.
+
 ## 10. Módulo Empleados
 
 ### 10.1 Cálculo de sueldo por receta
@@ -2849,6 +2874,32 @@ se separan a la primera actualización que alguien apure.
 menor— y esa cuenta lo garantiza mientras las fases avancen.
 
 **Condición de cierre que aplica a todas las fases:** ninguna fase se da por terminada sin haber actualizado `registro_funciones.md` con las funciones y variables de módulo que esa fase agregó, en el formato exacto de `CLAUDE.md`. Este documento ya nombra ~20 funciones (`formatearNumero`, `factorEscala`, `precioDeMenorGanancia`, `calcularSueldo`, `trozoGanador`, `SEMANAS_POR_MES`…) y el registro está vacío, así que el desfase parte en cero y solo crece si no se cierra fase por fase. Es la única forma de que la regla de "revisar el registro antes de escribir algo nuevo" sirva de algo: un registro incompleto es peor que no tenerlo, porque da falsa confianza de que algo no existe.
+
+### 15.2 Cómo se muestran los montos
+
+**Los montos se redondean al peso más cercano para mostrarse, y se calculan exactos por
+detrás.** Fue un pedido directo: *"en ganancias y gastos, visualmente debe redondearse para verse
+como número entero… pero, ojo, por detrás todo seguirá siendo calculado con exactitud"*. Nadie
+cobra $4.520,33333, y arrastrar esos decimales por la pantalla no informa nada.
+
+Son **dos funciones que no se pueden confundir**:
+
+| Función | Para qué | Precisión |
+|---|---|---|
+| `redondearParaGuardar` | Lo que se guarda y lo que multiplica cada receta | 5 decimales |
+| `formatearMonto` | Lo que se dibuja en gastos, ganancias y simulaciones | Entero |
+
+**`formatearMonto` no sirve para un precio por gramo**, y esa es la línea que no hay que cruzar:
+un ingrediente a $0,06667 el gramo se convertiría en "$0" y la receta parecería gratis. Se usa
+para totales —lo que cuesta, lo que entra, lo que se gana—, nunca para el valor unitario de un
+ingrediente ni para lo que se escribe en un campo.
+
+**El aviso es obligatorio.** Al redondear, la suma de las partes puede no dar el total que se
+muestra, y una suma que no cuadra por un peso se lee como un error de la app. Toda pantalla que
+use `formatearMonto` muestra `AVISO_MONTOS_REDONDEADOS` —una constante, para que las cuatro digan
+exactamente lo mismo—: *"Los montos se muestran redondeados al peso más cercano. Las cuentas se
+hacen con el valor exacto."* Un número redondeado sin avisar es un número falso; con el aviso es
+una comodidad.
 
 ### Fase 0 — Validar Google Sign-In + Drive API en un proyecto vacío
 

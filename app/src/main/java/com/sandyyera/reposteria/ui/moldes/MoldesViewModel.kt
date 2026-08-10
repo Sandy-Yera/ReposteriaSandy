@@ -14,11 +14,12 @@ import com.sandyyera.reposteria.logica.formato.formatearMientrasSeEscribe
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.logica.moldes.DimensionesMolde
 import com.sandyyera.reposteria.logica.moldes.FormaDelCorte
-import com.sandyyera.reposteria.logica.moldes.RepartoDelCorte
+import com.sandyyera.reposteria.logica.moldes.OpcionDeReparto
+import com.sandyyera.reposteria.logica.moldes.avisoDeMedidasDeCorteAjenas
 import com.sandyyera.reposteria.logica.moldes.corteSugerido
 import com.sandyyera.reposteria.logica.moldes.medidaDelTrozo
-import com.sandyyera.reposteria.logica.moldes.medidaEnCuadricula
-import com.sandyyera.reposteria.logica.moldes.repartosPosibles
+import com.sandyyera.reposteria.logica.moldes.opcionesDeReparto
+import com.sandyyera.reposteria.logica.moldes.queHacenLasMedidasDeCorte
 import com.sandyyera.reposteria.logica.moldes.TipoFormaMolde
 import com.sandyyera.reposteria.logica.validaciones.CampoDeMolde
 import com.sandyyera.reposteria.logica.validaciones.ErroresMolde
@@ -198,15 +199,35 @@ sealed interface DialogoMolde {
          * escrito, o con un corte que no es cuadrícula. Con cuñas no hay nada que repartir y el
          * tamaño sale solo de los trozos, así que eso lo dice [medidaDeLaPrueba].
          */
-        val repartosDeLaPrueba: List<Pair<RepartoDelCorte, String>>
+        val repartosDeLaPrueba: List<OpcionDeReparto>
             get() {
                 val d = dimensionesConCorte ?: return emptyList()
-                if (corteEfectivo != FormaDelCorte.CUADRICULA) return emptyList()
-                val cuantos = trozosDePrueba.toIntOrNull()?.takeIf { it > 1 } ?: return emptyList()
-                return repartosPosibles(cuantos).mapNotNull { reparto ->
-                    medidaEnCuadricula(d, reparto, ::formatearNumero)?.let { reparto to it }
-                }
+                val cuantos = trozosDePrueba.toIntOrNull() ?: return emptyList()
+                // El molde no elige nada —el reparto se decide en la receta, que es donde viven
+                // los trozos—, así que no hay reparto anotado que pasarle. El `elegido` que
+                // vuelve marca el que la app usaría, que acá es información y no una decisión.
+                return opcionesDeReparto(d, cuantos, trozosALoLargo = null, ::formatearNumero)
             }
+
+        /**
+         * Qué está haciendo el par de medidas de corte anotadas, o `null` si no hay ninguna.
+         *
+         * El campo **no es neutro** y hasta ahora no lo decía: escribir los dos lados apaga el
+         * reparto más parejo y deja mandando el orden. Sandy los llenó con las medidas del
+         * propio molde *"prácticamente porque no entiendo qué va ahí"*, sin saber que con eso
+         * cambiaba el resultado.
+         */
+        val explicacionDelCorte: String?
+            get() = dimensionesConCorte?.let { queHacenLasMedidasDeCorte(it, ::formatearNumero) }
+
+        /**
+         * El aviso de que lo anotado para cortar no son los lados de este molde (9.4.4).
+         *
+         * Responde "¿qué pasa si pongo un número menor?" donde sirve: al lado del campo. No
+         * bloquea —hay bordes que no se cortan— pero tampoco deja que pase callado.
+         */
+        val avisoDelCorte: String?
+            get() = dimensionesConCorte?.let { avisoDeMedidasDeCorteAjenas(it, ::formatearNumero) }
 
         /**
          * El tamaño del trozo con lo escrito, para los cortes que no son cuadrícula.
