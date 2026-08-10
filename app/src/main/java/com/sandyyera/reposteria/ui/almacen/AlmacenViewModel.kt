@@ -410,12 +410,17 @@ class AlmacenViewModel(
     }
 
     /**
-     * Deja el precio que ya estaba y guarda igual lo demás.
+     * Deja el ingrediente tal como estaba y solo lo anota en el almacén.
+     *
+     * Manda **los tres datos que ya tenía el ingrediente** —precio, unidad y si va en recetas— y
+     * no los escritos en el cuadro. Es lo que dice el botón: *dejarlo como está* es no tocarlo.
+     * Mandando los del cuadro, el repositorio volvería a encontrar diferencias y preguntaría lo
+     * mismo otra vez; mandando estos, no hay nada que confirmar y el artículo entra derecho.
      *
      * **No se puede resolver reescribiendo el campo del precio**, que es lo que hacía antes:
      * desde 14.5.2 ese campo dice lo que costó *todo*, no lo que cuesta cada unidad, así que
      * poner ahí el valor guardado escribiría un número que significa otra cosa. Va por su propia
-     * llamada al repositorio, con el valor que ya estaba.
+     * llamada al repositorio.
      */
     fun conservarElPrecioGuardado() {
         val actual = _dialogo.value as? DialogoAlmacen.Agregar ?: return
@@ -427,10 +432,10 @@ class AlmacenViewModel(
         viewModelScope.launch {
             val resultado = almacen.agregar(
                 nombre = actual.nombre,
-                esObjeto = actual.esObjeto,
-                vaEnRecetas = actual.vaEnRecetas,
+                esObjeto = disputa.existente.esObjeto,
+                vaEnRecetas = disputa.existente.vaEnRecetas,
                 cantidad = cuanto,
-                valor = disputa.valorGuardado,
+                valor = disputa.existente.valorPorGramo,
                 detalles = actual.detalles
             )
             terminarDeAgregar(actual, resultado)
