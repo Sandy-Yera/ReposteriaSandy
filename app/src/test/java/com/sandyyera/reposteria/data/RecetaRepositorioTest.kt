@@ -237,16 +237,81 @@ class RecetaRepositorioTest {
     }
 
     @Test
-    fun `no se puede tener dos veces el mismo precio base`() = runBlocking {
-        // `precioBasePorTrozo` se queda con el primero que encuentra, así que el segundo
-        // quedaría guardado sin alimentar nada — y en la lista los dos se ven casi iguales.
+    fun `se pueden tener varios precios de un trozo, y solo el primero es la base`() = runBlocking {
+        // Antes el segundo se rechazaba, porque la base se deducía de `cantidad == 1` y dos
+        // filas iguales eran indistinguibles. Sandy chocó con eso al querer tantear otro precio
+        // sin perder el que tenía: "debería estar editando el 1 trozo base todo el rato".
         val id = recetaConCosto()
         repositorio.crearPrecio(id, ModoPrecio.TROZO, "1", "500")
 
         val r = repositorio.crearPrecio(id, ModoPrecio.TROZO, "1", "700")
 
+        assertTrue(r is Resultado.Listo)
+        val precios = repositorio.observarPrecios(id).first()
+        assertEquals(2, precios.size)
+        assertEquals("Solo uno es la base", 1, precios.count { it.esBase })
+        assertEquals("Y es el primero", 500.0, precios.single { it.esBase }.precioTotal, 0.001)
+    }
+
+    @Test
+    fun `elegir otra base la cambia y apaga la anterior`() = runBlocking {
+        val id = recetaConCosto()
+        repositorio.crearPrecio(id, ModoPrecio.TROZO, "1", "500")
+        repositorio.crearPrecio(id, ModoPrecio.PRODUCTO, "1", "3.000")
+        repositorio.crearPrecio(id, ModoPrecio.TROZO, "1", "700")
+        val elSegundo = repositorio.observarPrecios(id).first()
+            .single { it.modo == ModoPrecio.TROZO && it.precioTotal == 700.0 }
+
+        assertNull(repositorio.elegirPrecioBase(elSegundo.id))
+
+        val precios = repositorio.observarPrecios(id).first()
+        assertEquals("Sigue habiendo una sola base por trozo", 1, precios.count { it.modo == ModoPrecio.TROZO && it.esBase })
+        assertEquals(700.0, precios.single { it.modo == ModoPrecio.TROZO && it.esBase }.precioTotal, 0.001)
+        // Y la del producto no se movió: se apaga por modo, no por receta entera.
+        assertEquals(3000.0, precios.single { it.modo == ModoPrecio.PRODUCTO && it.esBase }.precioTotal, 0.001)
+    }
+
+    @Test
+    fun `una promocion no puede ser la base`() = runBlocking {
+        // De la base salen los trozos sueltos que deja una promoción que no divide exacto: una
+        // base de 2 no tendría cómo cobrar el suelto que ella misma deja.
+        val id = recetaConCosto()
+        repositorio.crearPrecio(id, ModoPrecio.TROZO, "1", "500")
+        repositorio.crearPrecio(id, ModoPrecio.PRODUCTO, "1", "3.000")
+        repositorio.crearPrecio(id, ModoPrecio.TROZO, "2", "900")
+        val promo = repositorio.observarPrecios(id).first().single { it.cantidad == 2 }
+
+        assertNotNull(repositorio.elegirPrecioBase(promo.id))
+        assertEquals(500.0, repositorio.observarPrecios(id).first().single { it.modo == ModoPrecio.TROZO && it.esBase }.precioTotal, 0.001)
+    }
+
+    @Test
+    fun `borrar la base asciende a la siguiente en vez de dejar el modo sin ninguna`() = runBlocking {
+        // Sin base, los trozos que sobran de una promoción no tienen a qué venderse y las
+        // cifras bajan sin explicación. Asciende el más antiguo que quede, que es el que la
+        // receta venía usando.
+        val id = recetaConCosto()
+        repositorio.crearPrecio(id, ModoPrecio.TROZO, "1", "500")
+        repositorio.crearPrecio(id, ModoPrecio.TROZO, "1", "700")
+        val laBase = repositorio.observarPrecios(id).first().single { it.esBase }
+
+        repositorio.eliminarPrecio(laBase.id)
+
+        val precios = repositorio.observarPrecios(id).first()
+        assertEquals(1, precios.size)
+        assertTrue("La que queda hereda la base", precios.single().esBase)
+    }
+
+    @Test
+    fun `la base no puede convertirse en promocion al editarla`() = runBlocking {
+        val id = recetaConCosto()
+        repositorio.crearPrecio(id, ModoPrecio.TROZO, "1", "500")
+        val laBase = repositorio.observarPrecios(id).first().single { it.esBase }
+
+        val r = repositorio.editarPrecio(laBase.id, ModoPrecio.TROZO, "2", "900")
+
         assertTrue(r is Resultado.NoSePudo)
-        assertEquals(1, repositorio.observarPrecios(id).first().size)
+        assertEquals("Y no se tocó", 1, repositorio.observarPrecios(id).first().single().cantidad)
     }
 
     @Test

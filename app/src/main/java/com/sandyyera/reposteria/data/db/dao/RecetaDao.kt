@@ -15,6 +15,7 @@ import com.sandyyera.reposteria.data.db.entidades.RecetaRendimiento
 import com.sandyyera.reposteria.data.db.entidades.RecetaSeccion
 import com.sandyyera.reposteria.data.db.entidades.RecetaSimulacionVenta
 import com.sandyyera.reposteria.logica.duracion.TipoDuracion
+import com.sandyyera.reposteria.logica.precios.ModoPrecio
 import kotlinx.coroutines.flow.Flow
 
 /** El costo de una receta, para poder pedir varios de una vez. */
@@ -593,6 +594,48 @@ interface RecetaDao {
         quitarReferenciaATodos(recetaId)
         marcarComoReferencia(precioId)
     }
+
+    @Query(
+        "UPDATE receta_precios SET esBase = 0 WHERE recetaId = :recetaId AND modo = :modo"
+    )
+    suspend fun quitarBaseAlModo(recetaId: Long, modo: ModoPrecio)
+
+    @Query("UPDATE receta_precios SET esBase = 1 WHERE id = :precioId")
+    suspend fun marcarComoBase(precioId: Long)
+
+    /**
+     * Deja [precioId] como **única** base de su modo dentro de la receta.
+     *
+     * Mismo cuidado que [fijarPrecioDeReferencia] y por el mismo motivo, pero acotado al modo:
+     * la receta tiene dos bases —una por trozo y una por producto entero— y apagarlas todas
+     * juntas dejaría a la otra sin la suya.
+     *
+     * **No comprueba que el precio tenga cantidad 1**: eso lo revisa el repositorio, que es
+     * quien tiene la fila a mano.
+     */
+    @Transaction
+    suspend fun fijarPrecioBase(recetaId: Long, modo: ModoPrecio, precioId: Long) {
+        quitarBaseAlModo(recetaId, modo)
+        marcarComoBase(precioId)
+    }
+
+    /**
+     * El precio de cantidad 1 más antiguo de un modo, sin contar [exceptoId].
+     *
+     * Es a quién le toca la base cuando se borra la que estaba. Se ordena por `id` y no por
+     * precio: el más antiguo es el que la receta viene usando, y ascender al más barato o al
+     * más caro sería decidir por Sandy algo que ella no pidió.
+     */
+    @Query(
+        "SELECT * FROM receta_precios " +
+            "WHERE recetaId = :recetaId AND modo = :modo AND cantidad = 1 AND id != :exceptoId " +
+            "ORDER BY id LIMIT 1"
+    )
+    suspend fun otroPrecioDeUnoEnElModo(
+        recetaId: Long,
+        modo: ModoPrecio,
+        exceptoId: Long
+    ): RecetaPrecio?
 
     // --- Simulación de venta ---
 

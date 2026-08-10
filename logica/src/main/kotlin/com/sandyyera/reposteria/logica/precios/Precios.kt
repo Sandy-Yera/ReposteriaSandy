@@ -28,7 +28,21 @@ data class PrecioVigente(
      * menor ganancia— y eso hacía imposible responder "¿cuánto ganaría con **esta** promo?",
      * que es justamente para lo que sirve tener varias guardadas.
      */
-    val esReferencia: Boolean = false
+    val esReferencia: Boolean = false,
+    /**
+     * Si es **el precio de todos los días** de su modo: el que se cobra por un trozo suelto o
+     * por un producto entero cuando no hay promoción de por medio.
+     *
+     * Solo uno por receta y por modo lo tiene en `true`, y siempre tiene `cantidad = 1`.
+     *
+     * **No se deduce de `cantidad == 1`, y ahí está el cambio.** Antes se deducía, y por eso la
+     * app solo dejaba guardar un precio de un trozo: un segundo habría sido indistinguible del
+     * primero. Sandy lo reportó al querer tantear —*"si yo quisiera testear el valor de un
+     * trozo, no se me permite; debería estar editando el 1 trozo base todo el rato"*—. Ahora
+     * puede haber varios precios de un trozo y **la app sabe cuál es el de verdad** porque está
+     * marcado, no adivinado.
+     */
+    val esBase: Boolean = false
 )
 
 /**
@@ -162,21 +176,51 @@ fun errorAlElegirReferencia(precio: PrecioVigente, d: DatosCalculoReceta): Strin
 /**
  * Los dos precios **base** de una receta: uno por trozo suelto y uno por el producto entero.
  *
- * Son las filas de `cantidad = 1`, una por modo. No son una tabla aparte ni una columna
- * nueva: "el precio de un trozo" ya es exactamente eso, un precio de un trozo.
+ * Son filas de `cantidad = 1` **marcadas con `esBase`**, una por modo. No son una tabla aparte:
+ * "el precio de un trozo" ya es exactamente eso, un precio de un trozo.
+ *
+ * La marca reemplazó a deducirlo de la cantidad. Mientras la base era "la fila de cantidad 1",
+ * no podía haber dos, y guardar un segundo precio de un trozo estaba prohibido — no por una
+ * regla del negocio sino porque la app no habría sabido cuál era cuál.
  *
  * Existen como concepto propio porque **son los que sostienen a las promociones**. Una promo
  * de 2 trozos en una receta que rinde 3 deja uno suelto, y ese suelto tiene que venderse a
  * algo; sin un precio individual, lo que se muestre de esa venta es inventado (8.6.1).
  */
-fun precioBasePorTrozo(d: DatosCalculoReceta): PrecioVigente? =
-    d.precios.firstOrNull { it.modo == ModoPrecio.TROZO && it.cantidad == 1 }
+fun precioBasePorTrozo(d: DatosCalculoReceta): PrecioVigente? = baseDe(d.precios, ModoPrecio.TROZO)
 
 fun precioBaseDelProducto(d: DatosCalculoReceta): PrecioVigente? =
-    d.precios.firstOrNull { it.modo == ModoPrecio.PRODUCTO && it.cantidad == 1 }
+    baseDe(d.precios, ModoPrecio.PRODUCTO)
 
-/** Si un precio es uno de los dos base, y no una promoción. */
-fun esPrecioBase(precio: PrecioVigente): Boolean = precio.cantidad == 1
+/**
+ * La base de un modo: la marcada, y si ninguna lo está, la primera de cantidad 1.
+ *
+ * **El respaldo no es adorno.** Los precios guardados antes de que existiera la marca llegan
+ * todos con `esBase = false`; la migración marca el más antiguo de cada modo, pero un dato que
+ * se leyó mal una vez merece una red. Sin el respaldo, una receta vieja mal migrada dejaría de
+ * poder cobrar sus trozos sueltos y las cifras se irían para abajo **sin avisar**, que es la
+ * peor forma de fallar.
+ */
+private fun baseDe(precios: List<PrecioVigente>, modo: ModoPrecio): PrecioVigente? =
+    precios.firstOrNull { it.modo == modo && it.esBase }
+        ?: precios.firstOrNull { it.modo == modo && it.cantidad == 1 }
+
+/**
+ * Si un precio es la base de su modo, y no una promoción ni una alternativa.
+ *
+ * **Ya no es `cantidad == 1`**: desde que se pueden guardar varios precios de un trozo, la
+ * cantidad dejó de distinguirlos. Lo que distingue a la base es estar marcada.
+ */
+fun esPrecioBase(precio: PrecioVigente): Boolean = precio.esBase
+
+/**
+ * Si un precio **puede** ser la base de su modo.
+ *
+ * Una promoción no puede: la base es lo que se cobra por **uno**, y de ahí sale el precio de
+ * los trozos que sobran cuando una promo no divide exacto. Una base de 2 no tendría cómo
+ * cobrar el suelto que ella misma deja.
+ */
+fun puedeSerBase(precio: PrecioVigente): Boolean = precio.cantidad == 1
 
 /**
  * Cuáles de los dos precios base todavía no están puestos.
@@ -189,12 +233,12 @@ fun esPrecioBase(precio: PrecioVigente): Boolean = precio.cantidad == 1
  * rechaza.
  *
  * El orden importa: primero el del trozo, que es por donde se empieza, y el cuadro de precio
- * nuevo se abre justo en el primero que devuelva esta lista.
+ * nuevo se abre justo en el primero que devuelva esta lista. Lo da el orden del enum, que ya
+ * tiene `TROZO` antes que `PRODUCTO`; recorrer `entries` en vez de escribir los dos casos a
+ * mano deja un solo lugar donde ese orden vive.
  */
-fun basesQueFaltanEn(precios: List<PrecioVigente>): List<ModoPrecio> = buildList {
-    if (precios.none { it.modo == ModoPrecio.TROZO && it.cantidad == 1 }) add(ModoPrecio.TROZO)
-    if (precios.none { it.modo == ModoPrecio.PRODUCTO && it.cantidad == 1 }) add(ModoPrecio.PRODUCTO)
-}
+fun basesQueFaltanEn(precios: List<PrecioVigente>): List<ModoPrecio> =
+    ModoPrecio.entries.filter { baseDe(precios, it) == null }
 
 /** Lo que se muestra cuando una promoción no divide exacto y sobra un trozo (8.6.1). */
 const val AVISO_TROZO_SUELTO = "Se usó el valor individual"

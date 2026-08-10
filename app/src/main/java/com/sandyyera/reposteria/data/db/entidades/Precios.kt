@@ -43,7 +43,24 @@ data class RecetaPrecio(
      * de la migración 1→2: si uno lo declara y el otro no, Room detecta la diferencia al
      * abrir la base y la app no arranca.
      */
-    @ColumnInfo(defaultValue = "0") val esReferencia: Boolean = false
+    @ColumnInfo(defaultValue = "0") val esReferencia: Boolean = false,
+
+    /**
+     * Si es **el precio de todos los días** de su modo: lo que se cobra por un trozo suelto o
+     * por un producto entero, sin promoción de por medio.
+     *
+     * Una fila por receta **y por modo** debe tenerlo en `1`, y siempre con `cantidad = 1`. Lo
+     * garantiza `RecetaDao.fijarPrecioBase`, que en una transacción apaga las demás del mismo
+     * modo antes de encender esta. **No se escribe directo**, por lo mismo que `esReferencia`.
+     *
+     * Llegó en la versión 9. Antes la base se deducía de `cantidad == 1`, y por eso solo podía
+     * haber una: un segundo precio de un trozo habría sido indistinguible del primero y la app
+     * lo rechazaba. Con la marca puede haber varios y se sabe cuál es cuál.
+     *
+     * El `defaultValue` tiene que calzar con el `DEFAULT 0` de la migración 8 → 9, o Room se
+     * niega a abrir la base.
+     */
+    @ColumnInfo(defaultValue = "0") val esBase: Boolean = false
 )
 
 /**
@@ -57,5 +74,6 @@ fun RecetaPrecio.aVigente(): PrecioVigente = PrecioVigente(
     cantidad = cantidad,
     precioTotal = precioTotal,
     etiqueta = etiqueta,
-    esReferencia = esReferencia
+    esReferencia = esReferencia,
+    esBase = esBase
 )

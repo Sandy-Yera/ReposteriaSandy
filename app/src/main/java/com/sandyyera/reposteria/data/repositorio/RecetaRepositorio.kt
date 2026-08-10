@@ -56,6 +56,7 @@ import com.sandyyera.reposteria.logica.validaciones.debenMostrarseLosNombresDeSe
 import com.sandyyera.reposteria.logica.validaciones.elPasoDiceAlgo
 import com.sandyyera.reposteria.logica.validaciones.errorEnTextoDePaso
 import com.sandyyera.reposteria.logica.precios.basesQueFaltanEn
+import com.sandyyera.reposteria.logica.precios.puedeSerBase
 import com.sandyyera.reposteria.logica.precios.errorAlElegirReferencia
 import com.sandyyera.reposteria.logica.validaciones.NOMBRE_SECCION_POR_DEFECTO
 import com.sandyyera.reposteria.logica.validaciones.descripcionDePromocion
@@ -1164,22 +1165,19 @@ class RecetaRepositorio(
         val cantidad = textoANumero(cantidadTexto)?.toInt() ?: return Resultado.NoSePudo(
             "Escribe cuántos lleva"
         )
-        // Un segundo precio base del mismo modo no es un dato, es el mismo dato escrito dos
-        // veces: `precioBasePorTrozo` se queda con el primero que encuentra y el otro queda
-        // guardado sin alimentar nada. Se vio venir en el celular, donde dos filas base se
-        // dibujaban idénticas y solo se distinguían por el monto.
-        if (cantidad == 1 && yaGuardados.any { it.modo == modo && it.cantidad == 1 }) {
-            return Resultado.NoSePudo(
-                if (modo == ModoPrecio.TROZO) {
-                    "Ya tienes el precio de un trozo: cámbialo en vez de agregar otro"
-                } else {
-                    "Ya tienes el precio del producto entero: cámbialo en vez de agregar otro"
-                }
-            )
-        }
         val total = textoANumero(precioTotalTexto) ?: return Resultado.NoSePudo(
             "Escribe a cuánto lo vendes"
         )
+
+        // **El primero de cantidad 1 de cada modo queda como base; los siguientes, no.**
+        //
+        // Antes acá se rechazaba el segundo, porque la base se deducía de `cantidad == 1` y dos
+        // filas iguales habrían sido indistinguibles. Sandy chocó con eso al querer tantear: para
+        // comparar dos precios de un trozo había que pisar el que estaba, y el anterior se perdía
+        // —"debería estar editando el 1 trozo base todo el rato"—. Con `esBase` marcado conviven,
+        // y la app sigue sabiendo cuál es el de todos los días, que es de donde sale el precio de
+        // los trozos que sobran cuando una promoción no divide exacto (8.6.1).
+        val quedaComoBase = cantidad == 1 && faltan.contains(modo)
 
         dao.insertarPrecio(
             RecetaPrecio(
@@ -1187,7 +1185,8 @@ class RecetaRepositorio(
                 modo = modo,
                 cantidad = cantidad,
                 precioTotal = redondearParaGuardar(total),
-                etiqueta = etiqueta.trim().ifBlank { null }
+                etiqueta = etiqueta.trim().ifBlank { null },
+                esBase = quedaComoBase
             )
         )
         historial.registrar(
@@ -1233,8 +1232,21 @@ class RecetaRepositorio(
             "Escribe a cuánto lo vendes"
         )
 
-        // Se conservan `id`, `recetaId` y **`esReferencia`**: editar un precio no cambia cuál
-        // manda. Escribir el objeto entero sin ese cuidado apagaría la referencia en silencio.
+        // **La base no puede dejar de ser de uno, ni cambiarse de modo.** De ella sale el precio
+        // de los trozos que sobran cuando una promoción no divide exacto: una base de 2 no
+        // tendría cómo cobrar el suelto que ella misma deja, y una base que se muda al otro modo
+        // deja al suyo sin ninguna. Se rechaza en vez de arreglarlo por dentro, porque
+        // "arreglarlo" sería elegir otra base sin decirlo.
+        if (actual.esBase && (cantidad != 1 || modo != actual.modo)) {
+            return Resultado.NoSePudo(
+                "Este es el precio de uno solo, del que salen los trozos sueltos. Marca otro " +
+                    "como precio base antes de cambiarlo."
+            )
+        }
+
+        // Se conservan `id`, `recetaId`, **`esReferencia`** y **`esBase`**: editar un precio no
+        // cambia cuál manda ni cuál es el de todos los días. Escribir el objeto entero sin ese
+        // cuidado los apagaría en silencio.
         dao.actualizarPrecio(
             actual.copy(
                 modo = modo,
@@ -1269,13 +1281,65 @@ class RecetaRepositorio(
         val comoSeLlama = descripcionDePromocion(precio.aVigente())
         val titulo = dao.obtener(precio.recetaId)?.titulo
 
+        // Quién hereda la base **se busca antes de borrar**, porque la consulta excluye por id
+        // y después de borrar la fila ya no habría a quién excluir.
+        val heredero = if (precio.esBase) {
+            dao.otroPrecioDeUnoEnElModo(precio.recetaId, precio.modo, precioId)
+        } else {
+            null
+        }
+
         dao.eliminarPrecio(precioId)
+
+        // **Borrar la base no puede dejar al modo sin ninguna en silencio.** Sin base, los trozos
+        // que sobran de una promoción no tienen a qué venderse y las cifras se van para abajo
+        // sin explicación (`faltaElPrecioSuelto`). Asciende el más antiguo de cantidad 1, que es
+        // el que la receta venía usando de todos modos. Si no queda ninguno no se inventa nada:
+        // el modo se queda sin base, la pantalla lo pide de nuevo y eso sí se ve.
+        heredero?.let { dao.fijarPrecioBase(it.recetaId, it.modo, it.id) }
+
         historial.registrar(
             tipo = TipoEvento.ELIMINACION,
             entidad = EntidadEvento.RECETA,
-            descripcion = "Se quitó el precio '$comoSeLlama' de '$titulo'"
+            descripcion = "Se quitó el precio '$comoSeLlama' de '$titulo'",
+            detalleAdicional = heredero?.let {
+                "Pasó a ser el precio base $${formatearNumero(it.precioTotal)}"
+            }
         )
         return Resultado.Listo
+    }
+
+    /**
+     * Marca cuál de los precios de un modo es **el de todos los días** (8.6.2).
+     *
+     * Devuelve el motivo por el que no se pudo, o `null` si quedó. Es la pieza que faltaba para
+     * que puedan convivir varios precios de un trozo: sin poder decir cuál es la base, guardar
+     * el segundo habría dejado a la app eligiendo sola.
+     *
+     * **Solo un precio de cantidad 1 puede serlo.** De la base sale lo que se cobra por los
+     * trozos que sobran cuando una promoción no divide exacto, así que una base de 2 no tendría
+     * cómo cobrar el suelto que ella misma deja.
+     *
+     * Es independiente de la referencia y las dos cosas conviven a propósito: la referencia dice
+     * *con qué precio calculo las cifras* y la base dice *a cuánto vendo uno suelto*. Se pueden
+     * querer distintas — calcular con la promo de 3 y seguir cobrando el trozo suelto a lo de
+     * siempre es justamente el caso normal.
+     */
+    suspend fun elegirPrecioBase(precioId: Long): String? {
+        val precio = dao.obtenerPrecioPorId(precioId) ?: return "Ese precio ya no existe"
+        if (!puedeSerBase(precio.aVigente())) {
+            return "El precio base es el de uno solo: esta promoción lleva ${precio.cantidad}"
+        }
+        if (precio.esBase) return null
+
+        dao.fijarPrecioBase(precio.recetaId, precio.modo, precioId)
+        historial.registrar(
+            tipo = TipoEvento.EDICION,
+            entidad = EntidadEvento.RECETA,
+            descripcion = "Cambió el precio base de '${dao.obtener(precio.recetaId)?.titulo}'",
+            detalleAdicional = "Ahora es $${formatearNumero(precio.precioTotal)}"
+        )
+        return null
     }
 
     // --- Simulación de ventas (8.7) ---

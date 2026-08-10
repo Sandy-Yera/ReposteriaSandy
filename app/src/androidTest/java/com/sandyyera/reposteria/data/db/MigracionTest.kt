@@ -5,6 +5,7 @@ import androidx.room.testing.MigrationTestHelper
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -417,6 +418,49 @@ class MigracionTest {
     }
 
     @Test
+    fun migrar_8_a_9_marca_el_precio_base_de_cada_modo() {
+        // **Arranca en 7 y no en 8**, aunque lo que se prueba sea 8 → 9: el esquema `8.json`
+        // nunca llegó al repositorio —Room exporta solo el de la versión actual— y sin él
+        // `createDatabase(..., 8)` no tiene contra qué construir. Encadenar desde 7 da la misma
+        // base, y `receta_precios` no la toca la 7 → 8, así que las filas se pueden sembrar acá.
+        ayudante.createDatabase(nombreDeLaBase, 7).use { base ->
+            base.execSQL(
+                "INSERT INTO recetas (id, titulo, pasoPrevio, creadoEn, actualizadoEn) " +
+                    "VALUES (1, 'Torta', 'No necesita', 1000, 1000)"
+            )
+            // Dos de un trozo (el más antiguo tiene que ganar), uno del producto y una promo.
+            base.execSQL(
+                "INSERT INTO receta_precios (id, recetaId, modo, cantidad, precioTotal) " +
+                    "VALUES (10, 1, 'TROZO', 1, 500.0)"
+            )
+            base.execSQL(
+                "INSERT INTO receta_precios (id, recetaId, modo, cantidad, precioTotal) " +
+                    "VALUES (11, 1, 'TROZO', 1, 700.0)"
+            )
+            base.execSQL(
+                "INSERT INTO receta_precios (id, recetaId, modo, cantidad, precioTotal) " +
+                    "VALUES (12, 1, 'PRODUCTO', 1, 3000.0)"
+            )
+            base.execSQL(
+                "INSERT INTO receta_precios (id, recetaId, modo, cantidad, precioTotal) " +
+                    "VALUES (13, 1, 'TROZO', 2, 900.0)"
+            )
+        }
+
+        ayudante.runMigrationsAndValidate(
+            nombreDeLaBase, 9, true, AppDatabase.MIGRACION_7_8, AppDatabase.MIGRACION_8_9
+        ).use { base ->
+            base.query("SELECT id FROM receta_precios WHERE esBase = 1 ORDER BY id").use { fila ->
+                assertTrue(fila.moveToFirst())
+                assertEquals("El trozo más antiguo, que es el que la app ya usaba", 10, fila.getInt(0))
+                assertTrue(fila.moveToNext())
+                assertEquals("Y el del producto entero", 12, fila.getInt(0))
+                assertFalse("Nadie más", fila.moveToNext())
+            }
+        }
+    }
+
+    @Test
     fun despues_de_migrar_la_app_puede_abrir_la_base() {
         ayudante.createDatabase(nombreDeLaBase, 1).use { base ->
             base.execSQL(
@@ -429,10 +473,10 @@ class MigracionTest {
         // nueva no calza con la anterior.
         ayudante
             .runMigrationsAndValidate(
-                nombreDeLaBase, 8, true,
+                nombreDeLaBase, 9, true,
                 AppDatabase.MIGRACION_1_2, AppDatabase.MIGRACION_2_3, AppDatabase.MIGRACION_3_4,
                 AppDatabase.MIGRACION_4_5, AppDatabase.MIGRACION_5_6, AppDatabase.MIGRACION_6_7,
-                AppDatabase.MIGRACION_7_8
+                AppDatabase.MIGRACION_7_8, AppDatabase.MIGRACION_8_9
             )
             .close()
 
@@ -441,7 +485,7 @@ class MigracionTest {
             .addMigrations(
                 AppDatabase.MIGRACION_1_2, AppDatabase.MIGRACION_2_3, AppDatabase.MIGRACION_3_4,
                 AppDatabase.MIGRACION_4_5, AppDatabase.MIGRACION_5_6, AppDatabase.MIGRACION_6_7,
-                AppDatabase.MIGRACION_7_8
+                AppDatabase.MIGRACION_7_8, AppDatabase.MIGRACION_8_9
             )
             .build()
 

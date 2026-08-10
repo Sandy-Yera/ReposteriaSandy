@@ -448,12 +448,12 @@ class PreciosTest {
     }
 
     @Test
-    fun `los dos precios base se reconocen por su cantidad`() {
+    fun `los dos precios base se reconocen por su marca`() {
         val d = DatosCalculoReceta(
             recetaId = 1, titulo = "Torta", costoTotal = 900.0, trozos = 3,
             precios = listOf(
-                PrecioVigente(ModoPrecio.TROZO, 1, 2000.0),
-                PrecioVigente(ModoPrecio.PRODUCTO, 1, 5500.0),
+                PrecioVigente(ModoPrecio.TROZO, 1, 2000.0, esBase = true),
+                PrecioVigente(ModoPrecio.PRODUCTO, 1, 5500.0, esBase = true),
                 PrecioVigente(ModoPrecio.TROZO, 2, 3000.0)
             )
         )
@@ -462,5 +462,40 @@ class PreciosTest {
         assertEquals(5500.0, precioBaseDelProducto(d)!!.precioTotal, 0.001)
         assertTrue(esPrecioBase(precioBasePorTrozo(d)!!))
         assertFalse(esPrecioBase(PrecioVigente(ModoPrecio.TROZO, 2, 3000.0)))
+    }
+
+    @Test
+    fun `con varios precios de un trozo manda el marcado, no el primero`() {
+        // El caso que motivó la marca: Sandy quería tantear "¿y si el trozo valiera 2.500?"
+        // sin perder el precio que ya tenía. Con la base deducida de `cantidad == 1` eso era
+        // imposible, porque el segundo habría sido indistinguible del primero.
+        val d = DatosCalculoReceta(
+            recetaId = 1, titulo = "Torta", costoTotal = 900.0, trozos = 3,
+            precios = listOf(
+                PrecioVigente(ModoPrecio.TROZO, 1, 2000.0, etiqueta = "tanteo"),
+                PrecioVigente(ModoPrecio.TROZO, 1, 2500.0, esBase = true)
+            )
+        )
+
+        assertEquals("Manda el marcado aunque no sea el primero", 2500.0, precioBasePorTrozo(d)!!.precioTotal, 0.001)
+        assertFalse(esPrecioBase(d.precios[0]))
+        assertTrue("Pero el otro podría serlo", puedeSerBase(d.precios[0]))
+        assertFalse("Una promoción no", puedeSerBase(PrecioVigente(ModoPrecio.TROZO, 2, 3000.0)))
+    }
+
+    @Test
+    fun `sin ninguna marcada se cae en la primera de cantidad uno`() {
+        // La red para las recetas guardadas antes de la versión 9. Sin ella, una fila mal
+        // migrada dejaría de poder cobrar sus trozos sueltos **sin avisar**.
+        val d = DatosCalculoReceta(
+            recetaId = 1, titulo = "Torta", costoTotal = 900.0, trozos = 3,
+            precios = listOf(
+                PrecioVigente(ModoPrecio.TROZO, 2, 3000.0),
+                PrecioVigente(ModoPrecio.TROZO, 1, 2000.0)
+            )
+        )
+
+        assertEquals(2000.0, precioBasePorTrozo(d)!!.precioTotal, 0.001)
+        assertEquals("Y sigue faltando la del producto", listOf(ModoPrecio.PRODUCTO), basesQueFaltanEn(d.precios))
     }
 }

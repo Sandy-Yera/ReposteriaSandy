@@ -59,7 +59,7 @@ import com.sandyyera.reposteria.data.db.entidades.RecetaSimulacionVenta
         EventoCambio::class,
         ArticuloDeAlmacen::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = true
 )
 @TypeConverters(Convertidores::class)
@@ -109,7 +109,7 @@ abstract class AppDatabase : RoomDatabase() {
                 .addCallback(SembrarDatosIniciales)
                 .addMigrations(
                     MIGRACION_1_2, MIGRACION_2_3, MIGRACION_3_4, MIGRACION_4_5, MIGRACION_5_6,
-                    MIGRACION_6_7, MIGRACION_7_8
+                    MIGRACION_6_7, MIGRACION_7_8, MIGRACION_8_9
                 )
                 .build()
 
@@ -358,6 +358,44 @@ abstract class AppDatabase : RoomDatabase() {
                           WHERE otra.ingredienteId =
                               (SELECT i.id FROM ingredientes i WHERE i.nombre = almacen.nombre)
                       )
+                    """.trimIndent()
+                )
+            }
+        }
+
+        /**
+         * 8 → 9: cuál de los precios de un trozo es **el de todos los días**.
+         *
+         * Hasta acá la base se deducía de `cantidad = 1`, y por eso solo podía haber una por
+         * modo: un segundo precio de un trozo habría sido indistinguible del primero y el
+         * repositorio lo rechazaba. Sandy lo reportó queriendo tantear —*"si yo quisiera testear
+         * el valor de un trozo, no se me permite"*—: para comparar dos precios había que pisar
+         * el que ya estaba, y entonces el anterior se perdía.
+         *
+         * La columna es lo que permite que convivan. `DEFAULT 0` porque SQLite lo exige para
+         * una columna `NOT NULL`, y tiene que calzar con el `@ColumnInfo(defaultValue = "0")`
+         * de la entidad.
+         *
+         * **El `UPDATE` no es opcional**: sin él ninguna receta guardada tendría base, y de la
+         * base sale el precio de los trozos que sobran cuando una promoción no divide exacto.
+         * Se marca `MIN(id)` de cada `(receta, modo)` con `cantidad = 1`, que es exactamente la
+         * fila que `precioBasePorTrozo` venía eligiendo hasta esta versión — el primero que
+         * encontraba. O sea que nada cambia de valor al migrar: cambia de dónde se sabe.
+         */
+        val MIGRACION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE receta_precios ADD COLUMN esBase INTEGER NOT NULL DEFAULT 0"
+                )
+                db.execSQL(
+                    """
+                    UPDATE receta_precios
+                    SET esBase = 1
+                    WHERE id IN (
+                        SELECT MIN(id) FROM receta_precios
+                        WHERE cantidad = 1
+                        GROUP BY recetaId, modo
+                    )
                     """.trimIndent()
                 )
             }

@@ -122,9 +122,24 @@ data class FilaDePrecio(
     val precioPorTrozo: Double,
     val gananciaPorTrozo: Double,
     val esReferencia: Boolean,
-    /** Si es uno de los dos precios base (cantidad 1) y no una promoción. */
+    /**
+     * Si es **el precio base** de su modo: el de todos los días, del que salen los trozos
+     * sueltos que deja una promoción que no divide exacto.
+     *
+     * Ya no es "tiene cantidad 1": desde 8.6.2 pueden convivir varios precios de un trozo y lo
+     * que distingue a la base es estar marcada. Para saber si una fila *podría* serlo está
+     * [puedeSerBase].
+     */
     val esBase: Boolean = false
 ) {
+    /**
+     * Si esta fila puede pasar a ser la base de su modo.
+     *
+     * Una promoción no puede: la base es lo que se cobra por **uno**, y una base de 2 no
+     * tendría cómo cobrar el suelto que ella misma deja.
+     */
+    val puedeSerBase: Boolean get() = precio.cantidad == 1 && !esBase
+
     /**
      * Si vender a este precio deja pérdida.
      *
@@ -430,6 +445,24 @@ class GastosViewModel(
         }
         viewModelScope.launch {
             recetas.elegirPrecioDeReferencia(recetaId, precio.id)?.let { mensaje.value = it }
+        }
+    }
+
+    /**
+     * Cambia cuál precio es el de todos los días de su modo (8.6.2).
+     *
+     * Va por su propio gesto y no por el toque de la fila, que ya está tomado por elegir la
+     * referencia. **Son dos decisiones distintas y conviene que se puedan tomar por separado**:
+     * la referencia dice con qué precio se calculan las cifras y la base a cuánto se vende uno
+     * suelto — calcular con la promo de 3 y seguir cobrando el trozo suelto a lo de siempre es
+     * el caso normal, no una rareza.
+     *
+     * El rechazo va al aviso de abajo, por lo mismo que [elegirReferencia]: no hay cuadro
+     * abierto ni teclado tapando nada.
+     */
+    fun elegirBase(precio: RecetaPrecio) {
+        viewModelScope.launch {
+            recetas.elegirPrecioBase(precio.id)?.let { mensaje.value = it }
         }
     }
 

@@ -50,6 +50,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.tooling.preview.Preview
@@ -75,6 +76,7 @@ data class AccionesGastos(
     val cambiarEtiqueta: (String) -> Unit = {},
     val guardarPrecio: () -> Unit = {},
     val elegirReferencia: (RecetaPrecio) -> Unit = {},
+    val elegirBase: (RecetaPrecio) -> Unit = {},
     val pedirBorrado: (FilaDePrecio) -> Unit = {},
     val confirmarBorrado: () -> Unit = {},
     val cerrarDialogo: () -> Unit = {},
@@ -107,6 +109,7 @@ fun PasoGastosScreen(
             cambiarEtiqueta = modelo::cambiarEtiqueta,
             guardarPrecio = modelo::guardarPrecio,
             elegirReferencia = modelo::elegirReferencia,
+            elegirBase = modelo::elegirBase,
             pedirBorrado = modelo::pedirBorrado,
             confirmarBorrado = modelo::confirmarBorrado,
             cerrarDialogo = modelo::cerrarDialogo,
@@ -537,6 +540,15 @@ private fun FilaDeUnPrecio(fila: FilaDePrecio, acciones: AccionesGastos) {
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                    // La base se dice en la fila y no en un ícono: es un dato del precio, no una
+                    // acción. Lo que sí es acción es el botón de abajo (8.6.2).
+                    if (fila.esBase) {
+                        Text(
+                            text = "· base",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
                 Text(
                     text = "$${formatearMonto(fila.precio.precioTotal)} · " +
@@ -554,6 +566,22 @@ private fun FilaDeUnPrecio(fila: FilaDePrecio, acciones: AccionesGastos) {
                     color = if (fila.pierdePlata) MaterialTheme.colorScheme.error
                     else MaterialTheme.colorScheme.onSurface
                 )
+                // **Solo en las filas de uno solo que todavía no son la base.** Es el gesto que
+                // permite tener varios precios de un trozo sin que la app tenga que adivinar
+                // cuál es el de todos los días. Va como botón propio y no en el toque de la
+                // fila, que ya está tomado por elegir la referencia: son dos decisiones
+                // distintas y suelen quererse distintas.
+                if (fila.puedeSerBase) {
+                    TextButton(
+                        onClick = { acciones.elegirBase(fila.precio) },
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text(
+                            text = "Usar este como precio base",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
             }
             // Este es el único lápiz que queda en la app, y es una excepción con motivo:
             // 8.4.1 #3 sacó los íconos de editar porque el toque ya hacía eso, pero acá el

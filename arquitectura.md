@@ -1308,8 +1308,8 @@ Todas las cifras se recalculan sobre el snapshot que ya está en memoria (6.4): 
 #### 8.6.1 Los dos precios base, y el resto de una promoción
 
 Una receta tiene **dos precios base**: el de un trozo suelto y el del producto entero. No son
-una tabla aparte — son las filas de `cantidad = 1`, una por modo — pero sí un concepto propio,
-porque **son los que sostienen a las promociones**.
+una tabla aparte — son filas de `cantidad = 1` **marcadas con `esBase`**, una por modo — pero sí
+un concepto propio, porque **son los que sostienen a las promociones**.
 
 El motivo salió probando: una receta que rinde 3 trozos, con una promoción de "2 por $3.000",
 mostraba un ingreso de $4.500. Sale de dividir la promo por trozo (1.500) y multiplicar por
@@ -1359,6 +1359,40 @@ usa sobre su propio total.
 
 **En modo producto es lo mismo un piso más arriba:** una promoción de dos productos completos
 no se aplica al vender uno, así que ese uno se cobra a su precio base.
+
+#### 8.6.1.1 Varios precios de un trozo, y cuál es el de verdad
+
+Hasta la versión 9 de la base **la base se deducía de la cantidad**: la fila de `cantidad = 1`
+era la base, y por eso no podía haber dos — un segundo precio de un trozo habría sido
+indistinguible del primero, y `precioBasePorTrozo` se habría quedado con el que la consulta
+devolviera primero. El repositorio lo rechazaba de frente.
+
+Eso chocó con un uso legítimo: *"si yo quisiera testear el valor de un trozo, no se me permite;
+debería estar editando el 1 trozo base todo el rato"*. Comparar dos precios obligaba a pisar el
+que ya estaba, y el anterior se perdía. Lo mismo del lado del producto entero.
+
+**La corrección es una columna, no una regla nueva.** `receta_precios.esBase` marca cuál de los
+precios de `cantidad = 1` es el de todos los días, así que pueden convivir varios y la app sabe
+cuál usar sin adivinar. Lo que cambia es de dónde se sabe, no qué se calcula: la migración marca
+`MIN(id)` de cada `(receta, modo)`, que es exactamente la fila que la app venía eligiendo.
+
+Reglas que sostienen la columna:
+
+- **Solo un precio de `cantidad = 1` puede ser base.** De ella sale lo que se cobra por los
+  trozos que sobran cuando una promoción no divide exacto; una base de 2 no tendría cómo cobrar
+  el suelto que ella misma deja.
+- **El primero de cada modo queda como base**, los siguientes no. Marcarlos todos sería no
+  marcar ninguno.
+- **La base no puede convertirse en promoción ni mudarse de modo al editarla.** Se rechaza en
+  vez de arreglarlo por dentro, porque "arreglarlo" sería elegir otra base sin decirlo (9.4.2).
+- **Borrar la base asciende a la más antigua que quede** de ese modo. Sin base, los trozos
+  sueltos no tienen a qué venderse y las cifras bajan sin explicación. Si no queda ninguna, el
+  modo se queda sin base y la pantalla la vuelve a pedir — eso sí se ve.
+
+**Base y referencia son dos decisiones distintas y conviven a propósito.** La referencia dice
+*con qué precio calculo las cifras*; la base, *a cuánto vendo uno suelto*. Calcular con la promo
+de 3 y seguir cobrando el trozo suelto a lo de siempre es el caso normal, no una rareza — por eso
+la base se elige con su propio botón y no con el toque de la fila, que ya está tomado.
 
 #### 8.6.2 Cómo se nombra un precio, y por qué importa
 

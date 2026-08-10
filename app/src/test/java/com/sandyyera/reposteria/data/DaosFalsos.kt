@@ -26,6 +26,7 @@ import com.sandyyera.reposteria.data.db.entidades.RecetaSeccion
 import com.sandyyera.reposteria.data.db.entidades.RecetaSimulacionVenta
 import com.sandyyera.reposteria.data.db.entidades.esTraida
 import com.sandyyera.reposteria.logica.duracion.TipoDuracion
+import com.sandyyera.reposteria.logica.precios.ModoPrecio
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
@@ -644,6 +645,35 @@ class RecetaDaoFalso(
         if (posicion >= 0) precios[posicion] = precios[posicion].copy(esReferencia = true)
         cambio()
     }
+
+    // La base va por modo y no por receta entera, igual que en Room: apagarlas todas juntas
+    // dejaría al otro modo sin la suya.
+    override suspend fun quitarBaseAlModo(recetaId: Long, modo: ModoPrecio) {
+        for (i in precios.indices) {
+            if (precios[i].recetaId == recetaId && precios[i].modo == modo) {
+                precios[i] = precios[i].copy(esBase = false)
+            }
+        }
+        cambio()
+    }
+
+    override suspend fun marcarComoBase(precioId: Long) {
+        val posicion = precios.indexOfFirst { it.id == precioId }
+        if (posicion >= 0) precios[posicion] = precios[posicion].copy(esBase = true)
+        cambio()
+    }
+
+    override suspend fun otroPrecioDeUnoEnElModo(
+        recetaId: Long,
+        modo: ModoPrecio,
+        exceptoId: Long
+    ): RecetaPrecio? = precios
+        .filter {
+            it.recetaId == recetaId && it.modo == modo && it.cantidad == 1 && it.id != exceptoId
+        }
+        // `ORDER BY id` como en la consulta real: el más antiguo, que es el que la receta
+        // viene usando. Ordenar distinto acá aprobaría un ascenso que en el celular es otro.
+        .minByOrNull { it.id }
 
     // --- Simulación de venta ---
 
