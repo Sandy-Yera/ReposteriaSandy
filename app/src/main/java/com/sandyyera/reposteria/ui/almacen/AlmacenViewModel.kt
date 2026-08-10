@@ -104,7 +104,14 @@ sealed interface DialogoAlmacen {
         val tocado: Boolean = false,
         val guardando: Boolean = false,
         val rechazo: String? = null,
-        val precioEnDisputa: PrecioEnDisputa? = null
+    /**
+         * Lo que cambiaría en un ingrediente que ya existe, mientras se pregunta (14.5.1).
+         *
+         * Es el resultado del repositorio tal cual y no una copia propia: lo que hay que mostrar
+         * —qué cambia, y a cuántas recetas afecta— ya viene calculado ahí, y volver a deducirlo
+         * acá sería una segunda versión de la misma regla.
+         */
+        val precioEnDisputa: ResultadoAgregarAlAlmacen.YaExisteConCambios? = null
     ) : DialogoAlmacen {
 
         val unidad: String get() = if (esObjeto) "unidad" else "g"
@@ -237,19 +244,6 @@ sealed interface DialogoAlmacen {
     ) : DialogoAlmacen
 }
 
-/**
- * El precio escrito no coincide con el que ya tenía el ingrediente (7.2 y 14.5).
- *
- * Se muestran **los dos** y se pregunta antes de reemplazar, como pidió Sandy, porque cambiarlo
- * mueve el costo de **todas** las recetas que usan ese ingrediente y no se deshace. Esta es la
- * única pantalla donde los dos números se pueden comparar antes de que el viejo desaparezca.
- */
-data class PrecioEnDisputa(
-    val existente: Ingrediente,
-    val valorGuardado: Double,
-    val valorEscrito: Double
-)
-
 /** Lo que la pantalla del almacén necesita para dibujarse. */
 data class EstadoAlmacen(
     val visibles: List<FilaDeAlmacen> = emptyList(),
@@ -373,7 +367,10 @@ class AlmacenViewModel(
         // dice el aviso del cuadro (14.5.2).
         val precio = actual.valorPorUnidad ?: 0.0
 
-        _dialogo.value = actual.copy(guardando = true, precioEnDisputa = null)
+        // **La disputa NO se limpia acá.** Limpiarla dejaba ver el cuadro de agregar durante el
+        // instante entre confirmar y que la base conteste — un parpadeo que se lee como si algo
+        // hubiera vuelto atrás. Se limpia al llegar el resultado, en `terminarDeAgregar`.
+        _dialogo.value = actual.copy(guardando = true)
 
         viewModelScope.launch {
             val resultado = almacen.agregar(
@@ -402,17 +399,12 @@ class AlmacenViewModel(
             // Dentro del cuadro y no en la franja de abajo: es sobre lo que se acaba de
             // escribir, y con el teclado abierto esa franja queda tapada (8.2).
             is ResultadoAgregarAlAlmacen.NoSePudo ->
-                enAgregar { it.copy(guardando = false, rechazo = resultado.motivo) }
+                enAgregar {
+                    it.copy(guardando = false, rechazo = resultado.motivo, precioEnDisputa = null)
+                }
 
-            is ResultadoAgregarAlAlmacen.PrecioDistinto -> enAgregar {
-                it.copy(
-                    guardando = false,
-                    precioEnDisputa = PrecioEnDisputa(
-                        existente = resultado.existente,
-                        valorGuardado = resultado.existente.valorPorGramo,
-                        valorEscrito = resultado.nuevoValor
-                    )
-                )
+            is ResultadoAgregarAlAlmacen.YaExisteConCambios -> enAgregar {
+                it.copy(guardando = false, precioEnDisputa = resultado)
             }
         }
     }
@@ -430,7 +422,7 @@ class AlmacenViewModel(
         val disputa = actual.precioEnDisputa ?: return
         val cuanto = textoANumero(actual.cantidad) ?: return
 
-        _dialogo.value = actual.copy(guardando = true, precioEnDisputa = null)
+        _dialogo.value = actual.copy(guardando = true)
 
         viewModelScope.launch {
             val resultado = almacen.agregar(

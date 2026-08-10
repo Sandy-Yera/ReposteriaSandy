@@ -234,7 +234,13 @@ fun PasoPasos(
                     item(key = "titulo-${bloque.titulo}-${bloque.pasos.first().paso.id}") {
                         EncabezadoDeBloque(
                             texto = texto,
-                            vieneDe = estado.deDondeViene(bloque.titulo),
+                            // Un general anidado no cuelga de ninguna sección, así que su origen
+                            // no sale del título: se pregunta aparte (8.11.2).
+                            vieneDe = if (bloque.esGeneralAnidado) {
+                                estado.deDondeVieneElGeneralAnidado()
+                            } else {
+                                estado.deDondeViene(bloque.titulo)
+                            },
                             esGeneralAnidado = bloque.esGeneralAnidado
                         )
                     }

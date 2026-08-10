@@ -10,6 +10,7 @@ import com.sandyyera.reposteria.data.repositorio.ResultadoCrearReceta
 import com.sandyyera.reposteria.logica.duracion.TipoDuracion
 import com.sandyyera.reposteria.logica.duracion.UnidadDuracion
 import com.sandyyera.reposteria.logica.precios.ModoPrecio
+import com.sandyyera.reposteria.logica.simulacion.SEMANAS_POR_MES
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
@@ -162,6 +163,36 @@ class ResumenViewModelTest {
         val duraciones = modelo.estado.value.resumen!!.duraciones
         assertEquals(1, duraciones.size)
         assertTrue("Nombra el tipo y la cantidad", duraciones.single().contains("3"))
+    }
+
+    @Test
+    fun `la simulacion trae lo que se gana, no solo lo que se configuro`() = probar { modelo ->
+        // Lo reportó Sandy: decía "2 por día, 4 días" y eso es lo que se anotó, no lo que se
+        // gana — que es justamente lo que uno viene a mirar al resumen.
+        val seccion = recetas.obtenerSecciones(recetaId).single()
+        recetas.agregarIngrediente(seccion.id, ingrediente("Harina", 1.0), 1200.0)
+        recetas.guardarRendimiento(recetaId, "6", "1.200")
+        advanceUntilIdle()
+        recetas.crearPrecio(recetaId, ModoPrecio.TROZO, "1", "500")
+        recetas.guardarSimulacion(recetaId, "4", "2")
+        advanceUntilIdle()
+
+        val simulacion = modelo.estado.value.resumen!!.simulacion!!
+        assertEquals("2 por día, 4 días a la semana", simulacion.cuanto)
+        // Cuesta 1.200 y rinde 6 trozos a 500: ingreso 3.000, ganancia 1.800 por producto.
+        // Dos por día, cuatro días: 14.400 a la semana.
+        assertEquals(14400.0, simulacion.gananciaSemanal, 0.001)
+        assertEquals(14400.0 * SEMANAS_POR_MES, simulacion.gananciaMensual, 0.001)
+    }
+
+    @Test
+    fun `sin precio no se inventa una simulacion`() = probar { modelo ->
+        // Aunque los días y las unidades estén configurados: sin precio no hay nada que
+        // proyectar, y un "0 al mes" se leería como una conclusión.
+        recetas.guardarSimulacion(recetaId, "4", "2")
+        advanceUntilIdle()
+
+        assertNull(modelo.estado.value.resumen!!.simulacion)
     }
 
     @Test

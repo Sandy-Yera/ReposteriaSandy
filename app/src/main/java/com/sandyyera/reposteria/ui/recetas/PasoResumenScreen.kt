@@ -44,6 +44,7 @@ import com.sandyyera.reposteria.data.repositorio.LineaDelResumen
 import com.sandyyera.reposteria.data.repositorio.PrecioDelResumen
 import com.sandyyera.reposteria.data.repositorio.RendimientoDelResumen
 import com.sandyyera.reposteria.data.repositorio.ResumenDeReceta
+import com.sandyyera.reposteria.data.repositorio.SimulacionDelResumen
 import com.sandyyera.reposteria.data.repositorio.SeccionDelResumen
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.ui.theme.Medidas
@@ -219,7 +220,9 @@ fun PasoResumen(
             item {
                 ParteDelResumen(
                     parte = PasoDeReceta.SIMULACION,
-                    resumida = resumen.simulacion ?: "Sin simular",
+                    resumida = resumen.simulacion
+                        ?.let { "$${formatearNumero(it.gananciaMensual)} al mes" }
+                        ?: "Sin simular",
                     estado = estado,
                     acciones = acciones
                 ) {
@@ -234,7 +237,17 @@ fun PasoResumen(
                             }
                         )
                     } else {
-                        Renglon(resumen.simulacion)
+                        // Lo configurado **y lo que deja**, que es lo que uno viene a mirar:
+                        // "2 por día, 4 días" dice lo que se anotó, no lo que se gana.
+                        Renglon(resumen.simulacion.cuanto)
+                        Renglon(
+                            "Ganancia semanal: " +
+                                "$${formatearNumero(resumen.simulacion.gananciaSemanal)}"
+                        )
+                        Renglon(
+                            "Ganancia mensual: " +
+                                "$${formatearNumero(resumen.simulacion.gananciaMensual)}"
+                        )
                     }
                 }
             }
@@ -277,19 +290,39 @@ private fun EncabezadoDelResumen(resumen: ResumenDeReceta) {
                 text = "Antes de empezar: ${resumen.pasoPrevio}",
                 style = MaterialTheme.typography.bodySmall
             )
-            if (resumen.hayAvisoDePartes) {
-                // El aviso se ve acá pero **se resuelve en Cantidades**, que es donde están las
-                // tres salidas (8.11.3). Decirlo evita buscarlo en la parte equivocada.
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Warning,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error
-                    )
+            // **Se listan los cambios y no solo se avisa que los hay.** Decir "revísalo en
+            // Cantidades" mandaba a buscar un cambio de ingredientes que podía no existir: lo
+            // que se movió pudo ser un paso. Con la frase exacta se entiende sin salir de acá,
+            // y lo que queda allá es solo decidir — por eso también se dice cómo se apaga.
+            resumen.avisosDePartes.forEach { aviso ->
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                        Text(
+                            text = if (aviso.laOriginalSeBorro) {
+                                "  '${aviso.deDonde}' ya no existe"
+                            } else {
+                                "  '${aviso.deDonde}' cambió"
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                    aviso.cambios.forEach {
+                        Text(
+                            text = "• $it",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                     Text(
-                        text = "  Una receta traída cambió. Se revisa en Cantidades.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
+                        text = "El aviso se apaga en Cantidades, tocando \"Cambió\" sobre esa " +
+                            "parte y eligiendo Mantener o Actualizar.",
+                        style = MaterialTheme.typography.bodySmall
                     )
                 }
             }
@@ -546,7 +579,11 @@ private val recetaDeEjemplo = ResumenDeReceta(
         PrecioDelResumen("Trozo · $500", 308.33, esReferencia = true),
         PrecioDelResumen("Producto entero · $2.500", 225.0, esReferencia = false)
     ),
-    simulacion = "2 por día, 4 días a la semana",
+    simulacion = SimulacionDelResumen(
+        cuanto = "2 por día, 4 días a la semana",
+        gananciaSemanal = 10800.0,
+        gananciaMensual = 46764.0
+    ),
     bloquesDePasos = listOf(
         BloqueDelResumen("Bizcocho", "de 'Bizcocho básico'", false, listOf("1. Batir las claras.")),
         BloqueDelResumen("General", null, false, listOf("2. Armar y refrigerar."))

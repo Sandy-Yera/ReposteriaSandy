@@ -1707,6 +1707,17 @@ exactamente lo mismo, repetido tantas veces como partes se hayan traído. Va una
 encabezado que ya las agrupa (8.11.2), y las tres salidas se aplican a todas juntas: son
 decisiones sobre la receta que se trajo, no sobre un pedazo de ella.
 
+**El aviso dice qué cambió, y dónde se apaga.** El resumen (8.12) lista las frases —*"se eliminó
+un paso en 'Bizcocho'"*— en vez de decir solo que algo cambió. Lo reportó Sandy con un caso que lo
+deja claro: le sacó un **paso** a una receta traída, el aviso apareció diciendo "revísalo en
+Cantidades", y allá no había ningún ingrediente distinto. El aviso era correcto y el texto
+mentía sobre dónde mirar.
+
+Se resuelve igual en Cantidades, porque ahí viven las tres salidas, pero eso ahora se dice con
+todas las letras: *"se apaga tocando «Cambió» sobre esa parte y eligiendo Mantener o Actualizar"*.
+Un aviso que no dice cómo apagarse se queda encendido para siempre, que era la segunda mitad del
+reporte.
+
 **La marca de origen, en cambio, va en todas.** Bajo el nombre de cada parte ajena se lee *"de
 'Bizcocho'"*, y lo mismo bajo cada bloque de pasos traído. Lo pidió Sandy y el argumento es el
 que faltaba: *"¿qué ocurre si traigo una nueva sección? ¿cómo sabré que es de esa y no de la
@@ -1714,9 +1725,17 @@ anterior?"* Con dos recetas traídas seguidas, un encabezado solo al principio d
 deja ver dónde termina una y empieza la otra.
 
 Las dos cosas conviven porque responden preguntas distintas: **el aviso es una decisión** y se
-toma una vez; **la marca es una etiqueta** y tiene que estar donde se mira. En los pasos, la
-sangría del general anidado ya decía "vino de algo" pero no de qué, que es justamente el dato que
-hace falta cuando hay más de una receta traída.
+toma una vez; **la marca es una etiqueta** y tiene que estar donde se mira.
+
+**El general anidado también la lleva**, y ese fue el único que faltaba: sus pasos llegan con el
+título en `null` —eran generales allá y lo siguen siendo acá— así que la marca no se podía sacar
+de ahí. La sangría decía "vino de algo" pero no de qué.
+
+Con **más de una receta traída no se inventa cuál**: la fila del paso no guarda de dónde vino, así
+que se dice *"de una receta traída"*, que es lo que sí se sabe. Nombrar una al azar sería peor que
+no nombrar ninguna. Guardar el origen en el paso resolvería el caso completo y cuesta una versión
+de base; se anota acá para cuando alguna receta tenga tantas partes traídas que la ambigüedad
+moleste.
 
 **"Mantener" no es no hacer nada.** Vuelve a tomar la foto, sin tocar ningún ingrediente. Sin
 eso, el mismo aviso quedaría encendido para siempre y no habría forma de distinguir *"todavía
@@ -2370,10 +2389,26 @@ ve es una cuenta que hay que rehacer para confiar en ella (8.7.1).
 y se arregla al reponer. Guardar un 0 en silencio haría que la receta costara de menos sin que
 nada lo indicara.
 
-#### 14.5.1 Si el precio no coincide con el que ya había
+#### 14.5.1 Si ya existe y anotarlo así lo cambiaría
 
-Cuando el nombre ya existe en el catálogo con **otro** precio, la app **muestra los dos y
-pregunta** antes de reemplazar. Es la respuesta de Sandy —*"muestra los dos y pregunta antes de
+Cuando el nombre ya existe en el catálogo, la app **muestra qué cambiaría y pregunta** antes de
+tocarlo. Son **tres cosas y no solo el precio** —el precio, la unidad y si va en recetas— y las
+tres se aplican juntas al confirmar.
+
+Empezó cubriendo solo el precio, y eso dejaba un agujero que encontró Sandy: marcar *"se cuenta
+por unidad"* sobre un ingrediente que ya existía **no hacía nada**, porque solo se escribía el
+valor. El ingrediente seguía en gramos y no había forma de arreglarlo desde el almacén.
+
+**Cambiar la unidad es el que más hay que mirar.** El número del precio no se mueve pero pasa a
+significar otra cosa, y las líneas de receta que ya usan ese ingrediente en gramos empiezan a
+multiplicar por un precio por unidad. Por eso el aviso dice a cuántas recetas afecta, y agrega que
+**lo ya escrito conserva su número**: la app no convierte "500 g" en "500 unidades" a tus
+espaldas, pero esas líneas hay que revisarlas.
+
+El aviso lista **solo lo que de verdad cambia**: enumerar lo que se queda igual obliga a leer tres
+renglones para encontrar el que importa.
+
+Del precio en particular: **muestra los dos y pregunta** antes de reemplazar. Es la respuesta de Sandy —*"muestra los dos y pregunta antes de
 reemplazar"*— y es la misma regla que la calculadora de valor por gramo (7.2): cambiar ese número
 mueve el costo de **todas** las recetas que usan ese ingrediente y no se deshace. Esa pantalla es
 el único momento en que los dos números se pueden comparar antes de que el viejo desaparezca.

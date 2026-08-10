@@ -29,6 +29,7 @@ import com.sandyyera.reposteria.logica.partes.PasoParaMostrar
 import com.sandyyera.reposteria.logica.partes.SeccionParaTitulo
 import com.sandyyera.reposteria.logica.partes.bloquesDePasos
 import com.sandyyera.reposteria.logica.precios.gananciaPorTrozoDe
+import com.sandyyera.reposteria.logica.simulacion.simulacionDeVenta
 import com.sandyyera.reposteria.logica.precios.ModoPrecio
 import com.sandyyera.reposteria.logica.busqueda.sonElMismoTexto
 import com.sandyyera.reposteria.logica.busqueda.marcarRepetidos
@@ -197,7 +198,7 @@ data class ResumenDeReceta(
     val molde: String?,
     val rendimiento: RendimientoDelResumen,
     val precios: List<PrecioDelResumen>,
-    val simulacion: String?,
+    val simulacion: SimulacionDelResumen?,
     val bloquesDePasos: List<BloqueDelResumen>,
     /** Los grupos traídos de otra receta, para marcar sus partes y mostrar si hay aviso (8.11). */
     val partes: List<ParteTraida>
@@ -209,10 +210,42 @@ data class ResumenDeReceta(
     /** Si alguna parte traída tiene un aviso pendiente. Lo muestra el encabezado del resumen. */
     val hayAvisoDePartes: Boolean get() = partes.any { it.hayQueAvisar }
 
+    /**
+     * Qué cambió en las recetas traídas, receta por receta (8.11.5).
+     *
+     * **El resumen lista los cambios y no solo dice que los hay.** Antes decía "una receta traída
+     * cambió, revísalo en Cantidades", y eso mandaba a buscar un cambio de ingredientes que podía
+     * no existir: lo que se movió pudo ser un paso. Lo reportó Sandy — fue a Cantidades y no
+     * encontró nada, porque lo que había cambiado era un paso de la original.
+     *
+     * Diciendo la frase exacta ("Se eliminó un paso en 'Bizcocho'"), el aviso se entiende sin
+     * salir del resumen, y lo que queda por hacer allá es solo decidir.
+     */
+    val avisosDePartes: List<AvisoDeParteEnElResumen>
+        get() = partes.filter { it.hayQueAvisar }.map { parte ->
+            AvisoDeParteEnElResumen(
+                deDonde = parte.tituloDelOrigen ?: "una receta eliminada",
+                cambios = parte.cambios,
+                laOriginalSeBorro = parte.estado == EstadoDelVinculo.ORIGINAL_BORRADA
+            )
+        }
+
     /** De qué receta vino esta parte, o `null` si es propia. La frase la arma `ParteTraida`. */
     fun deDondeViene(seccionId: Long): String? =
         partes.firstOrNull { seccionId in it.seccionIds }?.comoSeNombraElOrigen
 }
+
+/**
+ * Un aviso de "la original cambió", ya legible, para mostrarlo en el resumen (8.11.3).
+ *
+ * Lleva **las frases** y no un contador: "cambió algo" manda a buscar; "se eliminó un paso en
+ * 'Bizcocho'" se entiende sin moverse.
+ */
+data class AvisoDeParteEnElResumen(
+    val deDonde: String,
+    val cambios: List<String>,
+    val laOriginalSeBorro: Boolean
+)
 
 /** Una parte de la receta con lo que lleva, ya escrito. */
 data class SeccionDelResumen(
@@ -225,6 +258,22 @@ data class SeccionDelResumen(
 
 /** Una línea de ingrediente tal como se lee: "500 g de Harina · $600". */
 data class LineaDelResumen(val cuanto: String, val nombre: String, val subtotal: Double)
+
+/**
+ * Lo que deja la receta a la semana y al mes, para el resumen (8.12).
+ *
+ * **Lleva las cifras y no solo "2 por día, 4 días"**, que era lo que había: ese texto dice lo que
+ * se configuró, no lo que se gana — y lo que uno viene a mirar al resumen es lo segundo. Lo
+ * reportó Sandy.
+ *
+ * Las dos salen de `simulacionDeVenta`, la misma función del paso de simulación, para que el
+ * resumen y ese paso no puedan decir números distintos.
+ */
+data class SimulacionDelResumen(
+    val cuanto: String,
+    val gananciaSemanal: Double,
+    val gananciaMensual: Double
+)
 
 /** El rendimiento, con lo que hace falta para leerlo sin abrir el paso. */
 data class RendimientoDelResumen(
@@ -1860,8 +1909,13 @@ class RecetaRepositorio(
             },
             // Sin precio no hay nada que proyectar, y decir "0 al mes" sería inventar una
             // cifra: la simulación se muestra solo cuando las dos mitades existen (8.7).
-            simulacion = deCifras.simulacion?.takeIf { datos.tienePrecio }?.let {
-                "${it.unidadesPorDia} por día, ${it.diasPorSemana} días a la semana"
+            simulacion = deCifras.simulacion?.takeIf { datos.tienePrecio }?.let { fila ->
+                val cifras = simulacionDeVenta(datos, fila.diasPorSemana, fila.unidadesPorDia)
+                SimulacionDelResumen(
+                    cuanto = "${fila.unidadesPorDia} por día, ${fila.diasPorSemana} días a la semana",
+                    gananciaSemanal = cifras.gananciaSemanal,
+                    gananciaMensual = cifras.gananciaMensual
+                )
             },
             bloquesDePasos = emptyList(),
             partes = partes

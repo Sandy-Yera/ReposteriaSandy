@@ -46,10 +46,12 @@ class AlmacenRepositorio(
      * ofrece al armar una receta. **Son dos preguntas distintas**: una caja de torta es un objeto
      * y sí se anota en la receta; una vela decorativa es un objeto y no.
      *
-     * **Si el ingrediente ya existía con otro precio, no lo pisa: devuelve
-     * [ResultadoAgregarAlAlmacen.PrecioDistinto] para que se pregunte primero.** Cambiar ese
-     * valor mueve el costo de **todas** las recetas que lo usan y no se deshace, así que es la
-     * misma confirmación que ya pide la calculadora de valor por gramo (7.2). Con
+     * **Si el ingrediente ya existía y esto lo cambiaría, no lo pisa: devuelve
+     * [ResultadoAgregarAlAlmacen.YaExisteConCambios] para que se pregunte primero.** Son tres
+     * cosas que pueden cambiar —el precio, la unidad y si va en recetas— y las tres se aplican
+     * juntas al confirmar: antes solo se escribía el precio, así que marcar "se cuenta por
+     * unidad" en algo que ya existía no hacía nada. Cambiar el precio o la unidad mueve el costo
+     * de las recetas que lo usan y no se deshace, que es la misma confirmación de 7.2. Con
      * [reemplazarElPrecio] en `true` se vuelve a llamar y ahí sí se escribe.
      *
      * **Todo lo que puede fallar se revisa antes de escribir nada**, que es la regla de todos los
@@ -94,13 +96,29 @@ class AlmacenRepositorio(
                     is ResultadoGuardarIngrediente.YaExiste -> creado.existente.id
                 }
             }
-            // El precio difiere y nadie confirmó todavía: no se escribe nada.
-            !mismoValor(existente.valorPorGramo, valor) && !reemplazarElPrecio ->
-                return ResultadoAgregarAlAlmacen.PrecioDistinto(existente, valor)
+            // Algo del ingrediente cambiaría y nadie confirmó todavía: no se escribe nada.
+            !reemplazarElPrecio && hayQueConfirmar(existente, esObjeto, vaEnRecetas, valor) ->
+                return ResultadoAgregarAlAlmacen.YaExisteConCambios(
+                    existente = existente,
+                    valorNuevo = valor,
+                    esObjetoNuevo = esObjeto,
+                    vaEnRecetasNuevo = vaEnRecetas,
+                    usadoEnRecetas = ingredientes.recetasAfectadasPorBorrar(existente.id).size
+                )
 
             else -> {
-                if (!mismoValor(existente.valorPorGramo, valor)) {
-                    ingredientes.actualizar(existente.copy(valorPorGramo = valor))
+                // **Se aplican las tres cosas y no solo el precio.** Antes solo se escribía el
+                // valor, así que marcar "se cuenta por unidad" en algo que ya existía no hacía
+                // nada — el ingrediente seguía en gramos y no había forma de arreglarlo desde
+                // acá. Lo reportó Sandy.
+                if (hayQueConfirmar(existente, esObjeto, vaEnRecetas, valor)) {
+                    ingredientes.actualizar(
+                        existente.copy(
+                            valorPorGramo = valor,
+                            esObjeto = esObjeto,
+                            vaEnRecetas = vaEnRecetas
+                        )
+                    )
                 }
                 existente.id
             }
@@ -120,6 +138,24 @@ class AlmacenRepositorio(
         )
         return ResultadoAgregarAlAlmacen.Listo
     }
+
+    /**
+     * Si anotar esto cambiaría el ingrediente que ya existe, y por lo tanto hay que preguntar.
+     *
+     * Las tres cosas pesan y no solo el precio: **cambiar la unidad cambia lo que el precio
+     * significa**. Un ingrediente que pasa de gramos a unidades tiene el mismo número guardado y
+     * de golpe quiere decir otra cosa, y las líneas de receta que lo usan en gramos empiezan a
+     * multiplicar por un precio por unidad. Eso no puede pasar en silencio.
+     */
+    private fun hayQueConfirmar(
+        existente: Ingrediente,
+        esObjeto: Boolean,
+        vaEnRecetas: Boolean,
+        valor: Double
+    ): Boolean =
+        !mismoValor(existente.valorPorGramo, valor) ||
+            existente.esObjeto != esObjeto ||
+            existente.vaEnRecetas != vaEnRecetas
 
     /**
      * Si dos precios son el mismo para esta app.
@@ -204,14 +240,40 @@ sealed interface ResultadoAgregarAlAlmacen {
     data class NoSePudo(val motivo: String) : ResultadoAgregarAlAlmacen
 
     /**
-     * Ya existe y su precio no coincide. Hay que mostrar los dos y preguntar (7.2).
+     * Ya existe y anotarlo así lo cambiaría. Hay que mostrar qué y preguntar (7.2, 14.5.1).
      *
-     * Lleva el ingrediente entero y no solo su valor para poder nombrarlo en el aviso y mostrar
-     * los dos números juntos, que es la única pantalla donde se pueden comparar antes de que el
-     * viejo desaparezca. Cambiarlo mueve el costo de todas las recetas que lo usan.
+     * Lleva el ingrediente entero y lo que quedaría, para poder mostrar **los dos lados juntos**:
+     * esta es la única pantalla donde se pueden comparar antes de que el viejo desaparezca.
+     *
+     * Son tres cambios posibles y no solo el precio. El de la **unidad** es el que más hay que
+     * mirar: el número guardado no se mueve pero pasa a significar otra cosa, y las líneas de
+     * receta que ya usan ese ingrediente en gramos empiezan a multiplicar por un precio por
+     * unidad. Por eso viaja [usadoEnRecetas]: sin ese número el aviso no puede decir a cuánto
+     * afecta.
      */
-    data class PrecioDistinto(
+    data class YaExisteConCambios(
         val existente: Ingrediente,
-        val nuevoValor: Double
-    ) : ResultadoAgregarAlAlmacen
+        val valorNuevo: Double,
+        val esObjetoNuevo: Boolean,
+        val vaEnRecetasNuevo: Boolean,
+        val usadoEnRecetas: Int
+    ) : ResultadoAgregarAlAlmacen {
+
+        val cambiaElPrecio: Boolean
+            get() = kotlin.math.abs(existente.valorPorGramo - valorNuevo) >= 0.000005
+
+        val cambiaLaUnidad: Boolean get() = existente.esObjeto != esObjetoNuevo
+
+        val cambiaSiVaEnRecetas: Boolean get() = existente.vaEnRecetas != vaEnRecetasNuevo
+
+        /**
+         * Si el cambio puede mover el costo de recetas que ya existen.
+         *
+         * Es lo que decide si el aviso lleva el color de advertencia: cambiar la unidad de algo
+         * que nadie usa todavía no tiene consecuencias, y pintarlo igual enseñaría a ignorar el
+         * aviso cuando sí las tenga.
+         */
+        val afectaRecetas: Boolean
+            get() = usadoEnRecetas > 0 && (cambiaElPrecio || cambiaLaUnidad)
+    }
 }

@@ -169,6 +169,27 @@ data class EstadoPasos(
         return partes.firstOrNull { seccionId in it.seccionIds }?.comoSeNombraElOrigen
     }
 
+    /**
+     * De dónde viene un **bloque general anidado**, que no tiene sección de la que colgarse.
+     *
+     * Los pasos generales de una receta traída llegan con `tituloSeccionId` en `null` —eran
+     * generales allá y lo siguen siendo acá— así que la marca de origen no se podía sacar del
+     * título. Sin esto, un bloque traído se veía igual que uno escrito acá salvo por la sangría,
+     * que dice "vino de algo" pero no de qué. Lo reportó Sandy.
+     *
+     * **Con más de una receta traída no se inventa cuál**: no hay dato para saberlo —la fila del
+     * paso no guarda de dónde vino— y decir un nombre al azar sería peor que no decir ninguno.
+     * Ahí se dice "de una receta traída", que es lo que sí se sabe con certeza.
+     */
+    fun deDondeVieneElGeneralAnidado(): String? {
+        val traidas = partes.filter { it.origenId != null }
+        return when {
+            traidas.isEmpty() -> null
+            traidas.size == 1 -> traidas.single().comoSeNombraElOrigen
+            else -> "de una receta traída"
+        }
+    }
+
     /** Lo que esté mal en ese paso, o `null`. El vacío no es un error: es un paso que se borra. */
     fun errorDe(paso: PasoParaMostrar): String? = errorEnTextoDePaso(textoDe(paso))
 

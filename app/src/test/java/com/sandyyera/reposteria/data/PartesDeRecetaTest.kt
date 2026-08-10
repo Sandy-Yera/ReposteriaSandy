@@ -370,6 +370,36 @@ class PartesDeRecetaTest {
     }
 
     @Test
+    fun `sacarle un paso a la original avisa, y mantener lo apaga`() = runBlocking {
+        // El caso que reportó Sandy: cambió un **paso** de la original y el aviso apareció, pero
+        // en Cantidades no había ningún ingrediente distinto — porque lo que cambió fue un paso.
+        // El aviso es correcto; lo que fallaba era que no decía qué había cambiado.
+        val origen = bizcocho()
+        val seccionDelOrigen = unicaSeccionDe(origen).id
+        val paso = repositorio.agregarPaso(origen, titulo = seccionDelOrigen)
+        repositorio.guardarTextoDePaso(paso, "Batir hasta que doble")
+
+        val torta = crearReceta("Torta")
+        repositorio.traerReceta(torta, origen)
+
+        repositorio.eliminarPaso(paso)
+
+        val conAviso = repositorio.partesDe(torta).first()
+        assertTrue("Sacar un paso de la original sí avisa", conAviso.hayQueAvisar)
+        assertTrue(
+            "Y la frase dice que fue un paso, no un ingrediente",
+            conAviso.cambios.any { it.contains("paso") }
+        )
+
+        repositorio.mantenerParte(dao.obtenerSecciones(torta).first().id)
+
+        assertFalse(
+            "Mantener lo apaga igual que con un ingrediente",
+            repositorio.partesDe(torta).first().hayQueAvisar
+        )
+    }
+
+    @Test
     fun `mantener deja el vinculo vivo, y el proximo cambio vuelve a preguntar`() = runBlocking {
         val origen = bizcocho()
         val torta = crearReceta("Torta")

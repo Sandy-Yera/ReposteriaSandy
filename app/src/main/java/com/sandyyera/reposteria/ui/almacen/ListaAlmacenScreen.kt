@@ -47,6 +47,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sandyyera.reposteria.data.db.dao.ArticuloConValor
+import com.sandyyera.reposteria.data.repositorio.ResultadoAgregarAlAlmacen
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.ui.componentes.BarraBusqueda
 import com.sandyyera.reposteria.ui.componentes.CampoNumerico
@@ -462,41 +463,80 @@ private fun DialogoAgregarAlAlmacen(
 }
 
 /**
- * El precio escrito no es el que ya tenía ese ingrediente (7.2 y 14.5).
+ * Este ingrediente ya existe y anotarlo así lo cambiaría (7.2 y 14.5.1).
  *
- * **Muestra los dos números juntos y no pregunta en abstracto**, que fue lo que pidió Sandy: esta
- * es la única pantalla donde se pueden comparar antes de que el viejo desaparezca. El botón de
- * reemplazar dice a qué afecta, porque el costo de todas las recetas que usan ese ingrediente se
- * mueve con él y no se deshace.
+ * **Muestra los dos lados juntos y no pregunta en abstracto**, que fue lo que pidió Sandy: esta
+ * es la única pantalla donde se pueden comparar antes de que el viejo desaparezca.
+ *
+ * Son tres cambios posibles y se listan **solo los que de verdad cambian**: un cuadro que enumera
+ * lo que se queda igual obliga a leer tres renglones para encontrar el que importa.
+ *
+ * El de la **unidad** es el que más pesa, y por eso lleva su propio aviso cuando el ingrediente ya
+ * está en recetas: el número del precio no se mueve pero pasa a significar otra cosa, y las líneas
+ * que lo usan en gramos empiezan a multiplicar por un precio por unidad.
  */
 @Composable
 private fun DialogoPrecioDistinto(
-    disputa: PrecioEnDisputa,
+    disputa: ResultadoAgregarAlAlmacen.YaExisteConCambios,
     acciones: AccionesAlmacen
 ) {
+    val laUnidadDeAntes = if (disputa.existente.esObjeto) "unidad" else "gramo"
+    val laUnidadNueva = if (disputa.esObjetoNuevo) "unidad" else "gramo"
+
     AlertDialog(
         onDismissRequest = acciones.cerrarLaDisputaDePrecio,
-        title = { Text("'${disputa.existente.nombre}' ya tiene otro precio") },
+        title = { Text("'${disputa.existente.nombre}' ya existe") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(Medidas.chico)) {
-                Text("Guardado: $${formatearNumero(disputa.valorGuardado)}")
-                Text("Escribiste: $${formatearNumero(disputa.valorEscrito)}")
-                Text(
-                    text = "Cambiarlo mueve el costo de todas las recetas que lo usan, y no se " +
-                        "puede deshacer.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(Medidas.chico)
+            ) {
+                Text("Si lo anotas así, esto va a cambiar:")
+
+                if (disputa.cambiaLaUnidad) {
+                    Text("• Se cuenta por $laUnidadDeAntes → por $laUnidadNueva")
+                }
+                if (disputa.cambiaElPrecio) {
+                    Text(
+                        "• Precio: $${formatearNumero(disputa.existente.valorPorGramo)} → " +
+                            "$${formatearNumero(disputa.valorNuevo)} por $laUnidadNueva"
+                    )
+                }
+                if (disputa.cambiaSiVaEnRecetas) {
+                    Text(
+                        if (disputa.vaEnRecetasNuevo) "• Pasa a ofrecerse en las recetas"
+                        else "• Deja de ofrecerse en las recetas"
+                    )
+                }
+
+                if (disputa.afectaRecetas) {
+                    Text(
+                        text = "Lo usan ${disputa.usadoEnRecetas} " +
+                            (if (disputa.usadoEnRecetas == 1) "receta" else "recetas") +
+                            ", y su costo se mueve con esto. No se puede deshacer.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    if (disputa.cambiaLaUnidad) {
+                        // El caso que más confunde: lo ya escrito no se convierte solo.
+                        Text(
+                            text = "Ojo: lo que ya está puesto en una receta conserva su número. " +
+                                "Revisa esas líneas después.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
             }
         },
         confirmButton = {
             TextButton(onClick = acciones.conservarElPrecioGuardado) {
-                Text("Dejar el guardado")
+                Text("Dejarlo como está")
             }
         },
         dismissButton = {
             TextButton(onClick = acciones.reemplazarElPrecio) {
-                Text(text = "Usar el nuevo", color = MaterialTheme.colorScheme.error)
+                Text(text = "Aplicar los cambios", color = MaterialTheme.colorScheme.error)
             }
         }
     )
