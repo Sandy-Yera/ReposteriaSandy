@@ -586,10 +586,15 @@ class RecetaDaoFalso(
         // "cambiar la duración" pasaría con dos valores distintos guardados a la vez.
         duraciones.removeAll { it.recetaId == duracion.recetaId && it.tipo == duracion.tipo }
         duraciones += duracion
+        // Y el aviso, que es lo que hace `observarDuraciones`. Faltaba, y el resumen se quedaba
+        // mostrando la lista vacía del primer instante: Room reemite ante **cualquier** escritura
+        // en la tabla, y un falso que no lo haga aprueba una pantalla que no se entera.
+        cambio()
     }
 
     override suspend fun eliminarDuracion(recetaId: Long, tipo: TipoDuracion) {
         duraciones.removeAll { it.recetaId == recetaId && it.tipo == tipo }
+        cambio()
     }
 
     // --- Precios ---
@@ -644,6 +649,11 @@ class RecetaDaoFalso(
 
     override suspend fun insertarSimulacionVenta(simulacion: RecetaSimulacionVenta) {
         simulaciones += simulacion
+        // Avisa igual que `actualizarSimulacionVenta`: **insertar también es escribir**. Sin
+        // esto, una receta que estrena su fila de simulación no aparecía en `observarSimulacionVenta`
+        // hasta que otra escritura moviera el contador — un dato correcto que llegaba tarde y
+        // por casualidad.
+        cambio()
     }
 
     override suspend fun obtenerSimulacionVenta(recetaId: Long): RecetaSimulacionVenta? =

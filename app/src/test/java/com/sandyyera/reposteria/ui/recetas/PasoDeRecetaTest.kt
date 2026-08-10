@@ -35,10 +35,16 @@ class PasoDeRecetaTest {
     }
 
     @Test
-    fun `el primer paso es cantidades`() {
+    fun `el primer paso es el resumen`() {
         // Abrir una receta siempre empieza por acá, y la fila se dibuja en el orden del
         // enum: el primero de la lista y el primero que se muestra tienen que ser el mismo.
-        assertEquals(PasoDeReceta.CANTIDADES, PasoDeReceta.entries.first())
+        //
+        // **Era cantidades hasta 8.12.** Una receta se arma una vez y se lee muchas, y entrando
+        // por el formulario había que recorrer los siete pasos para leerla. El resumen no edita
+        // nada, así que puede ser un paso más de la fila sin romper la regla de que cada paso es
+        // un formulario: es el índice de los otros seis.
+        assertEquals(PasoDeReceta.RESUMEN, PasoDeReceta.entries.first())
+        assertEquals("Y cantidades queda segunda", PasoDeReceta.CANTIDADES, PasoDeReceta.entries[1])
     }
 
     @Test
@@ -56,14 +62,15 @@ class PasoDeRecetaTest {
                 PasoDeReceta.SIMULACION
             ),
             PasoDeReceta.entries.filterNot {
-                it == PasoDeReceta.CANTIDADES ||
+                it == PasoDeReceta.RESUMEN ||
+                    it == PasoDeReceta.CANTIDADES ||
                     it == PasoDeReceta.DURACION ||
                     // Pasos tampoco alimenta ninguna cifra, pero va al final y no segundo:
                     // es lo más largo de escribir y se hace cuando lo demás ya está decidido.
                     it == PasoDeReceta.PASOS
             }
         )
-        assertEquals("Y duración queda segunda", PasoDeReceta.DURACION, PasoDeReceta.entries[1])
+        assertEquals("Y duración va pegada a cantidades", PasoDeReceta.DURACION, PasoDeReceta.entries[2])
         assertEquals("Y pasos, último", PasoDeReceta.PASOS, PasoDeReceta.entries.last())
     }
 }
