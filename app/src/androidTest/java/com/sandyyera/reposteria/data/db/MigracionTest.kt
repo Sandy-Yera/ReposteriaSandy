@@ -461,6 +461,73 @@ class MigracionTest {
     }
 
     @Test
+    fun migrar_9_a_10_agrega_las_ventas_sin_tocar_lo_que_habia() {
+        ayudante.createDatabase(nombreDeLaBase, 9).use { base ->
+            base.execSQL(
+                "INSERT INTO recetas (id, titulo, pasoPrevio, creadoEn, actualizadoEn) " +
+                    "VALUES (1, 'Torta', 'No necesita', 1000, 1000)"
+            )
+            base.execSQL(
+                "INSERT INTO ingredientes (id, nombre, valorPorGramo, creadoEn, actualizadoEn) " +
+                    "VALUES (1, 'Harina', 1.2, 1000, 1000)"
+            )
+        }
+
+        ayudante.runMigrationsAndValidate(
+            nombreDeLaBase, 10, true, AppDatabase.MIGRACION_9_10
+        ).use { base ->
+            // Las tres tablas existen y arrancan vacías, que es lo correcto: no hubo ventas
+            // antes de poder anotarlas.
+            for (tabla in listOf("ventas", "venta_lineas", "movimientos_almacen")) {
+                base.query("SELECT COUNT(*) FROM $tabla").use { fila ->
+                    assertTrue("Falta la tabla $tabla", fila.moveToFirst())
+                    assertEquals("$tabla debería arrancar vacía", 0, fila.getInt(0))
+                }
+            }
+            // Y lo que ya estaba no se tocó.
+            base.query("SELECT titulo FROM recetas WHERE id = 1").use { fila ->
+                assertTrue(fila.moveToFirst())
+                assertEquals("Torta", fila.getString(0))
+            }
+        }
+    }
+
+    @Test
+    fun borrar_una_receta_no_borra_lo_que_se_vendio() {
+        // **La decisión que hay que leer dos veces**: `SET_NULL` y no `CASCADE`. La venta
+        // ocurrió; que la receta ya no exista no la deshace. Por eso el título viaja copiado.
+        ayudante.createDatabase(nombreDeLaBase, 9).use { base ->
+            base.execSQL(
+                "INSERT INTO recetas (id, titulo, pasoPrevio, creadoEn, actualizadoEn) " +
+                    "VALUES (1, 'Torta', 'No necesita', 1000, 1000)"
+            )
+        }
+
+        ayudante.runMigrationsAndValidate(
+            nombreDeLaBase, 10, true, AppDatabase.MIGRACION_9_10
+        ).use { base ->
+            base.execSQL("PRAGMA foreign_keys = ON")
+            base.execSQL("INSERT INTO ventas (id, fecha, creadoEn) VALUES (1, 20000, 1000)")
+            base.execSQL(
+                "INSERT INTO venta_lineas (ventaId, recetaId, tituloReceta, unidades, " +
+                    "precioUnitario, costoEstimadoUnitario, precioEstimadoUnitario) " +
+                    "VALUES (1, 1, 'Torta', 2, 5000.0, 1500.0, 4500.0)"
+            )
+
+            base.execSQL("DELETE FROM recetas WHERE id = 1")
+
+            base.query(
+                "SELECT recetaId, tituloReceta, unidades FROM venta_lineas"
+            ).use { fila ->
+                assertTrue("La línea sigue ahí", fila.moveToFirst())
+                assertTrue("Pero sin receta", fila.isNull(0))
+                assertEquals("Y con su nombre copiado", "Torta", fila.getString(1))
+                assertEquals(2, fila.getInt(2))
+            }
+        }
+    }
+
+    @Test
     fun despues_de_migrar_la_app_puede_abrir_la_base() {
         ayudante.createDatabase(nombreDeLaBase, 1).use { base ->
             base.execSQL(
@@ -473,10 +540,10 @@ class MigracionTest {
         // nueva no calza con la anterior.
         ayudante
             .runMigrationsAndValidate(
-                nombreDeLaBase, 9, true,
+                nombreDeLaBase, 10, true,
                 AppDatabase.MIGRACION_1_2, AppDatabase.MIGRACION_2_3, AppDatabase.MIGRACION_3_4,
                 AppDatabase.MIGRACION_4_5, AppDatabase.MIGRACION_5_6, AppDatabase.MIGRACION_6_7,
-                AppDatabase.MIGRACION_7_8, AppDatabase.MIGRACION_8_9
+                AppDatabase.MIGRACION_7_8, AppDatabase.MIGRACION_8_9, AppDatabase.MIGRACION_9_10
             )
             .close()
 
@@ -485,7 +552,7 @@ class MigracionTest {
             .addMigrations(
                 AppDatabase.MIGRACION_1_2, AppDatabase.MIGRACION_2_3, AppDatabase.MIGRACION_3_4,
                 AppDatabase.MIGRACION_4_5, AppDatabase.MIGRACION_5_6, AppDatabase.MIGRACION_6_7,
-                AppDatabase.MIGRACION_7_8, AppDatabase.MIGRACION_8_9
+                AppDatabase.MIGRACION_7_8, AppDatabase.MIGRACION_8_9, AppDatabase.MIGRACION_9_10
             )
             .build()
 

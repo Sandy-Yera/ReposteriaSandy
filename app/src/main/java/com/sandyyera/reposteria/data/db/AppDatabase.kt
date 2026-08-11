@@ -13,6 +13,7 @@ import com.sandyyera.reposteria.data.db.dao.HistorialDao
 import com.sandyyera.reposteria.data.db.dao.IngredienteDao
 import com.sandyyera.reposteria.data.db.dao.MoldeDao
 import com.sandyyera.reposteria.data.db.dao.RecetaDao
+import com.sandyyera.reposteria.data.db.dao.VentaDao
 import com.sandyyera.reposteria.data.db.entidades.Empleado
 import com.sandyyera.reposteria.data.db.entidades.EmpleadoRecetaSueldo
 import com.sandyyera.reposteria.data.db.entidades.EmpleadoSimulacionMultiple
@@ -21,6 +22,7 @@ import com.sandyyera.reposteria.data.db.entidades.ArticuloDeAlmacen
 import com.sandyyera.reposteria.data.db.entidades.EventoCambio
 import com.sandyyera.reposteria.data.db.entidades.Ingrediente
 import com.sandyyera.reposteria.data.db.entidades.Molde
+import com.sandyyera.reposteria.data.db.entidades.MovimientoDeAlmacen
 import com.sandyyera.reposteria.data.db.entidades.Receta
 import com.sandyyera.reposteria.data.db.entidades.RecetaDuracion
 import com.sandyyera.reposteria.data.db.entidades.RecetaIngrediente
@@ -29,6 +31,8 @@ import com.sandyyera.reposteria.data.db.entidades.RecetaPrecio
 import com.sandyyera.reposteria.data.db.entidades.RecetaRendimiento
 import com.sandyyera.reposteria.data.db.entidades.RecetaSeccion
 import com.sandyyera.reposteria.data.db.entidades.RecetaSimulacionVenta
+import com.sandyyera.reposteria.data.db.entidades.Venta
+import com.sandyyera.reposteria.data.db.entidades.VentaLinea
 
 /**
  * La base de datos de la app.
@@ -57,9 +61,12 @@ import com.sandyyera.reposteria.data.db.entidades.RecetaSimulacionVenta
         EmpleadoSimulacionMultiple::class,
         EmpleadoSimulacionMultipleDetalle::class,
         EventoCambio::class,
-        ArticuloDeAlmacen::class
+        ArticuloDeAlmacen::class,
+        Venta::class,
+        VentaLinea::class,
+        MovimientoDeAlmacen::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = true
 )
 @TypeConverters(Convertidores::class)
@@ -71,6 +78,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun empleadoDao(): EmpleadoDao
     abstract fun historialDao(): HistorialDao
     abstract fun almacenDao(): AlmacenDao
+    abstract fun ventaDao(): VentaDao
 
     companion object {
         private const val NOMBRE_ARCHIVO = "reposteria.db"
@@ -109,7 +117,7 @@ abstract class AppDatabase : RoomDatabase() {
                 .addCallback(SembrarDatosIniciales)
                 .addMigrations(
                     MIGRACION_1_2, MIGRACION_2_3, MIGRACION_3_4, MIGRACION_4_5, MIGRACION_5_6,
-                    MIGRACION_6_7, MIGRACION_7_8, MIGRACION_8_9
+                    MIGRACION_6_7, MIGRACION_7_8, MIGRACION_8_9, MIGRACION_9_10
                 )
                 .build()
 
@@ -397,6 +405,98 @@ abstract class AppDatabase : RoomDatabase() {
                         GROUP BY recetaId, modo
                     )
                     """.trimIndent()
+                )
+            }
+        }
+
+        /**
+         * 9 → 10: las ventas y los movimientos del almacén (Fase 12, sección 18).
+         *
+         * **Tres tablas en una sola versión, y eso es deliberado.** Ventas y sus líneas no sirven
+         * sin los movimientos —de ellos sale el costo *real*, que es la mitad del informe— y
+         * subir dos versiones entre dos compilaciones deja a la del medio sin esquema exportado
+         * **para siempre** (5.5.2). Ya pasó dos veces, con la 6 y la 8.
+         *
+         * **No toca ni una fila de lo que ya existe.** Son tablas nuevas y nada más: una base con
+         * cinco años de recetas queda exactamente igual, y lo único que aparece es la sección
+         * Ventas vacía, que es lo correcto — no hubo ventas antes de poder anotarlas.
+         *
+         * Los `SET_NULL` de las claves foráneas son la decisión que hay que leer dos veces:
+         * borrar una receta **no borra la historia de lo que se vendió**, y borrar un ingrediente
+         * no borra la de lo que se gastó. La venta ocurrió; que la receta ya no exista no la
+         * deshace. Por eso el título y el nombre viajan copiados en sus tablas, que es la única
+         * copia de un nombre que esta app acepta.
+         *
+         * Los índices salen de las consultas que el informe va a hacer: por `fecha` para agrupar
+         * el día, y por las tres claves foráneas —que Room exige indexar igual, y que acá además
+         * se usan de verdad al armar el informe de una venta.
+         */
+        val MIGRACION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS ventas (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        fecha INTEGER NOT NULL,
+                        notas TEXT,
+                        descontoDelAlmacen INTEGER NOT NULL DEFAULT 0,
+                        creadoEn INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_ventas_fecha ON ventas(fecha)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS venta_lineas (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        ventaId INTEGER NOT NULL,
+                        recetaId INTEGER,
+                        tituloReceta TEXT NOT NULL,
+                        unidades INTEGER NOT NULL,
+                        precioUnitario REAL NOT NULL,
+                        costoEstimadoUnitario REAL NOT NULL,
+                        precioEstimadoUnitario REAL NOT NULL,
+                        FOREIGN KEY(ventaId) REFERENCES ventas(id) ON DELETE CASCADE,
+                        FOREIGN KEY(recetaId) REFERENCES recetas(id) ON DELETE SET NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_venta_lineas_ventaId ON venta_lineas(ventaId)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_venta_lineas_recetaId ON venta_lineas(recetaId)"
+                )
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS movimientos_almacen (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        ingredienteId INTEGER,
+                        nombre TEXT NOT NULL,
+                        cantidad REAL NOT NULL,
+                        valorUnitario REAL NOT NULL,
+                        motivo TEXT NOT NULL,
+                        ventaId INTEGER,
+                        fecha INTEGER NOT NULL,
+                        creadoEn INTEGER NOT NULL,
+                        FOREIGN KEY(ingredienteId) REFERENCES ingredientes(id) ON DELETE SET NULL,
+                        FOREIGN KEY(ventaId) REFERENCES ventas(id) ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_movimientos_almacen_ingredienteId " +
+                        "ON movimientos_almacen(ingredienteId)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_movimientos_almacen_ventaId " +
+                        "ON movimientos_almacen(ventaId)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_movimientos_almacen_fecha " +
+                        "ON movimientos_almacen(fecha)"
                 )
             }
         }

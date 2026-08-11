@@ -2,6 +2,7 @@ package com.sandyyera.reposteria.data.db
 
 import androidx.room.TypeConverter
 import com.sandyyera.reposteria.data.db.entidades.EntidadEvento
+import com.sandyyera.reposteria.data.db.entidades.MotivoDeMovimiento
 import com.sandyyera.reposteria.logica.duracion.TipoDuracion
 import com.sandyyera.reposteria.data.db.entidades.TipoEvento
 import com.sandyyera.reposteria.logica.duracion.UnidadDuracion
@@ -31,6 +32,10 @@ class Convertidores {
 
     @TypeConverter fun entidadEventoATexto(v: EntidadEvento?): String? = v?.name
     @TypeConverter fun textoAEntidadEvento(v: String?): EntidadEvento? = v?.let { EntidadEvento.valueOf(it) }
+
+    @TypeConverter fun motivoMovimientoATexto(v: MotivoDeMovimiento?): String? = v?.name
+    @TypeConverter fun textoAMotivoMovimiento(v: String?): MotivoDeMovimiento? =
+        v?.let { MotivoDeMovimiento.valueOf(it) }
 
     @TypeConverter fun tipoDuracionATexto(v: TipoDuracion?): String? = v?.name
     @TypeConverter fun textoATipoDuracion(v: String?): TipoDuracion? = v?.let { TipoDuracion.valueOf(it) }

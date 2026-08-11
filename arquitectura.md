@@ -3419,6 +3419,7 @@ una comodidad.
 
 - **Construyes:** la sección Ventas del menú (18), la tabla de ventas con sus líneas, la tabla de **movimientos del almacén** que 14.12 dejó anotada, y el informe de estimado contra real (18.2).
 - **Hecho cuando:** se registra una venta con 2+ recetas y precios escritos a mano; el informe del día muestra las dos columnas y **la diferencia entre ellas**; una venta con descuento asociado muestra costo real y una sin él dice "estimado" en vez de repetir el mismo número con otro nombre; y el día aparece con su fecha en número, en texto y con su etiqueta de feriado o fecha comercial cuando corresponda.
+- **La base ya está** (versión 10): `ventas`, `venta_lineas` y `movimientos_almacen`, las tres en una sola versión porque las primeras dos no sirven sin la tercera —de ella sale el costo real— y subir dos versiones entre dos compilaciones deja a la del medio sin esquema **para siempre** (5.5.2). La migración **no toca ni una fila** de lo que existía: son tablas nuevas y nada más.
 - **El calendario está construido y probado** (11 pruebas), por lo mismo que en las fases 9 y 11: es lo único de esta fase que se verifica sin celular, y hacerlo primero deja la parte más fácil de equivocarse —Pascua, el segundo domingo de mayo— resuelta y comprobada contra fechas reales antes de que exista la pantalla.
   - `datosDelDia`, `nombreDelDia`, `nombreDelMes`, `esFinDeSemana` — la fecha dicha de todas las formas que sirven para agrupar después.
   - `domingoDePascua`, `feriadosDe` — los 15 feriados permanentes, con los dos que se mueven.
