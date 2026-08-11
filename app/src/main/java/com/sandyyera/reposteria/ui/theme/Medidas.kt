@@ -39,4 +39,27 @@ object Medidas {
      * crecería hasta dejar los botones de Cancelar y Eliminar fuera de la pantalla.
      */
     val altoMaximoDeLista = 200.dp
+
+    /**
+     * Alto **mínimo** del cuerpo de un cuadro con algo debajo que hay que notar: 280dp.
+     *
+     * Lo pidió Sandy con el cuadro de ingrediente nuevo, donde el botón de *"no sé el valor por
+     * gramo, sé lo que pagué"* quedaba tan al fondo que casi no lo había visto. La solución no
+     * fue mover el aviso —arriba compite con los campos, que es lo que uno vino a llenar— sino
+     * **alargar un poco el cuadro**: lo justo para que asome y se entienda que hay algo más
+     * abajo. *"No debe crecer tanto, solo un poco para lograr notarlo más y poder bajar a
+     * leerlo."*
+     */
+    val altoMinimoDeCuadroConAviso = 280.dp
+
+    /**
+     * Hasta dónde crece el cuerpo de un **formulario** dentro de un cuadro: 380dp.
+     *
+     * Es distinto de [altoMaximoDeLista] y por eso no se reutiliza, aunque tenga el mismo aire:
+     * aquel tope existe para que una lista larga no empuje los botones fuera de la pantalla, y un
+     * formulario tiene un alto conocido y corto. Usar los 200dp de la lista era justamente lo que
+     * dejaba el cuadro del ingrediente nuevo demasiado bajo — un tope pensado para otra cosa,
+     * aplicado por estar a mano.
+     */
+    val altoMaximoDeFormulario = 380.dp
 }

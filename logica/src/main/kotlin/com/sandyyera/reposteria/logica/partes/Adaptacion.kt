@@ -1,7 +1,7 @@
 package com.sandyyera.reposteria.logica.partes
 
 import com.sandyyera.reposteria.logica.busqueda.sonElMismoTexto
-import com.sandyyera.reposteria.logica.formato.redondearParaGuardar
+import com.sandyyera.reposteria.logica.formato.redondearCantidad
 import com.sandyyera.reposteria.logica.validaciones.LARGO_MAXIMO_NOMBRE
 
 /**
@@ -31,8 +31,10 @@ fun cantidadAdaptada(
     enLaOriginalAntes: Double,
     enLaOriginalAhora: Double
 ): Double {
-    if (enLaOriginalAntes <= 0.0) return redondearParaGuardar(enLaOriginalAhora)
-    return redondearParaGuardar(enLaCopia * (enLaOriginalAhora / enLaOriginalAntes))
+    if (enLaOriginalAntes <= 0.0) return redondearCantidad(enLaOriginalAhora)
+    // Dos decimales y no cinco: esto es una cantidad, no un precio por gramo (8.3.1). Sin eso,
+    // adaptar una parte traída dejaba los 0,50007 g que Sandy reportó al reescalar.
+    return redondearCantidad(enLaCopia * (enLaOriginalAhora / enLaOriginalAntes))
 }
 
 /**

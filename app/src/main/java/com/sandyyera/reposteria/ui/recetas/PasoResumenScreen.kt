@@ -46,6 +46,7 @@ import com.sandyyera.reposteria.data.repositorio.RendimientoDelResumen
 import com.sandyyera.reposteria.data.repositorio.ResumenDeReceta
 import com.sandyyera.reposteria.data.repositorio.SimulacionDelResumen
 import com.sandyyera.reposteria.data.repositorio.SeccionDelResumen
+import com.sandyyera.reposteria.logica.almacen.RecetaParaElAlmacen
 import com.sandyyera.reposteria.logica.formato.AVISO_MONTOS_REDONDEADOS
 import com.sandyyera.reposteria.logica.formato.formatearMonto
 import com.sandyyera.reposteria.logica.formato.formatearNumero
@@ -56,7 +57,9 @@ import com.sandyyera.reposteria.ui.theme.ReposteriaTheme
 data class AccionesResumen(
     val alternar: (PasoDeReceta) -> Unit = {},
     val irAlPaso: (PasoDeReceta) -> Unit = {},
-    val cerrarReceta: () -> Unit = {}
+    val cerrarReceta: () -> Unit = {},
+    /** Cierra la receta y abre el almacén con el cuadro de agregar ya lleno (14.13). */
+    val guardarComoIngrediente: (RecetaParaElAlmacen) -> Unit = {}
 )
 
 /** El resumen conectado a su ViewModel. */
@@ -68,6 +71,7 @@ fun PasoResumenScreen(
     pasoActual: PasoDeReceta,
     alElegirPaso: (PasoDeReceta) -> Unit,
     alCerrarReceta: () -> Unit,
+    alGuardarComoIngrediente: (RecetaParaElAlmacen) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val estado by modelo.estado.collectAsStateWithLifecycle()
@@ -78,7 +82,8 @@ fun PasoResumenScreen(
         acciones = AccionesResumen(
             alternar = modelo::alternar,
             irAlPaso = alElegirPaso,
-            cerrarReceta = alCerrarReceta
+            cerrarReceta = alCerrarReceta,
+            guardarComoIngrediente = alGuardarComoIngrediente
         ),
         pasoActual = pasoActual,
         modifier = modifier,
@@ -298,6 +303,34 @@ private fun EncabezadoDelResumen(resumen: ResumenDeReceta) {
                 text = AVISO_MONTOS_REDONDEADOS,
                 style = MaterialTheme.typography.bodySmall
             )
+
+            // Convertirla en ingrediente (14.13): los siropes, almíbares y azúcares invertidos
+            // no se venden, se usan dentro de otras recetas. Va en el encabezado y no en un paso
+            // propio porque **no es un paso de armar la receta** sino algo que se hace con ella
+            // ya terminada, y acá está justo debajo del costo del que sale su precio.
+            val paraElAlmacen = resumen.paraElAlmacen
+            if (paraElAlmacen != null) {
+                TextButton(
+                    onClick = { acciones.guardarComoIngrediente(paraElAlmacen) },
+                    contentPadding = PaddingValues(0.dp)
+                ) {
+                    Text(
+                        text = "Guardarla como ingrediente " +
+                            "($${formatearNumero(resumen.valorPorGramoComoIngrediente ?: 0.0)} " +
+                            "por gramo)",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            } else {
+                // **Se dice por qué no se puede**, en vez de esconder el botón: un botón que
+                // aparece y desaparece sin explicación se lee como que la app se rompió.
+                resumen.porQueNoSeGuardaComoIngrediente?.let {
+                    Text(
+                        text = "Para guardarla como ingrediente: $it",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
             // **Se listan los cambios y no solo se avisa que los hay.** Decir "revísalo en
             // Cantidades" mandaba a buscar un cambio de ingredientes que podía no existir: lo
             // que se movió pudo ser un paso. Con la frase exacta se entiende sin salir de acá,

@@ -93,6 +93,37 @@ fun cantidadConUnidad(cantidad: Double, esObjeto: Boolean): String {
 }
 
 /**
+ * Cuántos decimales tiene una cantidad de ingrediente **después de reescalar** (8.3.1).
+ *
+ * Dos, y no los cinco de [MAXIMO_DECIMALES]. Lo pidió Sandy con un caso que se ve en cuanto uno
+ * reescala: *"tendría de limón 0,50007 g, cuando debería ser 0,5"*. Cinco decimales son los que
+ * necesita un **precio por gramo** —$0,06667 es un dato— pero en una cantidad son la basura que
+ * deja una multiplicación por un factor con decimales, y nadie pesa 0,00007 g de nada.
+ */
+const val DECIMALES_DE_CANTIDAD = 2
+
+private const val ESCALA_DE_CANTIDAD = 100L
+
+/**
+ * Redondea una cantidad de ingrediente a [DECIMALES_DE_CANTIDAD].
+ *
+ * Va **al guardar y no al mostrar**, al revés que [formatearMonto], y esa diferencia es a
+ * propósito: un monto redondeado solo para la vista deja el número exacto por detrás para seguir
+ * calculando, pero acá el 0,00007 no es precisión que valga la pena conservar — es el residuo de
+ * una regla de tres. Guardándolo, la próxima multiplicación lo arrastra y lo agranda.
+ *
+ * **Nunca convierte en cero algo que no lo era.** Con 0,004 g redondear daría 0, o sea que el
+ * ingrediente desaparecería de la receta por reescalar: ahí se conserva la precisión de siempre.
+ * Perder un ingrediente entero es mucho peor que mostrar un decimal de más en un caso raro.
+ */
+fun redondearCantidad(valor: Double): Double {
+    if (!valor.isFinite() || abs(valor) >= TOPE_PARA_REDONDEAR) return valor
+    val redondeado = (valor * ESCALA_DE_CANTIDAD).roundToLong() / ESCALA_DE_CANTIDAD.toDouble()
+    if (redondeado == 0.0 && valor != 0.0) return redondearParaGuardar(valor)
+    return redondeado
+}
+
+/**
  * Lo que se aclara al pie de toda pantalla que muestre montos con [formatearMonto].
  *
  * Es la mitad obligatoria del redondeo. Un número redondeado sin avisar es un número falso; con

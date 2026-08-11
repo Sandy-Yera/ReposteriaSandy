@@ -1005,7 +1005,14 @@ private fun DialogoCrearIngrediente(
         text = {
             Column(
                 modifier = Modifier
-                    .heightIn(max = Medidas.altoMaximoDeLista)
+                    // **Un mínimo y no solo un máximo.** El botón de "no sé el valor por gramo"
+                    // quedaba tan abajo que casi no se veía; alargando el cuadro un poco asoma y
+                    // se entiende que hay algo más. Mover el aviso arriba habría sido peor: ahí
+                    // compite con los campos, que es lo que uno vino a llenar.
+                    .heightIn(
+                        min = Medidas.altoMinimoDeCuadroConAviso,
+                        max = Medidas.altoMaximoDeFormulario
+                    )
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(Medidas.chico)
             ) {

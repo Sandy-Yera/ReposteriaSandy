@@ -1270,6 +1270,16 @@ Antes no se elegía: mandaba siempre la de menor ganancia. Eso servía para no p
 
 Ese respaldo tiene una consecuencia que hay que tener presente: **puede caer en un precio que pierde plata**, precisamente porque elige el que menos deja. O sea que el estado que `errorAlElegirReferencia` impide alcanzar a mano se alcanza solo, sin que nadie haga nada. No es contradictorio ni se arregla prohibiendo: al mismo lugar se llega sin tocar los precios, con que suba el costo de un ingrediente en otra pantalla. La conclusión es que **"la referencia pierde plata" es un estado que hay que mostrar, no uno que se pueda prevenir** — y por eso el aviso de la pantalla cuelga del estado y no de la acción.
 
+
+**Las cantidades se redondean a dos decimales, no a cinco.** Los cinco decimales de `MAXIMO_DECIMALES`
+existen por el **valor por gramo** —$0,06667 es un dato— pero en una cantidad son la basura que deja
+multiplicar por un factor con decimales. Sandy lo reportó con un caso que se ve en cuanto uno
+reescala: *"tendría de limón 0,50007 g, cuando debería ser 0,5"*. Nadie pesa 0,00007 g de nada.
+
+El redondeo va **al guardar y no al mostrar**, al revés que los montos (15.2): guardando el residuo,
+la próxima multiplicación lo arrastra y lo agranda. La única excepción es cuando redondear daría
+cero y el número no lo era —0,004 g— y ahí se conserva la precisión de siempre: perder un
+ingrediente entero de la receta es mucho peor que un decimal de más en un caso raro.
 #### La referencia no puede perder plata
 
 Elegir como referencia una promo que se vende bajo el costo **se rechaza**: la referencia queda como estaba y se muestra el aviso `MENSAJE_PROMOCION_CON_PERDIDAS` ("Esta promoción genera pérdidas").
@@ -2627,6 +2637,36 @@ destructivo no puede quedar hecho por el gesto de mirar una casilla.
 **Sin recetas que lo usen no se pregunta nada.** El aviso existe para nombrar lo que se rompe
 (7.1); sin nada que nombrar sería un "¿seguro?" que se aprieta sin leer, y que enseña a apretar los
 siguientes igual.
+
+### 14.13 Una receta guardada como ingrediente
+
+*"A veces hago siropes, almíbares o azúcares invertidos."* Son recetas que **no se venden**: se
+usan dentro de otras. Hasta acá la única forma de costearlas era estimar su valor por gramo a ojo,
+y **la app ya sabía el número exacto** — tiene el costo total y el peso final, así que el valor por
+gramo es una división que ya estaba hecha.
+
+Es distinto de "traer otra receta" (8.11) y las dos cosas conviven: traerla **copia sus
+ingredientes dentro** de la que se está armando, y esto la convierte en **una cosa** que se pesa y
+se guarda en un frasco. Un almíbar que se prepara el lunes y se usa el jueves es lo segundo.
+
+**Es un atajo al cuadro del almacén, no una pantalla nueva.** Lo pidió así: *"sería mejor que me
+redirigiera al almacenaje, con los campos rellenos"*. Se cierra la receta, se cambia a Almacén y se
+abre el cuadro de agregar con el nombre, el peso final como cantidad —*"además justo da la
+cantidad"*, y recién hecha eso es exactamente lo que hay en el frasco— y el costo total como
+precio.
+
+**Se manda el costo total y no el valor por gramo**, aunque el valor por gramo sea el dato
+interesante. El campo de ese cuadro pregunta *"cuánto costó todo"* (14.5.2) y la receta costó eso,
+así que la división la hace el cuadro y sale el mismo número, sin un redondeo de ida y otro de
+vuelta. Mandar el valor por gramo obligaría a multiplicarlo para llenar el campo y a que el cuadro
+lo dividiera de nuevo: dos operaciones para volver al punto de partida.
+
+**Todo queda editable**: no es un guardado automático sino un formulario contestado. Si el almíbar
+se reparte en dos frascos y solo uno queda en la despensa, la cantidad se corrige antes de aceptar.
+
+Cuando no se puede —sin ingredientes, o sin peso final anotado— **se dice por qué y dónde
+arreglarlo** en vez de esconder el botón: uno que aparece y desaparece sin explicación se lee como
+que la app se rompió.
 
 ### 14.12 Lo que este módulo **no** hace todavía
 

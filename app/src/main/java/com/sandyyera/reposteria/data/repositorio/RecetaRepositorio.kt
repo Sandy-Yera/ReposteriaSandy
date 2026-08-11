@@ -12,7 +12,11 @@ import com.sandyyera.reposteria.data.db.entidades.aVigente
 import com.sandyyera.reposteria.data.db.entidades.RecetaRendimiento
 import com.sandyyera.reposteria.logica.formato.cantidadConUnidad
 import com.sandyyera.reposteria.logica.almacen.GastoDeIngrediente
+import com.sandyyera.reposteria.logica.almacen.RecetaParaElAlmacen
+import com.sandyyera.reposteria.logica.almacen.porQueNoSePuedeGuardarComoIngrediente
+import com.sandyyera.reposteria.logica.almacen.valorPorGramoDeLaReceta
 import com.sandyyera.reposteria.logica.formato.formatearNumero
+import com.sandyyera.reposteria.logica.formato.redondearCantidad
 import com.sandyyera.reposteria.logica.formato.redondearParaGuardar
 import com.sandyyera.reposteria.logica.duracion.TipoDuracion
 import com.sandyyera.reposteria.logica.duracion.UnidadDuracion
@@ -211,6 +215,37 @@ data class ResumenDeReceta(
 
     /** Si alguna parte traída tiene un aviso pendiente. Lo muestra el encabezado del resumen. */
     val hayAvisoDePartes: Boolean get() = partes.any { it.hayQueAvisar }
+
+    /**
+     * El valor por gramo que tendría esta receta como ingrediente, o `null` si falta algo (14.13).
+     *
+     * Sale de dividir el costo por el peso final, así que **no es una estimación**: es la cuenta
+     * que la receta ya tenía hecha. Es lo que hace útil convertir un almíbar o un azúcar invertido
+     * en ingrediente en vez de adivinar su precio a ojo.
+     */
+    val valorPorGramoComoIngrediente: Double?
+        get() = valorPorGramoDeLaReceta(costoTotal, rendimiento.pesoFinalG)
+
+    /** Por qué no se puede guardar como ingrediente todavía, o `null` si sí se puede. */
+    val porQueNoSeGuardaComoIngrediente: String?
+        get() = porQueNoSePuedeGuardarComoIngrediente(
+            pesoFinalG = rendimiento.pesoFinalG,
+            tieneIngredientes = !sinIngredientes
+        )
+
+    /**
+     * Los tres campos con que se abre el cuadro del almacén, o `null` si falta algo.
+     *
+     * Lleva el **costo total** y no el valor por gramo porque es exactamente lo que ese cuadro
+     * pregunta —*"cuánto costó todo"*— y la receta costó eso: el cuadro divide y le sale el mismo
+     * número, sin un redondeo de ida y otro de vuelta (14.13).
+     */
+    val paraElAlmacen: RecetaParaElAlmacen?
+        get() {
+            if (porQueNoSeGuardaComoIngrediente != null) return null
+            val peso = rendimiento.pesoFinalG ?: return null
+            return RecetaParaElAlmacen(titulo, costoTotal, peso)
+        }
 
     /**
      * Qué cambió en las recetas traídas, receta por receta (8.11.5).
@@ -962,11 +997,13 @@ class RecetaRepositorio(
     }
 
     /**
-     * Multiplica todas las cantidades por [factor], con el redondeo con que se guarda todo.
+     * Multiplica todas las cantidades por [factor], redondeando a dos decimales.
      *
-     * El redondeo es el mismo que usa el resto de la app (`redondearParaGuardar`): si se
-     * guardara la cantidad sin redondear, el subtotal que muestra la pantalla no coincidiría
-     * con el que suma la base.
+     * **Dos y no los cinco de todo lo demás** (8.3.1): cinco decimales son los que necesita un
+     * precio por gramo, pero en una cantidad son la basura que deja la regla de tres. Lo pidió
+     * Sandy con un caso que se ve en cuanto uno reescala — *"tendría de limón 0,50007 g, cuando
+     * debería ser 0,5"*—, y el redondeo va **al guardar** porque si no la próxima multiplicación
+     * arrastra ese residuo y lo agranda.
      *
      * **Lo que se cuenta por unidad no se multiplica** (14.5). Reescalar es pasar la receta a
      * otro molde: cambia cuánta masa hay, no cuántas cajas se usan para llevarla. Y multiplicar
@@ -978,7 +1015,7 @@ class RecetaRepositorio(
             if (item.unidades != null) return@forEach
             dao.actualizarCantidad(
                 itemId = item.id,
-                cantidad = redondearParaGuardar(item.cantidadG * factor),
+                cantidad = redondearCantidad(item.cantidadG * factor),
                 unidades = null
             )
         }

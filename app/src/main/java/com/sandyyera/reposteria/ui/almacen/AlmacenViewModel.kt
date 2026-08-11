@@ -14,6 +14,7 @@ import com.sandyyera.reposteria.data.repositorio.RecetaRepositorio
 import com.sandyyera.reposteria.data.repositorio.Resultado
 import com.sandyyera.reposteria.data.repositorio.ResultadoRenombrarEnAlmacen
 import com.sandyyera.reposteria.logica.almacen.RecetaHecha
+import com.sandyyera.reposteria.logica.almacen.RecetaParaElAlmacen
 import com.sandyyera.reposteria.logica.almacen.SentidoDelMovimiento
 import com.sandyyera.reposteria.logica.almacen.VistaPreviaDelDescuento
 import com.sandyyera.reposteria.logica.almacen.avisoDeCantidadNegativa
@@ -876,6 +877,34 @@ class AlmacenViewModel(
             if (r is Resultado.NoSePudo) mensaje.value = r.motivo
         }
         _dialogo.value = DialogoAlmacen.Ninguno
+    }
+
+    /**
+     * Abre el cuadro de agregar **con los campos ya llenos**, viniendo de una receta (14.13).
+     *
+     * Es un atajo a una pantalla que ya existe y no una nueva, que es justo lo que Sandy pidió:
+     * *"sería mejor que me redirigiera al almacenaje, con los campos rellenos"*.
+     *
+     * El precio llega como **costo total** porque es lo que este cuadro pregunta (14.5.2) y es lo
+     * que la receta costó; la división a valor por gramo la hace el cuadro, igual que siempre.
+     * Queda `vaEnRecetas = true` y `esObjeto = false` sin preguntarlo: un almíbar se pesa y se usa
+     * dentro de otras recetas — es exactamente para eso que se convierte.
+     *
+     * **Todo queda editable.** No es un guardado automático sino un formulario contestado: si el
+     * almíbar se guarda en dos frascos y solo uno queda en la despensa, la cantidad se corrige
+     * antes de aceptar.
+     */
+    fun abrirAgregarDesdeReceta(datos: RecetaParaElAlmacen) {
+        _dialogo.value = DialogoAlmacen.Agregar(
+            nombre = datos.nombre,
+            esObjeto = false,
+            vaEnRecetas = true,
+            cantidad = formatearNumero(datos.cantidad),
+            precio = formatearNumero(datos.costoTotal),
+            // `tocado` en true porque los campos **ya tienen algo escrito**: con false, un error
+            // real —un nombre que choca— no se mostraría hasta tocar el formulario.
+            tocado = true
+        )
     }
 
     // --- Descontar lo que se gastó haciendo recetas (14.9) ---

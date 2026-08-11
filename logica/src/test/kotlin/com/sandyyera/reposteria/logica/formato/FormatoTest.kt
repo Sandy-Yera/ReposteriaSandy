@@ -1,6 +1,7 @@
 package com.sandyyera.reposteria.logica.formato
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -360,5 +361,37 @@ class FormatoTest {
         assertEquals(0.06667, redondearParaGuardar(0.0666666), 0.0000001)
         assertEquals("0,06667", formatearNumero(0.0666666))
         assertEquals("Y por eso los montos no se usan para eso", "0", formatearMonto(0.0666666))
+    }
+
+    // --- Cantidades de ingrediente al reescalar (8.3.1) ---
+
+    @Test
+    fun `una cantidad reescalada se queda en dos decimales`() {
+        // El caso de Sandy, tal cual: "tendría de limón 0,50007 g, cuando debería ser 0,5".
+        assertEquals(0.5, redondearCantidad(0.50007), 0.000001)
+        assertEquals(133.33, redondearCantidad(133.33333), 0.000001)
+        assertEquals("Sube cuando pasa la mitad", 0.51, redondearCantidad(0.505), 0.000001)
+    }
+
+    @Test
+    fun `los enteros no ganan decimales de la nada`() {
+        assertEquals("500", formatearNumero(redondearCantidad(500.0)))
+        assertEquals("0", formatearNumero(redondearCantidad(0.0)))
+    }
+
+    @Test
+    fun `nunca convierte en cero algo que no lo era`() {
+        // Redondear 0,004 a dos decimales daría 0, o sea que el ingrediente desaparecería de la
+        // receta por reescalarla. Perder uno entero es mucho peor que un decimal de más.
+        assertEquals(0.004, redondearCantidad(0.004), 0.000001)
+        assertNotEquals(0.0, redondearCantidad(0.001))
+    }
+
+    @Test
+    fun `es distinto de redondearParaGuardar, que sigue en cinco`() {
+        // La separación que importa: cinco decimales son los que necesita un precio por gramo
+        // —$0,06667 es un dato— y en una cantidad son la basura de una regla de tres.
+        assertEquals(0.06667, redondearParaGuardar(0.0666666), 0.000001)
+        assertEquals(0.07, redondearCantidad(0.0666666), 0.000001)
     }
 }

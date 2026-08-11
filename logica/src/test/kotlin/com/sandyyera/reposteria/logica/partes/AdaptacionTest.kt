@@ -39,10 +39,18 @@ class AdaptacionTest {
     }
 
     @Test
-    fun `el resultado viene redondeado como todo lo que se guarda`() {
-        // El mismo redondeo que el resto de la app: si se guardara sin redondear, el subtotal
-        // que muestra la pantalla no coincidiría con el que suma la base.
-        assertEquals(33.33333, cantidadAdaptada(100.0, 300.0, 100.0), 0.000001)
+    fun `el resultado viene redondeado a dos decimales, como toda cantidad`() {
+        // **Cambió de cinco a dos** (8.3.1). Cinco decimales son los que necesita un precio por
+        // gramo —$0,06667 es un dato— pero en una cantidad son la basura que deja la regla de
+        // tres: Sandy lo reportó al reescalar, con "0,50007 g de limón" donde eran 0,5.
+        assertEquals(33.33, cantidadAdaptada(100.0, 300.0, 100.0), 0.000001)
+    }
+
+    @Test
+    fun `pero una cantidad chiquita no se pierde al redondear`() {
+        // Redondear 0,004 a dos decimales daría 0, o sea que el ingrediente desaparecería de la
+        // copia. Ahí se conserva la precisión de siempre: perder uno entero es mucho peor.
+        assertEquals(0.004, cantidadAdaptada(0.4, 100.0, 1.0), 0.000001)
     }
 
     @Test

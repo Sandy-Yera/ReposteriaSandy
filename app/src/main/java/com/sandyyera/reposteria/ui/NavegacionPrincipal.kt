@@ -18,6 +18,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,6 +31,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.sandyyera.reposteria.AppContainer
 import com.sandyyera.reposteria.BuildConfig
+import com.sandyyera.reposteria.logica.almacen.RecetaParaElAlmacen
 import com.sandyyera.reposteria.ui.almacen.AlmacenViewModel
 import com.sandyyera.reposteria.ui.almacen.ListaAlmacenScreen
 import com.sandyyera.reposteria.ui.empleados.EmpleadosViewModel
@@ -119,6 +121,15 @@ fun NavegacionPrincipal(
     // el teléfono en Rendimiento no puede devolver a Cantidades.
     var pasoActual by rememberSaveable { mutableStateOf(PasoDeReceta.RESUMEN) }
 
+    // Lo que una receta manda al almacén al convertirse en ingrediente (14.13).
+    //
+    // Va acá y no dentro de una de las dos secciones porque **cruza de una a otra**: la receta lo
+    // produce y el almacén lo consume, y este es el único punto que ve a las dos. No es
+    // `rememberSaveable` a propósito: si el teléfono gira mientras el cuadro está abierto, el
+    // cuadro sobrevive solo (vive en el ViewModel del almacén) y este dato ya cumplió su función
+    // — guardarlo lo volvería a aplicar y reabriría el cuadro encima del que ya está.
+    var loQueVaAlAlmacen by remember { mutableStateOf<RecetaParaElAlmacen?>(null) }
+
     // Una receta abierta se ve a pantalla completa, sin el menú de secciones: es un paso
     // dentro de la receta, no una sección de la app.
     //
@@ -184,6 +195,13 @@ fun NavegacionPrincipal(
                 pasoActual = pasoActual,
                 alElegirPaso = elegirPaso,
                 alCerrarReceta = cerrarReceta,
+                alGuardarComoIngrediente = { datos ->
+                    // Cierra la receta y cambia de sección: llevar el dato sin cerrar dejaría el
+                    // cuadro del almacén abierto detrás de una receta que sigue en pantalla.
+                    loQueVaAlAlmacen = datos
+                    cerrarReceta()
+                    seccionActual = Seccion.ALMACEN
+                },
                 modifier = modifier
             )
 
@@ -390,15 +408,24 @@ private fun MenuDeSecciones(
         val abrirMenu: () -> Unit = { alcance.launch { estadoDelMenu.open() } }
 
         when (seccionActual) {
-            Seccion.ALMACEN -> ListaAlmacenScreen(
-                modelo = viewModel(
+            Seccion.ALMACEN -> {
+                val modeloAlmacen: AlmacenViewModel = viewModel(
                     factory = AlmacenViewModel.fabrica(
                         almacen = contenedor.almacen,
                         recetas = contenedor.recetas
                     )
-                ),
-                alAbrirMenu = abrirMenu
-            )
+                )
+                // Se aplica **una sola vez y se limpia**: sin el `null` de después, volver al
+                // almacén desde cualquier otra sección reabriría el mismo cuadro con los datos
+                // de una receta que se convirtió hace rato.
+                LaunchedEffect(loQueVaAlAlmacen) {
+                    loQueVaAlAlmacen?.let {
+                        modeloAlmacen.abrirAgregarDesdeReceta(it)
+                        loQueVaAlAlmacen = null
+                    }
+                }
+                ListaAlmacenScreen(modelo = modeloAlmacen, alAbrirMenu = abrirMenu)
+            }
 
             Seccion.INGREDIENTES -> ListaIngredientesScreen(
                 modelo = viewModel(
