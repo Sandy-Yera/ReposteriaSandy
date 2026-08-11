@@ -352,7 +352,7 @@ sealed interface DialogoAlmacen {
             get() = recetas.filter { (textoANumero(it.tandas) ?: 0.0) > 0 }
 
         val visibles: List<RecetaParaDescontar>
-            get() = recetas.filtrarPor(busqueda) { it.titulo }
+            get() = filtrarPor(recetas, busqueda) { it.titulo }
 
         val puedeCalcular: Boolean get() = elegidas.isNotEmpty() && !calculando
 

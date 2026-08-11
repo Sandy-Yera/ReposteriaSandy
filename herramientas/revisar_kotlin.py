@@ -17,6 +17,7 @@ de verdad— pero atrapa las cosas que sí se han colado hasta ahora:
 6. Un nombre entre acentos graves (los de las pruebas) con un carácter que la JVM no
    admite — dos puntos, punto, barra…
 7. Que esté versionado el esquema exportado de cada versión de la base de datos.
+8. Una función suelta de `:logica` llamada como si fuera método (`items.filtrarPor(...)`).
 
 Se corre solo, sin instalar nada:
 
@@ -132,6 +133,53 @@ def revisar_importaciones(rutas):
         faltan = usados - importados - por_paquete.get(paquete, set()) - CONOCIDOS - propios
         if faltan:
             print(f"  ¿sin importar? {os.path.relpath(ruta, RAIZ)}: {', '.join(sorted(faltan))}")
+            problemas += 1
+    return problemas
+
+
+def revisar_llamadas_con_punto(rutas):
+    """9. Una función suelta de `:logica` llamada como si fuera método (`x.f()`).
+
+    `filtrarPor(items, busqueda) { ... }` recibe la lista **por parámetro**; escrito
+    `items.filtrarPor(busqueda) { ... }` no compila, y la revisión 2 no lo ve porque el nombre
+    sí está importado. Se coló así en el cuadro de descontar por recetas.
+
+    Para no inventar falsos positivos solo se miran los nombres que en `:logica` están
+    declarados **al margen izquierdo y sin receptor**, y se descarta cualquiera que además
+    exista como método o como extensión en algún lado: ahí el punto puede ser correcto.
+    """
+    sueltas, con_punto = set(), set()
+    for ruta in rutas:
+        texto = open(ruta, encoding="utf-8").read()
+        codigo = sin_comentarios_ni_textos(texto)
+        # Declaradas al margen: `fun nombre(` o `fun <T> nombre(`, sin nada antes en la línea.
+        for m in re.finditer(r"^fun\s+(?:<[^>]*>\s*)?(\w+)\s*\(", codigo, re.M):
+            if "/logica/" in ruta.replace(os.sep, "/"):
+                sueltas.add(m.group(1))
+        # Métodos (con sangría) y extensiones (`fun Algo.nombre(`): ahí el punto es correcto.
+        #
+        # **`[ \t]` y no `\s`**: `\s` incluye el salto de línea, así que con `re.M` el `^`
+        # calzaba en una línea en blanco y los saltos hacían de "sangría" — o sea que *toda*
+        # función suelta precedida de una línea vacía parecía un método, y la revisión no
+        # marcaba nunca nada. Se pilló comprobando que atrapara el error que la motivó.
+        con_punto |= set(re.findall(r"^[ \t]+fun\s+(?:<[^>]*>\s*)?(\w+)\s*\(", codigo, re.M))
+        con_punto |= set(re.findall(r"\bfun\s+(?:<[^>]*>\s*)?[\w.<>]+\.(\w+)\s*\(", codigo))
+
+    candidatas = sueltas - con_punto
+    if not candidatas:
+        return 0
+
+    problemas = 0
+    for ruta in rutas:
+        codigo = sin_comentarios_ni_textos(open(ruta, encoding="utf-8").read())
+        # Se borra el paquete escrito completo antes de buscar: en
+        # `com.sandyyera.reposteria.logica.validaciones.textoANumero(x)` el punto es parte de
+        # la ruta y no una llamada a método. Sin esto, escribir el nombre calificado —que es
+        # lo correcto cuando dos paquetes traen el mismo nombre— se marcaba como error.
+        codigo = re.sub(r"\bcom(?:\.\w+)+\.", "", codigo)
+        malas = {n for n in candidatas if re.search(r"\.\s*" + n + r"\s*[({]", codigo)}
+        if malas:
+            print(f"  ¿llamada con punto? {os.path.relpath(ruta, RAIZ)}: {', '.join(sorted(malas))}")
             problemas += 1
     return problemas
 
@@ -414,6 +462,7 @@ def main():
         ("Nombres entre acentos graves", revisar_nombres_con_acentos),
         ("Esquemas de Room", revisar_esquemas),
         ("Aserciones de JUnit", revisar_aserciones),
+        ("Llamadas con punto", revisar_llamadas_con_punto),
     ]:
         encontrados = revision(rutas)
         estado = "ok" if encontrados == 0 else f"{encontrados} problema(s)"
