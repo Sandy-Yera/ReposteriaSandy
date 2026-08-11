@@ -477,45 +477,60 @@ class AlmacenRepositorio(
         ingredientes.recetasAfectadasPorBorrar(ingredienteId)
 
     /**
-     * Cambia si algo del almacén se ofrece al armar una receta (14.11).
+     * Cambia las dos cosas que definen **qué es** algo del almacén: su unidad y si va en
+     * recetas (14.11).
      *
-     * Sandy pidió poder verlo y cambiarlo desde acá —*"debería poder ver, una vez creado en
-     * almacén, si es posible usar en ingredientes o no (y editar)"*— y agregó la consecuencia:
-     * *"si lo cambio a que no es ingrediente, se debería eliminar con advertencia"*.
+     * Van juntas en una sola función y no en dos porque **se confirman juntas**: las dos tocan
+     * las mismas recetas, y preguntar dos veces por la misma lista de recetas afectadas sería
+     * pedir la misma autorización partida en dos.
      *
-     * **Apagarlo saca de verdad sus líneas de las recetas**, no solo lo esconde del buscador. Es
-     * lo que ella pidió y además es lo coherente: dejarlo dentro de tres recetas mientras la app
-     * dice que no es un ingrediente sería sostener dos verdades a la vez, y esas recetas
-     * seguirían costando por algo que la app ya no considera un ingrediente. Por eso pasa por
-     * `confirmarEliminacion`, que es la misma puerta que borrar desde el catálogo (7.1), y por
-     * eso la pantalla tiene que haber mostrado antes [recetasQueUsan].
+     * [esObjeto] es lo que Sandy pidió después: *"debería poder cambiar gramos a unidad, en
+     * almacén, caso que me haya equivocado"*. Es el cambio **más peligroso de los dos**, y no se
+     * nota mirándolo: el número del precio no se mueve pero pasa a significar otra cosa, y las
+     * líneas de receta que lo usan en gramos empiezan a multiplicar por un precio por unidad. Lo
+     * que ya está escrito en una receta **conserva su número**, así que esas líneas hay que
+     * revisarlas; la app no puede convertirlas sola porque no sabe cuántos gramos pesa una
+     * unidad. Es la misma advertencia que ya daba el cuadro de agregar (14.5.1).
      *
-     * **Encenderlo no necesita confirmación**: agregar algo a la lista de lo que se puede elegir
-     * no le quita nada a nadie.
+     * [vaEnRecetas] apagado **saca de verdad sus líneas de las recetas**, no solo lo esconde del
+     * buscador: dejarlo dentro de tres recetas mientras la app dice que no es un ingrediente
+     * sería sostener dos verdades a la vez.
+     *
+     * **No pregunta nada.** Quién decide es la pantalla, que tiene que haber mostrado antes
+     * [recetasQueUsan] con los nombres a la vista (7.1). Acá solo se escribe.
      */
-    suspend fun cambiarVaEnRecetas(ingredienteId: Long, vaEnRecetas: Boolean): Resultado {
+    suspend fun cambiarQueEs(
+        ingredienteId: Long,
+        esObjeto: Boolean,
+        vaEnRecetas: Boolean
+    ): Resultado {
         val ingrediente = ingredientes.obtener(ingredienteId)
             ?: return Resultado.NoSePudo("Ese ingrediente ya no existe")
-        if (ingrediente.vaEnRecetas == vaEnRecetas) return Resultado.Listo
+        val cambiaUnidad = ingrediente.esObjeto != esObjeto
+        val saleDeRecetas = ingrediente.vaEnRecetas && !vaEnRecetas
+        if (!cambiaUnidad && ingrediente.vaEnRecetas == vaEnRecetas) return Resultado.Listo
 
-        if (!vaEnRecetas) {
-            // Saca sus líneas de las recetas. **No borra el ingrediente**: sigue en el catálogo y
-            // en el almacén, que es donde se le lleva la cuenta — lo que deja de ser es algo que
-            // se pueda poner en una receta.
-            ingredientes.quitarDeLasRecetas(ingredienteId)
-        }
+        if (saleDeRecetas) ingredientes.quitarDeLasRecetas(ingredienteId)
+
         return when (
-            val r = ingredientes.actualizar(ingrediente.copy(vaEnRecetas = vaEnRecetas))
+            val r = ingredientes.actualizar(
+                ingrediente.copy(esObjeto = esObjeto, vaEnRecetas = vaEnRecetas)
+            )
         ) {
             is ResultadoGuardarIngrediente.Guardado -> {
+                // Un solo evento con las dos frases: es un acto —"corregí qué es esto"— y
+                // partirlo en dos llenaría el historial con la mitad de una decisión.
+                val frases = buildList {
+                    if (cambiaUnidad) {
+                        add(if (esObjeto) "ahora se cuenta por unidad" else "ahora se pesa en gramos")
+                    }
+                    if (saleDeRecetas) add("dejó de ir en recetas")
+                    if (!ingrediente.vaEnRecetas && vaEnRecetas) add("vuelve a ir en recetas")
+                }
                 historial.registrar(
                     tipo = TipoEvento.EDICION,
                     entidad = EntidadEvento.INGREDIENTE,
-                    descripcion = if (vaEnRecetas) {
-                        "'${ingrediente.nombre}' vuelve a ofrecerse en las recetas"
-                    } else {
-                        "'${ingrediente.nombre}' dejó de ser un ingrediente de recetas"
-                    }
+                    descripcion = "'${ingrediente.nombre}': ${frases.joinToString(", ")}"
                 )
                 Resultado.Listo
             }
@@ -525,6 +540,7 @@ class AlmacenRepositorio(
         }
     }
 }
+
 
 /** Las dos salidas de un nombre nuevo que no existe en el catálogo (14.10). */
 enum class QueHacerConElNombre {

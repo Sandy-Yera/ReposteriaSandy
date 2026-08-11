@@ -2570,13 +2570,36 @@ El cuadro dice **a cuántas recetas afecta cada camino**, que es lo único que p
 renombrar algo que no usa ninguna receta no tiene consecuencias, y renombrar lo que usan seis es
 otra decisión.
 
-### 14.11 Ver y cambiar si va en recetas
+**Se llega tocando el nombre en el encabezado del cuadro de editar**, que es el mismo gesto con el
+que se renombra una receta (8.4.1 #3): el nombre está a la vista, así que tocarlo es lo que uno
+intenta. Lo pidió Sandy así —*"pensé que sería más óptimo tocando el nombre que se ve ya en el
+menú, algo que ya hemos hecho antes"*— y tenía razón por una segunda razón: como campo más dentro
+del cuadro, quedaba escondida la decisión más grande —renombrar toca todas las recetas— debajo de
+la más chica, que es corregir cuánto queda. Toca **toda la franja** y no solo las letras, por lo
+mismo que allá: con el área pegada al texto hay que apuntarle justo, y al lado no pasa nada.
+
+Renombrar **no cuesta perder lo que se estaba editando**: el cuadro vuelve al de la cantidad con lo
+que hubiera escrito sin guardar, y con el nombre nuevo ya en el encabezado.
+
+### 14.11 Ver y cambiar **qué es**: la unidad y si va en recetas
 
 *"Debería poder ver, una vez creado en almacén, si es posible usar en ingredientes o no (y
-editar)."* Hasta acá `vaEnRecetas` se elegía al crear y **no se veía nunca más**: un dato que decide
-si algo aparece en el buscador de una receta, invisible desde la pantalla donde vive esa cosa.
+editar)."* Y después: *"debería poder cambiar gramos a unidad, en almacén, caso que me haya
+equivocado"*. Las dos cosas se elegían al crear y **no se veían nunca más**: dos datos que deciden
+cómo se lee y cuánto cuesta algo, invisibles desde la pantalla donde vive esa cosa.
 
-Ahora es un interruptor en el cuadro de editar. Los dos sentidos no pesan lo mismo:
+Son dos interruptores en el cuadro de editar y **una sola confirmación**, porque los dos tocan las
+mismas recetas: preguntar por separado sería pedir la misma autorización partida en dos.
+
+**Cambiar la unidad es el más peligroso de los dos, y no se nota mirándolo.** El número del precio
+no se mueve pero pasa a significar otra cosa, y las líneas de receta que lo usaban en gramos
+empiezan a multiplicar por un precio por unidad. Lo que ya está escrito en una receta **conserva su
+número**: la app no puede convertirlo sola porque no sabe cuántos gramos pesa una unidad. Por eso
+el aviso dice las dos cosas —que el precio hay que revisarlo, y que esas líneas también— en vez de
+un "¿seguro?". Es la misma advertencia que ya daba el cuadro de agregar (14.5.1), ahora también
+donde se corrige lo ya cargado.
+
+Sobre `vaEnRecetas`, los dos sentidos no pesan lo mismo:
 
 - **Encenderlo no pregunta.** Agregar algo a la lista de lo que se puede elegir no le quita nada a
   nadie.
@@ -2587,9 +2610,13 @@ Ahora es un interruptor en el cuadro de editar. Los dos sentidos no pesan lo mis
   costando por algo que ya no se considera ingrediente.
 
 **No borra el ingrediente ni la fila del almacén.** Sigue existiendo y se le sigue llevando la
-cuenta; lo que deja de ser es algo que se pueda poner en una receta. El interruptor tampoco escribe
-al tocarlo: la decisión pasa por su advertencia al guardar, porque un cambio destructivo no puede
-quedar hecho por el gesto de mirar una casilla.
+cuenta; lo que deja de ser es algo que se pueda poner en una receta. Ninguno de los dos
+interruptores escribe al tocarlo: la decisión pasa por su advertencia al guardar, porque un cambio
+destructivo no puede quedar hecho por el gesto de mirar una casilla.
+
+**Sin recetas que lo usen no se pregunta nada.** El aviso existe para nombrar lo que se rompe
+(7.1); sin nada que nombrar sería un "¿seguro?" que se aprieta sin leer, y que enseña a apretar los
+siguientes igual.
 
 ### 14.12 Lo que este módulo **no** hace todavía
 

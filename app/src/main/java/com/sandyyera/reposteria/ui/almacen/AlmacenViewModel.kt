@@ -245,13 +245,24 @@ sealed interface DialogoAlmacen {
         val sentido: SentidoDelMovimiento = SentidoDelMovimiento.SALE,
         val detalles: String,
         /**
-         * El nombre, editable desde acá (14.10).
+         * El nombre **solo para mostrarlo en el encabezado**, que es donde se toca para
+         * cambiarlo (14.10).
          *
-         * Es el del ingrediente al que apunta la fila y no un texto propio, así que cambiarlo no
-         * es una edición cualquiera: puede querer decir renombrar, unir o separar. Quién decide
-         * cuál es `AlmacenRepositorio.renombrar`.
+         * No es un campo de este cuadro: renombrar tiene el suyo, porque no es una edición
+         * cualquiera —puede querer decir renombrar, unir o separar— y meterla como un campo más
+         * escondía la decisión más grande debajo de la más chica. Se guarda acá y no se lee de
+         * `fila` para que al volver de un renombre exitoso el encabezado diga el nombre nuevo:
+         * la `fila` es la foto de antes.
          */
         val nombre: String,
+        /**
+         * Si se cuenta por unidad en vez de por gramo (14.11).
+         *
+         * Lo pidió Sandy para lo ya cargado: *"debería poder cambiar gramos a unidad, en almacén,
+         * caso que me haya equivocado"*. Es el cambio **más peligroso del cuadro** y no se nota
+         * mirándolo — el precio no se mueve pero pasa a significar otra cosa.
+         */
+        val esObjeto: Boolean,
         val vaEnRecetas: Boolean,
         val guardando: Boolean = false
     ) : DialogoAlmacen {
@@ -264,9 +275,17 @@ sealed interface DialogoAlmacen {
                     ?.let { resultadoDelMovimiento(fila.cantidad, it, sentido) }
             }
 
+        /**
+         * "g" o "unidad", **según lo elegido en el cuadro** y no según lo guardado.
+         *
+         * Cambiar la unidad y seguir viendo "(g)" en el campo de al lado sería contradecirse en
+         * la misma pantalla.
+         */
+        val unidad: String get() = if (esObjeto) "unidad" else "g"
+
         /** Cómo queda leído, con su unidad, para mostrarlo antes de confirmar (8.7.1). */
         val comoQuedaria: String?
-            get() = resultado?.let { cantidadConUnidad(it, fila.esObjeto) }
+            get() = resultado?.let { cantidadConUnidad(it, esObjeto) }
 
         /**
          * El aviso de que el resultado queda bajo cero, o `null`.
@@ -276,7 +295,7 @@ sealed interface DialogoAlmacen {
          * cuenta se recortaba en cero y las dos lecturas se perdían.
          */
         val avisoDelResultado: String?
-            get() = resultado?.let { avisoDeCantidadNegativa(it, fila.esObjeto) }
+            get() = resultado?.let { avisoDeCantidadNegativa(it, esObjeto) }
 
         /**
          * Si se sacó más de lo que había anotado.
@@ -291,13 +310,36 @@ sealed interface DialogoAlmacen {
                 fila.cantidad >= 0 &&
                 textoANumero(seMovio)?.let { seUsoDeMas(fila.cantidad, it) } == true
 
-        /** Si el nombre escrito es distinto del que tiene. Decide si hay que intentar renombrar. */
-        val nombreCambio: Boolean get() = nombre.trim() != fila.nombre.trim()
+        /** Si el cuadro cambia **qué es** la cosa: su unidad o si va en recetas (14.11). */
+        val cambiaQueEs: Boolean
+            get() = esObjeto != fila.esObjeto || vaEnRecetas != fila.vaEnRecetas
 
-        val errorNombre: String? get() = errorEnNombreEscrito(nombre)
+        val puedeGuardar: Boolean get() = resultado != null && !guardando
+    }
+
+    /**
+     * Cambiarle el nombre, en su propio cuadro (14.10).
+     *
+     * **Se llega tocando el nombre en el encabezado del otro**, que es el mismo gesto con el que
+     * se renombra una receta (8.4.1 #3): el nombre está a la vista, así que tocarlo es lo que
+     * uno intenta. Antes era un campo más dentro del cuadro de editar, y ahí quedaba escondida
+     * la decisión más grande —renombrar toca todas las recetas— debajo de la más chica.
+     *
+     * [volverA] es el cuadro de edición al que se regresa, con lo que hubiera escrito sin
+     * guardar: renombrar no puede costar perder la cantidad que se estaba corrigiendo.
+     */
+    data class Renombrar(
+        val volverA: CambiarCantidad,
+        val nombre: String,
+        val rechazo: String? = null,
+        val guardando: Boolean = false
+    ) : DialogoAlmacen {
+
+        /** El rechazo del repositorio manda sobre el del formato: es el más específico (8.2). */
+        val error: String? get() = rechazo ?: errorEnNombreEscrito(nombre)
 
         val puedeGuardar: Boolean
-            get() = resultado != null && errorNombre == null && !guardando
+            get() = error == null && nombre.trim() != volverA.nombre.trim() && !guardando
     }
 
     /**
@@ -317,15 +359,22 @@ sealed interface DialogoAlmacen {
     ) : DialogoAlmacen
 
     /**
-     * La advertencia antes de que algo deje de ser un ingrediente de recetas (14.11).
+     * La advertencia antes de cambiar **qué es** algo que las recetas usan (14.11).
      *
-     * Lleva **las recetas afectadas por nombre** y no un "¿seguro?": es la misma regla de 7.1, y
-     * un aviso sin la lista es un botón que se aprieta sin leer. Acá pesa más todavía, porque
-     * apagarlo saca sus líneas de esas recetas y eso les mueve el costo.
+     * Es **un solo cuadro para los dos cambios** —la unidad y si va en recetas— y no dos: los
+     * dos tocan las mismas recetas, así que preguntar por separado sería pedir la misma
+     * autorización partida en dos.
+     *
+     * Lleva **las recetas afectadas por nombre** y no un "¿seguro?": es la regla de 7.1, y un
+     * aviso sin la lista es un botón que se aprieta sin leer.
+     *
+     * [cambios] son las frases de lo que va a pasar, armadas por el ViewModel: la pantalla no
+     * tiene que volver a comparar contra la fila para saber qué decir.
      */
-    data class ConfirmarSalidaDeRecetas(
+    data class ConfirmarCambiosEnRecetas(
         val volverA: CambiarCantidad,
         val recetasAfectadas: List<String>,
+        val cambios: List<String>,
         val guardando: Boolean = false
     ) : DialogoAlmacen
 
@@ -599,6 +648,7 @@ class AlmacenViewModel(
             cantidad = formatearNumero(fila.cantidad),
             detalles = fila.detalles.orEmpty(),
             nombre = fila.nombre,
+            esObjeto = fila.esObjeto,
             vaEnRecetas = fila.vaEnRecetas
         )
     }
@@ -616,7 +666,45 @@ class AlmacenViewModel(
         it.copy(seMovio = formatearMientrasSeEscribe(texto))
     }
 
-    fun cambiarNombreEnEdicion(texto: String) = enEdicion { it.copy(nombre = texto) }
+    /**
+     * Marca o desmarca "se cuenta por unidad" (14.11).
+     *
+     * **Solo cambia lo que se ve; no escribe.** Es el cambio más peligroso del cuadro —el precio
+     * no se mueve pero pasa a significar otra cosa— así que pasa por la advertencia al guardar,
+     * igual que el otro interruptor.
+     */
+    fun cambiarEsObjetoEnEdicion(valor: Boolean) = enEdicion { it.copy(esObjeto = valor) }
+
+    // --- Renombrar, en su propio cuadro (14.10) ---
+
+    /** Se llega tocando el nombre en el encabezado, como el título de una receta (8.4.1 #3). */
+    fun abrirRenombre() {
+        val actual = _dialogo.value as? DialogoAlmacen.CambiarCantidad ?: return
+        _dialogo.value = DialogoAlmacen.Renombrar(volverA = actual, nombre = actual.nombre)
+    }
+
+    fun cambiarNombreDelRenombre(texto: String) {
+        _dialogo.update { actual ->
+            // El rechazo se limpia al escribir: es sobre lo que estaba, no sobre lo que se
+            // está escribiendo ahora.
+            if (actual is DialogoAlmacen.Renombrar) actual.copy(nombre = texto, rechazo = null)
+            else actual
+        }
+    }
+
+    /** Cierra el renombre y **vuelve al cuadro de editar**, sin perder lo que hubiera escrito. */
+    fun cancelarRenombre() {
+        val actual = _dialogo.value as? DialogoAlmacen.Renombrar ?: return
+        _dialogo.value = actual.volverA
+    }
+
+    fun guardarRenombre() {
+        val actual = _dialogo.value as? DialogoAlmacen.Renombrar ?: return
+        if (!actual.puedeGuardar) return
+        _dialogo.value = actual.copy(guardando = true)
+
+        viewModelScope.launch { intentarRenombrar(actual.volverA, actual.nombre, null) }
+    }
 
     /**
      * Marca o desmarca "se puede usar en recetas" (14.11).
@@ -656,9 +744,8 @@ class AlmacenViewModel(
             }
 
             // **El orden importa: primero lo que puede abrir otro cuadro.** La cantidad y las
-            // notas ya quedaron guardadas, así que si el nombre o el interruptor obligan a
-            // preguntar, lo que se pregunta es solo eso y no se pierde el resto de la edición.
-            if (actual.nombreCambio && intentarRenombrar(actual, confirmado = null)) return@launch
+            // notas ya quedaron guardadas, así que si los interruptores obligan a preguntar, lo
+            // que se pregunta es solo eso y no se pierde el resto de la edición.
             if (pedirConfirmacionDeRecetas(actual)) return@launch
 
             terminarEdicion(actual)
@@ -666,33 +753,40 @@ class AlmacenViewModel(
     }
 
     /**
-     * Intenta el renombre. Devuelve `true` si dejó un cuadro abierto y hay que parar acá.
+     * Intenta el renombre y deja el cuadro que corresponda. Devuelve `true` si hay que parar.
      *
-     * Es `suspend` y no lanza su propia corrutina porque **va encadenado con el resto del
-     * guardado**: lanzando una aparte, el cuadro se cerraría mientras la pregunta viaja y la
-     * respuesta llegaría a una pantalla que ya se fue.
+     * Es `suspend` y no lanza su propia corrutina porque **va encadenado con el resto**: lanzando
+     * una aparte, el cuadro se cerraría mientras la pregunta viaja y la respuesta llegaría a una
+     * pantalla que ya se fue.
      */
     private suspend fun intentarRenombrar(
-        actual: DialogoAlmacen.CambiarCantidad,
+        volverA: DialogoAlmacen.CambiarCantidad,
+        nombreNuevo: String,
         confirmado: QueHacerConElNombre?
     ): Boolean {
-        return when (val r = almacen.renombrar(actual.fila.id, actual.nombre, confirmado)) {
+        return when (val r = almacen.renombrar(volverA.fila.id, nombreNuevo, confirmado)) {
             is ResultadoRenombrarEnAlmacen.Listo -> {
                 mensaje.value = r.comoQuedo
+                // Vuelve al cuadro de editar **con el nombre nuevo en el encabezado**: la `fila`
+                // es la foto de antes y todavía dice el viejo.
+                _dialogo.value = volverA.copy(nombre = nombreNuevo.trim())
                 false
             }
 
             is ResultadoRenombrarEnAlmacen.NoSePudo -> {
-                // Vuelve al cuadro con el aviso **junto al campo** y no en la franja de abajo,
-                // que con el teclado abierto queda tapada (8.2).
-                mensaje.value = r.motivo
-                _dialogo.value = actual.copy(guardando = false)
+                // El aviso vuelve **junto al campo** y no a la franja de abajo, que con el
+                // teclado abierto queda tapada (8.2).
+                _dialogo.value = DialogoAlmacen.Renombrar(
+                    volverA = volverA,
+                    nombre = nombreNuevo,
+                    rechazo = r.motivo
+                )
                 true
             }
 
             is ResultadoRenombrarEnAlmacen.HayQueElegir -> {
                 _dialogo.value = DialogoAlmacen.ElegirQueHacerConElNombre(
-                    volverA = actual.copy(guardando = false),
+                    volverA = volverA,
                     nombreViejo = r.nombreViejo,
                     nombreNuevo = r.nombreNuevo,
                     usadoEnRecetas = r.usadoEnRecetas
@@ -709,36 +803,60 @@ class AlmacenViewModel(
         _dialogo.value = cuadro.copy(guardando = true)
 
         viewModelScope.launch {
-            if (intentarRenombrar(cuadro.volverA, confirmado = que)) return@launch
-            if (pedirConfirmacionDeRecetas(cuadro.volverA)) return@launch
-            terminarEdicion(cuadro.volverA)
+            intentarRenombrar(cuadro.volverA, cuadro.nombreNuevo, confirmado = que)
         }
     }
 
     /**
-     * Si apagar "va en recetas" necesita confirmarse, abre el aviso y devuelve `true`.
+     * Si cambiar **qué es** la cosa necesita confirmarse, abre el aviso y devuelve `true`.
      *
-     * **Solo apagar pregunta.** Encenderlo agrega algo a la lista de lo que se puede elegir y no
-     * le quita nada a nadie; apagarlo saca sus líneas de las recetas que lo usan y les mueve el
-     * costo, que es exactamente lo que 7.1 pide avisar con los nombres a la vista.
+     * Los dos cambios se preguntan **juntos** porque tocan las mismas recetas: partirlo en dos
+     * cuadros sería pedir la misma autorización dos veces.
+     *
+     * **Sin recetas que lo usen no se pregunta.** El aviso existe para nombrar lo que se rompe
+     * (7.1); sin nada que nombrar sería un "¿seguro?" que se aprieta sin leer y que enseña a
+     * apretar los siguientes igual.
      */
     private suspend fun pedirConfirmacionDeRecetas(
         actual: DialogoAlmacen.CambiarCantidad
     ): Boolean {
         val ingredienteId = actual.fila.ingredienteId ?: return false
-        if (actual.vaEnRecetas || actual.vaEnRecetas == actual.fila.vaEnRecetas) return false
+        if (!actual.cambiaQueEs) return false
 
         val afectadas = almacen.recetasQueUsan(ingredienteId)
-        _dialogo.value = DialogoAlmacen.ConfirmarSalidaDeRecetas(
+        if (afectadas.isEmpty()) return false
+
+        val cambios = buildList {
+            if (actual.esObjeto != actual.fila.esObjeto) {
+                add(
+                    if (actual.esObjeto) {
+                        "Pasará a contarse por unidad. El precio guardado no se mueve, pero " +
+                            "pasa a ser por unidad: lo que ya está puesto en esas recetas " +
+                            "conserva su número y hay que revisarlo."
+                    } else {
+                        "Pasará a pesarse en gramos. El precio guardado no se mueve, pero pasa " +
+                            "a ser por gramo: lo que ya está puesto en esas recetas conserva su " +
+                            "número y hay que revisarlo."
+                    }
+                )
+            }
+            if (!actual.vaEnRecetas && actual.fila.vaEnRecetas) {
+                add("Se sacará de esas recetas, y su costo va a bajar.")
+            }
+        }
+        if (cambios.isEmpty()) return false
+
+        _dialogo.value = DialogoAlmacen.ConfirmarCambiosEnRecetas(
             volverA = actual.copy(guardando = false),
-            recetasAfectadas = afectadas.map { it.titulo }
+            recetasAfectadas = afectadas.map { it.titulo },
+            cambios = cambios
         )
         return true
     }
 
-    /** Contesta el aviso de "deja de ser un ingrediente de recetas". */
-    fun confirmarSalidaDeRecetas() {
-        val aviso = _dialogo.value as? DialogoAlmacen.ConfirmarSalidaDeRecetas ?: return
+    /** Contesta el aviso de los cambios que tocan recetas. */
+    fun confirmarCambiosEnRecetas() {
+        val aviso = _dialogo.value as? DialogoAlmacen.ConfirmarCambiosEnRecetas ?: return
         if (aviso.guardando) return
         _dialogo.value = aviso.copy(guardando = true)
 
@@ -746,16 +864,15 @@ class AlmacenViewModel(
     }
 
     /**
-     * Escribe el interruptor de recetas si cambió, y cierra.
+     * Escribe los dos interruptores si cambiaron, y cierra.
      *
-     * Es el final común de los tres caminos —guardar directo, después del nombre y después de la
-     * advertencia— para que cerrar el cuadro y aplicar el interruptor no queden escritos tres
-     * veces con tres criterios.
+     * Es el final común de los dos caminos —guardar directo y guardar después de la advertencia—
+     * para que cerrar el cuadro y aplicarlos no queden escritos dos veces con dos criterios.
      */
     private suspend fun terminarEdicion(actual: DialogoAlmacen.CambiarCantidad) {
         val ingredienteId = actual.fila.ingredienteId
-        if (ingredienteId != null && actual.vaEnRecetas != actual.fila.vaEnRecetas) {
-            val r = almacen.cambiarVaEnRecetas(ingredienteId, actual.vaEnRecetas)
+        if (ingredienteId != null && actual.cambiaQueEs) {
+            val r = almacen.cambiarQueEs(ingredienteId, actual.esObjeto, actual.vaEnRecetas)
             if (r is Resultado.NoSePudo) mensaje.value = r.motivo
         }
         _dialogo.value = DialogoAlmacen.Ninguno

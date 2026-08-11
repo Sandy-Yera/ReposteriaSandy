@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -77,12 +78,16 @@ data class AccionesAlmacen(
     val cambiarCantidadEnEdicion: (String) -> Unit = {},
     val cambiarLoQueSeMovio: (String) -> Unit = {},
     val cambiarSentidoDelMovimiento: (SentidoDelMovimiento) -> Unit = {},
-    val cambiarNombreEnEdicion: (String) -> Unit = {},
+    val cambiarEsObjetoEnEdicion: (Boolean) -> Unit = {},
+    val abrirRenombre: () -> Unit = {},
+    val cambiarNombreDelRenombre: (String) -> Unit = {},
+    val cancelarRenombre: () -> Unit = {},
+    val guardarRenombre: () -> Unit = {},
     val cambiarVaEnRecetasEnEdicion: (Boolean) -> Unit = {},
     val cambiarDetallesEnEdicion: (String) -> Unit = {},
     val guardarEdicion: () -> Unit = {},
     val resolverElNombre: (QueHacerConElNombre) -> Unit = {},
-    val confirmarSalidaDeRecetas: () -> Unit = {},
+    val confirmarCambiosEnRecetas: () -> Unit = {},
     val abrirDescuentoPorRecetas: () -> Unit = {},
     val buscarRecetaParaDescontar: (String) -> Unit = {},
     val cambiarTandas: (Long, String) -> Unit = { _, _ -> },
@@ -127,10 +132,14 @@ fun ListaAlmacenScreen(
             cambiarCantidadEnEdicion = modelo::cambiarCantidadEnEdicion,
             cambiarLoQueSeMovio = modelo::cambiarLoQueSeMovio,
             cambiarSentidoDelMovimiento = modelo::cambiarSentidoDelMovimiento,
-            cambiarNombreEnEdicion = modelo::cambiarNombreEnEdicion,
+            cambiarEsObjetoEnEdicion = modelo::cambiarEsObjetoEnEdicion,
+            abrirRenombre = modelo::abrirRenombre,
+            cambiarNombreDelRenombre = modelo::cambiarNombreDelRenombre,
+            cancelarRenombre = modelo::cancelarRenombre,
+            guardarRenombre = modelo::guardarRenombre,
             cambiarVaEnRecetasEnEdicion = modelo::cambiarVaEnRecetasEnEdicion,
             resolverElNombre = modelo::resolverElNombre,
-            confirmarSalidaDeRecetas = modelo::confirmarSalidaDeRecetas,
+            confirmarCambiosEnRecetas = modelo::confirmarCambiosEnRecetas,
             abrirDescuentoPorRecetas = modelo::abrirDescuentoPorRecetas,
             buscarRecetaParaDescontar = modelo::buscarRecetaParaDescontar,
             cambiarTandas = modelo::cambiarTandas,
@@ -268,7 +277,8 @@ fun ListaAlmacen(
         is DialogoAlmacen.Agregar -> DialogoAgregarAlAlmacen(dialogo, acciones)
         is DialogoAlmacen.CambiarCantidad -> DialogoEditarArticulo(dialogo, acciones)
         is DialogoAlmacen.ElegirQueHacerConElNombre -> DialogoQueHacerConElNombre(dialogo, acciones)
-        is DialogoAlmacen.ConfirmarSalidaDeRecetas -> DialogoSalidaDeRecetas(dialogo, acciones)
+        is DialogoAlmacen.Renombrar -> DialogoRenombrarEnAlmacen(dialogo, acciones)
+        is DialogoAlmacen.ConfirmarCambiosEnRecetas -> DialogoCambiosEnRecetas(dialogo, acciones)
         is DialogoAlmacen.DescontarPorRecetas -> DialogoDescontarPorRecetas(dialogo, acciones)
         is DialogoAlmacen.ConfirmarBorrado -> AlertDialog(
             onDismissRequest = acciones.cerrarDialogo,
@@ -636,41 +646,91 @@ private fun DialogoQueHacerConElNombre(
 }
 
 /**
- * La advertencia antes de que algo deje de ser un ingrediente de recetas (14.11).
+ * Cambiarle el nombre a algo del almacén (14.10).
  *
- * **Nombra las recetas**, que es lo que hace que la confirmación signifique algo (7.1): un
- * "¿seguro?" sin la lista es un botón que se aprieta sin leer, y acá lo que está en juego es el
- * costo de esas recetas.
+ * Cuadro propio y no un campo dentro del de editar: renombrar puede querer decir tres cosas
+ * —renombrar, unir o separar— y como campo quedaba escondido debajo de la cantidad, que es la
+ * decisión más chica.
  */
 @Composable
-private fun DialogoSalidaDeRecetas(
-    estado: DialogoAlmacen.ConfirmarSalidaDeRecetas,
+private fun DialogoRenombrarEnAlmacen(
+    estado: DialogoAlmacen.Renombrar,
+    acciones: AccionesAlmacen
+) {
+    AlertDialog(
+        onDismissRequest = acciones.cancelarRenombre,
+        title = { Text("Cambiar el nombre") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Medidas.chico)) {
+                OutlinedTextField(
+                    value = estado.nombre,
+                    onValueChange = acciones.cambiarNombreDelRenombre,
+                    label = { Text("Nombre") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    isError = estado.error != null,
+                    // El aviso va **bajo el campo** y no en la franja de abajo, que con el
+                    // teclado abierto queda tapada (8.2).
+                    supportingText = {
+                        Text(
+                            estado.error
+                                ?: "Si escribes uno que ya está en Ingredientes, se unen."
+                        )
+                    },
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Sentences
+                    )
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = acciones.guardarRenombre, enabled = estado.puedeGuardar) {
+                Text("Cambiar")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = acciones.cancelarRenombre) { Text("Cancelar") }
+        }
+    )
+}
+
+/**
+ * La advertencia antes de cambiar **qué es** algo que las recetas usan (14.11).
+ *
+ * **Un solo cuadro para los dos cambios** —la unidad y si va en recetas—: los dos tocan las
+ * mismas recetas, así que preguntar por separado sería pedir la misma autorización partida en
+ * dos.
+ *
+ * **Nombra las recetas**, que es lo que hace que la confirmación signifique algo (7.1): un
+ * "¿seguro?" sin la lista es un botón que se aprieta sin leer.
+ */
+@Composable
+private fun DialogoCambiosEnRecetas(
+    estado: DialogoAlmacen.ConfirmarCambiosEnRecetas,
     acciones: AccionesAlmacen
 ) {
     AlertDialog(
         onDismissRequest = acciones.cerrarDialogo,
-        title = { Text("'${estado.volverA.fila.nombre}' dejará de ir en recetas") },
+        title = { Text("'${estado.volverA.nombre}' cambia para las recetas") },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(Medidas.chico)
             ) {
-                if (estado.recetasAfectadas.isEmpty()) {
-                    Text("No lo usa ninguna receta, así que no se pierde nada.")
-                } else {
-                    Text("Se va a sacar de estas recetas, y su costo va a bajar:")
-                    estado.recetasAfectadas.forEach {
-                        Text("• $it", style = MaterialTheme.typography.bodySmall)
-                    }
-                    Text(
-                        text = "No se puede deshacer.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
+                estado.cambios.forEach {
+                    Text(text = "• $it", style = MaterialTheme.typography.bodyMedium)
+                }
+                Text("Lo usan estas recetas:")
+                estado.recetasAfectadas.forEach {
+                    Text("• $it", style = MaterialTheme.typography.bodySmall)
                 }
                 Text(
-                    text = "Seguirá en el almacén y en Ingredientes: lo que deja de ser es algo " +
-                        "que se pueda poner en una receta.",
+                    text = "No se puede deshacer.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+                Text(
+                    text = "Seguirá en el almacén y en Ingredientes.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -678,10 +738,10 @@ private fun DialogoSalidaDeRecetas(
         },
         confirmButton = {
             TextButton(
-                onClick = acciones.confirmarSalidaDeRecetas,
+                onClick = acciones.confirmarCambiosEnRecetas,
                 enabled = !estado.guardando
             ) {
-                Text("Sacarlo", color = MaterialTheme.colorScheme.error)
+                Text("Cambiarlo", color = MaterialTheme.colorScheme.error)
             }
         },
         dismissButton = {
@@ -821,7 +881,23 @@ private fun DialogoEditarArticulo(
 ) {
     AlertDialog(
         onDismissRequest = acciones.cerrarDialogo,
-        title = { Text(estado.fila.nombre) },
+        title = {
+            // **Tocar el nombre lo cambia**, que es el mismo gesto del título de una receta
+            // (8.4.1 #3): está a la vista, así que tocarlo es lo que uno intenta. Antes era un
+            // campo más abajo, y ahí quedaba escondida la decisión más grande del cuadro
+            // —renombrar toca todas las recetas— debajo de la más chica.
+            //
+            // Toda la franja y no solo las letras, por lo mismo que allá: con el `clickable`
+            // pegado al texto hay que apuntarle justo, y al lado no pasa nada.
+            Text(
+                text = estado.nombre,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = Medidas.objetivoTactil)
+                    .clickable(onClick = acciones.abrirRenombre)
+                    .wrapContentHeight()
+            )
+        },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -849,7 +925,7 @@ private fun DialogoEditarArticulo(
                     ModoDeEdicion.MANUAL -> CampoNumerico(
                         valor = estado.cantidad,
                         alCambiar = acciones.cambiarCantidadEnEdicion,
-                        etiqueta = "¿Cuánto queda? (${estado.fila.unidad})",
+                        etiqueta = "¿Cuánto queda? (${estado.unidad})",
                         // El 0 es un dato y no un error: "no queda nada" es justo lo que uno
                         // viene a anotar antes de salir a comprar.
                         ayuda = "Puede ser 0 si se acabó",
@@ -880,9 +956,9 @@ private fun DialogoEditarArticulo(
                             valor = estado.seMovio,
                             alCambiar = acciones.cambiarLoQueSeMovio,
                             etiqueta = if (estado.sentido == SentidoDelMovimiento.SALE) {
-                                "¿Cuánto usaste? (${estado.fila.unidad})"
+                                "¿Cuánto usaste? (${estado.unidad})"
                             } else {
-                                "¿Cuánto entró? (${estado.fila.unidad})"
+                                "¿Cuánto entró? (${estado.unidad})"
                             },
                             accionDelTeclado = ImeAction.Next
                         )
@@ -917,29 +993,40 @@ private fun DialogoEditarArticulo(
 
                 HorizontalDivider()
 
-                // El nombre es el del ingrediente al que apunta la fila, así que cambiarlo puede
-                // querer decir tres cosas distintas. Quién decide cuál es el repositorio (14.10);
-                // acá solo se escribe.
-                OutlinedTextField(
-                    value = estado.nombre,
-                    onValueChange = acciones.cambiarNombreEnEdicion,
-                    label = { Text("Nombre") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    isError = estado.errorNombre != null,
-                    supportingText = {
-                        Text(
-                            estado.errorNombre
-                                ?: "Si escribes uno que ya existe en Ingredientes, se unen."
-                        )
-                    },
-                    keyboardOptions = KeyboardOptions(
-                        capitalization = KeyboardCapitalization.Sentences
-                    )
+                Text(
+                    text = "Toca el nombre de arriba para cambiarlo.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                // Ver y cambiar si se puede usar en recetas, que hasta ahora solo se elegía al
-                // crear y no se veía nunca más (14.11).
+                // Los dos interruptores que dicen **qué es** esto, que hasta ahora solo se
+                // elegían al crear y no se veían nunca más (14.11).
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Se cuenta por unidad",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Switch(
+                        checked = estado.esObjeto,
+                        onCheckedChange = acciones.cambiarEsObjetoEnEdicion
+                    )
+                }
+                if (estado.esObjeto != estado.fila.esObjeto) {
+                    // **El aviso de la unidad es el que más pesa** y no se nota mirándolo: el
+                    // número del precio no se mueve pero pasa a significar otra cosa (14.5.1).
+                    Text(
+                        text = "El precio guardado no cambia de número, pero pasa a ser por " +
+                            (if (estado.esObjeto) "unidad" else "gramo") +
+                            ". Revisa el precio en Ingredientes después.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -1131,6 +1218,7 @@ private fun AlmacenCalculadora() {
                 seMovio = "500",
                 detalles = "",
                 nombre = almacenDeEjemplo.visibles.first().nombre,
+                esObjeto = false,
                 vaEnRecetas = true
             ),
             AccionesAlmacen()
