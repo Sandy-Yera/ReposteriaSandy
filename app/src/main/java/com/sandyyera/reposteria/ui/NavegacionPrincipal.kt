@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.DrawerValue
@@ -31,6 +32,8 @@ import com.sandyyera.reposteria.AppContainer
 import com.sandyyera.reposteria.BuildConfig
 import com.sandyyera.reposteria.ui.almacen.AlmacenViewModel
 import com.sandyyera.reposteria.ui.almacen.ListaAlmacenScreen
+import com.sandyyera.reposteria.ui.empleados.EmpleadosViewModel
+import com.sandyyera.reposteria.ui.empleados.ListaEmpleadosScreen
 import com.sandyyera.reposteria.ui.ingredientes.IngredientesViewModel
 import com.sandyyera.reposteria.ui.ingredientes.ListaIngredientesScreen
 import com.sandyyera.reposteria.ui.moldes.ListaMoldesScreen
@@ -62,9 +65,9 @@ import kotlinx.coroutines.launch
 /**
  * Las secciones de la app (12.1).
  *
- * Moldes y Empleados se agregan al llegar sus fases. Están fuera de este enum a propósito
- * y no puestas en gris: una opción que no lleva a ninguna parte se toca igual, y da la
- * impresión de que algo se rompió.
+ * Lo que todavía no exista se agrega al llegar su fase, y queda **fuera del enum** a propósito en
+ * vez de puesto en gris: una opción que no lleva a ninguna parte se toca igual, y da la impresión
+ * de que algo se rompió. Ventas entra con la Fase 12.
  */
 enum class Seccion(val titulo: String, val icono: ImageVector) {
     /**
@@ -80,7 +83,15 @@ enum class Seccion(val titulo: String, val icono: ImageVector) {
     ALMACEN("Almacén", Icons.Default.Home),
     INGREDIENTES("Ingredientes", Icons.Default.ShoppingCart),
     MOLDES("Moldes", Icons.Default.Star),
-    RECETAS("Recetas", Icons.Default.Favorite)
+    RECETAS("Recetas", Icons.Default.Favorite),
+
+    /**
+     * Va **al final** y no junto a Ingredientes, aunque el orden sea el de "lo que hay que tener
+     * antes": un empleado no se puede configurar sin recetas con precio, así que depende de todo
+     * lo anterior. Es además la que menos se abre — los repartos se acuerdan una vez y se miran
+     * de vez en cuando.
+     */
+    EMPLEADOS("Empleados", Icons.Default.Person)
 }
 
 /**
@@ -392,6 +403,13 @@ private fun MenuDeSecciones(
             Seccion.INGREDIENTES -> ListaIngredientesScreen(
                 modelo = viewModel(
                     factory = IngredientesViewModel.fabrica(contenedor.ingredientes)
+                ),
+                alAbrirMenu = abrirMenu
+            )
+
+            Seccion.EMPLEADOS -> ListaEmpleadosScreen(
+                modelo = viewModel(
+                    factory = EmpleadosViewModel.fabrica(contenedor.empleados)
                 ),
                 alAbrirMenu = abrirMenu
             )

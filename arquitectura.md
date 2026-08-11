@@ -3407,6 +3407,7 @@ una comodidad.
 
 - **Construyes:** genérico + específicos, `calcularSueldo`, simulación individual y múltiple (con la carga en lote de 6.4).
 - **Hecho cuando:** el ejemplo de sueldo (10.000/3.000/7.000/3.000 → 7.000) funciona **en un test JUnit puro, armando el `DatosCalculoReceta` a mano y sin base de datos**; el tope se respeta; la simulación múltiple con 3+ recetas suma bien; y una receta sin precio queda listada en `omitidas` en vez de voltear el total.
+- **Las pantallas ya están** (10.1 y 10.3): la lista, el detalle con el reparto por receta y la simulación de todas juntas. Lista y detalle viven en la misma pantalla y no en dos — entrar a un empleado no cambia de sección, cambia de qué se está mirando— y por eso el botón de atrás cierra el detalle antes de salir. La sección entró al menú al final del orden: un empleado no se puede configurar sin recetas con precio, así que depende de todo lo anterior.
 - **La lógica pura está construida y probada** (33 pruebas), por lo mismo que en la Fase 9: es lo único de esta fase que se verifica sin celular, y hacerla primero es lo que dejó ver que faltaba un motivo de omisión (10.3).
   - `Sueldo` y `calcularSueldo` — el reparto de 10.1, con el ejemplo de la especificación y sus dos topes.
   - `SimulacionMultipleResultado`, `RecetaEnLaSimulacion`, `RecetaOmitida`, `MotivoDeOmision` y `simulacionMultiple` — el agregado de 10.3.

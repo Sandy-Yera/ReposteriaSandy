@@ -56,6 +56,7 @@ import com.sandyyera.reposteria.logica.almacen.SentidoDelMovimiento
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.ui.componentes.BarraBusqueda
 import com.sandyyera.reposteria.ui.componentes.CampoNumerico
+import com.sandyyera.reposteria.ui.componentes.MensajeCentrado
 import com.sandyyera.reposteria.ui.theme.Medidas
 import com.sandyyera.reposteria.ui.theme.ReposteriaTheme
 
@@ -1108,23 +1109,6 @@ private fun CasillaConExplicacion(
     }
 }
 
-/** El texto que ocupa el lugar de la lista cuando no hay nada que mostrar. */
-@Composable
-private fun MensajeCentrado(titulo: String, detalle: String) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(Medidas.grande),
-        verticalArrangement = Arrangement.spacedBy(Medidas.chico)
-    ) {
-        Text(text = titulo, style = MaterialTheme.typography.titleMedium)
-        Text(
-            text = detalle,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
 
 // --- Vistas previas ---
 

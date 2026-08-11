@@ -37,7 +37,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sandyyera.reposteria.data.db.entidades.Ingrediente
@@ -45,6 +44,7 @@ import com.sandyyera.reposteria.data.db.entidades.unidadDeMedida
 import com.sandyyera.reposteria.logica.calculadora.UnidadDeCompra
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.ui.componentes.BarraBusqueda
+import com.sandyyera.reposteria.ui.componentes.MensajeCentrado
 import com.sandyyera.reposteria.ui.theme.Medidas
 import com.sandyyera.reposteria.ui.theme.ReposteriaTheme
 
@@ -398,32 +398,6 @@ private fun TarjetaIngrediente(
                 )
             }
         }
-    }
-}
-
-/** El texto que ocupa el lugar de la lista cuando no hay nada que mostrar. */
-@Composable
-private fun MensajeCentrado(
-    titulo: String,
-    detalle: String,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(Medidas.chico, Alignment.CenterVertically),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text = titulo,
-            style = MaterialTheme.typography.titleMedium,
-            textAlign = TextAlign.Center
-        )
-        Text(
-            text = detalle,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center
-        )
     }
 }
 
