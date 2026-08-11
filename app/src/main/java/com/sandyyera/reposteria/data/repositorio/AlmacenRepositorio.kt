@@ -403,14 +403,37 @@ class AlmacenRepositorio(
                 )
             }
             dao.actualizar(articulo.copy(ingredienteId = yaExiste.id))
+
+            // **El de antes queda huérfano y hay que barrerlo.** Es el caso que lo motivó, y
+            // Sandy lo pilló con uno real: tenía "manga" en ingredientes, escribió "mangas" en
+            // el almacén —lo que creó un segundo ingrediente (14.5)—, y al corregir el nombre la
+            // fila se unió con el bueno pero "mangas" se quedó en el catálogo para siempre. Un
+            // ingrediente que nadie nombra no se puede encontrar para borrarlo a mano, así que
+            // no barrerlo acá es dejar basura que solo crece.
+            //
+            // **Solo si ninguna receta lo usa.** Si alguna lo usa no es basura: es una entrada
+            // del catálogo que alguien eligió, y borrarla sacaría sus líneas de esas recetas sin
+            // avisar. Ahí se queda, y el nombre lo dice.
+            val loUsanRecetas = ingredientes.recetasAfectadasPorBorrar(actual.id).isNotEmpty()
+            if (!loUsanRecetas) ingredientes.confirmarEliminacion(actual.id)
+
             historial.registrar(
                 tipo = TipoEvento.EDICION,
                 entidad = EntidadEvento.INGREDIENTE,
                 descripcion = "'${actual.nombre}' del almacén pasó a ser '${yaExiste.nombre}'",
-                detalleAdicional = "Se unió con el ingrediente que ya existía"
+                detalleAdicional = if (loUsanRecetas) {
+                    "Se unió. '${actual.nombre}' sigue en el catálogo porque lo usan recetas"
+                } else {
+                    "Se unió, y se barrió '${actual.nombre}', que quedó sin uso"
+                }
             )
             return ResultadoRenombrarEnAlmacen.Listo(
-                "Ahora lleva la cuenta de '${yaExiste.nombre}'"
+                if (loUsanRecetas) {
+                    "Ahora lleva la cuenta de '${yaExiste.nombre}'. '${actual.nombre}' sigue " +
+                        "en Ingredientes porque hay recetas que lo usan"
+                } else {
+                    "Ahora lleva la cuenta de '${yaExiste.nombre}', y se borró '${actual.nombre}'"
+                }
             )
         }
 

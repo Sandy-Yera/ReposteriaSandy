@@ -2562,6 +2562,16 @@ la conexión"*.
 - **Separar** — este frasco resultó ser otra cosa. Se crea un ingrediente nuevo con el nombre
   escrito y la fila pasa a apuntar ahí; el de antes queda intacto con sus recetas.
 
+**Al unir se barre el que quedaba huérfano.** Lo encontró Sandy con un caso real: tenía "manga"
+en ingredientes, en el almacén escribió *"mangas"* —lo que creó un segundo ingrediente, porque
+anotar algo en el almacén lo crea en el catálogo (14.5)— y al corregir el nombre la fila se unió
+con el bueno, pero **"mangas" se quedó en el catálogo para siempre**. Y ahí no se puede limpiar:
+un ingrediente que ninguna fila nombra tampoco se puede encontrar para borrarlo a mano.
+
+Se barre **solo si ninguna receta lo usa**. Si alguna lo usa no es basura sino una entrada que
+alguien eligió, y borrarla sacaría sus líneas de esas recetas sin avisar; ahí se queda y el
+mensaje lo dice.
+
 **"Romper la conexión" no es quedarse sin ingrediente**, y esa lectura literal habría roto 14.5: de
 ese enlace salen el precio y la unidad, así que una fila suelta no sabría ni cuánto vale lo que
 guarda. Es dejar de apuntar a *ese* ingrediente, no a ninguno.

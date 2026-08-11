@@ -1,5 +1,7 @@
 package com.sandyyera.reposteria.data
 
+import com.sandyyera.reposteria.data.db.dao.AlmacenDao
+import com.sandyyera.reposteria.data.db.dao.ArticuloConValor
 import com.sandyyera.reposteria.data.db.dao.CostoDeReceta
 import com.sandyyera.reposteria.data.db.dao.EmpleadoDao
 import com.sandyyera.reposteria.data.db.dao.HistorialDao
@@ -9,6 +11,7 @@ import com.sandyyera.reposteria.data.db.dao.MoldeDao
 import com.sandyyera.reposteria.data.db.dao.NombreDeIngrediente
 import com.sandyyera.reposteria.data.db.dao.RecetaDao
 import com.sandyyera.reposteria.data.db.dao.TrozosDeReceta
+import com.sandyyera.reposteria.data.db.entidades.ArticuloDeAlmacen
 import com.sandyyera.reposteria.data.db.entidades.Empleado
 import com.sandyyera.reposteria.data.db.entidades.EmpleadoRecetaSueldo
 import com.sandyyera.reposteria.data.db.entidades.EmpleadoSimulacionMultiple
@@ -63,6 +66,9 @@ class IngredienteDaoFalso : IngredienteDao {
      * pasa a colgar de él.
      */
     val enElAlmacen = MutableStateFlow<Set<Long>>(emptySet())
+
+    /** El almacén falso, cuando la prueba lo tiene. Lo enchufa `AlmacenDaoFalso` al construirse. */
+    var almacen: AlmacenDaoFalso? = null
 
     /** Deja ingredientes puestos de entrada, sin pasar por las comprobaciones. */
     fun sembrar(vararg ingredientes: Ingrediente) {
@@ -120,6 +126,12 @@ class IngredienteDaoFalso : IngredienteDao {
 
     override suspend fun eliminarPorId(ingredienteId: Long) {
         filas.value = filas.value.filterNot { it.id == ingredienteId }
+        // La cascada de la clave foránea (`onDelete = CASCADE`): sin ingrediente no hay fila de
+        // almacén que valga. Se enchufa desde afuera y no por constructor porque la dependencia
+        // va al revés —el almacén necesita el catálogo para su `JOIN`— y ponerla en los dos
+        // lados sería un círculo. Queda `null` en las pruebas que no tienen almacén, que es la
+        // respuesta correcta: sin tabla no hay nada que cascadear.
+        almacen?.alBorrarElIngrediente(ingredienteId)
     }
 }
 
@@ -937,5 +949,109 @@ class EmpleadoDaoFalso : EmpleadoDao {
     override suspend fun eliminarDetalle(detalleId: Long) {
         detalles.removeAll { it.id == detalleId }
         cambio()
+    }
+}
+
+/**
+ * El almacén en memoria (sección 14).
+ *
+ * Llegó tarde y eso costó: el almacén se rehízo tres veces —sumar y restar, descontar por
+ * recetas, renombrar— **sin una sola prueba**, y por ahí se coló el huérfano que Sandy encontró
+ * con "manga"/"mangas". Un módulo que se toca seguido y no tiene falso es un módulo que se
+ * prueba en el celular.
+ *
+ * Imita las dos cosas que la base hace sola y que, sin ellas, aprobarían versiones rotas:
+ *
+ * - **El índice único por `ingredienteId`**: dos filas para el mismo ingrediente dejarían
+ *   "cuánta harina queda" con dos respuestas. Lanza igual que Room, para que la prueba lo vea.
+ * - **La cascada del `CASCADE`**: borrar un ingrediente se lleva su fila de almacén. Sin esto,
+ *   una prueba podría afirmar que el barrido del huérfano deja todo limpio mientras queda una
+ *   fila apuntando a un ingrediente que ya no existe.
+ *
+ * Recibe el `IngredienteDaoFalso` porque `observarTodo` es un `JOIN`: el nombre, el precio y la
+ * unidad salen del catálogo y **no se guardan acá** (14.5). Copiarlos sería tener dos versiones
+ * del mismo dato, que es justo lo que la tabla real evita.
+ */
+class AlmacenDaoFalso(
+    private val ingredientes: IngredienteDaoFalso
+) : AlmacenDao {
+
+    private val filas = MutableStateFlow<List<ArticuloDeAlmacen>>(emptyList())
+    private var siguienteId = 1L
+
+    init {
+        // El aviso de 14.4 cuelga de esto en la app; acá se mantiene al día solo, así que una
+        // prueba del almacén no tiene que acordarse de moverlo a mano.
+        ingredientes.enElAlmacen.value = emptySet()
+        // Y se enchufa para recibir la cascada del borrado de un ingrediente.
+        ingredientes.almacen = this
+    }
+
+    override fun observarTodo(): Flow<List<ArticuloConValor>> =
+        combine(filas, ingredientes.observarTodos()) { articulos, catalogo ->
+            val porId = catalogo.associateBy { it.id }
+            articulos
+                .map { fila ->
+                    val i = fila.ingredienteId?.let { porId[it] }
+                    ArticuloConValor(
+                        id = fila.id,
+                        ingredienteId = fila.ingredienteId,
+                        // `COALESCE(i.nombre, a.nombre)`, igual que el SQL.
+                        nombre = i?.nombre ?: fila.nombre,
+                        cantidad = fila.cantidad,
+                        valorPorGramo = i?.valorPorGramo,
+                        esObjeto = i?.esObjeto,
+                        vaEnRecetas = i?.vaEnRecetas,
+                        detalles = fila.detalles,
+                        actualizadoEn = fila.actualizadoEn
+                    )
+                }
+                .sortedBy { it.nombre.lowercase() }
+        }
+
+    override suspend fun obtener(articuloId: Long): ArticuloDeAlmacen? =
+        filas.value.firstOrNull { it.id == articuloId }
+
+    override suspend fun obtenerPorIngrediente(ingredienteId: Long): ArticuloDeAlmacen? =
+        filas.value.firstOrNull { it.ingredienteId == ingredienteId }
+
+    override suspend fun ingredientesYaEnElAlmacen(): List<Long> =
+        filas.value.mapNotNull { it.ingredienteId }
+
+    override suspend fun insertar(articulo: ArticuloDeAlmacen): Long {
+        exigirQueNoSeRepita(articulo.ingredienteId, exceptoId = null)
+        val id = siguienteId++
+        filas.value = filas.value + articulo.copy(id = id)
+        avisarAlCatalogo()
+        return id
+    }
+
+    override suspend fun actualizar(articulo: ArticuloDeAlmacen) {
+        exigirQueNoSeRepita(articulo.ingredienteId, exceptoId = articulo.id)
+        filas.value = filas.value.map { if (it.id == articulo.id) articulo else it }
+        avisarAlCatalogo()
+    }
+
+    override suspend fun eliminar(articulo: ArticuloDeAlmacen) {
+        filas.value = filas.value.filterNot { it.id == articulo.id }
+        avisarAlCatalogo()
+    }
+
+    /** La cascada de la clave foránea: sin ingrediente no hay fila que valga. */
+    suspend fun alBorrarElIngrediente(ingredienteId: Long) {
+        filas.value = filas.value.filterNot { it.ingredienteId == ingredienteId }
+        avisarAlCatalogo()
+    }
+
+    private fun exigirQueNoSeRepita(ingredienteId: Long?, exceptoId: Long?) {
+        if (ingredienteId == null) return
+        val choca = filas.value.any { it.ingredienteId == ingredienteId && it.id != exceptoId }
+        require(!choca) {
+            "UNIQUE constraint failed: almacen.ingredienteId ($ingredienteId ya tiene fila)"
+        }
+    }
+
+    private fun avisarAlCatalogo() {
+        ingredientes.enElAlmacen.value = filas.value.mapNotNull { it.ingredienteId }.toSet()
     }
 }
