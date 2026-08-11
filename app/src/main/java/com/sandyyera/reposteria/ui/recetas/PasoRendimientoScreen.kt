@@ -41,6 +41,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sandyyera.reposteria.logica.formato.formatearMonto
 import com.sandyyera.reposteria.logica.formato.formatearNumero
+import com.sandyyera.reposteria.logica.moldes.OpcionDeReparto
 import com.sandyyera.reposteria.ui.componentes.CampoNumerico
 import com.sandyyera.reposteria.ui.theme.Medidas
 import com.sandyyera.reposteria.ui.theme.ReposteriaTheme

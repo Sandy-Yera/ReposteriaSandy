@@ -25,8 +25,8 @@ android {
         // `versionCode` tiene que ser un entero que **solo suba** —Android se niega a instalar
         // encima algo con un número menor—, así que se deriva del nombre y no se lleva aparte:
         // fase × 1000 + actualización. Dos números que se escriben a mano se separan.
-        versionCode = 11_005
-        versionName = "0.11.05"
+        versionCode = 11_006
+        versionName = "0.11.06"
         // Necesario para `./gradlew :app:connectedAndroidTest` (la prueba de migración).
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

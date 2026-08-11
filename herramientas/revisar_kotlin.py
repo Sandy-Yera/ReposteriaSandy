@@ -118,9 +118,15 @@ def revisar_importaciones(rutas):
         ))
         propios |= set(re.findall(r"\bfun\s+(?:<[^>]*>\s*)?([A-Z]\w*)\s*\(", codigo))
         propios |= set(re.findall(r"\bval\s+([A-Z]\w*)\b", codigo))
-        # CamelCase usado como tipo o llamada, sin un punto delante
+        # CamelCase usado como tipo o llamada, sin un punto delante.
+        #
+        # El `>` del final de la clase no es adorno: sin él, un tipo usado **solo** como
+        # argumento genérico —`List<OpcionDeReparto>,` — no lo seguía ninguno de los otros
+        # caracteres y quedaba invisible. Por ahí se coló `OpcionDeReparto` al bajarlo a
+        # `:logica`: el ViewModel se llevó el import y la pantalla, que lo usaba justo así,
+        # quedó sin él. Esta revisión existe para atrapar exactamente eso.
         usados = {
-            u for u in re.findall(r"(?<![\w.])([A-Z][a-z][A-Za-z0-9]*)(?=\s*[.(<,)\s:=])", codigo)
+            u for u in re.findall(r"(?<![\w.])([A-Z][a-z][A-Za-z0-9]*)(?=\s*[.(<>,)\s:=])", codigo)
             if not u.isupper()
         }
         faltan = usados - importados - por_paquete.get(paquete, set()) - CONOCIDOS - propios
