@@ -142,6 +142,25 @@ class IngredienteRepositorio(
         recetaDao.obtenerRecetasQueUsan(ingredienteId)
 
     /**
+     * Saca este ingrediente de todas las recetas, **sin borrarlo del catálogo** (14.11).
+     *
+     * Es la mitad de `confirmarEliminacion` que no borra la fila, y existe porque apagar "va en
+     * recetas" desde el almacén necesita exactamente eso: la cosa sigue existiendo y se le sigue
+     * llevando la cuenta, lo que deja de ser es algo que se pueda poner en una receta. Dejar sus
+     * líneas donde estaban sostendría dos verdades a la vez — la app diciendo que no es un
+     * ingrediente y tres recetas costando por él.
+     *
+     * Reutiliza `quitarIngredienteDeTodasLasSecciones`, la misma consulta del borrado, en vez de
+     * escribir otra: son la misma operación y separarlas dejaría dos formas de sacar lo mismo.
+     *
+     * No pide confirmación ni registra en el historial: las dos cosas son de quien la llama, que
+     * es el que sabe por qué lo está sacando.
+     */
+    suspend fun quitarDeLasRecetas(ingredienteId: Long) {
+        recetaDao.quitarIngredienteDeTodasLasSecciones(ingredienteId)
+    }
+
+    /**
      * Borra el ingrediente de verdad, cuando el usuario ya confirmó la advertencia.
      *
      * Lee el nombre y las recetas afectadas **antes** de borrar nada, porque después ya

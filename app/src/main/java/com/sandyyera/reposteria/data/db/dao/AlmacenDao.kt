@@ -74,6 +74,15 @@ interface AlmacenDao {
     @Query("SELECT * FROM almacen WHERE id = :articuloId")
     suspend fun obtener(articuloId: Long): ArticuloDeAlmacen?
 
+    /**
+     * La fila de almacén de un ingrediente, si la tiene (14.9).
+     *
+     * La usa el descuento por recetas hechas, que trabaja por `ingredienteId` —así es como salen
+     * de las recetas— y no por el `id` de la fila. El índice es único, así que hay a lo más una.
+     */
+    @Query("SELECT * FROM almacen WHERE ingredienteId = :ingredienteId")
+    suspend fun obtenerPorIngrediente(ingredienteId: Long): ArticuloDeAlmacen?
+
     /** Qué ingredientes del catálogo ya están en el almacén, para no ofrecerlos dos veces. */
     @Query("SELECT ingredienteId FROM almacen WHERE ingredienteId IS NOT NULL")
     suspend fun ingredientesYaEnElAlmacen(): List<Long>

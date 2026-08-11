@@ -22,6 +22,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -30,6 +31,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -47,7 +49,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sandyyera.reposteria.data.db.dao.ArticuloConValor
+import com.sandyyera.reposteria.data.repositorio.QueHacerConElNombre
 import com.sandyyera.reposteria.data.repositorio.ResultadoAgregarAlAlmacen
+import com.sandyyera.reposteria.logica.almacen.SentidoDelMovimiento
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.ui.componentes.BarraBusqueda
 import com.sandyyera.reposteria.ui.componentes.CampoNumerico
@@ -71,9 +75,20 @@ data class AccionesAlmacen(
     val abrirEdicion: (FilaDeAlmacen) -> Unit = {},
     val cambiarModoDeEdicion: (ModoDeEdicion) -> Unit = {},
     val cambiarCantidadEnEdicion: (String) -> Unit = {},
-    val cambiarLoQueSeUso: (String) -> Unit = {},
+    val cambiarLoQueSeMovio: (String) -> Unit = {},
+    val cambiarSentidoDelMovimiento: (SentidoDelMovimiento) -> Unit = {},
+    val cambiarNombreEnEdicion: (String) -> Unit = {},
+    val cambiarVaEnRecetasEnEdicion: (Boolean) -> Unit = {},
     val cambiarDetallesEnEdicion: (String) -> Unit = {},
     val guardarEdicion: () -> Unit = {},
+    val resolverElNombre: (QueHacerConElNombre) -> Unit = {},
+    val confirmarSalidaDeRecetas: () -> Unit = {},
+    val abrirDescuentoPorRecetas: () -> Unit = {},
+    val buscarRecetaParaDescontar: (String) -> Unit = {},
+    val cambiarTandas: (Long, String) -> Unit = { _, _ -> },
+    val calcularElDescuento: () -> Unit = {},
+    val volverAElegirRecetas: () -> Unit = {},
+    val confirmarElDescuento: () -> Unit = {},
     val pedirBorrado: (FilaDeAlmacen) -> Unit = {},
     val confirmarBorrado: () -> Unit = {},
     val cerrarDialogo: () -> Unit = {},
@@ -110,7 +125,18 @@ fun ListaAlmacenScreen(
             abrirEdicion = modelo::abrirEdicion,
             cambiarModoDeEdicion = modelo::cambiarModoDeEdicion,
             cambiarCantidadEnEdicion = modelo::cambiarCantidadEnEdicion,
-            cambiarLoQueSeUso = modelo::cambiarLoQueSeUso,
+            cambiarLoQueSeMovio = modelo::cambiarLoQueSeMovio,
+            cambiarSentidoDelMovimiento = modelo::cambiarSentidoDelMovimiento,
+            cambiarNombreEnEdicion = modelo::cambiarNombreEnEdicion,
+            cambiarVaEnRecetasEnEdicion = modelo::cambiarVaEnRecetasEnEdicion,
+            resolverElNombre = modelo::resolverElNombre,
+            confirmarSalidaDeRecetas = modelo::confirmarSalidaDeRecetas,
+            abrirDescuentoPorRecetas = modelo::abrirDescuentoPorRecetas,
+            buscarRecetaParaDescontar = modelo::buscarRecetaParaDescontar,
+            cambiarTandas = modelo::cambiarTandas,
+            calcularElDescuento = modelo::calcularElDescuento,
+            volverAElegirRecetas = modelo::volverAElegirRecetas,
+            confirmarElDescuento = modelo::confirmarElDescuento,
             cambiarDetallesEnEdicion = modelo::cambiarDetallesEnEdicion,
             guardarEdicion = modelo::guardarEdicion,
             pedirBorrado = modelo::pedirBorrado,
@@ -193,6 +219,17 @@ fun ListaAlmacen(
         }
 
         if (estado.hayArticulos) {
+            // Descontar por recetas hechas (14.9). Va acá arriba y no escondido en un menú:
+            // es lo que se hace después de cocinar, o sea tan seguido como anotar una compra.
+            OutlinedButton(
+                onClick = acciones.abrirDescuentoPorRecetas,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = Medidas.objetivoTactil)
+            ) {
+                Text("Descontar lo que hice hoy")
+            }
+
             ValorDelAlmacen(estado)
             BarraBusqueda(
                 texto = estado.busqueda,
@@ -230,6 +267,9 @@ fun ListaAlmacen(
         is DialogoAlmacen.Ninguno -> Unit
         is DialogoAlmacen.Agregar -> DialogoAgregarAlAlmacen(dialogo, acciones)
         is DialogoAlmacen.CambiarCantidad -> DialogoEditarArticulo(dialogo, acciones)
+        is DialogoAlmacen.ElegirQueHacerConElNombre -> DialogoQueHacerConElNombre(dialogo, acciones)
+        is DialogoAlmacen.ConfirmarSalidaDeRecetas -> DialogoSalidaDeRecetas(dialogo, acciones)
+        is DialogoAlmacen.DescontarPorRecetas -> DialogoDescontarPorRecetas(dialogo, acciones)
         is DialogoAlmacen.ConfirmarBorrado -> AlertDialog(
             onDismissRequest = acciones.cerrarDialogo,
             title = { Text("¿Sacar '${dialogo.fila.nombre}' del almacén?") },
@@ -543,6 +583,227 @@ private fun DialogoPrecioDistinto(
 }
 
 /**
+ * El nombre escrito no existe en el catálogo: qué significa eso (14.10).
+ *
+ * Las dos salidas se explican por su **consecuencia** y no por su nombre: "renombrar" y "separar"
+ * no dicen nada solos, y lo que hay que saber para elegir es a cuántas recetas les cambia el
+ * nombre y a cuántas no.
+ */
+@Composable
+private fun DialogoQueHacerConElNombre(
+    estado: DialogoAlmacen.ElegirQueHacerConElNombre,
+    acciones: AccionesAlmacen
+) {
+    val cuantas = estado.usadoEnRecetas
+    AlertDialog(
+        onDismissRequest = acciones.cerrarDialogo,
+        title = { Text("'${estado.nombreNuevo}' no existe todavía") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(Medidas.chico)
+            ) {
+                Text("¿Qué es lo que pasó con '${estado.nombreViejo}'?")
+                Text(
+                    text = "• Es el mismo y estaba mal escrito → Renombrar. " +
+                        if (cuantas == 0) {
+                            "No lo usa ninguna receta, así que no cambia nada más."
+                        } else {
+                            "Cambia también en ${if (cuantas == 1) "1 receta" else "$cuantas recetas"}."
+                        },
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    text = "• Resultó ser otra cosa → Separar. Se crea '${estado.nombreNuevo}' " +
+                        "aparte y '${estado.nombreViejo}' queda igual en sus recetas.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { acciones.resolverElNombre(QueHacerConElNombre.RENOMBRAR) },
+                enabled = !estado.guardando
+            ) { Text("Renombrar") }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = { acciones.resolverElNombre(QueHacerConElNombre.SEPARAR) },
+                enabled = !estado.guardando
+            ) { Text("Separar") }
+        }
+    )
+}
+
+/**
+ * La advertencia antes de que algo deje de ser un ingrediente de recetas (14.11).
+ *
+ * **Nombra las recetas**, que es lo que hace que la confirmación signifique algo (7.1): un
+ * "¿seguro?" sin la lista es un botón que se aprieta sin leer, y acá lo que está en juego es el
+ * costo de esas recetas.
+ */
+@Composable
+private fun DialogoSalidaDeRecetas(
+    estado: DialogoAlmacen.ConfirmarSalidaDeRecetas,
+    acciones: AccionesAlmacen
+) {
+    AlertDialog(
+        onDismissRequest = acciones.cerrarDialogo,
+        title = { Text("'${estado.volverA.fila.nombre}' dejará de ir en recetas") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(Medidas.chico)
+            ) {
+                if (estado.recetasAfectadas.isEmpty()) {
+                    Text("No lo usa ninguna receta, así que no se pierde nada.")
+                } else {
+                    Text("Se va a sacar de estas recetas, y su costo va a bajar:")
+                    estado.recetasAfectadas.forEach {
+                        Text("• $it", style = MaterialTheme.typography.bodySmall)
+                    }
+                    Text(
+                        text = "No se puede deshacer.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+                Text(
+                    text = "Seguirá en el almacén y en Ingredientes: lo que deja de ser es algo " +
+                        "que se pueda poner en una receta.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = acciones.confirmarSalidaDeRecetas,
+                enabled = !estado.guardando
+            ) {
+                Text("Sacarlo", color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = acciones.cerrarDialogo) { Text("Cancelar") }
+        }
+    )
+}
+
+/**
+ * Descontar del almacén lo que se gastó haciendo recetas (14.9).
+ *
+ * **Dos momentos en el mismo cuadro**: elegir qué se hizo, y mirar qué va a pasar. El segundo no
+ * es una formalidad — esto toca muchas filas de una vez y es lo más destructivo del almacén, así
+ * que poder revisarlo fila por fila antes de confirmar es lo que lo hace usable sin miedo.
+ */
+@Composable
+private fun DialogoDescontarPorRecetas(
+    estado: DialogoAlmacen.DescontarPorRecetas,
+    acciones: AccionesAlmacen
+) {
+    val previa = estado.previa
+    AlertDialog(
+        onDismissRequest = acciones.cerrarDialogo,
+        title = { Text(if (previa == null) "¿Qué hiciste?" else "Esto va a quedar") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(Medidas.chico)
+            ) {
+                if (previa == null) {
+                    Text(
+                        text = "Escribe cuántas tandas hiciste de cada una. Media tanda se " +
+                            "escribe 0,5.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    BarraBusqueda(
+                        texto = estado.busqueda,
+                        alCambiar = acciones.buscarRecetaParaDescontar,
+                        marcador = "Buscar receta"
+                    )
+                    estado.visibles.forEach { fila ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(Medidas.chico),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = fila.titulo,
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            CampoNumerico(
+                                valor = fila.tandas,
+                                alCambiar = { acciones.cambiarTandas(fila.recetaId, it) },
+                                etiqueta = "Tandas",
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                    if (estado.recetas.isEmpty() && !estado.calculando) {
+                        Text("Todavía no hay recetas que hayas guardado.")
+                    }
+                } else {
+                    if (!previa.hayAlgoQueDescontar) {
+                        Text("Nada de lo que llevan esas recetas está anotado en el almacén.")
+                    }
+                    previa.filas.forEach { fila ->
+                        Column {
+                            Text(
+                                text = "${fila.nombre}: ${fila.comoSeLeeLoQueSeUsa} → queda " +
+                                    fila.comoSeLeeLoQueQueda,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (fila.quedaNegativo) MaterialTheme.colorScheme.error
+                                else MaterialTheme.colorScheme.onSurface
+                            )
+                            fila.aviso?.let {
+                                Text(
+                                    text = it,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
+                    }
+                    if (previa.sinAnotar.isNotEmpty()) {
+                        // No es un error —hay cosas que se usan sin llevarles la cuenta— pero
+                        // callarlo dejaría la impresión de que se descontó todo.
+                        Text(
+                            text = "No están en el almacén, así que no se tocan: " +
+                                previa.sinAnotar.joinToString { it.nombre },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (previa == null) {
+                TextButton(
+                    onClick = acciones.calcularElDescuento,
+                    enabled = estado.puedeCalcular
+                ) { Text("Ver qué queda") }
+            } else {
+                TextButton(
+                    onClick = acciones.confirmarElDescuento,
+                    enabled = previa.hayAlgoQueDescontar && !estado.guardando
+                ) { Text("Descontar") }
+            }
+        },
+        dismissButton = {
+            if (previa == null) {
+                TextButton(onClick = acciones.cerrarDialogo) { Text("Cancelar") }
+            } else {
+                TextButton(onClick = acciones.volverAElegirRecetas) { Text("Volver") }
+            }
+        }
+    )
+}
+
+/**
  * Editar algo del almacén: cuánto queda y sus notas (14.7).
  *
  * **Dos formas de llegar al mismo número**, y las dos hacen falta:
@@ -578,9 +839,9 @@ private fun DialogoEditarArticulo(
                         label = { Text("A mano") }
                     )
                     FilterChip(
-                        selected = estado.modo == ModoDeEdicion.CALCULADORA,
-                        onClick = { acciones.cambiarModoDeEdicion(ModoDeEdicion.CALCULADORA) },
-                        label = { Text("Calculadora") }
+                        selected = estado.modo == ModoDeEdicion.MOVIMIENTO,
+                        onClick = { acciones.cambiarModoDeEdicion(ModoDeEdicion.MOVIMIENTO) },
+                        label = { Text("Entró o salió") }
                     )
                 }
 
@@ -595,30 +856,111 @@ private fun DialogoEditarArticulo(
                         accionDelTeclado = ImeAction.Next
                     )
 
-                    ModoDeEdicion.CALCULADORA -> {
+                    ModoDeEdicion.MOVIMIENTO -> {
+                        // **Los dos sentidos a la vista y no solo restar** (14.8). Antes esto era
+                        // "calculadora" y solo sabía quitar: sumar obligaba a hacer la cuenta de
+                        // cabeza y anotar el total, que es el trabajo que el cuadro ahorra.
+                        Row(horizontalArrangement = Arrangement.spacedBy(Medidas.chico)) {
+                            FilterChip(
+                                selected = estado.sentido == SentidoDelMovimiento.SALE,
+                                onClick = {
+                                    acciones.cambiarSentidoDelMovimiento(SentidoDelMovimiento.SALE)
+                                },
+                                label = { Text("Salió") }
+                            )
+                            FilterChip(
+                                selected = estado.sentido == SentidoDelMovimiento.ENTRA,
+                                onClick = {
+                                    acciones.cambiarSentidoDelMovimiento(SentidoDelMovimiento.ENTRA)
+                                },
+                                label = { Text("Entró") }
+                            )
+                        }
                         CampoNumerico(
-                            valor = estado.seUso,
-                            alCambiar = acciones.cambiarLoQueSeUso,
-                            etiqueta = "¿Cuánto usaste? (${estado.fila.unidad})",
+                            valor = estado.seMovio,
+                            alCambiar = acciones.cambiarLoQueSeMovio,
+                            etiqueta = if (estado.sentido == SentidoDelMovimiento.SALE) {
+                                "¿Cuánto usaste? (${estado.fila.unidad})"
+                            } else {
+                                "¿Cuánto entró? (${estado.fila.unidad})"
+                            },
                             accionDelTeclado = ImeAction.Next
                         )
-                        estado.resultado?.let { queda ->
+                        estado.comoQuedaria?.let { queda ->
+                            // La cuenta se muestra **antes** de guardar: una resta que no se ve
+                            // hay que rehacerla de cabeza para confiar en ella (8.7.1).
                             Text(
-                                text = "Quedan ${formatearNumero(queda)} ${estado.fila.unidad}",
+                                text = "Queda $queda",
                                 style = MaterialTheme.typography.titleMedium
                             )
                         }
                         if (estado.seFueDeRango) {
-                            // No impide guardar: el estante queda en cero igual. Se dice para
-                            // que no parezca un error de la app.
                             Text(
-                                text = "Usaste más de lo anotado, así que queda en 0. Puede ser " +
-                                    "que la cantidad de antes estuviera mal.",
+                                text = "Sacaste más de lo que había anotado.",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
+                }
+
+                // El negativo **se muestra y no se impide** (14.8), en los dos modos: es el dato
+                // que Sandy pidió ver, y el aviso trae las dos lecturas posibles porque solo ella
+                // sabe cuál es la de ese frasco.
+                estado.avisoDelResultado?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+
+                HorizontalDivider()
+
+                // El nombre es el del ingrediente al que apunta la fila, así que cambiarlo puede
+                // querer decir tres cosas distintas. Quién decide cuál es el repositorio (14.10);
+                // acá solo se escribe.
+                OutlinedTextField(
+                    value = estado.nombre,
+                    onValueChange = acciones.cambiarNombreEnEdicion,
+                    label = { Text("Nombre") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    isError = estado.errorNombre != null,
+                    supportingText = {
+                        Text(
+                            estado.errorNombre
+                                ?: "Si escribes uno que ya existe en Ingredientes, se unen."
+                        )
+                    },
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Sentences
+                    )
+                )
+
+                // Ver y cambiar si se puede usar en recetas, que hasta ahora solo se elegía al
+                // crear y no se veía nunca más (14.11).
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Se puede usar en recetas",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Switch(
+                        checked = estado.vaEnRecetas,
+                        onCheckedChange = acciones.cambiarVaEnRecetasEnEdicion
+                    )
+                }
+                if (!estado.vaEnRecetas && estado.fila.vaEnRecetas) {
+                    Text(
+                        text = "Al guardar se sacará de las recetas que lo usen. Te vamos a " +
+                            "decir cuáles antes.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
                 }
 
                 // Los detalles van abajo, que es donde Sandy pidió verlos al entrar a editar.
@@ -784,10 +1126,12 @@ private fun AlmacenCalculadora() {
             almacenDeEjemplo,
             DialogoAlmacen.CambiarCantidad(
                 fila = almacenDeEjemplo.visibles.first(),
-                modo = ModoDeEdicion.CALCULADORA,
+                modo = ModoDeEdicion.MOVIMIENTO,
                 cantidad = "2.500",
-                seUso = "500",
-                detalles = ""
+                seMovio = "500",
+                detalles = "",
+                nombre = almacenDeEjemplo.visibles.first().nombre,
+                vaEnRecetas = true
             ),
             AccionesAlmacen()
         )

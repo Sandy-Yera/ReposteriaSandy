@@ -25,10 +25,13 @@ class AlmacenTest {
     }
 
     @Test
-    fun `usar mas de lo que habia deja cero y no un negativo`() {
-        // Un stock negativo no existe en un estante. Que la cuenta no cierre significa que lo
-        // anotado antes estaba mal, y lo que queda de verdad es nada.
-        assertEquals(0.0, loQueQueda(400.0, 500.0), 0.00001)
+    fun `usar mas de lo que habia deja el negativo a la vista`() {
+        // **Cambió, y con mejor razón que la que tenía.** Antes se recortaba en cero con el
+        // argumento de que "un stock negativo no existe en un estante". Sandy dio las dos
+        // lecturas que el cero borraba: puede haber entrado algo sin anotar —y entonces el
+        // negativo dice cuánto—, o la receta puede pedir más de lo que de verdad se usa. El
+        // cero era el dato cómodo, no el verdadero.
+        assertEquals(-100.0, loQueQueda(400.0, 500.0), 0.00001)
     }
 
     @Test

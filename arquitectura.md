@@ -2465,15 +2465,15 @@ leen; así que no hace falta que la base los entienda.
 compró algo no es haber revisado cuánto queda, y mover la fecha por eso haría creer que el stock
 está al día cuando lo único que se editó fue una nota.
 
-### 14.7 Editar: a mano o con la calculadora
+### 14.7 Editar: a mano o por movimiento
 
 Dos formas, y ninguna reemplaza a la otra:
 
 - **A mano** — se escribe cuánto queda. Es para cuando uno mira el frasco y estima.
-- **Calculadora** — se escribe **cuánto se usó** y la app resta. Es para cuando se midió lo que
-  se sacó.
+- **Entró o salió** — se escribe **cuánto se movió**, en un sentido o en el otro, y la app hace la
+  cuenta. Es para cuando se midió lo que se sacó, o cuando llegó una compra.
 
-El resultado de la calculadora **se muestra antes de guardar**. Una resta que uno no ve es una
+El resultado **se muestra antes de guardar**. Una resta que uno no ve es una
 resta que hay que rehacer de cabeza para poder confiar en ella (8.7.1).
 
 Los dos campos se guardan **por separado** en el estado, y no en uno solo que cambie de
@@ -2481,17 +2481,123 @@ significado según el modo. Compartirlo haría que cambiar de modo reinterpretar
 "500" puesto como "queda" pasaría a leerse como "usé", y el número guardado sería otro sin que
 nadie tocara nada.
 
-**No baja de cero.** Usar más de lo anotado no deja una cantidad negativa: deja cero, porque un
-stock negativo no existe en un estante. Pero **se dice** —*"usaste más de lo anotado, así que
-queda en 0"*— en vez de recortarlo en silencio: que la cuenta no cierre es un dato, o se anotó mal
-antes o se usó de otro paquete, y las dos cosas conviene verlas. El aviso **no impide guardar**.
+**Baja de cero, y se muestra.** Esto cambió, y la razón vieja era peor que la nueva: se recortaba
+en cero *"porque un stock negativo no existe en un estante"*. Sandy dio las dos lecturas que ese
+recorte borraba, y las dos son sobre lo que el número **enseña**:
 
-### 14.8 Lo que este módulo **no** hace todavía
+1. *"Puede que haya comprado más y por eso logré ocuparla"* — el negativo dice cuánto entró sin
+   anotarse. En cero, esa compra desaparece y el almacén miente hacia arriba.
+2. *"El aviso me ayudaría a decir 'oh, quizá le eche menos a una y realmente esto debería estar en
+   0'"* — el negativo es la señal de que **una receta pide más de lo que de verdad se usa**. Eso es
+   información sobre la receta, no sobre el frasco, y era justo lo que se perdía.
 
-Es "uno básico", como se pidió, y estas ausencias son deliberadas y no olvidos:
+O sea que el cero no era el dato verdadero: era el dato cómodo. Lo que corresponde es mostrarlo
+con su aviso, que ofrece las dos lecturas porque solo Sandy sabe cuál es la de ese frasco. **No
+impide guardar.**
 
-- **No descuenta solo al producir una receta.** Eso necesita decidir qué es "producir" y qué
-  pasa cuando falta stock, y ninguna de las dos preguntas está contestada.
+### 14.8 Sumar, no solo restar
+
+Hasta acá el almacén **solo sabía bajar**. La calculadora resolvía "usé 300 g" y *"compré un kilo
+más"* no tenía dónde escribirse: había que hacer la suma de cabeza y anotar el total, o sea
+deshacer justo el trabajo que el cuadro existe para ahorrar. Sandy lo dijo sin rodeos: *"solo
+pensé en restar… debería poder agregar como quitar ingredientes con claridad"*.
+
+El modo pasó a tener **dos sentidos elegibles** —*Entró* y *Salió*— y el número siempre se escribe
+en positivo. El sentido va aparte y no como signo del número por lo mismo que los dos campos del
+cuadro están separados: un "500" que cambia de significado según dónde esté escrito es un número
+que se guarda al revés el día que alguien cambie de modo sin borrar.
+
+Sumar sobre un negativo lo saca del pozo, que es el caso que el recorte en cero hacía imposible de
+arreglar bien: con el stock en −200, comprar un kilo tiene que dejar 800 y no 1.000.
+
+### 14.9 Descontar por recetas hechas
+
+*"En almacén, poder disminuir los ingredientes eligiendo qué recetas hice y la cantidad."* La app
+ya sabe cuánto lleva cada receta —es de donde sale el costo— así que el dato ya estaba: lo que
+faltaba era usarlo para mover el inventario en vez de restar frasco por frasco.
+
+**Se eligen recetas y tandas, y se mira antes de confirmar.** Los dos momentos viven en el mismo
+cuadro porque son dos pantallas de lo mismo, y separarlas obligaría a volver atrás para corregir un
+número que se ve mal recién en la previa.
+
+La vista previa **no es una formalidad**. Esto toca muchas filas de una vez y es lo más destructivo
+que hace el almacén; lo que lo vuelve usable sin miedo es poder revisar, fila por fila, de cuánto
+se parte y en cuánto queda. Lo que confirma la pantalla es **la previa ya calculada** y no las
+recetas otra vez: volver a calcular al escribir abriría la puerta a guardar algo distinto de lo que
+se mostró, basta con que alguien edite una receta entremedio.
+
+Cuatro decisiones que sostienen la cuenta:
+
+- **Las tandas son decimales.** Media tanda es normal en repostería, y obligar a un entero
+  empujaría a anotar una tanda entera y corregir el frasco después.
+- **La misma receta dos veces se suma**, no se reemplaza: escribirla dos veces es haberla hecho
+  dos veces.
+- **El mismo ingrediente en dos secciones se suma** —harina en la masa y harina en el relleno— y
+  eso lo resuelve el `GROUP BY` de la consulta. Descontar solo una de las dos dejaría el almacén
+  alto sin que nada lo dijera.
+- **Lo que se gasta y no está anotado se dice**, con nombre. No es un error —hay cosas que se usan
+  sin llevarles la cuenta— pero callarlo dejaría la impresión de que se descontó todo, y la mitad
+  del valor de esto es saber que la cuenta está completa.
+
+Queda **un solo evento en el historial** y no uno por frasco: descontar una tanda es un acto, no
+veinte, y anotarlo veinte veces taparía el panel de cambios justo con lo que más se repite.
+
+### 14.10 Cambiarle el nombre a algo del almacén
+
+Un nombre en el almacén **no es un texto propio de la fila**: es el del ingrediente al que apunta
+(14.5). Por eso editarlo no es una edición cualquiera, sino una de tres cosas, y cuál depende de si
+el nombre escrito ya existe en el catálogo:
+
+| Lo escrito | Qué pasa | Por qué no se pregunta |
+|---|---|---|
+| Ya existe y está libre | **Se une**: esta fila pasa a llevar la cuenta de ese ingrediente | Es lo único que ese nombre puede significar |
+| Ya existe y tiene su propia fila | **No se puede** | Dos filas para un ingrediente = dos respuestas a "cuánta harina queda" |
+| No existe | **Hay que elegir** (ver abajo) | Son dos caminos que no se deshacen igual |
+
+Las dos salidas del tercer caso las nombró Sandy: *"debería preguntarme si deseo renombrar o romper
+la conexión"*.
+
+- **Renombrar** — era el mismo y estaba mal escrito. Toca **todas las recetas que lo usan**, porque
+  el nombre es uno solo.
+- **Separar** — este frasco resultó ser otra cosa. Se crea un ingrediente nuevo con el nombre
+  escrito y la fila pasa a apuntar ahí; el de antes queda intacto con sus recetas.
+
+**"Romper la conexión" no es quedarse sin ingrediente**, y esa lectura literal habría roto 14.5: de
+ese enlace salen el precio y la unidad, así que una fila suelta no sabría ni cuánto vale lo que
+guarda. Es dejar de apuntar a *ese* ingrediente, no a ninguno.
+
+El cuadro dice **a cuántas recetas afecta cada camino**, que es lo único que permite contestar:
+renombrar algo que no usa ninguna receta no tiene consecuencias, y renombrar lo que usan seis es
+otra decisión.
+
+### 14.11 Ver y cambiar si va en recetas
+
+*"Debería poder ver, una vez creado en almacén, si es posible usar en ingredientes o no (y
+editar)."* Hasta acá `vaEnRecetas` se elegía al crear y **no se veía nunca más**: un dato que decide
+si algo aparece en el buscador de una receta, invisible desde la pantalla donde vive esa cosa.
+
+Ahora es un interruptor en el cuadro de editar. Los dos sentidos no pesan lo mismo:
+
+- **Encenderlo no pregunta.** Agregar algo a la lista de lo que se puede elegir no le quita nada a
+  nadie.
+- **Apagarlo saca sus líneas de las recetas**, con la advertencia de 7.1 y **los nombres de las
+  recetas a la vista**. Es lo que Sandy pidió —*"si lo cambio a que no es ingrediente, se debería
+  eliminar con advertencia"*— y además es lo coherente: dejarlo dentro de tres recetas mientras la
+  app dice que no es un ingrediente sería sostener dos verdades a la vez, y esas recetas seguirían
+  costando por algo que ya no se considera ingrediente.
+
+**No borra el ingrediente ni la fila del almacén.** Sigue existiendo y se le sigue llevando la
+cuenta; lo que deja de ser es algo que se pueda poner en una receta. El interruptor tampoco escribe
+al tocarlo: la decisión pasa por su advertencia al guardar, porque un cambio destructivo no puede
+quedar hecho por el gesto de mirar una casilla.
+
+### 14.12 Lo que este módulo **no** hace todavía
+
+Estas ausencias son deliberadas y no olvidos:
+
+- **No guarda el historial de movimientos.** Cada fila sabe cuánto hay y cuándo se miró, no cómo
+  llegó ahí. Esa tabla llega con Ventas (sección 18), que la necesita para comparar lo estimado
+  contra lo real, y llega con ella para no subir dos versiones de la base por lo mismo.
 - **No avisa cuando algo se está acabando.** Un mínimo por artículo es una columna más y una
   decisión por artículo; primero conviene usarlo un tiempo y ver qué mínimos son reales.
 - **No costea los envases.** Un objeto entra a la receta con 0 gramos (14.1.1); el día que haga
@@ -2528,6 +2634,89 @@ y deja mandando el orden. Tres cambios:
    bordes que no se cortan— pero tampoco pasa callado.
 
 La lista de repartos marca además **cuál usa la app** si nadie elige. Antes había que deducirlo.
+
+## 18. Módulo Ventas (planificado, Fase 12)
+
+**Qué responde:** *"¿cuánto creí que iba a costar y ganar, y cuánto costó y gané de verdad?"*. Eso
+es lo que pidió Sandy —*"logrando ver el estimado del costo y la ganancia vs lo real del costo y la
+ganancia del día"*— y es lo que le da sentido a todo lo anterior: hasta ahora la app calcula lo que
+**debería** pasar, y nada compara eso con lo que pasó.
+
+Es una sección propia en el menú principal, al lado de Almacén, Ingredientes, Moldes y Recetas.
+
+### 18.1 Qué es una venta
+
+Una venta es **un día y una lista de lo que se vendió**. No una boleta ni un cliente: lo que se
+quiere analizar es el día, y meter clientes ahora sería construir un CRM para responder una
+pregunta que no lo necesita.
+
+Cada línea lleva la receta, cuántas se vendieron y a qué precio. **El precio se escribe y no se
+deduce del catálogo**, y esa es la decisión que hace que el módulo sirva: el precio guardado es el
+que Sandy *piensa* cobrar, y el de la venta es el que cobró. Si se dedujera, lo real y lo estimado
+serían el mismo número y no habría nada que comparar.
+
+### 18.2 Estimado contra real
+
+Las dos columnas del informe, y de dónde sale cada una:
+
+| | Estimado | Real |
+|---|---|---|
+| Ingreso | Precio de referencia × unidades (8.6) | Precio escrito × unidades |
+| Costo | `costoTotal` de la receta × unidades | Costo de los ingredientes **descontados de verdad** |
+| Ganancia | La resta de los dos de arriba | La resta de los dos de arriba |
+
+**El costo real necesita la tabla de movimientos**, que es la deuda que 14.12 deja anotada: sin un
+registro de qué salió del almacén y a qué precio estaba en ese momento, "lo real" sería lo estimado
+otra vez. Por eso Ventas y esa tabla llegan juntas, en una sola versión de la base.
+
+La diferencia entre las dos columnas **no es un error de la app**: es el hallazgo. Un costo real
+más alto dice que la receta gasta más de lo anotado; uno más bajo, que la receta pide de más — la
+misma señal que ya da un stock en negativo (14.8), vista desde el otro lado.
+
+### 18.3 Los metadatos del día
+
+*"Cosas como el día-mes como número, como también día escrito, y verificar en el calendario si ese
+día es algún festivo o es un día especial, para poder recabar metadatos."* La palabra es exacta: no
+es información de la venta sino **del día** de la venta, y es lo que después responde "¿los domingos
+vendo más?" o "¿el 18 se dispara?".
+
+**Se calculan y no se guardan.** Con la fecha guardada sale todo; anotarlo serían seis columnas
+diciendo lo mismo que una, y que además quedan mal si alguien corrige la fecha después.
+
+Ya está construido y probado (`logica/calendario/Calendario.kt`), antes que la pantalla que lo va a
+usar, porque es Kotlin puro y se puede verificar entero sin celular:
+
+- **Número y texto**: `18/9/2026` y *"viernes 18 de septiembre"*.
+- **Fin de semana**, aparte del feriado: un sábado no es un festivo, y mezclarlos perdería justo la
+  diferencia que sirve para comparar.
+- **Los 15 feriados permanentes de Chile**, incluidos Viernes y Sábado Santo, que cuelgan del
+  domingo de Pascua y se calculan con el algoritmo de Gauss. **No están los regionales ni los que
+  el Congreso declara para un año suelto**: no siguen ninguna regla, así que no se pueden calcular,
+  y solo los permanentes sirven para comparar un año con otro.
+- **Las fechas comerciales que mueven una repostería**: San Valentín, día de la madre (segundo
+  domingo de mayo), día del padre, Nochebuena, Fin de Año. Son pocas y elegidas, no un almanaque:
+  agregar las cincuenta que existen convertiría "día especial" en un dato que se cumple siempre, y
+  un dato que se cumple siempre no distingue nada.
+- **El feriado le gana a la fecha comercial** cuando caen juntos, porque es el que decide si se
+  abre. Pasa de verdad: el día de la madre puede caer el 1 de mayo.
+
+### 18.4 El descuento automático
+
+Registrar una venta puede descontar del almacén, reutilizando **la misma máquina de 14.9**: una
+venta de 3 tortas es 3 tandas de esa receta. Que sea la misma y no una copia es lo que garantiza
+que el almacén se mueva igual por los dos caminos.
+
+Es **opcional por venta** y no automático a ciegas: lo vendido hoy pudo hornearse ayer, y descontar
+al vender contaría dos veces lo que ya se descontó al cocinar. La pregunta —"¿descuento del
+almacén?"— se contesta por venta, con la vista previa de 14.9 antes de escribir.
+
+### 18.5 Lo que este módulo **no** hace
+
+- **No maneja clientes ni boletas.** La pregunta es sobre el día.
+- **No cobra ni imprime.** No es un punto de venta.
+- **No inventa el costo real cuando falta el movimiento.** Una venta sin descuento asociado muestra
+  el costo estimado **diciendo que es estimado**, en vez de un "real" que sería el mismo número con
+  otro nombre.
 
 ## 10. Módulo Empleados
 
@@ -2886,7 +3075,7 @@ Restauración: si Room detecta que no hay base de datos local, la app ofrece "Re
 
 | Parte | Qué dice | Cuándo cambia |
 |---|---|---|
-| `0` | La app todavía no está terminada | Pasa a `1` con las quince fases hechas, no antes |
+| `0` | La app todavía no está terminada | Pasa a `1` con todas las fases hechas, no antes |
 | `10` | La fase en curso | Al empezar la fase siguiente |
 | `01` | Qué actualización de esa fase es | En cada compilación que se instala en el celular |
 
@@ -3188,22 +3377,33 @@ una comodidad.
 - **El `EmpleadoRepositorio` está construido**, con 21 pruebas sobre DAO falsos. El falso imita las tres cosas que la base hace sola —el índice único con `REPLACE`, las cascadas y la condición `esGenerico = 0` del `DELETE`—, porque sin eso una prueba aprobaría una versión que deja sueldos huérfanos o dos sueldos para la misma receta.
 - **Lo que queda son las pantallas**, y solo se comprueba compilando.
 
-### Fase 12 — Historial de cambios / notificaciones
+### Fase 12 — Módulo Ventas y los informes de análisis
+
+- **Construyes:** la sección Ventas del menú (18), la tabla de ventas con sus líneas, la tabla de **movimientos del almacén** que 14.12 dejó anotada, y el informe de estimado contra real (18.2).
+- **Hecho cuando:** se registra una venta con 2+ recetas y precios escritos a mano; el informe del día muestra las dos columnas y **la diferencia entre ellas**; una venta con descuento asociado muestra costo real y una sin él dice "estimado" en vez de repetir el mismo número con otro nombre; y el día aparece con su fecha en número, en texto y con su etiqueta de feriado o fecha comercial cuando corresponda.
+- **El calendario está construido y probado** (11 pruebas), por lo mismo que en las fases 9 y 11: es lo único de esta fase que se verifica sin celular, y hacerlo primero deja la parte más fácil de equivocarse —Pascua, el segundo domingo de mayo— resuelta y comprobada contra fechas reales antes de que exista la pantalla.
+  - `datosDelDia`, `nombreDelDia`, `nombreDelMes`, `esFinDeSemana` — la fecha dicha de todas las formas que sirven para agrupar después.
+  - `domingoDePascua`, `feriadosDe` — los 15 feriados permanentes, con los dos que se mueven.
+  - `diaDeLaMadre`, `diaDelPadre`, `fechasComercialesDe`, `queDiaEs` — las fechas que mueven una repostería, separadas de los feriados a propósito.
+- **La máquina del descuento también está construida** (Fase 10 → 14.9): una venta de 3 tortas son 3 tandas de esa receta, y reutilizarla en vez de copiarla es lo que garantiza que el almacén se mueva igual por los dos caminos.
+- **Una sola versión de la base para las tres tablas.** Ventas, sus líneas y los movimientos llegan juntos: subir dos versiones entre dos compilaciones deja a la del medio sin esquema exportado **para siempre** (5.5.2), y ya pasó dos veces.
+
+### Fase 13 — Historial de cambios / notificaciones
 
 - **Construyes:** `EventoCambio`, `HistorialRepositorio`, `HistorialCambiosPanel` (botón campana + lista color-coded), y la limpieza automática a 6 meses.
 - **Hecho cuando:** crear, editar o eliminar cualquier ingrediente/receta/molde/empleado deja su rastro en el historial con el color correcto, cada evento nombra la entidad afectada (no un texto genérico), una eliminación con efectos en cascada muestra el detalle de qué se vio afectado, y un evento con fecha falseada a 7 meses atrás desaparece solo.
 
-### Fase 13 — Navegación general y pulido de UI
+### Fase 14 — Navegación general y pulido de UI
 
 - **Construyes:** drawer de navegación con las 4 secciones, buscador global, ajustes de Compose para verse bien en distintos tamaños de celular, la **pantalla de configuración** (12.7) y la **exportación a PDF** (12.8).
 - **Hecho cuando:** la app completa se usa cómodamente en tu celular real, sin elementos cortados ni ilegibles; la rueda de configuración cambia el tema y la app arranca siguiendo al sistema; y una receta y una sección se pueden bajar en PDF con sus campos, no solo con sus resultados.
 
-### Fase 14 — Sincronización real con Google Drive
+### Fase 15 — Sincronización real con Google Drive
 
 - **Construyes:** `DriveClient`, `SyncWorker` (encolado como trabajo único, 13.3), integración con Room, respaldo dual, restauración, `SesionLock` (13.4).
 - **Hecho cuando:** guardar cualquier cambio sube el respaldo a ambas cuentas configuradas, **rellenar una receta completa dispara una sola subida y no una por campo**, poner el celular en modo avión no bloquea el uso (y sincroniza solo al volver la red), restaurar en una instalación limpia trae todo de vuelta, y probar con dos `deviceId` distintos dispara la advertencia.
 
-### Fase 15 — QA final y APK firmado (última fase)
+### Fase 16 — QA final y APK firmado (última fase)
 
 - **Construyes:** nada nuevo — checklist completo contra tu especificación original, prueba de estrés (recetas grandes), revisión de formatos numéricos, manejo de errores en cada formulario, y la generación de un **APK de release firmado** (`./gradlew assembleRelease` con tu keystore).
 - **Hecho cuando:** instalas el APK directo en tu celular (sin Android Studio conectado), usas la app de principio a fin — ingredientes, moldes, receta completa con sus 7 pasos, sueldos de empleados, historial de cambios — y todo respalda solo en Drive. Este es el ejecutable final.

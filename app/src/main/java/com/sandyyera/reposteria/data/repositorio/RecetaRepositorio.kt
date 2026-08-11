@@ -11,6 +11,7 @@ import com.sandyyera.reposteria.data.db.entidades.TipoEvento
 import com.sandyyera.reposteria.data.db.entidades.aVigente
 import com.sandyyera.reposteria.data.db.entidades.RecetaRendimiento
 import com.sandyyera.reposteria.logica.formato.cantidadConUnidad
+import com.sandyyera.reposteria.logica.almacen.GastoDeIngrediente
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.logica.formato.redondearParaGuardar
 import com.sandyyera.reposteria.logica.duracion.TipoDuracion
@@ -1340,6 +1341,29 @@ class RecetaRepositorio(
             detalleAdicional = "Ahora es $${formatearNumero(precio.precioTotal)}"
         )
         return null
+    }
+
+    /**
+     * Lo que lleva **una tanda** de cada receta pedida, agrupado por ingrediente (14.9).
+     *
+     * Es lo que el almacén necesita para descontar por recetas hechas, y vive acá porque el que
+     * sabe cuánto lleva una receta es este repositorio: el almacén no entra a las secciones.
+     *
+     * Devuelve el mapa que espera `loQueSeGasta`, ya armado, en vez de la lista cruda: agruparlo
+     * en el almacén sería que dos módulos supieran la forma de esta consulta.
+     *
+     * Con la lista vacía contesta vacío **sin consultar**: un `IN ()` sin elementos es SQL
+     * inválido en algunos motores y una consulta desperdiciada en el resto.
+     */
+    suspend fun gastoDeVariasRecetas(
+        recetaIds: List<Long>
+    ): Map<Long, List<GastoDeIngrediente>> {
+        if (recetaIds.isEmpty()) return emptyMap()
+        return dao.gastoDeVariasRecetas(recetaIds)
+            .groupBy { it.recetaId }
+            .mapValues { (_, filas) ->
+                filas.map { GastoDeIngrediente(it.ingredienteId, it.cantidad) }
+            }
     }
 
     // --- Simulación de ventas (8.7) ---

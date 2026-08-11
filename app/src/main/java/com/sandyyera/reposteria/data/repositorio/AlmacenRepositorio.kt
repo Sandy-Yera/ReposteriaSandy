@@ -5,9 +5,20 @@ import com.sandyyera.reposteria.data.db.dao.ArticuloConValor
 import com.sandyyera.reposteria.data.db.entidades.ArticuloDeAlmacen
 import com.sandyyera.reposteria.data.db.entidades.EntidadEvento
 import com.sandyyera.reposteria.data.db.entidades.Ingrediente
+import com.sandyyera.reposteria.data.db.entidades.Receta
 import com.sandyyera.reposteria.data.db.entidades.TipoEvento
+import com.sandyyera.reposteria.logica.almacen.FilaParaDescontar
+import com.sandyyera.reposteria.logica.almacen.RecetaHecha
+import com.sandyyera.reposteria.logica.almacen.SentidoDelMovimiento
+import com.sandyyera.reposteria.logica.almacen.VistaPreviaDelDescuento
+import com.sandyyera.reposteria.logica.almacen.conLosNombres
+import com.sandyyera.reposteria.logica.almacen.loQueSeGasta
+import com.sandyyera.reposteria.logica.almacen.vistaPreviaDelDescuento
+import com.sandyyera.reposteria.logica.almacen.resultadoDelMovimiento
+import com.sandyyera.reposteria.logica.busqueda.sonElMismoTexto
 import com.sandyyera.reposteria.logica.validaciones.errorEnNombreEscrito
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 
 /**
  * El inventario: qué hay guardado y cuánto queda (sección 14).
@@ -18,6 +29,9 @@ import kotlinx.coroutines.flow.Flow
 class AlmacenRepositorio(
     private val dao: AlmacenDao,
     private val ingredientes: IngredienteRepositorio,
+    // Para el descuento por recetas hechas (14.9): es el único que sabe cuánto lleva cada
+    // receta. La flecha va en este sentido y no al revés — las recetas no saben del almacén.
+    private val recetas: RecetaRepositorio,
     private val historial: HistorialRepositorio
 ) {
 
@@ -182,12 +196,43 @@ class AlmacenRepositorio(
     suspend fun cambiarCantidad(articuloId: Long, cantidad: Double): Resultado {
         val articulo = dao.obtener(articuloId)
             ?: return Resultado.NoSePudo("Eso ya no está en el almacén")
-        if (cantidad < 0) return Resultado.NoSePudo("No puede quedar una cantidad negativa")
 
+        // **Ya no se rechaza el negativo** (14.8). Antes esto contestaba "no puede quedar una
+        // cantidad negativa", y era la misma idea que recortaba la resta en cero: el número
+        // cómodo en vez del verdadero. Un negativo dice cuánto entró sin anotarse, o cuánto pide
+        // de más una receta, y las dos cosas son datos. Lo que corresponde es mostrarlo con su
+        // aviso, y de eso se encarga la pantalla.
         dao.actualizar(
             articulo.copy(cantidad = cantidad, actualizadoEn = System.currentTimeMillis())
         )
         return Resultado.Listo
+    }
+
+    /**
+     * Suma o resta sobre lo que ya había (14.8).
+     *
+     * Existe porque **hasta ahora solo se podía restar**: la calculadora resolvía "usé 300 g" y
+     * "compré un kilo más" no tenía dónde escribirse. Lo pidió Sandy tal cual: *"debería poder
+     * agregar como quitar ingredientes con claridad"*.
+     *
+     * La cuenta la hace `resultadoDelMovimiento`, la misma de la vista previa de la pantalla, así
+     * que lo que se ve antes de confirmar es exactamente lo que se guarda. [cuanto] llega siempre
+     * en positivo y el sentido va aparte, para que un número no cambie de significado según dónde
+     * esté escrito.
+     */
+    suspend fun mover(
+        articuloId: Long,
+        cuanto: Double,
+        sentido: SentidoDelMovimiento
+    ): Resultado {
+        val articulo = dao.obtener(articuloId)
+            ?: return Resultado.NoSePudo("Eso ya no está en el almacén")
+        if (cuanto < 0) return Resultado.NoSePudo("Escribe cuánto, en positivo")
+
+        return cambiarCantidad(
+            articuloId,
+            resultadoDelMovimiento(articulo.cantidad, cuanto, sentido)
+        )
     }
 
     /**
@@ -225,6 +270,302 @@ class AlmacenRepositorio(
         )
         return Resultado.Listo
     }
+
+    // --- Descontar lo que se gastó haciendo recetas (14.9) ---
+
+    /**
+     * Qué le pasaría al almacén si se hubieran hecho estas recetas. **No escribe nada.**
+     *
+     * Va aparte de [descontar] a propósito, y no es ceremonia: esto toca muchas filas de una vez
+     * y es lo más destructivo que hace el almacén. Lo que evita el desastre es poder mirar antes,
+     * fila por fila, de cuánto se parte y en cuánto queda — incluido lo que va a quedar bajo
+     * cero, que es justo lo que Sandy quiere ver y no esconder.
+     *
+     * Los ingredientes que la receta gasta y **no están anotados** salen por su cuenta en la
+     * vista previa, con su nombre traído del catálogo. No es un error —hay cosas que se usan sin
+     * llevarles la cuenta— pero callarlo dejaría la impresión de que se descontó todo.
+     */
+    suspend fun vistaPreviaDeDescontar(hechas: List<RecetaHecha>): VistaPreviaDelDescuento {
+        val ids = hechas.map { it.recetaId }.distinct()
+        if (ids.isEmpty()) return VistaPreviaDelDescuento(emptyList(), emptyList())
+
+        val gastos = recetas.gastoDeVariasRecetas(ids)
+        val seGasta = loQueSeGasta(hechas, gastos)
+        val enElAlmacen = dao.observarTodo().first()
+            .mapNotNull { fila ->
+                FilaParaDescontar(
+                    ingredienteId = fila.ingredienteId ?: return@mapNotNull null,
+                    nombre = fila.nombre,
+                    // Una fila anterior a 14.5 no sabe su unidad. Se toma como gramo, que es lo
+                    // que era todo antes de que los objetos existieran.
+                    esObjeto = fila.esObjeto ?: false,
+                    cantidad = fila.cantidad
+                )
+            }
+        val previa = vistaPreviaDelDescuento(seGasta, enElAlmacen)
+        if (previa.sinAnotar.isEmpty()) return previa
+
+        // Los nombres de lo que no está anotado los tiene el catálogo, no el almacén. Se piden
+        // solo si hacen falta: lo normal es que esta lista venga vacía.
+        val nombres = previa.sinAnotar.associate { falta ->
+            falta.ingredienteId to (ingredientes.obtener(falta.ingredienteId)?.nombre ?: falta.nombre)
+        }
+        return previa.conLosNombres(nombres)
+    }
+
+    /**
+     * Descuenta de verdad lo que muestra la vista previa.
+     *
+     * Recibe la previa **ya calculada** y no las recetas otra vez, y eso es deliberado: volver a
+     * calcular acá abriría la puerta a que se escriba algo distinto de lo que se mostró — basta
+     * que alguien edite una receta en otra pantalla entremedio. Lo que se confirma es lo que se
+     * vio.
+     *
+     * Escribe fila por fila con `cambiarCantidad`, que ya acepta negativos (14.8). Una fila que
+     * desapareció entremedio se salta en vez de voltear el resto: el resto del descuento es
+     * correcto y perderlo entero sería peor.
+     *
+     * **Registra un solo evento en el historial y no uno por frasco.** Descontar una tanda es un
+     * acto, no veinte, y anotarlo veinte veces taparía el panel de cambios justo con lo que más
+     * se repite.
+     */
+    suspend fun descontar(previa: VistaPreviaDelDescuento, queSeHizo: String): Resultado {
+        if (!previa.hayAlgoQueDescontar) {
+            return Resultado.NoSePudo("No hay nada anotado que descontar")
+        }
+        var movidas = 0
+        for (fila in previa.filas) {
+            val articulo = dao.obtenerPorIngrediente(fila.ingredienteId) ?: continue
+            dao.actualizar(
+                articulo.copy(
+                    cantidad = fila.quedara,
+                    actualizadoEn = System.currentTimeMillis()
+                )
+            )
+            movidas++
+        }
+        historial.registrar(
+            tipo = TipoEvento.EDICION,
+            entidad = EntidadEvento.INGREDIENTE,
+            descripcion = "Se descontó del almacén lo de $queSeHizo",
+            detalleAdicional = "Movió $movidas " + if (movidas == 1) "cosa" else "cosas"
+        )
+        return Resultado.Listo
+    }
+
+    // --- Cambiarle el nombre a algo del almacén (14.10) ---
+
+    /**
+     * Intenta ponerle otro nombre a una fila del almacén.
+     *
+     * **Un nombre en el almacén no es un texto propio de la fila**: es el del ingrediente al que
+     * apunta (14.5). Por eso cambiarlo no es una edición sino una de tres cosas, y cuál es
+     * depende de si el nombre escrito ya existe en el catálogo:
+     *
+     * 1. **Existe y está libre** → se une: esta fila pasa a llevar la cuenta de ese ingrediente.
+     *    Es lo que pidió Sandy —*"si pongo un nombre que ya está en ingredientes, hace unión"*—
+     *    y no hay nada que preguntar, porque es lo único que ese nombre puede significar.
+     * 2. **Existe y ya tiene su propia fila de almacén** → no se puede, y es la excepción que
+     *    ella misma nombró (*"a excepción de que ya exista previa unión"*). Unir dejaría dos
+     *    filas para el mismo ingrediente, y ahí "cuánta harina queda" tendría dos respuestas —
+     *    el índice único de la tabla lo impide de todos modos, pero reventar no explica nada.
+     * 3. **No existe** → hay dos caminos posibles y se devuelve [HayQueElegir] sin tocar nada.
+     *
+     * [confirmado] es la respuesta a ese tercer caso y por eso llega `null` la primera vez: sin
+     * él, el repositorio elegiría por su cuenta entre renombrar seis recetas y no tocarlas.
+     */
+    suspend fun renombrar(
+        articuloId: Long,
+        nombreNuevo: String,
+        confirmado: QueHacerConElNombre? = null
+    ): ResultadoRenombrarEnAlmacen {
+        val limpio = nombreNuevo.trim()
+        errorEnNombreEscrito(limpio)?.let {
+            return ResultadoRenombrarEnAlmacen.NoSePudo(it)
+        }
+        val articulo = dao.obtener(articuloId)
+            ?: return ResultadoRenombrarEnAlmacen.NoSePudo("Eso ya no está en el almacén")
+        val actual = articulo.ingredienteId?.let { ingredientes.obtener(it) }
+            ?: return ResultadoRenombrarEnAlmacen.NoSePudo(
+                "Esta fila es anterior a la versión 14.5 y no tiene ingrediente"
+            )
+        if (sonElMismoTexto(actual.nombre, limpio)) {
+            return ResultadoRenombrarEnAlmacen.Listo("Se llama igual que antes")
+        }
+
+        // El del catálogo se busca **excluyendo al propio**, porque acá el propio ya se descartó
+        // arriba y sin excluirlo un cambio de tildes se leería como "ya existe otro igual".
+        val yaExiste = ingredientes.buscarParecido(limpio, exceptoId = actual.id)
+        if (yaExiste != null) {
+            if (yaExiste.id in ingredientesYaGuardados()) {
+                return ResultadoRenombrarEnAlmacen.NoSePudo(
+                    "'${yaExiste.nombre}' ya tiene su propia fila en el almacén"
+                )
+            }
+            dao.actualizar(articulo.copy(ingredienteId = yaExiste.id))
+            historial.registrar(
+                tipo = TipoEvento.EDICION,
+                entidad = EntidadEvento.INGREDIENTE,
+                descripcion = "'${actual.nombre}' del almacén pasó a ser '${yaExiste.nombre}'",
+                detalleAdicional = "Se unió con el ingrediente que ya existía"
+            )
+            return ResultadoRenombrarEnAlmacen.Listo(
+                "Ahora lleva la cuenta de '${yaExiste.nombre}'"
+            )
+        }
+
+        return when (confirmado) {
+            null -> ResultadoRenombrarEnAlmacen.HayQueElegir(
+                nombreViejo = actual.nombre,
+                nombreNuevo = limpio,
+                usadoEnRecetas = ingredientes.recetasAfectadasPorBorrar(actual.id).size
+            )
+
+            QueHacerConElNombre.RENOMBRAR -> {
+                when (val r = ingredientes.actualizar(actual.copy(nombre = limpio))) {
+                    is ResultadoGuardarIngrediente.NoValido ->
+                        ResultadoRenombrarEnAlmacen.NoSePudo(r.motivo)
+                    is ResultadoGuardarIngrediente.YaExiste ->
+                        ResultadoRenombrarEnAlmacen.NoSePudo(
+                            "'${r.existente.nombre}' ya existe en ingredientes"
+                        )
+                    is ResultadoGuardarIngrediente.Guardado ->
+                        ResultadoRenombrarEnAlmacen.Listo("Se renombró en todas partes")
+                }
+            }
+
+            QueHacerConElNombre.SEPARAR -> {
+                // **Se crea un ingrediente nuevo en vez de dejar la fila sin ninguno.** Que todo
+                // lo del almacén tenga su ingrediente es la regla de 14.5, y de ahí salen el
+                // precio y la unidad: una fila suelta no sabría ni cuánto vale lo que guarda.
+                // "Romper la conexión" es dejar de apuntar a *ese* ingrediente, no quedarse sin.
+                val creado = ingredientes.crear(
+                    nombre = limpio,
+                    valorPorGramo = actual.valorPorGramo,
+                    esObjeto = actual.esObjeto,
+                    vaEnRecetas = actual.vaEnRecetas
+                )
+                val nuevoId = when (creado) {
+                    is ResultadoGuardarIngrediente.Guardado -> creado.id
+                    is ResultadoGuardarIngrediente.YaExiste -> creado.existente.id
+                    is ResultadoGuardarIngrediente.NoValido ->
+                        return ResultadoRenombrarEnAlmacen.NoSePudo(creado.motivo)
+                }
+                dao.actualizar(articulo.copy(ingredienteId = nuevoId))
+                historial.registrar(
+                    tipo = TipoEvento.CREACION,
+                    entidad = EntidadEvento.INGREDIENTE,
+                    descripcion = "'$limpio' se separó de '${actual.nombre}'",
+                    detalleAdicional = "'${actual.nombre}' sigue igual en sus recetas"
+                )
+                ResultadoRenombrarEnAlmacen.Listo(
+                    "Se creó '$limpio' aparte. '${actual.nombre}' no se tocó"
+                )
+            }
+        }
+    }
+
+    // --- Si va en recetas o no, desde el almacén (14.11) ---
+
+    /**
+     * A qué recetas afectaría sacar este ingrediente del catálogo de recetas.
+     *
+     * Se pregunta **antes** de mostrar la confirmación, no después de aceptarla: el aviso de 7.1
+     * sirve porque nombra las recetas, y un "¿seguro?" sin la lista es un botón que se aprieta.
+     */
+    suspend fun recetasQueUsan(ingredienteId: Long): List<Receta> =
+        ingredientes.recetasAfectadasPorBorrar(ingredienteId)
+
+    /**
+     * Cambia si algo del almacén se ofrece al armar una receta (14.11).
+     *
+     * Sandy pidió poder verlo y cambiarlo desde acá —*"debería poder ver, una vez creado en
+     * almacén, si es posible usar en ingredientes o no (y editar)"*— y agregó la consecuencia:
+     * *"si lo cambio a que no es ingrediente, se debería eliminar con advertencia"*.
+     *
+     * **Apagarlo saca de verdad sus líneas de las recetas**, no solo lo esconde del buscador. Es
+     * lo que ella pidió y además es lo coherente: dejarlo dentro de tres recetas mientras la app
+     * dice que no es un ingrediente sería sostener dos verdades a la vez, y esas recetas
+     * seguirían costando por algo que la app ya no considera un ingrediente. Por eso pasa por
+     * `confirmarEliminacion`, que es la misma puerta que borrar desde el catálogo (7.1), y por
+     * eso la pantalla tiene que haber mostrado antes [recetasQueUsan].
+     *
+     * **Encenderlo no necesita confirmación**: agregar algo a la lista de lo que se puede elegir
+     * no le quita nada a nadie.
+     */
+    suspend fun cambiarVaEnRecetas(ingredienteId: Long, vaEnRecetas: Boolean): Resultado {
+        val ingrediente = ingredientes.obtener(ingredienteId)
+            ?: return Resultado.NoSePudo("Ese ingrediente ya no existe")
+        if (ingrediente.vaEnRecetas == vaEnRecetas) return Resultado.Listo
+
+        if (!vaEnRecetas) {
+            // Saca sus líneas de las recetas. **No borra el ingrediente**: sigue en el catálogo y
+            // en el almacén, que es donde se le lleva la cuenta — lo que deja de ser es algo que
+            // se pueda poner en una receta.
+            ingredientes.quitarDeLasRecetas(ingredienteId)
+        }
+        return when (
+            val r = ingredientes.actualizar(ingrediente.copy(vaEnRecetas = vaEnRecetas))
+        ) {
+            is ResultadoGuardarIngrediente.Guardado -> {
+                historial.registrar(
+                    tipo = TipoEvento.EDICION,
+                    entidad = EntidadEvento.INGREDIENTE,
+                    descripcion = if (vaEnRecetas) {
+                        "'${ingrediente.nombre}' vuelve a ofrecerse en las recetas"
+                    } else {
+                        "'${ingrediente.nombre}' dejó de ser un ingrediente de recetas"
+                    }
+                )
+                Resultado.Listo
+            }
+            is ResultadoGuardarIngrediente.NoValido -> Resultado.NoSePudo(r.motivo)
+            is ResultadoGuardarIngrediente.YaExiste ->
+                Resultado.NoSePudo("Ya existe otro con ese nombre")
+        }
+    }
+}
+
+/** Las dos salidas de un nombre nuevo que no existe en el catálogo (14.10). */
+enum class QueHacerConElNombre {
+    /** Era el mismo y estaba mal escrito: se renombra, y con él todas sus recetas. */
+    RENOMBRAR,
+
+    /** Resultó ser otra cosa: se crea un ingrediente nuevo y el de antes queda intacto. */
+    SEPARAR
+}
+
+/**
+ * Cómo terminó un intento de renombrar algo del almacén (14.10).
+ *
+ * Es un tipo cerrado y no un `Resultado` porque el caso normal **no es ni éxito ni fracaso**: un
+ * nombre nuevo puede querer decir dos cosas muy distintas y solo Sandy sabe cuál. Lo pidió así:
+ * *"editar el nombre a otro que no es el del ingrediente debería preguntarme si deseo renombrar
+ * o romper la conexión"*.
+ */
+sealed interface ResultadoRenombrarEnAlmacen {
+    /** El nombre quedó. [comoQuedo] dice qué se hizo, para poder contarlo en la franja de abajo. */
+    data class Listo(val comoQuedo: String) : ResultadoRenombrarEnAlmacen
+
+    data class NoSePudo(val motivo: String) : ResultadoRenombrarEnAlmacen
+
+    /**
+     * El nombre nuevo no existe en el catálogo, así que hay dos caminos y hay que preguntar.
+     *
+     * - **Renombrar** el ingrediente: era el mismo y estaba mal escrito. Toca todas las recetas
+     *   que lo usan, porque el nombre es uno solo.
+     * - **Separar**: este frasco resultó ser otra cosa. Se crea un ingrediente nuevo con el
+     *   nombre escrito y la fila del almacén pasa a apuntar ahí; el de antes queda intacto con
+     *   sus recetas.
+     *
+     * [usadoEnRecetas] es lo que hace que la pregunta se pueda contestar: renombrar algo que no
+     * usa ninguna receta no tiene consecuencias, y renombrar lo que usan seis es otra decisión.
+     */
+    data class HayQueElegir(
+        val nombreViejo: String,
+        val nombreNuevo: String,
+        val usadoEnRecetas: Int
+    ) : ResultadoRenombrarEnAlmacen
 }
 
 /**

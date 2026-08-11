@@ -16,7 +16,7 @@ android {
         // La versión es `0.<fase>.<actualización>` (ver arquitectura.md, sección 15):
         //
         // - El **0** de adelante dice que la app todavía no está terminada. Cambia a 1 cuando
-        //   estén las quince fases, no antes.
+        //   estén todas las fases, no antes.
         // - El del medio es **la fase en curso**, así que el número dice en qué parte del plan
         //   estamos sin tener que ir a buscarlo.
         // - El último cuenta las actualizaciones **dentro** de esa fase, y vuelve a 00 al
@@ -25,8 +25,8 @@ android {
         // `versionCode` tiene que ser un entero que **solo suba** —Android se niega a instalar
         // encima algo con un número menor—, así que se deriva del nombre y no se lleva aparte:
         // fase × 1000 + actualización. Dos números que se escriben a mano se separan.
-        versionCode = 11_006
-        versionName = "0.11.06"
+        versionCode = 11_007
+        versionName = "0.11.07"
         // Necesario para `./gradlew :app:connectedAndroidTest` (la prueba de migración).
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

@@ -9,8 +9,15 @@ import com.sandyyera.reposteria.data.db.dao.ArticuloConValor
 import com.sandyyera.reposteria.data.db.entidades.Ingrediente
 import com.sandyyera.reposteria.data.repositorio.AlmacenRepositorio
 import com.sandyyera.reposteria.data.repositorio.ResultadoAgregarAlAlmacen
+import com.sandyyera.reposteria.data.repositorio.QueHacerConElNombre
+import com.sandyyera.reposteria.data.repositorio.RecetaRepositorio
 import com.sandyyera.reposteria.data.repositorio.Resultado
-import com.sandyyera.reposteria.logica.almacen.loQueQueda
+import com.sandyyera.reposteria.data.repositorio.ResultadoRenombrarEnAlmacen
+import com.sandyyera.reposteria.logica.almacen.RecetaHecha
+import com.sandyyera.reposteria.logica.almacen.SentidoDelMovimiento
+import com.sandyyera.reposteria.logica.almacen.VistaPreviaDelDescuento
+import com.sandyyera.reposteria.logica.almacen.avisoDeCantidadNegativa
+import com.sandyyera.reposteria.logica.almacen.resultadoDelMovimiento
 import com.sandyyera.reposteria.logica.almacen.seUsoDeMas
 import com.sandyyera.reposteria.logica.busqueda.filtrarPor
 import com.sandyyera.reposteria.logica.calculadora.UnidadDeCompra
@@ -38,7 +45,17 @@ import kotlinx.coroutines.launch
 data class FilaDeAlmacen(val articulo: ArticuloConValor) {
 
     val id: Long get() = articulo.id
+    val ingredienteId: Long? get() = articulo.ingredienteId
     val nombre: String get() = articulo.nombre
+
+    /**
+     * Si se ofrece al armar una receta (14.11).
+     *
+     * Una fila vieja sin ingrediente cuenta como que **no**: era exactamente lo que un artículo
+     * suelto significaba antes de 14.5 — algo de lo que se lleva la cuenta y que no entra en
+     * ninguna receta.
+     */
+    val vaEnRecetas: Boolean get() = articulo.vaEnRecetas ?: false
     val cantidad: Double get() = articulo.cantidad
     val detalles: String? get() = articulo.detalles
 
@@ -68,13 +85,27 @@ data class FilaDeAlmacen(val articulo: ArticuloConValor) {
 }
 
 /**
- * Cómo se está editando la cantidad de algo (14.7).
+ * Una receta en el cuadro de descontar, con cuántas tandas se escribieron (14.9).
  *
- * Las dos formas existen porque responden a dos situaciones distintas y ninguna reemplaza a la
- * otra: [MANUAL] es para cuando uno mira el frasco y estima cuánto queda; [CALCULADORA] para
- * cuando se sabe **cuánto se usó** y la resta la hace la app.
+ * [tandas] es texto y no un número porque **es un campo mientras se escribe**: guardarlo ya
+ * convertido obligaría a decidir qué significa un "1," a medio teclear, y la respuesta correcta
+ * es "todavía nada".
  */
-enum class ModoDeEdicion { MANUAL, CALCULADORA }
+data class RecetaParaDescontar(
+    val recetaId: Long,
+    val titulo: String,
+    val tandas: String = ""
+)
+
+/**
+ * Las dos formas de anotar cuánto hay (14.7 y 14.8).
+ *
+ * `MANUAL` es mirar el frasco y escribir lo que queda; `MOVIMIENTO` es decir qué pasó —entró o
+ * salió tanto— y dejar que la app haga la cuenta. **La segunda pasó a tener dos sentidos** y
+ * antes se llamaba `CALCULADORA`, cuando solo sabía restar: sumar obligaba a hacer la cuenta de
+ * cabeza y anotar el total, que es exactamente el trabajo que este cuadro existe para ahorrar.
+ */
+enum class ModoDeEdicion { MANUAL, MOVIMIENTO }
 
 /** Qué hay abierto encima del almacén. */
 sealed interface DialogoAlmacen {
@@ -210,8 +241,18 @@ sealed interface DialogoAlmacen {
         val fila: FilaDeAlmacen,
         val modo: ModoDeEdicion = ModoDeEdicion.MANUAL,
         val cantidad: String,
-        val seUso: String = "",
+        val seMovio: String = "",
+        val sentido: SentidoDelMovimiento = SentidoDelMovimiento.SALE,
         val detalles: String,
+        /**
+         * El nombre, editable desde acá (14.10).
+         *
+         * Es el del ingrediente al que apunta la fila y no un texto propio, así que cambiarlo no
+         * es una edición cualquiera: puede querer decir renombrar, unir o separar. Quién decide
+         * cuál es `AlmacenRepositorio.renombrar`.
+         */
+        val nombre: String,
+        val vaEnRecetas: Boolean,
         val guardando: Boolean = false
     ) : DialogoAlmacen {
 
@@ -219,22 +260,112 @@ sealed interface DialogoAlmacen {
         val resultado: Double?
             get() = when (modo) {
                 ModoDeEdicion.MANUAL -> textoANumero(cantidad)
-                ModoDeEdicion.CALCULADORA ->
-                    textoANumero(seUso)?.let { loQueQueda(fila.cantidad, it) }
+                ModoDeEdicion.MOVIMIENTO -> textoANumero(seMovio)
+                    ?.let { resultadoDelMovimiento(fila.cantidad, it, sentido) }
             }
 
+        /** Cómo queda leído, con su unidad, para mostrarlo antes de confirmar (8.7.1). */
+        val comoQuedaria: String?
+            get() = resultado?.let { cantidadConUnidad(it, fila.esObjeto) }
+
         /**
-         * Si en la calculadora se usó más de lo que había anotado.
+         * El aviso de que el resultado queda bajo cero, o `null`.
          *
-         * **No impide guardar**: la cuenta queda en cero igual, que es lo que de verdad hay en el
-         * estante. Se avisa para que no parezca un error de la app — o se anotó mal antes, o se
-         * usó de otro paquete, y las dos cosas son datos que conviene ver.
+         * **No impide guardar, y ese es todo el punto** (14.8). El negativo es el dato: o entró
+         * algo que no se anotó, o la receta pide más de lo que de verdad se usa. Antes esta
+         * cuenta se recortaba en cero y las dos lecturas se perdían.
+         */
+        val avisoDelResultado: String?
+            get() = resultado?.let { avisoDeCantidadNegativa(it, fila.esObjeto) }
+
+        /**
+         * Si se sacó más de lo que había anotado.
+         *
+         * **No es lo mismo que el aviso del negativo** y por eso convive con él: acá se compara
+         * contra lo que había, y en un frasco que ya venía bajo cero sacar 10 g más no es
+         * "se usó de más", es seguir hundiendo algo ya hundido.
          */
         val seFueDeRango: Boolean
-            get() = modo == ModoDeEdicion.CALCULADORA &&
-                textoANumero(seUso)?.let { seUsoDeMas(fila.cantidad, it) } == true
+            get() = modo == ModoDeEdicion.MOVIMIENTO &&
+                sentido == SentidoDelMovimiento.SALE &&
+                fila.cantidad >= 0 &&
+                textoANumero(seMovio)?.let { seUsoDeMas(fila.cantidad, it) } == true
 
-        val puedeGuardar: Boolean get() = resultado != null && !guardando
+        /** Si el nombre escrito es distinto del que tiene. Decide si hay que intentar renombrar. */
+        val nombreCambio: Boolean get() = nombre.trim() != fila.nombre.trim()
+
+        val errorNombre: String? get() = errorEnNombreEscrito(nombre)
+
+        val puedeGuardar: Boolean
+            get() = resultado != null && errorNombre == null && !guardando
+    }
+
+    /**
+     * El nombre escrito no existe en el catálogo: hay que elegir qué significa (14.10).
+     *
+     * Es un cuadro propio y no un aviso dentro del otro porque **son dos caminos que no se
+     * deshacen igual**: renombrar toca todas las recetas que usan el ingrediente, y separar no
+     * toca ninguna. Poner eso en una línea de ayuda sería esconder la decisión más grande del
+     * cuadro debajo de la más chica.
+     */
+    data class ElegirQueHacerConElNombre(
+        val volverA: CambiarCantidad,
+        val nombreViejo: String,
+        val nombreNuevo: String,
+        val usadoEnRecetas: Int,
+        val guardando: Boolean = false
+    ) : DialogoAlmacen
+
+    /**
+     * La advertencia antes de que algo deje de ser un ingrediente de recetas (14.11).
+     *
+     * Lleva **las recetas afectadas por nombre** y no un "¿seguro?": es la misma regla de 7.1, y
+     * un aviso sin la lista es un botón que se aprieta sin leer. Acá pesa más todavía, porque
+     * apagarlo saca sus líneas de esas recetas y eso les mueve el costo.
+     */
+    data class ConfirmarSalidaDeRecetas(
+        val volverA: CambiarCantidad,
+        val recetasAfectadas: List<String>,
+        val guardando: Boolean = false
+    ) : DialogoAlmacen
+
+    /**
+     * Elegir qué recetas se hicieron, para descontar lo que llevaron (14.9).
+     *
+     * **Dos momentos en un mismo cuadro y no dos cuadros**: primero se eligen las recetas y las
+     * tandas, después se mira la vista previa. Son dos pantallas de lo mismo, y separarlas
+     * obligaría a volver atrás para corregir un número que se ve mal recién en la previa.
+     *
+     * [previa] en `null` es "todavía estoy eligiendo". Es lo que distingue los dos momentos, y
+     * va acá y no en un booleano aparte porque no puede haber previa sin haberla calculado.
+     */
+    data class DescontarPorRecetas(
+        val recetas: List<RecetaParaDescontar> = emptyList(),
+        val busqueda: String = "",
+        val previa: VistaPreviaDelDescuento? = null,
+        val calculando: Boolean = false,
+        val guardando: Boolean = false
+    ) : DialogoAlmacen {
+
+        /** Las que tienen un número escrito mayor que cero. Son las que se van a descontar. */
+        val elegidas: List<RecetaParaDescontar>
+            get() = recetas.filter { (textoANumero(it.tandas) ?: 0.0) > 0 }
+
+        val visibles: List<RecetaParaDescontar>
+            get() = recetas.filtrarPor(busqueda) { it.titulo }
+
+        val puedeCalcular: Boolean get() = elegidas.isNotEmpty() && !calculando
+
+        /** "Torta de manjar y 2 más", para el historial y para el título de la previa. */
+        val comoSeLlamaLoQueSeHizo: String
+            get() {
+                val nombres = elegidas.map { it.titulo }
+                return when (nombres.size) {
+                    0 -> "nada"
+                    1 -> "'${nombres.single()}'"
+                    else -> "'${nombres.first()}' y ${nombres.size - 1} más"
+                }
+            }
     }
 
     /** La advertencia antes de sacar algo del almacén (6.3). */
@@ -285,7 +416,10 @@ data class EstadoAlmacen(
  * de texto.
  */
 class AlmacenViewModel(
-    private val almacen: AlmacenRepositorio
+    private val almacen: AlmacenRepositorio,
+    // Solo para leer la lista de recetas del cuadro de descontar (14.9). El almacén podría
+    // exponerla, pero eso sería hacerle de intermediario a una lista que no es suya.
+    private val recetas: RecetaRepositorio
 ) : ViewModel() {
 
     private val busqueda = MutableStateFlow("")
@@ -463,19 +597,35 @@ class AlmacenViewModel(
         _dialogo.value = DialogoAlmacen.CambiarCantidad(
             fila = fila,
             cantidad = formatearNumero(fila.cantidad),
-            detalles = fila.detalles.orEmpty()
+            detalles = fila.detalles.orEmpty(),
+            nombre = fila.nombre,
+            vaEnRecetas = fila.vaEnRecetas
         )
     }
 
     fun cambiarModoDeEdicion(modo: ModoDeEdicion) = enEdicion { it.copy(modo = modo) }
 
+    fun cambiarSentidoDelMovimiento(sentido: SentidoDelMovimiento) =
+        enEdicion { it.copy(sentido = sentido) }
+
     fun cambiarCantidadEnEdicion(texto: String) = enEdicion {
         it.copy(cantidad = formatearMientrasSeEscribe(texto))
     }
 
-    fun cambiarLoQueSeUso(texto: String) = enEdicion {
-        it.copy(seUso = formatearMientrasSeEscribe(texto))
+    fun cambiarLoQueSeMovio(texto: String) = enEdicion {
+        it.copy(seMovio = formatearMientrasSeEscribe(texto))
     }
+
+    fun cambiarNombreEnEdicion(texto: String) = enEdicion { it.copy(nombre = texto) }
+
+    /**
+     * Marca o desmarca "se puede usar en recetas" (14.11).
+     *
+     * **Solo cambia lo que se ve; no escribe.** Apagarlo saca de verdad sus líneas de las
+     * recetas, así que la decisión pasa por su advertencia al guardar y no por el interruptor —
+     * un cambio destructivo no puede quedar hecho por el gesto de mirar una casilla.
+     */
+    fun cambiarVaEnRecetasEnEdicion(valor: Boolean) = enEdicion { it.copy(vaEnRecetas = valor) }
 
     fun cambiarDetallesEnEdicion(texto: String) = enEdicion { it.copy(detalles = texto) }
 
@@ -504,7 +654,201 @@ class AlmacenViewModel(
                 val notas = almacen.guardarDetalles(actual.fila.id, actual.detalles)
                 if (notas is Resultado.NoSePudo) mensaje.value = notas.motivo
             }
+
+            // **El orden importa: primero lo que puede abrir otro cuadro.** La cantidad y las
+            // notas ya quedaron guardadas, así que si el nombre o el interruptor obligan a
+            // preguntar, lo que se pregunta es solo eso y no se pierde el resto de la edición.
+            if (actual.nombreCambio && intentarRenombrar(actual, confirmado = null)) return@launch
+            if (pedirConfirmacionDeRecetas(actual)) return@launch
+
+            terminarEdicion(actual)
+        }
+    }
+
+    /**
+     * Intenta el renombre. Devuelve `true` si dejó un cuadro abierto y hay que parar acá.
+     *
+     * Es `suspend` y no lanza su propia corrutina porque **va encadenado con el resto del
+     * guardado**: lanzando una aparte, el cuadro se cerraría mientras la pregunta viaja y la
+     * respuesta llegaría a una pantalla que ya se fue.
+     */
+    private suspend fun intentarRenombrar(
+        actual: DialogoAlmacen.CambiarCantidad,
+        confirmado: QueHacerConElNombre?
+    ): Boolean {
+        return when (val r = almacen.renombrar(actual.fila.id, actual.nombre, confirmado)) {
+            is ResultadoRenombrarEnAlmacen.Listo -> {
+                mensaje.value = r.comoQuedo
+                false
+            }
+
+            is ResultadoRenombrarEnAlmacen.NoSePudo -> {
+                // Vuelve al cuadro con el aviso **junto al campo** y no en la franja de abajo,
+                // que con el teclado abierto queda tapada (8.2).
+                mensaje.value = r.motivo
+                _dialogo.value = actual.copy(guardando = false)
+                true
+            }
+
+            is ResultadoRenombrarEnAlmacen.HayQueElegir -> {
+                _dialogo.value = DialogoAlmacen.ElegirQueHacerConElNombre(
+                    volverA = actual.copy(guardando = false),
+                    nombreViejo = r.nombreViejo,
+                    nombreNuevo = r.nombreNuevo,
+                    usadoEnRecetas = r.usadoEnRecetas
+                )
+                true
+            }
+        }
+    }
+
+    /** Contesta el cuadro de "renombrar o separar". */
+    fun resolverElNombre(que: QueHacerConElNombre) {
+        val cuadro = _dialogo.value as? DialogoAlmacen.ElegirQueHacerConElNombre ?: return
+        if (cuadro.guardando) return
+        _dialogo.value = cuadro.copy(guardando = true)
+
+        viewModelScope.launch {
+            if (intentarRenombrar(cuadro.volverA, confirmado = que)) return@launch
+            if (pedirConfirmacionDeRecetas(cuadro.volverA)) return@launch
+            terminarEdicion(cuadro.volverA)
+        }
+    }
+
+    /**
+     * Si apagar "va en recetas" necesita confirmarse, abre el aviso y devuelve `true`.
+     *
+     * **Solo apagar pregunta.** Encenderlo agrega algo a la lista de lo que se puede elegir y no
+     * le quita nada a nadie; apagarlo saca sus líneas de las recetas que lo usan y les mueve el
+     * costo, que es exactamente lo que 7.1 pide avisar con los nombres a la vista.
+     */
+    private suspend fun pedirConfirmacionDeRecetas(
+        actual: DialogoAlmacen.CambiarCantidad
+    ): Boolean {
+        val ingredienteId = actual.fila.ingredienteId ?: return false
+        if (actual.vaEnRecetas || actual.vaEnRecetas == actual.fila.vaEnRecetas) return false
+
+        val afectadas = almacen.recetasQueUsan(ingredienteId)
+        _dialogo.value = DialogoAlmacen.ConfirmarSalidaDeRecetas(
+            volverA = actual.copy(guardando = false),
+            recetasAfectadas = afectadas.map { it.titulo }
+        )
+        return true
+    }
+
+    /** Contesta el aviso de "deja de ser un ingrediente de recetas". */
+    fun confirmarSalidaDeRecetas() {
+        val aviso = _dialogo.value as? DialogoAlmacen.ConfirmarSalidaDeRecetas ?: return
+        if (aviso.guardando) return
+        _dialogo.value = aviso.copy(guardando = true)
+
+        viewModelScope.launch { terminarEdicion(aviso.volverA) }
+    }
+
+    /**
+     * Escribe el interruptor de recetas si cambió, y cierra.
+     *
+     * Es el final común de los tres caminos —guardar directo, después del nombre y después de la
+     * advertencia— para que cerrar el cuadro y aplicar el interruptor no queden escritos tres
+     * veces con tres criterios.
+     */
+    private suspend fun terminarEdicion(actual: DialogoAlmacen.CambiarCantidad) {
+        val ingredienteId = actual.fila.ingredienteId
+        if (ingredienteId != null && actual.vaEnRecetas != actual.fila.vaEnRecetas) {
+            val r = almacen.cambiarVaEnRecetas(ingredienteId, actual.vaEnRecetas)
+            if (r is Resultado.NoSePudo) mensaje.value = r.motivo
+        }
+        _dialogo.value = DialogoAlmacen.Ninguno
+    }
+
+    // --- Descontar lo que se gastó haciendo recetas (14.9) ---
+
+    /**
+     * Abre el cuadro con **todas** las recetas y ninguna elegida.
+     *
+     * Las recetas se leen **una sola vez** y no observadas, que es la regla de 12.2.1: mientras
+     * el cuadro está abierto, una receta que aparece o desaparece movería la lista bajo el dedo.
+     * La foto de un momento es justamente para esto.
+     */
+    fun abrirDescuentoPorRecetas() {
+        _dialogo.value = DialogoAlmacen.DescontarPorRecetas(calculando = true)
+        viewModelScope.launch {
+            val todas = recetas.obtenerTodasUnaVez()
+            _dialogo.update { actual ->
+                if (actual !is DialogoAlmacen.DescontarPorRecetas) actual
+                else actual.copy(
+                    recetas = todas.map { RecetaParaDescontar(it.id, it.titulo) },
+                    calculando = false
+                )
+            }
+        }
+    }
+
+    fun buscarRecetaParaDescontar(texto: String) = enDescuento { it.copy(busqueda = texto) }
+
+    fun cambiarTandas(recetaId: Long, texto: String) = enDescuento { actual ->
+        actual.copy(
+            recetas = actual.recetas.map { fila ->
+                if (fila.recetaId == recetaId) {
+                    fila.copy(tandas = formatearMientrasSeEscribe(texto))
+                } else {
+                    fila
+                }
+            }
+        )
+    }
+
+    /**
+     * Calcula qué pasaría, **sin escribir nada**.
+     *
+     * Es el paso que hace que esto se pueda usar sin miedo: descontar toca muchas filas de una
+     * vez y es lo más destructivo del almacén. Mirar antes, fila por fila, es lo que separa una
+     * herramienta útil de una que hay que deshacer a mano.
+     */
+    fun calcularElDescuento() {
+        val actual = _dialogo.value as? DialogoAlmacen.DescontarPorRecetas ?: return
+        if (!actual.puedeCalcular) return
+        _dialogo.value = actual.copy(calculando = true)
+
+        viewModelScope.launch {
+            val hechas = actual.elegidas.map {
+                RecetaHecha(it.recetaId, it.titulo, textoANumero(it.tandas) ?: 0.0)
+            }
+            val previa = almacen.vistaPreviaDeDescontar(hechas)
+            _dialogo.update { abierto ->
+                if (abierto !is DialogoAlmacen.DescontarPorRecetas) abierto
+                else abierto.copy(previa = previa, calculando = false)
+            }
+        }
+    }
+
+    /** Vuelve de la vista previa a elegir recetas, sin perder los números escritos. */
+    fun volverAElegirRecetas() = enDescuento { it.copy(previa = null) }
+
+    /** Escribe el descuento. Solo se llega acá desde la vista previa. */
+    fun confirmarElDescuento() {
+        val actual = _dialogo.value as? DialogoAlmacen.DescontarPorRecetas ?: return
+        val previa = actual.previa ?: return
+        if (actual.guardando) return
+        _dialogo.value = actual.copy(guardando = true)
+
+        viewModelScope.launch {
+            // Se manda la previa **ya calculada** y no las recetas otra vez: lo que se confirma
+            // tiene que ser exactamente lo que se vio.
+            val r = almacen.descontar(previa, actual.comoSeLlamaLoQueSeHizo)
+            mensaje.value = when (r) {
+                is Resultado.NoSePudo -> r.motivo
+                is Resultado.Listo -> "Se descontó del almacén"
+            }
             _dialogo.value = DialogoAlmacen.Ninguno
+        }
+    }
+
+    private fun enDescuento(
+        cambio: (DialogoAlmacen.DescontarPorRecetas) -> DialogoAlmacen.DescontarPorRecetas
+    ) {
+        _dialogo.update { actual ->
+            if (actual is DialogoAlmacen.DescontarPorRecetas) cambio(actual) else actual
         }
     }
 
@@ -550,8 +894,11 @@ class AlmacenViewModel(
     }
 
     companion object {
-        fun fabrica(almacen: AlmacenRepositorio): ViewModelProvider.Factory = viewModelFactory {
-            initializer { AlmacenViewModel(almacen) }
+        fun fabrica(
+            almacen: AlmacenRepositorio,
+            recetas: RecetaRepositorio
+        ): ViewModelProvider.Factory = viewModelFactory {
+            initializer { AlmacenViewModel(almacen, recetas) }
         }
     }
 }

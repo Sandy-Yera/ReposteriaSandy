@@ -21,6 +21,14 @@ import kotlinx.coroutines.flow.Flow
 /** El costo de una receta, para poder pedir varios de una vez. */
 data class CostoDeReceta(val recetaId: Long, val costo: Double)
 
+/**
+ * Lo que una receta lleva de un ingrediente, sumando todas sus secciones (14.9).
+ *
+ * Lleva `recetaId` porque la consulta trae varias recetas juntas: sin él no habría cómo saber
+ * cuál de las tandas multiplicar por cuántas veces se hizo cada una.
+ */
+data class GastoDeUnaReceta(val recetaId: Long, val ingredienteId: Long, val cantidad: Double)
+
 /** Los trozos de una receta, para poder pedir varios de una vez. */
 data class TrozosDeReceta(val recetaId: Long, val trozos: Int)
 
@@ -403,6 +411,33 @@ interface RecetaDao {
         """
     )
     fun observarLineasConIngrediente(recetaId: Long): Flow<List<LineaConIngrediente>>
+
+    /**
+     * Cuánto lleva **una tanda** de cada receta pedida, por ingrediente (14.9).
+     *
+     * Es la consulta del descuento por recetas hechas. Trae varias recetas de una vez a
+     * propósito: preguntando de a una, hacer cinco recetas serían cinco viajes a la base para
+     * armar un solo número por frasco.
+     *
+     * El `SUM` con `GROUP BY` no es adorno: **el mismo ingrediente puede estar en dos secciones**
+     * de la misma receta —harina en la masa y harina en el relleno— y descontar solo una de las
+     * dos dejaría el almacén alto sin que nada lo dijera.
+     *
+     * `COALESCE(ri.unidades, ri.cantidadG)` es la misma regla del costo (14.5): lo que hay que
+     * descontar es la cantidad **en su unidad**, y una caja pesa 0 g a propósito.
+     */
+    @Query(
+        """
+        SELECT rs.recetaId      AS recetaId,
+               ri.ingredienteId AS ingredienteId,
+               SUM(COALESCE(ri.unidades, ri.cantidadG)) AS cantidad
+        FROM receta_ingredientes ri
+        JOIN receta_secciones rs ON rs.id = ri.seccionId
+        WHERE rs.recetaId IN (:recetaIds)
+        GROUP BY rs.recetaId, ri.ingredienteId
+        """
+    )
+    suspend fun gastoDeVariasRecetas(recetaIds: List<Long>): List<GastoDeUnaReceta>
 
     /** Cuántos gramos suma una receta. Distinto de [costoTotalReceta]: eso suma dinero. */
     @Query(

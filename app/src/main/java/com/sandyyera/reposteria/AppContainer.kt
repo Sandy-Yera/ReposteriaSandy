@@ -86,11 +86,16 @@ class AppContainer(private val context: Context) {
      *
      * Va en un solo sentido: ingredientes no sabe nada del almacén. Lo que el almacén necesita
      * **leer** del catálogo sigue saliendo de un `JOIN` en su propia consulta.
+     *
+     * **También depende de recetas desde 14.9**, por el descuento de lo que se gastó haciendo
+     * una tanda: el único que sabe cuánto lleva una receta es ese repositorio. La flecha sigue
+     * yendo en un solo sentido — las recetas no saben que existe un almacén.
      */
     val almacen: AlmacenRepositorio by lazy {
         AlmacenRepositorio(
             dao = base.almacenDao(),
             ingredientes = ingredientes,
+            recetas = recetas,
             historial = historial
         )
     }
