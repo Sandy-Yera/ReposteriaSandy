@@ -18,6 +18,7 @@ de verdad— pero atrapa las cosas que sí se han colado hasta ahora:
    admite — dos puntos, punto, barra…
 7. Que esté versionado el esquema exportado de cada versión de la base de datos.
 8. Una función suelta de `:logica` llamada como si fuera método (`items.filtrarPor(...)`).
+9. Un método del DAO que su DAO falso no implementa (solo rompe al compilar las pruebas).
 
 Se corre solo, sin instalar nada:
 
@@ -133,6 +134,62 @@ def revisar_importaciones(rutas):
         faltan = usados - importados - por_paquete.get(paquete, set()) - CONOCIDOS - propios
         if faltan:
             print(f"  ¿sin importar? {os.path.relpath(ruta, RAIZ)}: {', '.join(sorted(faltan))}")
+            problemas += 1
+    return problemas
+
+
+def _cierre_de_parentesis(texto, desde):
+    """Dónde termina la lista de parámetros que abre en [desde]. -1 si no cierra."""
+    nivel = 0
+    for i in range(desde, len(texto)):
+        if texto[i] == "(":
+            nivel += 1
+        elif texto[i] == ")":
+            nivel -= 1
+            if nivel == 0:
+                return i
+    return -1
+
+
+def revisar_daos_falsos(rutas):
+    """10. Un método del DAO que el DAO falso no implementa.
+
+    Solo revienta al compilar **las pruebas**, así que `installDebug` pasa y el error aparece
+    recién en el `:app:test` siguiente — o sea en la máquina de Sandy y no acá. Pasó con
+    `gastoDeVariasRecetas`, agregada al `RecetaDao` y olvidada en `RecetaDaoFalso`.
+
+    Se cuentan solo los **abstractos**: un `@Transaction fun` con cuerpo no hay que
+    implementarlo, y marcarlo daría un aviso por algo que compila.
+    """
+    interfaces, falsos = {}, {}
+    for ruta in rutas:
+        codigo = sin_comentarios_ni_textos(open(ruta, encoding="utf-8").read())
+        for m in re.finditer(r"^interface\s+(\w*Dao)\b", codigo, re.M):
+            cuerpo = codigo[m.end():]
+            abstractos = set()
+            for f in re.finditer(r"\bfun\s+(?:<[^>]*>\s*)?(\w+)\s*\(", cuerpo):
+                cierre = _cierre_de_parentesis(cuerpo, f.end() - 1)
+                if cierre < 0:
+                    continue
+                resto = cuerpo[cierre + 1:cierre + 200]
+                # Después de los paréntesis puede venir `: Tipo` y después `{` (concreta),
+                # `=` (concreta) o un salto a la siguiente declaración (abstracta).
+                sin_tipo = re.sub(r"^\s*:[^{=\n]*", "", resto)
+                if not sin_tipo.lstrip().startswith(("{", "=")):
+                    abstractos.add(f.group(1))
+            interfaces[m.group(1)] = abstractos
+        for m in re.finditer(r"^class\s+(\w*DaoFalso)\b[^{]*?:\s*(\w*Dao)\b", codigo, re.M | re.S):
+            cuerpo = codigo[m.end():]
+            falsos[m.group(1)] = (
+                m.group(2),
+                set(re.findall(r"\boverride\s+(?:suspend\s+)?fun\s+(\w+)\s*\(", cuerpo))
+            )
+
+    problemas = 0
+    for nombre, (interfaz, implementados) in sorted(falsos.items()):
+        faltan = interfaces.get(interfaz, set()) - implementados
+        if faltan:
+            print(f"  {nombre} no implementa de {interfaz}: {', '.join(sorted(faltan))}")
             problemas += 1
     return problemas
 
@@ -463,6 +520,7 @@ def main():
         ("Esquemas de Room", revisar_esquemas),
         ("Aserciones de JUnit", revisar_aserciones),
         ("Llamadas con punto", revisar_llamadas_con_punto),
+        ("DAO falsos completos", revisar_daos_falsos),
     ]:
         encontrados = revision(rutas)
         estado = "ok" if encontrados == 0 else f"{encontrados} problema(s)"

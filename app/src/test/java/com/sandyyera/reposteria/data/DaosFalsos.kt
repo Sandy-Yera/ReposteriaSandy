@@ -3,6 +3,7 @@ package com.sandyyera.reposteria.data
 import com.sandyyera.reposteria.data.db.dao.AlmacenDao
 import com.sandyyera.reposteria.data.db.dao.ArticuloConValor
 import com.sandyyera.reposteria.data.db.dao.CostoDeReceta
+import com.sandyyera.reposteria.data.db.dao.GastoDeUnaReceta
 import com.sandyyera.reposteria.data.db.dao.EmpleadoDao
 import com.sandyyera.reposteria.data.db.dao.HistorialDao
 import com.sandyyera.reposteria.data.db.dao.IngredienteDao
@@ -363,6 +364,30 @@ class RecetaDaoFalso(
                     valorPorGramo = ficha.valorPorGramo
                 )
             }
+        }
+
+    /**
+     * Lo que lleva una tanda de cada receta, por ingrediente (14.9).
+     *
+     * Imita el `SUM ... GROUP BY rs.recetaId, ri.ingredienteId` de la consulta real, y esa suma
+     * es la parte que importa: **el mismo ingrediente puede estar en dos secciones** —harina en
+     * la masa y harina en el relleno— y un falso que devolviera una fila por línea dejaría pasar
+     * un descuento que solo resta la mitad.
+     *
+     * El `COALESCE(ri.unidades, ri.cantidadG)` es la misma regla del costo (14.5): lo que se
+     * descuenta es la cantidad **en su unidad**, y una caja pesa 0 g a propósito.
+     */
+    override suspend fun gastoDeVariasRecetas(recetaIds: List<Long>): List<GastoDeUnaReceta> =
+        recetaIds.distinct().flatMap { recetaId ->
+            itemsDe(recetaId)
+                .groupBy { it.ingredienteId }
+                .map { (ingredienteId, lineas) ->
+                    GastoDeUnaReceta(
+                        recetaId = recetaId,
+                        ingredienteId = ingredienteId,
+                        cantidad = lineas.sumOf { it.unidades ?: it.cantidadG }
+                    )
+                }
         }
 
     override fun observarRendimiento(recetaId: Long): Flow<RecetaRendimiento?> =
