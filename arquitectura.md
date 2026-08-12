@@ -2306,6 +2306,16 @@ El tope son 140 caracteres, y es una decisión y no un número al azar: visible 
 largo. Da para "es redondo, 22 cm de diámetro" y un par de detalles más, y no para una receta
 escondida.
 
+**La columna viaja en la migración 9 → 10, junto con las tablas de Ventas.** Estuvo un rato en una
+versión 11 propia, y el cambio no fue de opinión sino de información: mientras no se supiera si el
+celular ya había corrido la 9 → 10, tocar esa migración era peligroso —una tabla sin la columna que
+Room cree que existe deja la app sin abrir— y una versión aparte era la única opción segura, al
+precio de perder el esquema exportado de la 10 (5.5.2). Al confirmarse que la 10 nunca llegó a
+compilarse, plegarla dejó de tener riesgo y salvó ese esquema.
+
+La regla que deja: **antes de partir una migración en dos, preguntar si la primera ya corrió.** La
+respuesta cambia cuál de las dos opciones es la correcta, y es una pregunta de una línea.
+
 ## 14. Módulo Almacén (inventario)
 
 Lo pidió Sandy como *"una nueva sección en el menú principal, una que sea la primera, antes de

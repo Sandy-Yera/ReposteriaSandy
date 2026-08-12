@@ -489,6 +489,16 @@ class MigracionTest {
                 assertTrue(fila.moveToFirst())
                 assertEquals("Torta", fila.getString(0))
             }
+            // La nota del molde viaja en esta misma migración (9.6): arranca en `null`, que es
+            // "no hay nada anotado" y no una nota vacía.
+            base.execSQL(
+                "INSERT INTO moldes (id, nombre, tipoForma, ladoCm, creadoEn, actualizadoEn) " +
+                    "VALUES (1, 'Cuadrado 20', 'CUADRADO', 20.0, 1000, 1000)"
+            )
+            base.query("SELECT notas FROM moldes WHERE id = 1").use { fila ->
+                assertTrue(fila.moveToFirst())
+                assertTrue("Sin nota anotada es null, no cadena vacía", fila.isNull(0))
+            }
         }
     }
 

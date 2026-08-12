@@ -66,7 +66,7 @@ import com.sandyyera.reposteria.data.db.entidades.VentaLinea
         VentaLinea::class,
         MovimientoDeAlmacen::class
     ],
-    version = 11,
+    version = 10,
     exportSchema = true
 )
 @TypeConverters(Convertidores::class)
@@ -117,8 +117,7 @@ abstract class AppDatabase : RoomDatabase() {
                 .addCallback(SembrarDatosIniciales)
                 .addMigrations(
                     MIGRACION_1_2, MIGRACION_2_3, MIGRACION_3_4, MIGRACION_4_5, MIGRACION_5_6,
-                    MIGRACION_6_7, MIGRACION_7_8, MIGRACION_8_9, MIGRACION_9_10,
-                    MIGRACION_10_11
+                    MIGRACION_6_7, MIGRACION_7_8, MIGRACION_8_9, MIGRACION_9_10
                 )
                 .build()
 
@@ -411,12 +410,21 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         /**
-         * 9 → 10: las ventas y los movimientos del almacén (Fase 12, sección 18).
+         * 9 → 10: las ventas, los movimientos del almacén (Fase 12, sección 18) y la nota del
+         * molde (9.6).
          *
-         * **Tres tablas en una sola versión, y eso es deliberado.** Ventas y sus líneas no sirven
-         * sin los movimientos —de ellos sale el costo *real*, que es la mitad del informe— y
-         * subir dos versiones entre dos compilaciones deja a la del medio sin esquema exportado
-         * **para siempre** (5.5.2). Ya pasó dos veces, con la 6 y la 8.
+         * **Todo en una sola versión, y eso es deliberado.** Ventas y sus líneas no sirven sin los
+         * movimientos —de ellos sale el costo *real*, que es la mitad del informe— y subir dos
+         * versiones entre dos compilaciones deja a la del medio sin esquema exportado **para
+         * siempre** (5.5.2). Ya pasó dos veces, con la 6 y la 8.
+         *
+         * **La nota del molde estuvo un rato en una versión 11 y se plegó acá.** No fue un cambio
+         * de opinión sino de información: mientras no se supiera si el celular ya había corrido la
+         * 9 → 10, tocar esta migración era peligroso —una tabla sin la columna que Room cree que
+         * existe deja la app sin abrir— y una versión aparte era la única opción segura. Al
+         * confirmarse que la 10 nunca se compiló, plegarla dejó de tener riesgo y salvó su
+         * esquema. La regla que deja: **antes de partir una migración en dos, preguntar si la
+         * primera ya corrió**; la respuesta cambia cuál de las dos opciones es la correcta.
          *
          * **No toca ni una fila de lo que ya existe.** Son tablas nuevas y nada más: una base con
          * cinco años de recetas queda exactamente igual, y lo único que aparece es la sección
@@ -499,25 +507,10 @@ abstract class AppDatabase : RoomDatabase() {
                     "CREATE INDEX IF NOT EXISTS index_movimientos_almacen_fecha " +
                         "ON movimientos_almacen(fecha)"
                 )
-            }
-        }
 
-        /**
-         * 10 → 11: una nota corta en cada molde (9.6).
-         *
-         * Una columna y nada más. `TEXT` nullable **sin `DEFAULT`**, porque acá el `null`
-         * significa algo —"este molde no tiene nada anotado"— y no es lo mismo que una nota
-         * vacía; es el mismo criterio de `almacen.detalles` en la 7 → 8.
-         *
-         * **Va en su propia versión y no dentro de la 9 → 10**, aunque esa todavía no se haya
-         * instalado en ningún celular. Meterla ahí habría sido más barato —se salva el esquema de
-         * la 10, que ahora se pierde por 5.5.2— pero solo funciona si la base del celular sigue
-         * en 9: si ya corrió la 9 → 10, cambiarla por debajo deja una tabla sin la columna que
-         * Room cree que existe, y la app no abre. **El esquema perdido es un costo de pruebas; una
-         * base que no abre es un costo de datos**, y entre los dos no hay comparación.
-         */
-        val MIGRACION_10_11 = object : Migration(10, 11) {
-            override fun migrate(db: SupportSQLiteDatabase) {
+                // La nota del molde (9.6). `TEXT` nullable **sin `DEFAULT`**, porque acá el `null`
+                // significa algo —"este molde no tiene nada anotado"— y no es lo mismo que una
+                // nota vacía; es el mismo criterio de `almacen.detalles` en la 7 → 8.
                 db.execSQL("ALTER TABLE moldes ADD COLUMN notas TEXT")
             }
         }
