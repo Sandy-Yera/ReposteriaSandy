@@ -60,6 +60,39 @@ El orden importa: el `bajar` va **antes**, junto al comando de instalar, porque 
 de perder los datos ya no sirve. Lo de `listar` y `subir` va al final y breve, porque es
 para el día que haga falta y repetirlo largo cada vez es ruido.
 
+# Instrucción: los comandos van listos para copiar, sobre todo los del esquema
+
+Cuando algo tenga que hacerlo Sandy en su equipo —porque acá no hay Android SDK y el
+esquema de Room solo lo escribe el compilador—, **el mensaje tiene que traer el comando
+completo, con la ruta entera, listo para pegar**. Nada de "agrega el JSON que se generó" ni
+de rutas a medias.
+
+El caso que se repite es el esquema de la base. Después de cada compilación en que sube la
+versión de la base, va así, con el número real de la versión y no un `<n>`:
+
+```bash
+./gradlew :app:assembleDebug
+git add app/schemas/com.sandyyera.reposteria.data.db.AppDatabase/10.json
+git commit -m "Esquema de la versión 10 de la base"
+git push
+```
+
+**Por qué esto y no una explicación:** esa ruta tiene el nombre completo del paquete y no se
+escribe de memoria; el autocompletado del terminal la corta en pedazos, y el archivo aparece
+entre los sin seguimiento, perdido en el ruido de `build/`. Ya pasó dos veces —el `6.json` se
+perdió para siempre y el `8.json` estuvo meses en el disco sin subir— y las dos veces el
+motivo fue el mismo: no estaba a mano el comando exacto.
+
+**Nunca proponer `git add -f` para esto.** El `-f` pasa por encima de `.gitignore`, o sea de
+la protección que existe para que no se suban credenciales ni datos reales del negocio. Los
+esquemas en `app/schemas/` no están ignorados, así que un `git add` normal alcanza: si alguna
+vez hiciera falta forzar, eso es señal de que hay una regla mal escrita que **hay que
+arreglar**, no saltar.
+
+Después de que Sandy diga que subió algo, **verificarlo de verdad**: `git pull`, mirar que el
+archivo esté en `git ls-files`, y abrirlo para confirmar que dice la versión que corresponde.
+Que el commit exista no prueba que adentro esté lo que se esperaba.
+
 # Instrucción: registro y reutilización obligatoria de funciones y variables
 
 Aplica a todo el código de este proyecto, en cualquier archivo y lenguaje (Kotlin, Gradle scripts, etc.). Objetivo: nunca reinventar algo que ya existe por falta de contexto.
