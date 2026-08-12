@@ -19,6 +19,23 @@ data class Molde(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val nombre: String,
     @Embedded val dimensiones: DimensionesMolde,
+
+    /**
+     * Una nota corta y libre sobre este molde (9.6).
+     *
+     * Lo pidió Sandy con el caso que la dejó a medias: *"en algunos moldes exóticos son redondos,
+     * tienen un diámetro, pero no lo puedo dejar escrito y deberé medirlo para poder recalcular
+     * ciertas cosas"*. Un molde exótico se mide con agua a propósito —no hay fórmula para su
+     * volumen— pero eso no significa que no se sepa **nada** de él: su diámetro, su forma, un
+     * detalle de por dónde se desmolda.
+     *
+     * **Es texto libre y no participa de ningún cálculo**, y esa separación es todo el punto. Si
+     * el diámetro anotado acá entrara en el área, un molde de rosca volvería a calcularse como un
+     * cilindro y las cantidades de sus recetas se irían al tacho — que es exactamente lo que 9.4
+     * existe para evitar. Acá se anota para **leerlo**, no para que la app lo use.
+     */
+    val notas: String? = null,
+
     val creadoEn: Long = System.currentTimeMillis(),
     val actualizadoEn: Long = System.currentTimeMillis()
 )

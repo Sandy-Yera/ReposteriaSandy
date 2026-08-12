@@ -579,15 +579,27 @@ private fun FilaDeMolde(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Medidas.chico)
     ) {
-        Text(
-            text = molde.nombre,
-            style = MaterialTheme.typography.bodyMedium,
-            color = when {
-                enUso -> MaterialTheme.colorScheme.onSurfaceVariant
-                elegido -> MaterialTheme.colorScheme.primary
-                else -> MaterialTheme.colorScheme.onSurface
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = molde.nombre,
+                style = MaterialTheme.typography.bodyMedium,
+                color = when {
+                    enUso -> MaterialTheme.colorScheme.onSurfaceVariant
+                    elegido -> MaterialTheme.colorScheme.primary
+                    else -> MaterialTheme.colorScheme.onSurface
+                }
+            )
+            // La nota del molde también acá (9.6), que es donde de verdad hace falta: este es el
+            // momento en que se elige con qué molde se hace la receta, y "es redondo, 22 cm" es
+            // justo lo que uno necesita saber sin ir a buscarlo a la otra sección.
+            molde.notas?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
             }
-        )
+        }
         motivoNoDisponible?.let {
             Text(
                 text = it,

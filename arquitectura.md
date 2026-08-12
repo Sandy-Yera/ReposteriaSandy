@@ -2283,6 +2283,29 @@ algo es de la receta y no del molde: el mismo molde da 6 porciones de torta y 12
 Guardarlo en el molde sería un segundo lugar donde el mismo dato puede quedar viejo. Es un campo
 del cuadro, para mirar, y el texto lo dice con todas las letras.
 
+### 9.6 Una nota corta en cada molde
+
+*"En algunos moldes exóticos son redondos, tienen un diámetro, pero no lo puedo dejar escrito y
+deberé medirlo para poder recalcular ciertas cosas."*
+
+Un molde exótico se mide **con agua** a propósito: no hay fórmula para su volumen (9.1). Pero eso
+no significa que no se sepa nada de él — su diámetro, su forma, por dónde se desmolda. Ese
+conocimiento existía solo en la cabeza, y volvía a costar una medición cada vez.
+
+**Es texto libre y no participa de ningún cálculo**, y esa separación es todo el punto. Si el
+diámetro anotado ahí entrara en el área, un molde de rosca volvería a calcularse como un cilindro y
+las cantidades de sus recetas se irían al tacho — que es exactamente lo que 9.4 existe para evitar.
+Acá se anota para **leerlo**.
+
+**Se ve en la fila, no en el detalle.** Lo que se pidió fue *"un mensaje corto que sea visible"*, y
+algo que hay que abrir para leer no sirve para lo que motivó el campo. Aparece en dos lugares: el
+catálogo de moldes y **el momento de elegir el molde de una receta**, que es donde de verdad hace
+falta.
+
+El tope son 140 caracteres, y es una decisión y no un número al azar: visible es lo contrario de
+largo. Da para "es redondo, 22 cm de diámetro" y un par de detalles más, y no para una receta
+escondida.
+
 ## 14. Módulo Almacén (inventario)
 
 Lo pidió Sandy como *"una nueva sección en el menú principal, una que sea la primera, antes de

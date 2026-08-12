@@ -118,6 +118,11 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Qué hace: revisa de una vez los dos campos del formulario de un ingrediente.
 - Cómo funciona: recibe el nombre y el valor por gramo escritos, devuelve `ErroresIngrediente`. Se llama en cada tecla para habilitar o no el botón de guardar. **No reemplaza la validación del repositorio**, que es la que decide de verdad y además comprueba lo único que acá no se puede saber: si ya existe otro ingrediente con ese nombre.
 
+### LARGO_MAXIMO_NOTA ✅ IMPLEMENTADA
+- Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Validaciones.kt
+- Qué hace: cuánto puede medir una nota corta de las que se leen de un vistazo (9.6).
+- Cómo funciona: 140 caracteres, y es una decisión y no un número al azar. Lo que se pidió fue *"un mensaje corto que sea visible"*, y **visible es lo contrario de largo**: una nota de tres párrafos hay que abrirla para leerla, que es justo lo que este campo evita. Da para "es redondo, 22 cm de diámetro" y un par de detalles más, y no para una receta escondida.
+
 ### LARGO_MAXIMO_NOMBRE ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/validaciones/Validaciones.kt
 - Qué hace: cuántos caracteres puede tener cualquier nombre escrito a mano.
@@ -612,7 +617,7 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/MoldeRepositorio.kt
 - Qué hace: crea un molde, revisando antes que sirva y que no esté repetido.
 - Cómo funciona: `suspend`, recibe el nombre, la forma y el mapa de medidas **escritas**, y devuelve `ResultadoGuardarMolde`. Valida con `revisarMolde` y convierte con `dimensionesDesde`, las dos de `logica/`. Las comprobaciones van acá y no en la pantalla porque en la Fase 5 habrá una segunda forma de definir un molde —el "modo prueba" del reescalado (9.3)— y las dos tienen que comportarse igual.
-
+ Desde 9.6 recibe además `notas`, opcional y al final para que todo lo que ya la llamaba siga diciendo lo mismo. La limpia `notaLimpia`: recorta al tope de 140 y devuelve **`null` y no `""`** en blanco, porque el `null` dice "no hay nada anotado" y una nota vacía sería una que existe y está en blanco — el mismo criterio de `almacen.detalles`.
 ### MoldeRepositorio.buscarParecido ✅ IMPLEMENTADA
 - Ubicación: app/src/main/java/com/sandyyera/reposteria/data/repositorio/MoldeRepositorio.kt
 - Qué hace: busca un molde que se llame igual, para no crear repetidos.

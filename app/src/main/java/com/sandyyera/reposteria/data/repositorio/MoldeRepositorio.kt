@@ -11,6 +11,7 @@ import com.sandyyera.reposteria.logica.validaciones.CampoDeMolde
 import com.sandyyera.reposteria.logica.validaciones.ErroresMolde
 import com.sandyyera.reposteria.logica.validaciones.dimensionesDesde
 import com.sandyyera.reposteria.logica.moldes.FormaDelCorte
+import com.sandyyera.reposteria.logica.validaciones.LARGO_MAXIMO_NOTA
 import com.sandyyera.reposteria.logica.validaciones.textoANumero
 import com.sandyyera.reposteria.logica.validaciones.revisarMolde
 import kotlinx.coroutines.flow.Flow
@@ -79,7 +80,10 @@ class MoldeRepositorio(
         medidas: Map<CampoDeMolde, String>,
         corte: FormaDelCorte? = null,
         largoDeCorteTexto: String = "",
-        anchoDeCorteTexto: String = ""
+        anchoDeCorteTexto: String = "",
+        // La nota de 9.6. Va al final y con valor por defecto para que todo lo que ya llamaba a
+        // esta función siga diciendo lo mismo: es opcional de verdad, no un campo más que llenar.
+        notas: String = ""
     ): ResultadoGuardarMolde {
         val limpio = nombre.trim()
         val errores = revisarMolde(limpio, forma, medidas, largoDeCorteTexto, anchoDeCorteTexto)
@@ -99,7 +103,9 @@ class MoldeRepositorio(
         )
             ?: return ResultadoGuardarMolde.NoValido(errores)
 
-        val id = dao.insertar(Molde(nombre = limpio, dimensiones = dimensiones))
+        val id = dao.insertar(
+            Molde(nombre = limpio, dimensiones = dimensiones, notas = notaLimpia(notas))
+        )
         historial.registrar(
             tipo = TipoEvento.CREACION,
             entidad = EntidadEvento.MOLDE,
@@ -126,7 +132,8 @@ class MoldeRepositorio(
         medidas: Map<CampoDeMolde, String>,
         corte: FormaDelCorte? = null,
         largoDeCorteTexto: String = "",
-        anchoDeCorteTexto: String = ""
+        anchoDeCorteTexto: String = "",
+        notas: String = ""
     ): ResultadoGuardarMolde {
         val limpio = nombre.trim()
         val errores = revisarMolde(limpio, forma, medidas, largoDeCorteTexto, anchoDeCorteTexto)
@@ -154,6 +161,7 @@ class MoldeRepositorio(
             actual.copy(
                 nombre = limpio,
                 dimensiones = dimensiones,
+                notas = notaLimpia(notas),
                 actualizadoEn = System.currentTimeMillis()
             )
         )
@@ -205,4 +213,19 @@ class MoldeRepositorio(
         recetas.takeIf { it.isNotEmpty() }
             ?.joinToString(", ") { it.titulo }
             ?.let { "$que: $it" }
+
+    /**
+     * Deja la nota lista para guardar, o `null` si no hay ninguna (9.6).
+     *
+     * El `null` y la nota vacía **no son lo mismo** y por eso no se guarda `""`: uno dice "no hay
+     * nada anotado" y el otro sería una nota que existe y está en blanco, que la pantalla tendría
+     * que dibujar. Es el mismo criterio de `almacen.detalles`.
+     *
+     * Se recorta al tope de un nombre porque es el único tope de texto que la app tiene, y una
+     * "nota corta" que se convierte en tres párrafos deja de ser visible de un vistazo — que era
+     * justamente lo que se pidió.
+     */
+    private fun notaLimpia(notas: String): String? =
+        notas.trim().take(LARGO_MAXIMO_NOTA).ifBlank { null }
+
 }

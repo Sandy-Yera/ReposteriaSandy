@@ -73,6 +73,7 @@ data class AccionesMoldes(
     val cambiarTrozosDeLaPrueba: (String) -> Unit = {},
     val cambiarLargoDeCorte: (String) -> Unit = {},
     val cambiarAnchoDeCorte: (String) -> Unit = {},
+    val cambiarNotas: (String) -> Unit = {},
     val guardar: () -> Unit = {},
     val pedirBorrado: (Molde) -> Unit = {},
     val confirmarBorrado: () -> Unit = {},
@@ -104,6 +105,7 @@ fun ListaMoldesScreen(
             cambiarTrozosDeLaPrueba = modelo::cambiarTrozosDeLaPrueba,
             cambiarLargoDeCorte = modelo::cambiarLargoDeCorte,
             cambiarAnchoDeCorte = modelo::cambiarAnchoDeCorte,
+            cambiarNotas = modelo::cambiarNotas,
             guardar = modelo::guardar,
             pedirBorrado = modelo::pedirBorrado,
             confirmarBorrado = modelo::confirmarBorrado,
@@ -269,6 +271,17 @@ private fun TarjetaMolde(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                // La nota, **en la fila y no escondida en el detalle** (9.6). Lo que se pidió fue
+                // "un mensaje corto que sea **visible**", y algo que hay que abrir para leer no
+                // sirve para lo que motivó el campo: enterarse del diámetro de un molde exótico
+                // antes de ir a medirlo otra vez.
+                molde.notas?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
             IconButton(onClick = alBorrar) {
                 Icon(
@@ -505,6 +518,26 @@ private fun FormularioMolde(
                         )
                     }
                 }
+
+                // La nota corta (9.6). Va **al final y siempre**, en cualquier forma: lo que se
+                // anota acá no depende de la forma —"es redondo, 22 cm", "se desmolda del
+                // revés"— y esconderla en algunas dejaría un campo que aparece y desaparece.
+                OutlinedTextField(
+                    value = estado.notas,
+                    onValueChange = acciones.cambiarNotas,
+                    label = { Text("Nota (opcional)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2,
+                    supportingText = {
+                        Text(
+                            "Lo que quieras recordar de este molde: su diámetro si es exótico, " +
+                                "por dónde se desmolda, un detalle de su forma."
+                        )
+                    },
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Sentences
+                    )
+                )
 
                 estado.vistaPrevia?.let { (area, volumen) ->
                     // En vivo y no al guardar: es la única forma de darse cuenta ahí mismo

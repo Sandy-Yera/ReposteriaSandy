@@ -30,6 +30,16 @@ import kotlin.math.floor
 const val LARGO_MAXIMO_NOMBRE = 60
 
 /**
+ * Cuánto puede medir una nota corta, de las que se leen de un vistazo (9.6).
+ *
+ * 140 y no "lo que sea": lo que se pidió fue *"un mensaje corto que sea visible"*, y visible es lo
+ * contrario de largo — una nota de tres párrafos hay que abrirla para leerla, que es exactamente
+ * lo que este campo evita. Da para "es redondo, 22 cm de diámetro" y para un par de detalles más,
+ * y no para una receta escondida.
+ */
+const val LARGO_MAXIMO_NOTA = 140
+
+/**
  * Revisa cualquier nombre escrito a mano: un ingrediente, un molde, un empleado.
  *
  * Se llamaba `errorEnNombreIngrediente`, pero su cuerpo nunca tuvo nada de ingredientes y

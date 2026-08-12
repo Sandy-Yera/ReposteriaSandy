@@ -66,7 +66,7 @@ import com.sandyyera.reposteria.data.db.entidades.VentaLinea
         VentaLinea::class,
         MovimientoDeAlmacen::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = true
 )
 @TypeConverters(Convertidores::class)
@@ -117,7 +117,8 @@ abstract class AppDatabase : RoomDatabase() {
                 .addCallback(SembrarDatosIniciales)
                 .addMigrations(
                     MIGRACION_1_2, MIGRACION_2_3, MIGRACION_3_4, MIGRACION_4_5, MIGRACION_5_6,
-                    MIGRACION_6_7, MIGRACION_7_8, MIGRACION_8_9, MIGRACION_9_10
+                    MIGRACION_6_7, MIGRACION_7_8, MIGRACION_8_9, MIGRACION_9_10,
+                    MIGRACION_10_11
                 )
                 .build()
 
@@ -498,6 +499,26 @@ abstract class AppDatabase : RoomDatabase() {
                     "CREATE INDEX IF NOT EXISTS index_movimientos_almacen_fecha " +
                         "ON movimientos_almacen(fecha)"
                 )
+            }
+        }
+
+        /**
+         * 10 → 11: una nota corta en cada molde (9.6).
+         *
+         * Una columna y nada más. `TEXT` nullable **sin `DEFAULT`**, porque acá el `null`
+         * significa algo —"este molde no tiene nada anotado"— y no es lo mismo que una nota
+         * vacía; es el mismo criterio de `almacen.detalles` en la 7 → 8.
+         *
+         * **Va en su propia versión y no dentro de la 9 → 10**, aunque esa todavía no se haya
+         * instalado en ningún celular. Meterla ahí habría sido más barato —se salva el esquema de
+         * la 10, que ahora se pierde por 5.5.2— pero solo funciona si la base del celular sigue
+         * en 9: si ya corrió la 9 → 10, cambiarla por debajo deja una tabla sin la columna que
+         * Room cree que existe, y la app no abre. **El esquema perdido es un costo de pruebas; una
+         * base que no abre es un costo de datos**, y entre los dos no hay comparación.
+         */
+        val MIGRACION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE moldes ADD COLUMN notas TEXT")
             }
         }
 

@@ -83,6 +83,15 @@ sealed interface DialogoMolde {
         val corte: FormaDelCorte? = null,
         val largoDeCorte: String = "",
         val anchoDeCorte: String = "",
+
+        /**
+         * La nota corta y libre del molde (9.6).
+         *
+         * Va en el formulario como cualquier campo, pero **no entra en ninguna validación ni en
+         * ningún cálculo**: es texto para leer. Si el diámetro que se anote acá entrara en el
+         * área, un molde de rosca volvería a calcularse como un cilindro (9.4).
+         */
+        val notas: String = "",
         /**
          * En cuántos trozos se está imaginando el corte, **solo para ver cómo quedaría**.
          *
@@ -347,7 +356,8 @@ class MoldesViewModel(
             tocado = true,
             corte = d.formaDelCorte,
             largoDeCorte = d.largoDeCorteCm?.let { formatearNumero(it) }.orEmpty(),
-            anchoDeCorte = d.anchoDeCorteCm?.let { formatearNumero(it) }.orEmpty()
+            anchoDeCorte = d.anchoDeCorteCm?.let { formatearNumero(it) }.orEmpty(),
+            notas = molde.notas.orEmpty()
         )
     }
 
@@ -390,6 +400,15 @@ class MoldesViewModel(
         it.copy(anchoDeCorte = formatearMientrasSeEscribe(texto), tocado = true)
     }
 
+    /**
+     * Cambia la nota del molde (9.6).
+     *
+     * **No pone `tocado` en true**, al revés que los demás campos: `tocado` es lo que enciende los
+     * avisos de lo que falta, y una nota no puede faltar. Escribiéndola primero, un molde vacío se
+     * llenaría de errores en rojo por un campo que es opcional.
+     */
+    fun cambiarNotas(texto: String) = enFormulario { it.copy(notas = texto) }
+
     fun cambiarMedida(campo: CampoDeMolde, texto: String) = enFormulario {
         // Por el mismo camino que el resto de los campos numéricos: el punto de mil lo pone
         // el ViewModel, no el Composable.
@@ -414,7 +433,8 @@ class MoldesViewModel(
                     // trozo aparece sola.
                     corte = formulario.corteEfectivo,
                     largoDeCorteTexto = formulario.largoDeCorte,
-                    anchoDeCorteTexto = formulario.anchoDeCorte
+                    anchoDeCorteTexto = formulario.anchoDeCorte,
+                    notas = formulario.notas
                 )
             } else {
                 repositorio.actualizar(
@@ -424,7 +444,8 @@ class MoldesViewModel(
                     medidas = formulario.medidas,
                     corte = formulario.corteEfectivo,
                     largoDeCorteTexto = formulario.largoDeCorte,
-                    anchoDeCorteTexto = formulario.anchoDeCorte
+                    anchoDeCorteTexto = formulario.anchoDeCorte,
+                    notas = formulario.notas
                 )
             }
 
