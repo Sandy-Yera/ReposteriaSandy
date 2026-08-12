@@ -138,6 +138,99 @@ def revisar_importaciones(rutas):
     return problemas
 
 
+def _funciones_de_nivel_superior(codigo):
+    """Corta el archivo en funciones de nivel superior: [(nombre, cuerpo)].
+
+    Solo las que empiezan al margen izquierdo, que son las que tienen su propio alcance de
+    variables locales. Lo de adentro (lambdas, clases anidadas) queda dentro del cuerpo.
+    """
+    trozos = []
+    for m in re.finditer(r"^(?:private\s+|internal\s+)?fun\s+(?:<[^>]*>\s*)?(\w+)", codigo, re.M):
+        abre = codigo.find("{", m.end())
+        if abre < 0:
+            continue
+        nivel, fin = 0, -1
+        for i in range(abre, len(codigo)):
+            if codigo[i] == "{":
+                nivel += 1
+            elif codigo[i] == "}":
+                nivel -= 1
+                if nivel == 0:
+                    fin = i
+                    break
+        if fin > 0:
+            trozos.append((m.group(1), codigo[m.start():fin]))
+    return trozos
+
+
+def revisar_alcance_de_locales(rutas):
+    """11. Una variable local de una función usada dentro de **otra** función del mismo archivo.
+
+    Es el error de mover un bloque de código de una función a otra y no llevarse lo que usaba.
+    Pasó dos veces seguidas: `loQueVaAlAlmacen`, declarada en `NavegacionPrincipal` y usada en
+    `MenuDeSecciones`, y `acciones`, parámetro de `PasoResumen` usado en
+    `EncabezadoDelResumen`.
+
+    Solo se miran nombres que en **alguna** función de ese archivo son local o parámetro: sin
+    esa condición habría que resolver todos los imports y las herencias, y el resultado sería
+    ruido. Con ella, el nombre existe seguro y lo único en duda es dónde.
+    """
+    problemas = 0
+    for ruta in rutas:
+        codigo = sin_comentarios_ni_textos(open(ruta, encoding="utf-8").read())
+        funciones = _funciones_de_nivel_superior(codigo)
+        if len(funciones) < 2:
+            continue
+
+        # Qué declara cada función: sus parámetros y sus `val`/`var` de adentro.
+        #
+        # **Una lista y no un diccionario por nombre**: dos funciones sobrecargadas comparten
+        # nombre, y con un diccionario la segunda pisaba lo que declaraba la primera — que fue
+        # exactamente el falso positivo que apareció al escribir esta revisión.
+        declara = []
+        for nombre, cuerpo in funciones:
+            propios = set(re.findall(r"\b(?:val|var)\s+(\w+)", cuerpo))
+            # Desestructuración: `val (uno, otro) = ...` no la ve el patrón de arriba.
+            for grupo in re.findall(r"\b(?:val|var)\s*\(([\w,\s]+)\)", cuerpo):
+                propios |= {t.strip() for t in grupo.split(",") if t.strip()}
+            # **Todo lo que lleve dos puntos en el cuerpo**, y no solo la firma: eso cubre los
+            # parámetros de las funciones anidadas, que son declaraciones tan locales como un
+            # `val`. Sin esto, un `fun frase(medida: Double)` dentro de otra función daba un
+            # falso positivo por `medida`.
+            propios |= set(re.findall(r"(\w+)\s*:", cuerpo))
+            # La variable de un `for (x in ...)`, que también es local y no lleva `val`.
+            for grupo in re.findall(r"\bfor\s*\((.*?)\s+in\s", cuerpo):
+                propios |= {t.strip(" ()") for t in grupo.split(",") if t.strip(" ()")}
+            # Los de las lambdas (`{ fila ->`, `{ (a, b) ->`) y el `it` implícito.
+            # Los parámetros de una lambda: `{ fila ->`, `{ a, b ->`, `{ (a, b) ->`.
+            for grupo in re.findall(r"\{([^{}\n]*?)->", cuerpo):
+                propios |= {t.strip(" ()") for t in grupo.split(",") if t.strip(" ()").isidentifier()}
+            propios.add("it")
+            declara.append(propios)
+
+        # Un nombre es "local de alguien" si alguna función lo declara.
+        deAlguien = set()
+        for propios in declara:
+            deAlguien |= propios
+
+        for indice, (nombre, cuerpo) in enumerate(funciones):
+            cuerpo_sin_firma = cuerpo[cuerpo.find("{"):] if "{" in cuerpo else cuerpo
+            usados = set(re.findall(r"(?<![\w.])([a-z]\w*)\b", cuerpo_sin_firma))
+            # Se descartan los nombres de argumento (`texto = ...`), que no son variables.
+            argumentos = set(re.findall(r"(\w+)\s*=[^=]", cuerpo_sin_firma))
+            faltan = (usados & deAlguien) - declara[indice] - argumentos - CONOCIDOS
+            # Y lo que el archivo declara al margen (funciones, constantes) es de todos.
+            faltan -= {f for f, _ in funciones}
+            faltan -= set(re.findall(r"^(?:private\s+)?(?:val|const val)\s+(\w+)", codigo, re.M))
+            if faltan:
+                print(
+                    f"  ¿fuera de alcance? {os.path.relpath(ruta, RAIZ)} "
+                    f"en {nombre}(): {', '.join(sorted(faltan))}"
+                )
+                problemas += 1
+    return problemas
+
+
 def _cierre_de_parentesis(texto, desde):
     """Dónde termina la lista de parámetros que abre en [desde]. -1 si no cierra."""
     nivel = 0
@@ -521,6 +614,7 @@ def main():
         ("Aserciones de JUnit", revisar_aserciones),
         ("Llamadas con punto", revisar_llamadas_con_punto),
         ("DAO falsos completos", revisar_daos_falsos),
+        ("Alcance de locales", revisar_alcance_de_locales),
     ]:
         encontrados = revision(rutas)
         estado = "ok" if encontrados == 0 else f"{encontrados} problema(s)"

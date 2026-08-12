@@ -312,6 +312,8 @@ fun NavegacionPrincipal(
             contenedor = contenedor,
             seccionActual = seccionActual,
             alElegirSeccion = { seccionActual = it },
+            loQueVaAlAlmacen = loQueVaAlAlmacen,
+            alAplicarLoDelAlmacen = { loQueVaAlAlmacen = null },
             alAbrirReceta = {
                 recetaAbierta = it
                 // Cada receta que se abre empieza por el resumen: quedarse en el paso donde se
@@ -367,6 +369,16 @@ private fun MenuDeSecciones(
     seccionActual: Seccion,
     alElegirSeccion: (Seccion) -> Unit,
     alAbrirReceta: (Long) -> Unit,
+    /**
+     * Lo que una receta manda al almacén al convertirse en ingrediente (14.13), o `null`.
+     *
+     * Viaja **por parámetro y no por una variable compartida**: quien lo produce es la receta,
+     * que vive en `NavegacionPrincipal`, y quien lo consume es la sección Almacén, que se dibuja
+     * acá dentro. Son dos funciones distintas y este es el único hilo entre las dos.
+     */
+    loQueVaAlAlmacen: RecetaParaElAlmacen? = null,
+    /** Avisa que ya se aplicó, para que no se vuelva a abrir el mismo cuadro. */
+    alAplicarLoDelAlmacen: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val estadoDelMenu = rememberDrawerState(DrawerValue.Closed)
@@ -421,7 +433,7 @@ private fun MenuDeSecciones(
                 LaunchedEffect(loQueVaAlAlmacen) {
                     loQueVaAlAlmacen?.let {
                         modeloAlmacen.abrirAgregarDesdeReceta(it)
-                        loQueVaAlAlmacen = null
+                        alAplicarLoDelAlmacen()
                     }
                 }
                 ListaAlmacenScreen(modelo = modeloAlmacen, alAbrirMenu = abrirMenu)

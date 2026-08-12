@@ -162,7 +162,7 @@ fun PasoResumen(
             contentPadding = PaddingValues(Medidas.medio),
             verticalArrangement = Arrangement.spacedBy(Medidas.chico)
         ) {
-            item { EncabezadoDelResumen(resumen) }
+            item { EncabezadoDelResumen(resumen, acciones) }
 
             item {
                 ParteDelResumen(
@@ -274,7 +274,7 @@ fun PasoResumen(
 
 /** El título, lo que hay que tener hecho antes, y el aviso de las partes traídas. */
 @Composable
-private fun EncabezadoDelResumen(resumen: ResumenDeReceta) {
+private fun EncabezadoDelResumen(resumen: ResumenDeReceta, acciones: AccionesResumen) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
