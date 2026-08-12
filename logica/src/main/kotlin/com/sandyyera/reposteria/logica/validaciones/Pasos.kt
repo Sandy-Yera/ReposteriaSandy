@@ -22,6 +22,29 @@ package com.sandyyera.reposteria.logica.validaciones
 const val LARGO_MAXIMO_PASO = 1000
 
 /**
+ * Lo que dice el "antes de empezar" cuando no hay nada que tener listo de antemano (8.8).
+ *
+ * Existe como constante y no como texto suelto porque **se escribe en dos lados**: es el valor con
+ * que nace una receta y es lo que se vuelve a guardar cuando alguien vacía el campo. Con la frase
+ * copiada a mano en los dos, bastaba cambiar una para que la mitad de las recetas dijera una cosa
+ * y la otra mitad otra.
+ *
+ * Es una frase y no un vacío a propósito: el resumen la muestra como "Antes de empezar: …", y un
+ * hueco ahí se lee como que falta llenarlo. "No necesita" contesta la pregunta.
+ */
+const val SIN_PASO_PREVIO = "No necesita"
+
+/**
+ * Si el "antes de empezar" dice algo, o sea si hay algo que tener listo antes de arrancar.
+ *
+ * La frase por defecto **cuenta como vacío**: una receta recién creada dice "No necesita" porque
+ * nadie escribió nada todavía, no porque alguien haya decidido eso. Sin esto, el campo se abriría
+ * con "No necesita" escrito adentro y habría que borrarlo a mano antes de poder poner lo propio.
+ */
+fun elPasoPrevioDiceAlgo(texto: String): Boolean =
+    texto.isNotBlank() && texto.trim() != SIN_PASO_PREVIO
+
+/**
  * Si un paso dice algo, o sea si hay algo que guardar.
  *
  * Es el gemelo de `elBloqueDiceAlgo` del paso de duración, y por el mismo motivo: **un paso que

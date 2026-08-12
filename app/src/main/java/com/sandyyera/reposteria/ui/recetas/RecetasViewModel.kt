@@ -104,10 +104,20 @@ sealed interface DialogoReceta {
     data class ConfirmarBorrado(
         val receta: Receta,
         val usadaPor: List<Receta>? = null,
+        /**
+         * Los empleados que la tienen asignada, por nombre (7.1).
+         *
+         * Mismo trato que [usadaPor]: `null` es "todavía consultando" y lista vacía es "no la
+         * tiene nadie". Lo pidió Sandy — *"al borrar una receta, en la advertencia debería
+         * decirme el empleado que está asociado"*—, y tiene razón: el aviso ya decía que se van
+         * los sueldos, pero sin nombrar a nadie eso es una frase, no una advertencia. Acá sí se
+         * pierde algo de verdad, a diferencia de las recetas que la usan como parte.
+         */
+        val empleados: List<String>? = null,
         val borrando: Boolean = false
     ) : DialogoReceta {
-        /** Mientras la consulta no vuelva no se puede confirmar: faltaría la mitad del aviso. */
-        val sePuedeBorrar: Boolean get() = usadaPor != null && !borrando
+        /** Mientras alguna consulta no vuelva no se puede confirmar: faltaría parte del aviso. */
+        val sePuedeBorrar: Boolean get() = usadaPor != null && empleados != null && !borrando
     }
 }
 
@@ -274,10 +284,13 @@ class RecetasViewModel(
     fun pedirBorrado(receta: Receta) {
         _dialogo.value = DialogoReceta.ConfirmarBorrado(receta)
         viewModelScope.launch {
+            // Las dos consultas en el mismo `launch` y no en dos: son dos preguntas sobre el
+            // mismo borrado, y separarlas dejaría el cuadro completándose a saltos.
             val usadaPor = repositorio.recetasQueUsanEstaReceta(receta.id)
+            val empleados = repositorio.empleadosQueTienenLaReceta(receta.id)
             _dialogo.update { actual ->
                 if (actual is DialogoReceta.ConfirmarBorrado && actual.receta.id == receta.id) {
-                    actual.copy(usadaPor = usadaPor)
+                    actual.copy(usadaPor = usadaPor, empleados = empleados)
                 } else {
                     actual
                 }

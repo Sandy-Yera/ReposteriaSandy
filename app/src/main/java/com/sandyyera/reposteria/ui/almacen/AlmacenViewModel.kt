@@ -7,6 +7,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.sandyyera.reposteria.data.db.dao.ArticuloConValor
 import com.sandyyera.reposteria.data.db.entidades.Ingrediente
+import com.sandyyera.reposteria.data.db.entidades.Receta
 import com.sandyyera.reposteria.data.repositorio.AlmacenRepositorio
 import com.sandyyera.reposteria.data.repositorio.ResultadoAgregarAlAlmacen
 import com.sandyyera.reposteria.data.repositorio.QueHacerConElNombre
@@ -418,11 +419,48 @@ sealed interface DialogoAlmacen {
             }
     }
 
-    /** La advertencia antes de sacar algo del almacén (6.3). */
+    /**
+     * La advertencia antes de sacar algo del almacén (6.3).
+     *
+     * [tambienDelCatalogo] es lo que Sandy pidió: una casilla que se marca **antes** de apretar
+     * borrar. Marcarla no borra el ingrediente acá — borra la fila del almacén de inmediato y
+     * **abre la segunda advertencia**, la de ingredientes, con las recetas afectadas a la vista.
+     * Son dos borrados con consecuencias muy distintas, y una sola confirmación para los dos
+     * sería pedir permiso para lo chico y aprovechar para lo grande.
+     */
     data class ConfirmarBorrado(
         val fila: FilaDeAlmacen,
+        val tambienDelCatalogo: Boolean = false,
         val borrando: Boolean = false
-    ) : DialogoAlmacen
+    ) : DialogoAlmacen {
+
+        /**
+         * Si la casilla tiene sentido para esta fila.
+         *
+         * Una fila vieja sin ingrediente (ver la migración 7 → 8) no tiene nada que borrar del
+         * catálogo, y ofrecer una casilla que no hace nada es peor que no ofrecerla.
+         */
+        val sePuedeSacarDelCatalogo: Boolean get() = fila.ingredienteId != null
+    }
+
+    /**
+     * La segunda advertencia: sacarlo también del catálogo de ingredientes (7.1).
+     *
+     * Llega **después** de haber sacado la fila del almacén, y por eso el cuadro lo dice: si se
+     * cancela acá, lo del almacén ya se fue igual. Es lo que Sandy describió, y es lo honesto —
+     * la primera confirmación ya se dio.
+     *
+     * [recetasAfectadas] arranca en `null` mientras se consulta, con la misma distinción de
+     * siempre: `null` es "todavía no sé" y lista vacía es "no lo usa ninguna receta".
+     */
+    data class ConfirmarBorradoDelCatalogo(
+        val ingredienteId: Long,
+        val nombre: String,
+        val recetasAfectadas: List<Receta>? = null,
+        val borrando: Boolean = false
+    ) : DialogoAlmacen {
+        val sePuedeBorrar: Boolean get() = recetasAfectadas != null && !borrando
+    }
 }
 
 /** Lo que la pantalla del almacén necesita para dibujarse. */
@@ -1004,6 +1042,25 @@ class AlmacenViewModel(
         _dialogo.value = DialogoAlmacen.ConfirmarBorrado(fila)
     }
 
+    /** Marca o desmarca la casilla de "sacarlo también de ingredientes". */
+    fun cambiarTambienDelCatalogo(marcado: Boolean) {
+        _dialogo.update { actual ->
+            if (actual is DialogoAlmacen.ConfirmarBorrado) {
+                actual.copy(tambienDelCatalogo = marcado)
+            } else {
+                actual
+            }
+        }
+    }
+
+    /**
+     * Saca la fila del almacén, y si la casilla estaba marcada **abre la segunda advertencia**.
+     *
+     * El orden es el que pidió Sandy y es el correcto: lo del almacén se hace de inmediato porque
+     * ya se confirmó y no le hace nada a ninguna receta. Lo del catálogo espera a su propio aviso,
+     * con las recetas afectadas a la vista (7.1), porque eso sí saca el ingrediente de todas las
+     * recetas que lo usan.
+     */
     fun confirmarBorrado() {
         val aviso = _dialogo.value as? DialogoAlmacen.ConfirmarBorrado ?: return
         if (aviso.borrando) return
@@ -1012,8 +1069,55 @@ class AlmacenViewModel(
 
         viewModelScope.launch {
             almacen.eliminar(aviso.fila.id, aviso.fila.nombre)
+            val ingredienteId = aviso.fila.ingredienteId
+            if (!aviso.tambienDelCatalogo || ingredienteId == null) {
+                _dialogo.value = DialogoAlmacen.Ninguno
+                mensaje.value = "Se sacó '${aviso.fila.nombre}' del almacén"
+                return@launch
+            }
+
+            // El mensaje del primer borrado **no se muestra todavía**: encima va a haber otro
+            // cuadro, y una franja que aparece debajo de un diálogo no se lee. Se dice al final,
+            // contando las dos cosas que pasaron.
+            _dialogo.value = DialogoAlmacen.ConfirmarBorradoDelCatalogo(
+                ingredienteId = ingredienteId,
+                nombre = aviso.fila.nombre
+            )
+            val afectadas = almacen.recetasQueUsan(ingredienteId)
+            _dialogo.update { actual ->
+                if (actual is DialogoAlmacen.ConfirmarBorradoDelCatalogo &&
+                    actual.ingredienteId == ingredienteId
+                ) {
+                    actual.copy(recetasAfectadas = afectadas)
+                } else {
+                    actual
+                }
+            }
+        }
+    }
+
+    /** Cierra la segunda advertencia sin borrar del catálogo. Lo del almacén ya se hizo. */
+    fun cancelarBorradoDelCatalogo() {
+        val aviso = _dialogo.value as? DialogoAlmacen.ConfirmarBorradoDelCatalogo ?: return
+        _dialogo.value = DialogoAlmacen.Ninguno
+        mensaje.value = "Se sacó '${aviso.nombre}' del almacén. Sigue en ingredientes"
+    }
+
+    /** Borra de verdad del catálogo, ya con la segunda advertencia aceptada (7.1). */
+    fun confirmarBorradoDelCatalogo() {
+        val aviso = _dialogo.value as? DialogoAlmacen.ConfirmarBorradoDelCatalogo ?: return
+        if (!aviso.sePuedeBorrar) return
+
+        _dialogo.value = aviso.copy(borrando = true)
+
+        viewModelScope.launch {
+            val r = almacen.eliminarDelCatalogo(aviso.ingredienteId)
             _dialogo.value = DialogoAlmacen.Ninguno
-            mensaje.value = "Se sacó '${aviso.fila.nombre}' del almacén"
+            mensaje.value = when (r) {
+                is Resultado.NoSePudo -> r.motivo
+                is Resultado.Listo ->
+                    "Se sacó '${aviso.nombre}' del almacén y de ingredientes"
+            }
         }
     }
 

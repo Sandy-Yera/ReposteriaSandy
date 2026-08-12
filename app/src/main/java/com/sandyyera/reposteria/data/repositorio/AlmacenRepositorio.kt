@@ -271,6 +271,28 @@ class AlmacenRepositorio(
         return Resultado.Listo
     }
 
+    /**
+     * Borra el ingrediente del catálogo, ya con la advertencia aceptada (7.1).
+     *
+     * Es el **segundo paso** de "sacar del almacén y además del catálogo", que Sandy pidió como
+     * una sola intención con dos confirmaciones: *"una opción que debo marcar antes de apretar
+     * borrar… y al apretar borrar saltará el aviso de ingredientes, mostrando las recetas
+     * afectadas"*. Son dos borrados distintos y por eso son dos preguntas: sacar del almacén no
+     * le hace nada a ninguna receta, y esto se lleva el ingrediente de todas las que lo usan.
+     *
+     * **No pregunta nada**: quién decide es la pantalla, que tiene que haber mostrado antes
+     * [recetasQueUsan] con los nombres a la vista. Acá solo se escribe, igual que en
+     * [cambiarQueEs].
+     */
+    suspend fun eliminarDelCatalogo(ingredienteId: Long): Resultado {
+        ingredientes.obtener(ingredienteId)
+            ?: return Resultado.NoSePudo("Ese ingrediente ya no existe")
+        // El historial y el barrido de las líneas de receta los hace el repositorio de
+        // ingredientes: es su tabla. Duplicarlo acá dejaría dos versiones del mismo borrado.
+        ingredientes.confirmarEliminacion(ingredienteId)
+        return Resultado.Listo
+    }
+
     // --- Descontar lo que se gastó haciendo recetas (14.9) ---
 
     /**

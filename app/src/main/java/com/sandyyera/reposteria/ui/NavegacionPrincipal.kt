@@ -27,6 +27,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.sandyyera.reposteria.AppContainer
@@ -383,6 +384,20 @@ private fun MenuDeSecciones(
 ) {
     val estadoDelMenu = rememberDrawerState(DrawerValue.Closed)
     val alcance = rememberCoroutineScope()
+    val gestorDeFoco = LocalFocusManager.current
+
+    // **Abrir el menú saca del campo de texto.** Lo reportó Sandy: con el teclado abierto y el
+    // cursor parpadeando en un campo, el menú se dibuja encima pero el cursor se sigue viendo a
+    // través, y el teclado sigue ahí ocupando media pantalla. El menú tapa lo que se estaba
+    // escribiendo, así que seguir "dentro" del campo es una mentira de la pantalla.
+    //
+    // Va colgado de que el menú **esté abierto** y no del botón que lo abre: también se abre
+    // arrastrando desde el borde, y ahí no pasa por el botón. Además, soltar el foco dispara el
+    // guardado de lo que se estaba escribiendo —los campos guardan al salir—, así que abrir el
+    // menú con algo a medio escribir lo deja guardado en vez de perderlo.
+    LaunchedEffect(estadoDelMenu.isOpen) {
+        if (estadoDelMenu.isOpen) gestorDeFoco.clearFocus(force = true)
+    }
 
     ModalNavigationDrawer(
         modifier = modifier,

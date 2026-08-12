@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -17,7 +18,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -49,7 +49,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sandyyera.reposteria.data.repositorio.RecetaDeUnEmpleado
 import com.sandyyera.reposteria.logica.formato.AVISO_MONTOS_REDONDEADOS
 import com.sandyyera.reposteria.logica.formato.formatearMonto
-import com.sandyyera.reposteria.logica.precios.DatosCalculoReceta
 import com.sandyyera.reposteria.logica.sueldos.SimulacionMultipleResultado
 import com.sandyyera.reposteria.ui.componentes.BarraBusqueda
 import com.sandyyera.reposteria.ui.componentes.CampoNumerico
@@ -70,7 +69,7 @@ data class AccionesEmpleados(
     val confirmarBorrado: () -> Unit = {},
     val abrirElegirReceta: () -> Unit = {},
     val buscarReceta: (String) -> Unit = {},
-    val elegirReceta: (DatosCalculoReceta) -> Unit = {},
+    val elegirReceta: (RecetaCandidata) -> Unit = {},
     val abrirSueldo: (RecetaDeUnEmpleado) -> Unit = {},
     val cambiarGanancia: (String) -> Unit = {},
     val guardarSueldo: () -> Unit = {},
@@ -256,7 +255,19 @@ private fun FilaEmpleado(fila: FilaDeEmpleado, acciones: AccionesEmpleados) {
                     .weight(1f)
                     .padding(vertical = Medidas.chico)
             ) {
-                Text(fila.nombre, style = MaterialTheme.typography.titleMedium)
+                // **Tocar el nombre lo cambia**, como el título de una receta y el del almacén
+                // (8.4.1 #3). El lápiz se fue: lo que se hace seguido se toca.
+                Text(
+                    text = fila.nombre,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = Medidas.objetivoTactil)
+                        .clickable(enabled = fila.noSePuedeTocar == null) {
+                            acciones.abrirRenombre(fila)
+                        }
+                        .wrapContentHeight()
+                )
                 fila.noSePuedeTocar?.let {
                     Text(
                         text = "El modelo estándar de reparto",
@@ -266,9 +277,6 @@ private fun FilaEmpleado(fila: FilaDeEmpleado, acciones: AccionesEmpleados) {
                 }
             }
             if (fila.noSePuedeTocar == null) {
-                IconButton(onClick = { acciones.abrirRenombre(fila) }) {
-                    Icon(Icons.Default.Edit, contentDescription = "Cambiar el nombre")
-                }
                 IconButton(onClick = { acciones.pedirBorrado(fila) }) {
                     Icon(
                         imageVector = Icons.Default.Delete,
@@ -386,7 +394,10 @@ private fun FilaDeSueldo(receta: RecetaDeUnEmpleado, acciones: AccionesEmpleados
                 valor = receta.sueldo.unidadesPorDia.toString(),
                 alCambiar = { acciones.cambiarUnidades(receta, it) },
                 etiqueta = "¿Cuántas vende al día?",
-                ayuda = "Para la simulación de abajo"
+                // Se dice que es de acá y no de la receta: la receta tiene su propia simulación
+                // (8.7) y son dos preguntas distintas — cuánto vende **este** empleado no es
+                // cuánto se vende en total.
+                ayuda = "Solo para la simulación de este empleado. No cambia la de la receta."
             )
         }
     }
@@ -425,11 +436,20 @@ private fun Cifra(nombre: String, valor: Double, destacada: Boolean = false) {
 @Composable
 private fun SimulacionDelEmpleado(estado: EstadoDelEmpleado, acciones: AccionesEmpleados) {
     Text("Si vendiera eso todos los días", style = MaterialTheme.typography.titleMedium)
+    Text(
+        // **De quién es cada cifra**, que era la confusión: las tres columnas conviven en la
+        // misma tarjeta y sin decirlo no se sabe cuál mirar.
+        text = "Son las tres partes del mismo total: lo que entra, lo que te queda a ti y lo " +
+            "que se lleva el empleado.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
 
     CampoNumerico(
         valor = estado.diasPorSemana,
         alCambiar = acciones.cambiarDias,
-        etiqueta = "¿Cuántos días a la semana?"
+        etiqueta = "¿Cuántos días a la semana?",
+        error = estado.errorDias
     )
 
     val r: SimulacionMultipleResultado = estado.simulacion ?: return
@@ -542,13 +562,17 @@ private fun DialogoNombreRepetido(
         title = { Text("Ya tienes un '${estado.nombre}'") },
         text = {
             Text(
-                "Si son dos personas distintas está bien tener los dos. Si te equivocaste, " +
-                    "cancela y ponle otro nombre."
+                // **Se dice cómo va a quedar**, no solo que se puede. Dos filas con el mismo
+                // nombre son imposibles de distinguir en la lista, así que el que entra se
+                // numera — y eso hay que saberlo antes de aceptar, no descubrirlo después.
+                "Si son dos personas distintas está bien tener los dos: el nuevo va a quedar " +
+                    "como '${estado.comoQuedaria}' para poder distinguirlos. Si te " +
+                    "equivocaste, cancela y ponle otro nombre."
             )
         },
         confirmButton = {
             TextButton(onClick = acciones.crearAunqueSeRepita, enabled = !estado.guardando) {
-                Text("Son dos personas")
+                Text("Crear '${estado.comoQuedaria}'")
             }
         },
         dismissButton = {
@@ -601,8 +625,13 @@ private fun DialogoDelSueldo(estado: DialogoEmpleados.Sueldo, acciones: Acciones
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Medidas.chico)) {
                 Text(
-                    text = "Esta receta deja $${estado.comoSeLeeElTope} de ganancia. Eso es lo " +
-                        "más que se puede llevar: el resto lo necesitas para cubrir el costo.",
+                    // **De dónde sale ese número**, que era la duda: es el precio marcado como
+                    // referencia hoy, y ese se cambia en el paso de Gastos de la receta. Sin
+                    // decirlo, el tope parece una regla fija de la app.
+                    text = "Con el precio que la receta tiene marcado ahora, deja " +
+                        "$${estado.comoSeLeeElTope} de ganancia. Eso es lo más que se puede " +
+                        "llevar: el resto lo necesitas para cubrir el costo. Si cambias el " +
+                        "precio de referencia en la receta, este tope cambia.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -647,16 +676,33 @@ private fun DialogoElegirReceta(
                         alCambiar = acciones.buscarReceta,
                         marcador = "Buscar receta"
                     )
-                    estado.visibles.forEach { datos ->
-                        Text(
-                            text = datos.titulo,
-                            style = MaterialTheme.typography.bodyLarge,
+                    estado.visibles.forEach { candidata ->
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(min = Medidas.objetivoTactil)
-                                .clickable { acciones.elegirReceta(datos) }
+                                .clickable(enabled = candidata.sePuede) {
+                                    acciones.elegirReceta(candidata)
+                                }
                                 .padding(vertical = Medidas.chico)
-                        )
+                        ) {
+                            Text(
+                                text = candidata.datos.titulo,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = if (candidata.sePuede) MaterialTheme.colorScheme.onSurface
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            // **El motivo a la vista y no al tocarla.** Antes elegir una receta
+                            // sin precio cerraba la app: las fórmulas del reparto lanzan con
+                            // razón cuando no hay ganancia que repartir.
+                            candidata.porQueNo?.let {
+                                Text(
+                                    text = it,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
                     }
                 }
             }

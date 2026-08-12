@@ -96,7 +96,10 @@ data class AccionesAlmacen(
     val volverAElegirRecetas: () -> Unit = {},
     val confirmarElDescuento: () -> Unit = {},
     val pedirBorrado: (FilaDeAlmacen) -> Unit = {},
+    val cambiarTambienDelCatalogo: (Boolean) -> Unit = {},
     val confirmarBorrado: () -> Unit = {},
+    val cancelarBorradoDelCatalogo: () -> Unit = {},
+    val confirmarBorradoDelCatalogo: () -> Unit = {},
     val cerrarDialogo: () -> Unit = {},
     val mensajeMostrado: () -> Unit = {},
     val abrirMenu: () -> Unit = {}
@@ -150,7 +153,10 @@ fun ListaAlmacenScreen(
             cambiarDetallesEnEdicion = modelo::cambiarDetallesEnEdicion,
             guardarEdicion = modelo::guardarEdicion,
             pedirBorrado = modelo::pedirBorrado,
+            cambiarTambienDelCatalogo = modelo::cambiarTambienDelCatalogo,
             confirmarBorrado = modelo::confirmarBorrado,
+            cancelarBorradoDelCatalogo = modelo::cancelarBorradoDelCatalogo,
+            confirmarBorradoDelCatalogo = modelo::confirmarBorradoDelCatalogo,
             cerrarDialogo = modelo::cerrarDialogo,
             mensajeMostrado = modelo::mensajeMostrado,
             abrirMenu = alAbrirMenu
@@ -281,28 +287,166 @@ fun ListaAlmacen(
         is DialogoAlmacen.Renombrar -> DialogoRenombrarEnAlmacen(dialogo, acciones)
         is DialogoAlmacen.ConfirmarCambiosEnRecetas -> DialogoCambiosEnRecetas(dialogo, acciones)
         is DialogoAlmacen.DescontarPorRecetas -> DialogoDescontarPorRecetas(dialogo, acciones)
-        is DialogoAlmacen.ConfirmarBorrado -> AlertDialog(
-            onDismissRequest = acciones.cerrarDialogo,
-            title = { Text("¿Sacar '${dialogo.fila.nombre}' del almacén?") },
-            text = {
+        is DialogoAlmacen.ConfirmarBorrado -> ConfirmarSacarDelAlmacen(dialogo, acciones)
+        is DialogoAlmacen.ConfirmarBorradoDelCatalogo ->
+            ConfirmarSacarDelCatalogo(dialogo, acciones)
+    }
+    }
+}
+
+/**
+ * La primera advertencia: sacar algo del almacén (6.3).
+ *
+ * Trae la casilla que pidió Sandy — *"una opción que debo marcar, antes de apretar borrar, que sea
+ * 'eliminar de ingredientes'"*—. Marcarla **no borra el ingrediente acá**: hace que al confirmar,
+ * después de sacar la fila del almacén, salte la segunda advertencia con las recetas afectadas.
+ *
+ * Que sean dos preguntas y no una no es ceremonia de más: sacar del almacén no le hace nada a
+ * ninguna receta, y borrar del catálogo se lleva el ingrediente de todas las que lo usan. Una sola
+ * confirmación para las dos sería pedir permiso para lo chico y aprovechar para lo grande.
+ *
+ * El texto de arriba **cambia según la casilla**, en vez de quedarse diciendo "sigue en
+ * Ingredientes" mientras la casilla marcada dice lo contrario.
+ */
+@Composable
+private fun ConfirmarSacarDelAlmacen(
+    dialogo: DialogoAlmacen.ConfirmarBorrado,
+    acciones: AccionesAlmacen
+) {
+    AlertDialog(
+        onDismissRequest = acciones.cerrarDialogo,
+        title = { Text("¿Sacar '${dialogo.fila.nombre}' del almacén?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Medidas.chico)) {
                 // Se dice con todas las letras: son dos cosas distintas y confundirlas haría
                 // creer que esto borra un ingrediente en uso.
                 Text(
-                    "Deja de llevarle la cuenta acá. Sigue en Ingredientes y en las recetas " +
-                        "que lo usan."
+                    if (dialogo.tambienDelCatalogo) {
+                        "Deja de llevarle la cuenta acá. Como marcaste la casilla, después va " +
+                            "a preguntar por el ingrediente, mostrando a qué recetas afecta."
+                    } else {
+                        "Deja de llevarle la cuenta acá. Sigue en Ingredientes y en las " +
+                            "recetas que lo usan."
+                    }
                 )
-            },
-            confirmButton = {
-                TextButton(onClick = acciones.confirmarBorrado, enabled = !dialogo.borrando) {
-                    Text(text = "Sacar", color = MaterialTheme.colorScheme.error)
+
+                if (dialogo.sePuedeSacarDelCatalogo) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = Medidas.objetivoTactil)
+                            // Toda la fila cambia la casilla, no solo el cuadradito: es un
+                            // blanco de 20 dp contra uno de ancho completo (8.4.1).
+                            .clickable {
+                                acciones.cambiarTambienDelCatalogo(!dialogo.tambienDelCatalogo)
+                            },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = dialogo.tambienDelCatalogo,
+                            onCheckedChange = acciones.cambiarTambienDelCatalogo
+                        )
+                        Text(
+                            text = "Eliminarlo también de Ingredientes",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = acciones.cerrarDialogo) { Text("Cancelar") }
             }
-        )
-    }
-    }
+        },
+        confirmButton = {
+            TextButton(onClick = acciones.confirmarBorrado, enabled = !dialogo.borrando) {
+                Text(text = "Sacar", color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = acciones.cerrarDialogo) { Text("Cancelar") }
+        }
+    )
+}
+
+/**
+ * La segunda advertencia: borrarlo también del catálogo de ingredientes (7.1).
+ *
+ * Es la misma advertencia que la de la pantalla de Ingredientes y por la misma regla: **nombra las
+ * recetas afectadas**. Un "¿seguro?" sin la lista es un botón que se aprieta.
+ *
+ * Dice arriba que lo del almacén ya se hizo, porque es verdad y porque cancelar acá no lo
+ * devuelve. Esconderlo dejaría creer que "Cancelar" deshace las dos cosas.
+ *
+ * El cuerpo entero se desplaza y los botones quedan fijos, igual que en el borrado de una receta:
+ * con veinte recetas afectadas, un cuadro que crece se lleva el botón fuera de la pantalla.
+ */
+@Composable
+private fun ConfirmarSacarDelCatalogo(
+    dialogo: DialogoAlmacen.ConfirmarBorradoDelCatalogo,
+    acciones: AccionesAlmacen
+) {
+    AlertDialog(
+        onDismissRequest = acciones.cancelarBorradoDelCatalogo,
+        title = { Text("¿Eliminar '${dialogo.nombre}' de Ingredientes?") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(Medidas.chico)
+            ) {
+                Text(
+                    text = "Del almacén ya salió. Esto es lo otro: sacarlo del catálogo y de " +
+                        "las recetas que lo usan.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+
+                when {
+                    // `null` es "todavía consultando" y no "no lo usa ninguna": mientras tanto el
+                    // botón está apagado, porque confirmar sería confirmar media advertencia.
+                    dialogo.recetasAfectadas == null -> Text(
+                        text = "Revisando a qué recetas afecta…",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    dialogo.recetasAfectadas.isNotEmpty() -> Column {
+                        Text(
+                            text = "Lo pierden ${dialogo.recetasAfectadas.size} " +
+                                if (dialogo.recetasAfectadas.size == 1) "receta:" else "recetas:",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        dialogo.recetasAfectadas.forEach {
+                            Text(
+                                text = "• ${it.titulo}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                    else -> Text(
+                        text = "No lo usa ninguna receta.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Text(
+                    text = "Esto no se puede deshacer.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = acciones.confirmarBorradoDelCatalogo,
+                enabled = dialogo.sePuedeBorrar
+            ) {
+                Text(text = "Eliminar", color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = acciones.cancelarBorradoDelCatalogo) {
+                Text("Dejarlo en Ingredientes")
+            }
+        }
+    )
 }
 
 /**

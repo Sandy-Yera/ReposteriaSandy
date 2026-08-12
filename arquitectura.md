@@ -216,7 +216,10 @@ data class Ingrediente(
 data class Receta(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val titulo: String,
-    val pasoPrevio: String = "No necesita",
+    // Se escribe en el paso "Pasos", arriba de todo, y se muestra en el resumen. El
+    // valor por defecto es la constante SIN_PASO_PREVIO, y vaciar el campo lo repone
+    // en vez de guardar una cadena vacía (8.8).
+    val pasoPrevio: String = SIN_PASO_PREVIO,
     val creadoEn: Long = System.currentTimeMillis(),
     val actualizadoEn: Long = System.currentTimeMillis()
 )
@@ -888,6 +891,21 @@ suspend fun confirmarEliminacionIngrediente(ingredienteId: Long) {
 
 `costoTotalReceta()` (8.2) ya se calcula en vivo sumando los ingredientes vigentes de cada receta — al desaparecer la fila `RecetaIngrediente`, el costo total de cada receta afectada se reajusta solo, sin ningún paso adicional.
 
+#### 7.1.1 La misma regla, en las otras dos advertencias
+
+**Borrar una receta nombra a los empleados que la tienen asignada.** La cascada de
+`empleado_receta_sueldo` se los lleva, y hasta acá el aviso lo decía en general — "y los sueldos
+que algún empleado tuviera asignados"—, que es una frase y no una advertencia. Lo pidió Sandy, y
+de paso previó el caso feo: *"si tuviera 100 empleados distintos, el mensaje sería largo… al menos
+que el campo del mensaje permita bajar"*. Por eso el cuerpo entero del cuadro se desplaza y los
+botones se quedan quietos: con muchos nombres, un cuadro que crece deja "Eliminar" justo donde
+estaba "Cancelar".
+
+**Sacar algo del almacén puede encadenar el borrado del ingrediente** (14.10.1), y son **dos
+confirmaciones y no una**: sacar del almacén no le hace nada a ninguna receta, borrar del catálogo
+se lleva el ingrediente de todas las que lo usan. Una sola confirmación para los dos sería pedir
+permiso para lo chico y aprovechar para lo grande.
+
 ### 7.2 Calculadora de valor por gramo
 
 Un botón aparte en la misma sección de Ingredientes, abajo de "+ Nuevo ingrediente". Resuelve la cuenta que hay que rehacer cada vez que sube un precio: se compró un paquete por tanto y trae tanto, y lo que la app necesita es cuánto cuesta **un gramo**.
@@ -1519,6 +1537,30 @@ que `:ingredientes:` muestra los ingredientes de la receta. Los dos van con **do
 adelante y atrás**: equivocarse escribiendo eso es raro, y así el atajo no se dispara solo
 al escribir la palabra en medio de una frase. El título elegido se resalta como encabezado,
 no como un paso más.
+
+##### "Antes de empezar", arriba del todo
+
+El primer campo de la pantalla no es un paso: es lo que hay que **tener listo antes** del paso 1
+—un bizcocho del día anterior, el almíbar frío—. Se guarda en `Receta.pasoPrevio` y se muestra en
+el encabezado del resumen (8.10).
+
+Existió desde el principio en los datos y **no había cómo cambiarlo**, hasta que Sandy preguntó:
+*"'Antes de empezar: no necesita'. ¿Qué es eso que sale en recetas? No veo cómo cambiarlo o de
+dónde viene."* Un dato que se muestra en todas las recetas y no se puede tocar es la peor mezcla:
+parece que la app decidió algo por uno.
+
+Tres reglas, y las tres salen de que **no es un paso**:
+
+- **Vaciarlo repone "No necesita"** (`SIN_PASO_PREVIO`) en vez de guardar el vacío. El resumen
+  dice "Antes de empezar: …" y un hueco ahí se lee como un dato que falta, no como un "no hace
+  falta". Es lo contrario de un paso, que vaciarlo **sí** significa borrarlo.
+- **La frase por defecto no se escribe dentro del campo**, se muestra como sugerencia
+  (`elPasoPrevioDiceAlgo`). Una receta nueva la trae porque nadie escribió nada, no porque alguien
+  lo haya decidido; escrita adentro habría que borrarla a mano cada vez.
+- **Se mide con la misma regla que un paso** (`errorEnTextoDePaso`). Es un texto de receta del
+  mismo tamaño, y un segundo tope que nadie mira se separa del primero a la primera.
+
+Guarda **al salir del campo**, como los pasos y la duración.
 
 ##### Crear una parte desde acá
 
@@ -2634,6 +2676,27 @@ mismo que allá: con el área pegada al texto hay que apuntarle justo, y al lado
 Renombrar **no cuesta perder lo que se estaba editando**: el cuadro vuelve al de la cantidad con lo
 que hubiera escrito sin guardar, y con el nombre nuevo ya en el encabezado.
 
+#### 14.10.1 Sacarlo del almacén **y** de ingredientes
+
+Sacar algo del almacén nunca tocó el catálogo, y eso sigue siendo lo correcto por defecto: dejar de
+llevarle la cuenta a la harina no es dejar de usarla en las recetas. Pero el caso de arriba —el
+typo que crea un ingrediente de más— deja el otro camino: a veces lo que uno quiere es que
+desaparezca de las dos partes.
+
+Sandy lo pidió como **una casilla que se marca antes de apretar borrar**, no como un segundo botón:
+*"al apretar borrar, en este caso, borrará del almacén de inmediato, pero también saltará el aviso
+de ingredientes, mostrando así las recetas afectadas y todo, y al apretar borrar allí, ahí se
+eliminará de ingredientes"*. Se implementó exactamente así, y el orden importa:
+
+1. **La fila del almacén se va de inmediato**, porque eso ya se confirmó y no afecta a ninguna
+   receta.
+2. **Recién ahí aparece la segunda advertencia**, la de 7.1, con las recetas afectadas por nombre.
+3. Cancelar en la segunda **no devuelve la fila del almacén**, y el cuadro lo dice arriba. Esconderlo
+   dejaría creer que "Cancelar" deshace las dos cosas.
+
+La casilla **solo aparece si la fila tiene ingrediente**: las filas viejas de antes de la migración
+7 → 8 no lo tienen, y una casilla que no hace nada es peor que ninguna.
+
 ### 14.11 Ver y cambiar **qué es**: la unidad y si va en recetas
 
 *"Debería poder ver, una vez creado en almacén, si es posible usar en ingredientes o no (y
@@ -2979,6 +3042,14 @@ sin leerlo, así que conviene que enseñe la dependencia.
 Las secciones viven en un `enum Seccion` y **solo se agregan cuando existe su pantalla**. Nada de dejarlas puestas en gris a la espera: una opción deshabilitada se toca igual y parece que la app se rompió.
 
 Cada sección conserva su ViewModel al cambiar de una a otra —`viewModel()` los guarda en la Activity, no en el Composable—, así que ir a Recetas y volver a Ingredientes no borra lo que había escrito en el buscador. La sección elegida va en `rememberSaveable` para que girar el teléfono no devuelva al principio.
+
+**Abrir el menú saca del campo de texto.** Lo reportó Sandy: con el teclado abierto y el cursor
+parpadeando, el menú se dibujaba encima pero *"se ve todavía el puntero, traspasando así el
+menú"*, y el teclado seguía ocupando media pantalla. Se resuelve con un `clearFocus(force = true)`
+colgado de que el menú **esté abierto** —no del botón que lo abre, porque también se abre
+arrastrando desde el borde—. Arregla de paso algo que no se pidió: soltar el foco dispara el
+guardado de los campos que guardan al salir (pasos, duración, "antes de empezar"), así que abrir el
+menú con algo a medio escribir ahora lo deja guardado en vez de perderlo.
 
 ### 12.2 Buscador
 

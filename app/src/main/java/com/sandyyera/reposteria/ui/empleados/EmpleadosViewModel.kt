@@ -11,10 +11,12 @@ import com.sandyyera.reposteria.data.repositorio.RecetaDeUnEmpleado
 import com.sandyyera.reposteria.data.repositorio.Resultado
 import com.sandyyera.reposteria.data.repositorio.ResultadoCrearEmpleado
 import com.sandyyera.reposteria.logica.busqueda.filtrarPor
+import com.sandyyera.reposteria.logica.partes.nombreSinChocar
 import com.sandyyera.reposteria.logica.formato.formatearMientrasSeEscribe
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.logica.precios.DatosCalculoReceta
 import com.sandyyera.reposteria.logica.sueldos.SimulacionMultipleResultado
+import com.sandyyera.reposteria.logica.validaciones.errorEnDiasPorSemanaTexto
 import com.sandyyera.reposteria.logica.validaciones.errorEnGananciaDelEmpleado
 import com.sandyyera.reposteria.logica.validaciones.errorEnNombreEscrito
 import com.sandyyera.reposteria.logica.validaciones.motivoParaNoTocarAlEmpleado
@@ -41,6 +43,17 @@ data class FilaDeEmpleado(val empleado: Empleado) {
 
     /** El motivo por el que no se puede renombrar ni borrar, o `null` si sí se puede. */
     val noSePuedeTocar: String? get() = motivoParaNoTocarAlEmpleado(empleado.esGenerico)
+}
+
+/**
+ * Una receta ofrecida para asignarle a un empleado, con el motivo si no se puede.
+ *
+ * **El motivo viaja con ella y no se calcula al tocarla**, que es el arreglo del cierre de la
+ * app: sin precio no hay ganancia que repartir y las fórmulas lanzan con razón, así que la
+ * pantalla tiene que saberlo **antes** de ofrecerla.
+ */
+data class RecetaCandidata(val datos: DatosCalculoReceta, val porQueNo: String?) {
+    val sePuede: Boolean get() = porQueNo == null
 }
 
 /** Qué hay abierto encima de la sección de empleados. */
@@ -77,6 +90,18 @@ sealed interface DialogoEmpleados {
      */
     data class ConfirmarNombreRepetido(
         val nombre: String,
+        /**
+         * Cómo va a quedar el nuevo: "Ana 2", "Ana 3"…
+         *
+         * **Se dice antes de aceptar y no se descubre después.** Dos filas con el mismo nombre
+         * son imposibles de distinguir en la lista, así que el que entra se numera; que eso pase
+         * sin avisar es lo que hacía riesgoso el "sí, son dos personas".
+         *
+         * Lo resuelve `nombreSinChocar`, la misma función que bautiza una sección traída (8.11.2):
+         * es el mismo problema —un nombre que ya está ocupado— y escribirlo de nuevo acá serían
+         * dos numeraciones que se separan.
+         */
+        val comoQuedaria: String,
         val guardando: Boolean = false
     ) : DialogoEmpleados
 
@@ -124,12 +149,12 @@ sealed interface DialogoEmpleados {
      * receta que aparece movería la lista bajo el dedo.
      */
     data class ElegirReceta(
-        val candidatas: List<DatosCalculoReceta> = emptyList(),
+        val candidatas: List<RecetaCandidata> = emptyList(),
         val busqueda: String = "",
         val cargando: Boolean = true
     ) : DialogoEmpleados {
-        val visibles: List<DatosCalculoReceta>
-            get() = filtrarPor(candidatas, busqueda) { it.titulo }
+        val visibles: List<RecetaCandidata>
+            get() = filtrarPor(candidatas, busqueda) { it.datos.titulo }
     }
 }
 
@@ -163,6 +188,14 @@ data class EstadoDelEmpleado(
     val cargando: Boolean = true
 ) {
     val sinRecetas: Boolean get() = !cargando && recetas.isEmpty()
+
+    /**
+     * El aviso de los días, o `null`.
+     *
+     * Faltaba: se podían escribir 9 días a la semana, que no existen. La regla ya vivía en
+     * `logica/validaciones` y solo no se estaba mirando.
+     */
+    val errorDias: String? get() = errorEnDiasPorSemanaTexto(diasPorSemana)
 
     /** Cuántas de sus recetas no se pueden repartir todavía. La pantalla lo dice arriba. */
     val cuantasSinReparto: Int get() = recetas.count { it.sinRepartoPosible }
@@ -301,7 +334,13 @@ class EmpleadosViewModel(
                     _dialogo.value = actual.copy(guardando = false, rechazo = r.motivo)
                 // **No es un rechazo**: dos personas pueden llamarse igual. Se pregunta.
                 is ResultadoCrearEmpleado.YaExiste ->
-                    _dialogo.value = DialogoEmpleados.ConfirmarNombreRepetido(actual.nombre)
+                    _dialogo.value = DialogoEmpleados.ConfirmarNombreRepetido(
+                        nombre = actual.nombre,
+                        comoQuedaria = nombreSinChocar(
+                            actual.nombre,
+                            estado.value.empleados.map { it.nombre }
+                        )
+                    )
             }
         }
     }
@@ -313,7 +352,9 @@ class EmpleadosViewModel(
         _dialogo.value = aviso.copy(guardando = true)
 
         viewModelScope.launch {
-            empleados.crearAunqueSeRepita(aviso.nombre)
+            // Se crea **con el nombre numerado** y no con el repetido: es lo que el aviso acaba
+            // de prometer, y guardar el otro dejaría dos filas idénticas en la lista.
+            empleados.crearAunqueSeRepita(aviso.comoQuedaria)
             _dialogo.value = DialogoEmpleados.Ninguno
         }
     }
@@ -354,7 +395,9 @@ class EmpleadosViewModel(
         val cual = abierto.value ?: return
         _dialogo.value = DialogoEmpleados.ElegirReceta()
         viewModelScope.launch {
-            val candidatas = empleados.recetasQueFaltanPor(cual)
+            val candidatas = empleados.recetasQueFaltanPor(cual).map {
+                RecetaCandidata(it, empleados.porQueNoSeLePuedeAsignar(it))
+            }
             _dialogo.update { actual ->
                 if (actual is DialogoEmpleados.ElegirReceta) {
                     actual.copy(candidatas = candidatas, cargando = false)
@@ -372,11 +415,17 @@ class EmpleadosViewModel(
     }
 
     /** Elegida la receta, se pasa a escribir cuánto se lleva. Son dos preguntas, no una. */
-    fun elegirReceta(datos: DatosCalculoReceta) {
+    fun elegirReceta(candidata: RecetaCandidata) {
+        // La que no se puede **ni siquiera abre el cuadro**: el motivo ya está a la vista en la
+        // lista, y calcular su tope sería justo lo que cerraba la app.
+        candidata.porQueNo?.let {
+            mensaje.value = it
+            return
+        }
         _dialogo.value = DialogoEmpleados.Sueldo(
-            recetaId = datos.recetaId,
-            titulo = datos.titulo,
-            gananciaTotal = gananciaDe(datos),
+            recetaId = candidata.datos.recetaId,
+            titulo = candidata.datos.titulo,
+            gananciaTotal = gananciaDe(candidata.datos),
             ganancia = ""
         )
     }
@@ -431,6 +480,9 @@ class EmpleadosViewModel(
 
     fun cambiarDias(texto: String) {
         dias.value = texto
+        // No se guarda lo que no pasa la validación: el aviso ya lo dice el estado, y escribir
+        // un 9 dejaría una semana de nueve días guardada en la base.
+        if (errorEnDiasPorSemanaTexto(texto) != null) return
         val cuantos = texto.toIntOrNull() ?: return
         val cual = abierto.value ?: return
         viewModelScope.launch {
@@ -447,7 +499,9 @@ class EmpleadosViewModel(
         val cuantas = texto.toIntOrNull() ?: return
         val cual = abierto.value ?: return
         viewModelScope.launch {
-            empleados.guardarUnidadesEnLaSimulacion(cual, receta.recetaId, cuantas)
+            // A la **misma fila que muestra la pantalla**: escribir en la tabla de detalle y leer
+            // de la del sueldo era el bug de "el campo no cambia nada".
+            empleados.guardarUnidadesPorDia(cual, receta.recetaId, cuantas)
             recalcularSimulacion()
         }
     }

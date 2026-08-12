@@ -259,6 +259,24 @@ interface RecetaDao {
     suspend fun recetasQueUsanLaReceta(recetaId: Long): List<Receta>
 
     /**
+     * Los nombres de los empleados que tienen esta receta asignada.
+     *
+     * Alimenta la advertencia previa a borrarla (7.1): la cascada de `empleado_receta_sueldo` se
+     * lleva esos sueldos, y el aviso tiene que nombrar a quién le pasa. Devuelve **nombres y no
+     * empleados enteros** porque es todo lo que el aviso muestra, y traer la fila completa
+     * invitaría a mostrar cosas del empleado en un cuadro que habla de una receta.
+     */
+    @Query(
+        """
+        SELECT DISTINCT e.nombre FROM empleados e
+        JOIN empleado_receta_sueldo s ON s.empleadoId = e.id
+        WHERE s.recetaId = :recetaId
+        ORDER BY e.nombre COLLATE NOCASE
+        """
+    )
+    suspend fun empleadosConLaReceta(recetaId: Long): List<String>
+
+    /**
      * Los ids de las recetas que ya están hechas de partes: el tope de un solo nivel (8.11.6).
      *
      * Mira las **dos** columnas y no solo el id, porque una sección cuya original fue borrada

@@ -56,6 +56,7 @@ import com.sandyyera.reposteria.logica.moldes.nombreDelCorte
 import com.sandyyera.reposteria.logica.moldes.medidasEnTexto
 import com.sandyyera.reposteria.logica.moldes.TipoFormaMolde
 import com.sandyyera.reposteria.logica.validaciones.CampoDeMolde
+import com.sandyyera.reposteria.logica.validaciones.LARGO_MAXIMO_NOTA
 import com.sandyyera.reposteria.ui.componentes.BarraBusqueda
 import com.sandyyera.reposteria.ui.componentes.CampoNumerico
 import com.sandyyera.reposteria.ui.theme.Medidas
@@ -528,10 +529,20 @@ private fun FormularioMolde(
                     label = { Text("Nota (opcional)") },
                     modifier = Modifier.fillMaxWidth(),
                     minLines = 2,
+                    // **El tope se dice mientras se escribe, no al guardar.** Antes se podía
+                    // escribir sin fin y el recorte aparecía al releer lo guardado, o sea
+                    // después de perder el texto de más.
+                    isError = estado.notasSePasan,
                     supportingText = {
                         Text(
-                            "Lo que quieras recordar de este molde: su diámetro si es exótico, " +
-                                "por dónde se desmolda, un detalle de su forma."
+                            if (estado.notasSePasan) {
+                                "Te pasaste por ${estado.notas.trim().length - LARGO_MAXIMO_NOTA}: " +
+                                    "se va a recortar a $LARGO_MAXIMO_NOTA caracteres."
+                            } else {
+                                "Lo que quieras recordar de este molde: su diámetro si es " +
+                                    "exótico, por dónde se desmolda. " +
+                                    "${estado.notas.trim().length}/$LARGO_MAXIMO_NOTA"
+                            }
                         )
                     },
                     keyboardOptions = KeyboardOptions(

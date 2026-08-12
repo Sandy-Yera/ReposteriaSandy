@@ -310,15 +310,24 @@ private fun EncabezadoDelResumen(resumen: ResumenDeReceta, acciones: AccionesRes
             // ya terminada, y acá está justo debajo del costo del que sale su precio.
             val paraElAlmacen = resumen.paraElAlmacen
             if (paraElAlmacen != null) {
+                // **Sin `contentPadding` en cero.** Lo tenía para alinear el texto con lo de
+                // arriba, y el borde redondeado del botón se comía las primeras y últimas
+                // letras: un botón ancho con texto pegado al canto no tiene dónde curvarse.
+                // Se recupera la alineación con un relleno propio, que no toca el canto.
                 TextButton(
                     onClick = { acciones.guardarComoIngrediente(paraElAlmacen) },
-                    contentPadding = PaddingValues(0.dp)
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(
+                        horizontal = Medidas.medio,
+                        vertical = Medidas.chico
+                    )
                 ) {
                     Text(
                         text = "Guardarla como ingrediente " +
                             "($${formatearNumero(resumen.valorPorGramoComoIngrediente ?: 0.0)} " +
                             "por gramo)",
-                        style = MaterialTheme.typography.bodyMedium
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             } else {

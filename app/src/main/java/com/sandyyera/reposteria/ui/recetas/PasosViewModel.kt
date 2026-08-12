@@ -19,6 +19,8 @@ import com.sandyyera.reposteria.logica.partes.reemplazarAtajo
 import com.sandyyera.reposteria.logica.partes.titulosDisponibles
 import com.sandyyera.reposteria.data.repositorio.IngredientesDeSeccion
 import com.sandyyera.reposteria.data.repositorio.ParteTraida
+import com.sandyyera.reposteria.logica.validaciones.SIN_PASO_PREVIO
+import com.sandyyera.reposteria.logica.validaciones.elPasoPrevioDiceAlgo
 import com.sandyyera.reposteria.logica.validaciones.errorEnNombreSeccion
 import com.sandyyera.reposteria.logica.validaciones.errorEnTextoDePaso
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -139,6 +141,16 @@ data class EstadoPasos(
     val bloques: List<BloqueDePasos> = emptyList(),
     val secciones: List<SeccionParaTitulo> = emptyList(),
     /**
+     * Lo que hay que tener listo **antes** de empezar, tal como está guardado (8.8).
+     *
+     * Llega [SIN_PASO_PREVIO] cuando nadie escribió nada, que es como nace toda receta. La
+     * pantalla no lo muestra dentro del campo —ver [textoDelPasoPrevio]—: sería un texto que hay
+     * que borrar antes de poder escribir el propio.
+     */
+    val pasoPrevio: String = SIN_PASO_PREVIO,
+    /** Lo que se está escribiendo en ese campo, o `null` si no se ha tocado. */
+    val pasoPrevioEnElCampo: String? = null,
+    /**
      * Lo que se está escribiendo, por paso.
      *
      * Va **aparte de los bloques** y no dentro de ellos: los bloques vienen de la base, y un
@@ -155,6 +167,21 @@ data class EstadoPasos(
 ) {
     /** El texto que hay que dibujar en un paso: lo que se está escribiendo, o lo guardado. */
     fun textoDe(paso: PasoParaMostrar): String = escribiendo[paso.id] ?: paso.texto
+
+    /**
+     * El texto que va dentro del campo "antes de empezar".
+     *
+     * La frase por defecto se muestra **como sugerencia y no como contenido** (`elPasoPrevioDiceAlgo`):
+     * escrita adentro habría que borrarla a mano cada vez, y una app que hace borrar algo antes
+     * de dejar escribir es una app que cobra peaje por su propio valor por defecto.
+     */
+    val textoDelPasoPrevio: String
+        get() = pasoPrevioEnElCampo
+            ?: pasoPrevio.takeIf { elPasoPrevioDiceAlgo(it) }
+            ?: ""
+
+    /** Lo que esté mal en el "antes de empezar", o `null`. Se mide como un paso más. */
+    val errorDelPasoPrevio: String? get() = errorEnTextoDePaso(textoDelPasoPrevio)
 
     /**
      * De qué receta vinieron los pasos de este bloque, o `null` si son propios (8.11.2).
@@ -216,6 +243,14 @@ class PasosViewModel(
 
     private val mensaje = MutableStateFlow<String?>(null)
     private val escribiendo = MutableStateFlow<Map<Long, String>>(emptyMap())
+    /**
+     * Lo que se está tecleando en el "antes de empezar", o `null` si no se tocó.
+     *
+     * Va aparte de [escribiendo] y no como una entrada más del mapa: ese mapa está indexado por
+     * id de paso, y el "antes de empezar" **no es un paso** — no tiene fila, no se numera y no se
+     * borra al vaciarlo. Meterlo ahí con un id inventado obligaría a esquivarlo en cada recorrido.
+     */
+    private val pasoPrevioEscribiendo = MutableStateFlow<String?>(null)
     private val _dialogo = MutableStateFlow<DialogoPasos>(DialogoPasos.Ninguno)
 
     private val _cursorPedido = MutableStateFlow<PosicionDelCursor?>(null)
@@ -232,20 +267,42 @@ class PasosViewModel(
      */
     val cursorPedido: StateFlow<PosicionDelCursor?> = _cursorPedido
 
-    val estado: StateFlow<EstadoPasos> = combine(
+    /**
+     * Los pasos junto con la receta misma, en un solo flujo.
+     *
+     * Van juntos **porque `combine` acepta cinco flujos y hacían falta seis**. Se emparejan estos
+     * dos y no otros porque son los dos que vienen de la misma pantalla de la base y cambian
+     * juntos: escribir el "antes de empezar" toca la fila de la receta, y escribir un paso toca
+     * la tabla de pasos. Anidar el `combine` es preferible a la versión de `vararg`, donde los
+     * cinco valores llegan como `Array<Any?>` y hay que convertirlos a mano uno por uno.
+     */
+    private val pasosYReceta = combine(
         recetas.observarPasos(recetaId),
-        recetas.observarSecciones(recetaId),
+        recetas.observarReceta(recetaId)
+    ) { pasos, receta -> pasos to receta }
+
+    /** Los dos campos que se están escribiendo, juntos por lo mismo que [pasosYReceta]. */
+    private val loQueSeEscribe = combine(
         escribiendo,
+        pasoPrevioEscribiendo
+    ) { enLosPasos, enElPasoPrevio -> enLosPasos to enElPasoPrevio }
+
+    val estado: StateFlow<EstadoPasos> = combine(
+        pasosYReceta,
+        recetas.observarSecciones(recetaId),
+        loQueSeEscribe,
         // Se **observa** y no se pide una vez: traer una receta desde el paso de cantidades
         // tiene que marcar sus bloques acá sin que nadie se acuerde de refrescar.
         recetas.observarPartesDe(recetaId),
         mensaje
-    ) { pasos, secciones, enElCampo, partesTraidas, mensajeActual ->
+    ) { (pasos, receta), secciones, enElCampo, partesTraidas, mensajeActual ->
         val paraTitulo = secciones.map { SeccionParaTitulo(it.id, it.nombreSeccion) }
         EstadoPasos(
             bloques = bloquesDePasos(pasos.map { it.aMostrar() }, paraTitulo),
             secciones = paraTitulo,
-            escribiendo = enElCampo,
+            pasoPrevio = receta?.pasoPrevio ?: SIN_PASO_PREVIO,
+            pasoPrevioEnElCampo = enElCampo.second,
+            escribiendo = enElCampo.first,
             partes = partesTraidas,
             mensaje = mensajeActual,
             cargando = false
@@ -468,6 +525,36 @@ class PasosViewModel(
     /** Guarda todo lo pendiente. La pantalla la llama al desmontarse. */
     fun guardarTodoLoPendiente() {
         escribiendo.value.keys.toList().forEach { guardarPaso(it) }
+        guardarPasoPrevio()
+    }
+
+    // --- El "antes de empezar" (8.8) ---
+
+    /** Lo que se teclea en el "antes de empezar". No toca la base: eso pasa al salir del campo. */
+    fun cambiarPasoPrevio(texto: String) {
+        pasoPrevioEscribiendo.value = texto
+    }
+
+    /**
+     * Guarda el "antes de empezar". La pantalla lo llama **al salir del campo y al desmontarse**.
+     *
+     * Mismo trato que un paso: se guarda al abandonar el campo y no en cada tecla. Vaciarlo no es
+     * un error —repone la frase por defecto, que es lo que hace el repositorio— así que no hay
+     * nada que confirmar.
+     */
+    fun guardarPasoPrevio() {
+        val texto = pasoPrevioEscribiendo.value ?: return
+        viewModelScope.launch {
+            when (val r = recetas.guardarPasoPrevio(recetaId, texto)) {
+                // Se suelta el campo recién cuando la base lo aceptó: soltarlo antes dejaría el
+                // campo mostrando lo guardado —lo viejo— por un instante, que es el parpadeo que
+                // 12.2.1 evita en los demás campos.
+                is Resultado.Listo -> pasoPrevioEscribiendo.value = null
+                // El texto se conserva: si se descartara, el aviso diría qué está mal sobre algo
+                // que ya no se puede ver ni corregir.
+                is Resultado.NoSePudo -> mensaje.value = r.motivo
+            }
+        }
     }
 
     // --- El título ---

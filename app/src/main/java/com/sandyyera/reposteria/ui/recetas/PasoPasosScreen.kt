@@ -68,6 +68,8 @@ import com.sandyyera.reposteria.ui.theme.ReposteriaTheme
 data class AccionesPasos(
     val agregarPaso: () -> Unit = {},
     val cambiarTexto: (Long, String, Int) -> Unit = { _, _, _ -> },
+    val cambiarPasoPrevio: (String) -> Unit = {},
+    val guardarPasoPrevio: () -> Unit = {},
     val guardarPaso: (Long) -> Unit = {},
     val guardarTodoLoPendiente: () -> Unit = {},
     val abrirElegirTitulo: (Long) -> Unit = {},
@@ -109,6 +111,8 @@ fun PasoPasosScreen(
         AccionesPasos(
             agregarPaso = modelo::agregarPaso,
             cambiarTexto = modelo::cambiarTexto,
+            cambiarPasoPrevio = modelo::cambiarPasoPrevio,
+            guardarPasoPrevio = modelo::guardarPasoPrevio,
             guardarPaso = modelo::guardarPaso,
             guardarTodoLoPendiente = modelo::guardarTodoLoPendiente,
             abrirElegirTitulo = { modelo.abrirElegirTitulo(it) },
@@ -224,6 +228,8 @@ fun PasoPasos(
             verticalArrangement = Arrangement.spacedBy(Medidas.chico)
         ) {
             item { BotonDeAtajos(acciones.abrirAyuda) }
+
+            item { CampoDeAntesDeEmpezar(estado, acciones) }
 
             if (!estado.cargando && estado.vacio) {
                 item { TodaviaSinPasos() }
@@ -424,6 +430,60 @@ private fun FilaDeUnPaso(
                 )
             }
         }
+    }
+}
+
+/**
+ * El campo del "antes de empezar" (8.8).
+ *
+ * Lo pidió Sandy después de ver la frase en el resumen: *"'Antes de empezar: no necesita'. ¿Qué es
+ * eso que sale en recetas? No veo cómo cambiarlo o de dónde viene"*. La frase existía desde el
+ * principio y **nada la escribía**: era un dato que se mostraba y no se podía tocar, que es la
+ * peor mezcla — parece que la app decidió algo por uno.
+ *
+ * Va acá arriba y no en un cuadro aparte porque es lo primero de la preparación: lo que hay que
+ * tener listo antes del paso 1. Y es un campo abierto, como los pasos, por lo mismo que ellos —
+ * esconderlo detrás de un diálogo sería un toque de más para algo que se escribe escribiendo.
+ *
+ * Guarda **al salir del campo**, igual que un paso. Vaciarlo repone "No necesita", así que no hay
+ * forma de dejar la receta con el renglón a medias.
+ */
+@Composable
+private fun CampoDeAntesDeEmpezar(estado: EstadoPasos, acciones: AccionesPasos) {
+    var teniaFoco by remember { mutableStateOf(false) }
+    val error = estado.errorDelPasoPrevio
+
+    Column(modifier = Modifier.padding(bottom = Medidas.chico)) {
+        Text(
+            text = "Antes de empezar",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.primary
+        )
+        OutlinedTextField(
+            value = estado.textoDelPasoPrevio,
+            onValueChange = acciones.cambiarPasoPrevio,
+            // El valor por defecto se muestra **como sugerencia y no escrito adentro**: así se ve
+            // qué dice hoy la receta sin tener que borrarlo para poner lo propio.
+            placeholder = { Text("No necesita nada listo de antes") },
+            supportingText = {
+                Text(
+                    text = error
+                        ?: "Lo que hay que tener hecho antes del paso 1: un bizcocho del día " +
+                            "anterior, el almíbar frío. Si lo dejas vacío dice 'No necesita'.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            },
+            isError = error != null,
+            keyboardOptions = KeyboardOptions(
+                capitalization = KeyboardCapitalization.Sentences
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .onFocusChanged { foco ->
+                    if (teniaFoco && !foco.isFocused) acciones.guardarPasoPrevio()
+                    teniaFoco = foco.isFocused
+                }
+        )
     }
 }
 

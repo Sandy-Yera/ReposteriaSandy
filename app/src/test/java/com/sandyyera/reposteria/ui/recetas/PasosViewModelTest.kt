@@ -8,6 +8,7 @@ import com.sandyyera.reposteria.data.repositorio.HistorialRepositorio
 import com.sandyyera.reposteria.data.repositorio.RecetaRepositorio
 import com.sandyyera.reposteria.data.repositorio.ResultadoCrearReceta
 import com.sandyyera.reposteria.logica.partes.TITULO_GENERAL
+import com.sandyyera.reposteria.logica.validaciones.SIN_PASO_PREVIO
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
@@ -668,5 +669,61 @@ class PasosViewModelTest {
         val bloques = modelo.estado.value.bloques
         assertEquals(2, bloques.size)
         assertEquals(TITULO_GENERAL, bloques.last().encabezado)
+    }
+
+    // --- El "antes de empezar" (8.8) ---
+
+    @Test
+    fun `el campo del antes de empezar arranca vacio, no con la frase por defecto`() =
+        probar { modelo ->
+            // La receta dice "No necesita" porque nadie escribió nada. Mostrarlo dentro del
+            // campo obligaría a borrarlo a mano antes de poder poner lo propio.
+            assertEquals(SIN_PASO_PREVIO, modelo.estado.value.pasoPrevio)
+            assertEquals("", modelo.estado.value.textoDelPasoPrevio)
+        }
+
+    @Test
+    fun `escribir el antes de empezar lo guarda al salir del campo`() = probar { modelo ->
+        modelo.cambiarPasoPrevio("Tener el bizcocho del día anterior")
+        // Mientras se escribe, la base todavía no lo tiene: se guarda al abandonar el campo,
+        // igual que un paso.
+        assertEquals(SIN_PASO_PREVIO, modelo.estado.value.pasoPrevio)
+
+        modelo.guardarPasoPrevio()
+        advanceUntilIdle()
+
+        assertEquals("Tener el bizcocho del día anterior", modelo.estado.value.pasoPrevio)
+        assertEquals(
+            "Y el campo ya muestra lo guardado",
+            "Tener el bizcocho del día anterior",
+            modelo.estado.value.textoDelPasoPrevio
+        )
+    }
+
+    @Test
+    fun `vaciar el antes de empezar repone la frase por defecto`() = probar { modelo ->
+        modelo.cambiarPasoPrevio("Almíbar frío")
+        modelo.guardarPasoPrevio()
+        advanceUntilIdle()
+
+        modelo.cambiarPasoPrevio("")
+        modelo.guardarPasoPrevio()
+        advanceUntilIdle()
+
+        // Guardarlo en blanco dejaría el resumen diciendo "Antes de empezar:" y nada más, que
+        // se lee como un dato que falta en vez de como un "no hace falta".
+        assertEquals(SIN_PASO_PREVIO, modelo.estado.value.pasoPrevio)
+        assertEquals("", modelo.estado.value.textoDelPasoPrevio)
+    }
+
+    @Test
+    fun `irse de la pantalla guarda tambien el antes de empezar`() = probar { modelo ->
+        // `guardarTodoLoPendiente` se llama al desmontarse. Si se olvidara de este campo, lo
+        // escrito se perdería al cambiar de paso de la receta sin tocar nada más.
+        modelo.cambiarPasoPrevio("Manjar hecho")
+        modelo.guardarTodoLoPendiente()
+        advanceUntilIdle()
+
+        assertEquals("Manjar hecho", modelo.estado.value.pasoPrevio)
     }
 }

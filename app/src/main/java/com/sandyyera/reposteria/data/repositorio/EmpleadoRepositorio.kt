@@ -38,8 +38,16 @@ data class RecetaDeUnEmpleado(
     val recetaId: Long get() = sueldo.recetaId
     val titulo: String get() = datos.titulo
 
-    /** Lo que gana la receta entera, que es el tope de lo que el empleado puede llevarse. */
-    val gananciaTotal: Double get() = ingresoBruto(datos) - datos.costoTotal
+    /**
+     * Lo que gana la receta entera, que es el tope de lo que el empleado puede llevarse.
+     *
+     * **Contesta 0 y no revienta cuando la receta se quedó sin precio.** `ingresoBruto` lanza con
+     * razón ahí —no hay nada que repartir— pero esto se lee para *dibujar* una fila que ya
+     * existe: una receta puede perder su precio después de asignada, y ahí lo que corresponde es
+     * mostrar el aviso de `sinRepartoPosible`, no cerrar la app.
+     */
+    val gananciaTotal: Double
+        get() = if (!datos.tienePrecio) 0.0 else ingresoBruto(datos) - datos.costoTotal
 
     /** Si esta receta no se puede repartir todavía, y la pantalla tiene que decir por qué. */
     val sinRepartoPosible: Boolean get() = reparto == null
@@ -211,6 +219,25 @@ class EmpleadoRepositorio(
      * ingrediente ya puesto en una sección — lo que se ofrece y lo que se acepta no pueden
      * discrepar. El índice único de la tabla lo hace cumplir de verdad; esto es para no chocar.
      */
+    /**
+     * Por qué una receta no se le puede asignar a un empleado, o `null` si sí se puede.
+     *
+     * **Es el arreglo de un cierre de la app.** Sin precio no hay ganancia que repartir, y todo
+     * lo que cuelga de eso —`ingresoBruto`, `precioDeReferencia`— lanza excepción con razón. La
+     * pantalla llamaba a esas fórmulas para mostrar el tope antes de preguntar, así que elegir
+     * una receta sin precio cerraba la app en vez de decir que falta el precio. Lo encontró
+     * Sandy: *"al parecer falla cuando la receta no lleva precio"*.
+     *
+     * Se contesta **antes** de ofrecerla, no al tocarla: una opción que se puede elegir y siempre
+     * falla enseña a no leer lo que contesta.
+     */
+    fun porQueNoSeLePuedeAsignar(datos: DatosCalculoReceta): String? = when {
+        !datos.tienePrecio -> "Todavía no tiene precio: sin él no hay ganancia que repartir"
+        ingresoBruto(datos) - datos.costoTotal < 0 ->
+            "Se vende bajo su costo, así que no hay ganancia que repartir"
+        else -> null
+    }
+
     suspend fun recetasQueFaltanPor(empleadoId: Long): List<DatosCalculoReceta> {
         val yaTiene = dao.obtenerSueldos(empleadoId).map { it.recetaId }.toSet()
         val todas = recetas.obtenerTodasUnaVez().map { it.id }.filterNot { it in yaTiene }
@@ -262,6 +289,28 @@ class EmpleadoRepositorio(
                 unidadesPorDia = unidadesPorDia.coerceAtLeast(0)
             )
         )
+        return Resultado.Listo
+    }
+
+    /**
+     * Cambia cuántas de esta receta vende al día, **sin tocar lo que se lleva**.
+     *
+     * Va a la misma fila que muestra la pantalla (`EmpleadoRecetaSueldo`) y no a la tabla de
+     * detalle de la simulación: escribir en una y leer de la otra era el bug de "el campo no
+     * cambia nada y el total sale en 0".
+     *
+     * Se conserva `gananciaEmpleado` con un `copy` en vez de reescribir la fila entera, por lo
+     * mismo que `editarPrecio` conserva `esReferencia`: escribirla completa sin ese cuidado
+     * pondría el reparto en cero cada vez que se corrige una cantidad.
+     */
+    suspend fun guardarUnidadesPorDia(
+        empleadoId: Long,
+        recetaId: Long,
+        unidadesPorDia: Int
+    ): Resultado {
+        val actual = dao.obtenerSueldo(empleadoId, recetaId)
+            ?: return Resultado.NoSePudo("Esa receta no está asignada")
+        dao.guardarSueldo(actual.copy(unidadesPorDia = unidadesPorDia.coerceAtLeast(0)))
         return Resultado.Listo
     }
 
@@ -326,16 +375,21 @@ class EmpleadoRepositorio(
      */
     suspend fun simulacionDeTodasSusRecetas(empleadoId: Long): SimulacionMultipleResultado {
         val dias = diasCompartidos(empleadoId)
-        val detalle = dao.obtenerDetalle(empleadoId)
-        val sueldos = dao.obtenerSueldos(empleadoId).associateBy { it.recetaId }
-        val datos = recetas.obtenerDatosCalculo(detalle.map { it.recetaId }.distinct())
+        // **Se recorren los sueldos y no la tabla de detalle**, que es el arreglo del bug que
+        // Sandy reportó como "veo todo en 0". El detalle arranca vacío: una receta recién
+        // asignada no tiene fila ahí, así que la simulación no la contaba — y el campo de
+        // "cuántas vende al día" mostraba `sueldo.unidadesPorDia`, o sea **otra tabla**.
+        // Escribir en una y leer de la otra hacía que el campo pareciera muerto y el total
+        // siempre cero. Un número, un lugar.
+        val sueldos = dao.obtenerSueldos(empleadoId)
+        val datos = recetas.obtenerDatosCalculo(sueldos.map { it.recetaId }.distinct())
 
-        val filas = detalle.mapNotNull { fila ->
-            val d = datos[fila.recetaId] ?: return@mapNotNull null
+        val filas = sueldos.mapNotNull { sueldo ->
+            val d = datos[sueldo.recetaId] ?: return@mapNotNull null
             RecetaEnLaSimulacion(
                 datos = d,
-                gananciaEmpleado = sueldos[fila.recetaId]?.gananciaEmpleado ?: 0.0,
-                unidadesPorDia = fila.unidadesPorDia
+                gananciaEmpleado = sueldo.gananciaEmpleado,
+                unidadesPorDia = sueldo.unidadesPorDia
             )
         }
         return simulacionMultiple(filas, dias)

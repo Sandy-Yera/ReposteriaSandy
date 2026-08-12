@@ -805,6 +805,20 @@ class RecetaDaoFalso(
         return recetas.value.filter { it.id in ids }.sortedBy { it.titulo.lowercase() }
     }
 
+    /**
+     * Quién tiene la receta asignada.
+     *
+     * La consulta real cruza `empleados` con `empleado_receta_sueldo`, dos tablas que este falso
+     * no tiene: es el falso del DAO de **recetas**. En vez de inventarlas se deja el mapa
+     * [empleadosPorReceta], que la prueba llena a mano con lo que quiere que conteste. Devolver
+     * siempre vacío habría sido peor: la advertencia de borrado quedaría probada solo en el caso
+     * en que no hay a quién nombrar, que es justo el que no importa.
+     */
+    val empleadosPorReceta = mutableMapOf<Long, List<String>>()
+
+    override suspend fun empleadosConLaReceta(recetaId: Long): List<String> =
+        empleadosPorReceta[recetaId].orEmpty().sortedBy { it.lowercase() }
+
     override suspend fun idsDeRecetasHechasDePartes(): List<Long> =
         secciones.filter { it.esTraida }.map { it.recetaId }.distinct()
 

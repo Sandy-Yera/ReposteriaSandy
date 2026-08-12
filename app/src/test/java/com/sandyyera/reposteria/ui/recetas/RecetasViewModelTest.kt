@@ -257,6 +257,35 @@ class RecetasViewModelTest {
         assertTrue("Ahora sí se puede confirmar", cuadro.sePuedeBorrar)
     }
 
+    @Test
+    fun `la advertencia nombra a los empleados que tienen la receta`() = probar { modelo ->
+        // El aviso ya decía que se iban los sueldos, pero sin decir de quién: eso es una frase,
+        // no una advertencia (7.1). Lo pidió Sandy.
+        val id = crearReceta("Torta de manjar")
+        recetaDao.empleadosPorReceta[id] = listOf("Carla", "Ana")
+        advanceUntilIdle()
+
+        modelo.pedirBorrado(modelo.estado.value.visibles.single().receta)
+        advanceUntilIdle()
+
+        val cuadro = modelo.dialogo.value as DialogoReceta.ConfirmarBorrado
+        assertEquals(listOf("Ana", "Carla"), cuadro.empleados)
+    }
+
+    @Test
+    fun `no se puede confirmar antes de saber que empleados la tienen`() = probar { modelo ->
+        // La mitad nueva de la advertencia entra en la misma regla que la de las recetas que la
+        // usan: mientras la consulta no vuelva, confirmar sería confirmar media advertencia.
+        crearReceta("Torta de manjar")
+        advanceUntilIdle()
+
+        modelo.pedirBorrado(modelo.estado.value.visibles.single().receta)
+
+        val cuadro = modelo.dialogo.value as DialogoReceta.ConfirmarBorrado
+        assertNull("Todavía no se sabe", cuadro.empleados)
+        assertFalse("Y por eso no se puede borrar", cuadro.sePuedeBorrar)
+    }
+
     // --- Las repetidas de antes de la regla ---
 
     @Test

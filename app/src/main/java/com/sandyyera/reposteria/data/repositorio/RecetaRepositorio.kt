@@ -58,7 +58,9 @@ import com.sandyyera.reposteria.logica.partes.textoDelVinculo
 import com.sandyyera.reposteria.logica.partes.vinculoDesdeTexto
 import com.sandyyera.reposteria.logica.partes.errorAlUsarTitulo
 import com.sandyyera.reposteria.logica.validaciones.debenMostrarseLosNombresDeSeccion
+import com.sandyyera.reposteria.logica.validaciones.SIN_PASO_PREVIO
 import com.sandyyera.reposteria.logica.validaciones.elPasoDiceAlgo
+import com.sandyyera.reposteria.logica.validaciones.elPasoPrevioDiceAlgo
 import com.sandyyera.reposteria.logica.validaciones.errorEnTextoDePaso
 import com.sandyyera.reposteria.logica.precios.basesQueFaltanEn
 import com.sandyyera.reposteria.logica.precios.puedeSerBase
@@ -422,6 +424,44 @@ class RecetaRepositorio(
         )
         return Resultado.Listo
     }
+
+    /**
+     * Guarda el "antes de empezar" de una receta (8.8).
+     *
+     * Existe porque hasta ahora **no había cómo cambiarlo**: la frase "Antes de empezar: no
+     * necesita" salía en el resumen de todas las recetas sin que nada la escribiera nunca, y
+     * Sandy preguntó de dónde venía — que es exactamente lo que pasa con un dato que se muestra
+     * y no se puede tocar.
+     *
+     * **Vaciar el campo repone [SIN_PASO_PREVIO]** en vez de guardar una cadena vacía. La receta
+     * siempre contesta la pregunta: dejarlo en blanco haría que el resumen dijera "Antes de
+     * empezar:" y nada más, que se lee como un dato que falta en vez de como un "no hace falta".
+     *
+     * Se mide con `errorEnTextoDePaso` y no con una regla propia: es un texto de receta del mismo
+     * tamaño que un paso, y un segundo tope que nadie mira se separa del primero a la primera.
+     */
+    suspend fun guardarPasoPrevio(recetaId: Long, texto: String): Resultado {
+        val receta = dao.obtener(recetaId) ?: return Resultado.NoSePudo("Esa receta ya no existe")
+        errorEnTextoDePaso(texto)?.let { return Resultado.NoSePudo(it) }
+
+        val queda = if (elPasoPrevioDiceAlgo(texto)) texto.trim() else SIN_PASO_PREVIO
+        if (queda == receta.pasoPrevio) return Resultado.Listo
+
+        dao.actualizar(receta.copy(pasoPrevio = queda, actualizadoEn = System.currentTimeMillis()))
+        return Resultado.Listo
+    }
+
+    /**
+     * Los empleados que tienen esta receta asignada, por nombre.
+     *
+     * Alimenta la advertencia previa a borrarla (7.1). Borrar la receta **se lleva sus sueldos**
+     * por la cascada de `empleado_receta_sueldo`, y hasta acá el aviso lo decía en general —"y
+     * los sueldos que algún empleado tuviera asignados"— sin nombrar a nadie. Lo pidió Sandy con
+     * el mismo argumento que ya vale para los ingredientes: un aviso que no nombra a quién afecta
+     * es un botón que se aprieta sin leer.
+     */
+    suspend fun empleadosQueTienenLaReceta(recetaId: Long): List<String> =
+        dao.empleadosConLaReceta(recetaId)
 
     /**
      * Borra la receta de verdad, cuando ya se confirmó la advertencia (6.3).

@@ -421,6 +421,12 @@ private fun FormularioReceta(
  * afuera no: las copias son independientes y siguen ahí enteras. Lo que les queda es un aviso
  * pendiente preguntando qué hacer, y decirlo antes es la diferencia entre entenderlo y
  * encontrárselo meses después sin explicación.
+ *
+ * **Los empleados van con nombre y apellido** (7.1). El aviso ya decía que se iban los sueldos,
+ * pero sin decir de quién eso es una frase y no una advertencia. Lo pidió Sandy, y de paso
+ * previó el caso feo: *"si tuviera 100 empleados distintos, el mensaje sería largo"*. Por eso el
+ * cuerpo entero se desplaza y los botones se quedan quietos — con cien nombres, un cuadro que
+ * crece empuja "Eliminar" fuera de la pantalla o, peor, lo deja justo donde estaba "Cancelar".
  */
 @Composable
 private fun ConfirmarBorradoReceta(
@@ -432,28 +438,60 @@ private fun ConfirmarBorradoReceta(
         onDismissRequest = alCerrar,
         title = { Text("¿Eliminar '${estado.receta.titulo}'?") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(Medidas.chico)) {
+            // **El desplazamiento es de todo el cuerpo y no de cada lista.** Antes solo se movía
+            // la lista de recetas que la usan, así que con muchos empleados el cuadro se estiraba
+            // igual. Un solo `verticalScroll` acá adentro deja los botones del `AlertDialog`
+            // fijos abajo, que es lo que Sandy pidió expresamente.
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(Medidas.chico)
+            ) {
                 Text("Se van con ella sus ingredientes, su rendimiento, sus precios y sus pasos.")
-                Text(
-                    text = "También los sueldos que algún empleado tuviera asignados para " +
-                        "esta receta.",
-                    style = MaterialTheme.typography.bodyMedium
-                )
 
                 when {
-                    // `null` es "todavía consultando" y no "no la usa ninguna": mientras tanto
-                    // el botón está apagado, porque confirmar acá sería confirmar media
-                    // advertencia.
+                    // `null` es "todavía consultando" y no "no la tiene nadie": mientras tanto el
+                    // botón está apagado, porque confirmar acá sería confirmar media advertencia.
+                    estado.empleados == null -> Text(
+                        text = "Revisando si algún empleado la tiene asignada…",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    estado.empleados.isNotEmpty() -> Column {
+                        Text(
+                            text = "Pierden su sueldo por esta receta " +
+                                "${estado.empleados.size} " +
+                                if (estado.empleados.size == 1) "empleado:" else "empleados:",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        estado.empleados.forEach {
+                            Text(
+                                text = "• $it",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                        Text(
+                            text = "Sus otras recetas no se tocan; lo que se borra es cuánto " +
+                                "se llevaban por esta.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    else -> Text(
+                        text = "Ningún empleado la tiene asignada.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                when {
                     estado.usadaPor == null -> Text(
                         text = "Revisando si otras recetas la usan…",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    estado.usadaPor.isNotEmpty() -> Column(
-                        modifier = Modifier
-                            .heightIn(max = Medidas.altoMaximoDeLista)
-                            .verticalScroll(rememberScrollState())
-                    ) {
+                    estado.usadaPor.isNotEmpty() -> Column {
                         Text(
                             text = "La usan como parte ${estado.usadaPor.size} " +
                                 if (estado.usadaPor.size == 1) "receta:" else "recetas:",
@@ -545,7 +583,8 @@ private fun RecetasBorrando() {
             estadoDeEjemplo(),
             DialogoReceta.ConfirmarBorrado(
                 receta = Receta(id = 1, titulo = "Torta de manjar"),
-                usadaPor = emptyList()
+                usadaPor = emptyList(),
+                empleados = emptyList()
             ),
             AccionesRecetas()
         )
@@ -563,7 +602,24 @@ private fun RecetasBorrandoUnaUsada() {
                 usadaPor = listOf(
                     Receta(id = 2, titulo = "Torta de manjar"),
                     Receta(id = 3, titulo = "Mil hojas")
-                )
+                ),
+                empleados = emptyList()
+            ),
+            AccionesRecetas()
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "Recetas - borrando una que tienen empleados")
+@Composable
+private fun RecetasBorrandoUnaDeEmpleados() {
+    ReposteriaTheme {
+        ListaRecetas(
+            estadoDeEjemplo(),
+            DialogoReceta.ConfirmarBorrado(
+                receta = Receta(id = 1, titulo = "Torta de manjar"),
+                usadaPor = emptyList(),
+                empleados = listOf("Ana", "Carla", "Modelo estándar")
             ),
             AccionesRecetas()
         )

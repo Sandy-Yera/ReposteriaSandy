@@ -5,6 +5,7 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.sandyyera.reposteria.logica.validaciones.SIN_PASO_PREVIO
 
 /**
  * Una receta.
@@ -17,7 +18,12 @@ import androidx.room.PrimaryKey
 data class Receta(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val titulo: String,
-    val pasoPrevio: String = "No necesita",
+    /**
+     * Lo que hay que tener listo **antes** de empezar: un bizcocho del día anterior, el
+     * almíbar hecho. Se escribe en el paso "Pasos", arriba de todo, y se muestra en el
+     * resumen. Nace en [SIN_PASO_PREVIO] y vuelve a esa frase si se vacía el campo.
+     */
+    val pasoPrevio: String = SIN_PASO_PREVIO,
     val creadoEn: Long = System.currentTimeMillis(),
     val actualizadoEn: Long = System.currentTimeMillis()
 )

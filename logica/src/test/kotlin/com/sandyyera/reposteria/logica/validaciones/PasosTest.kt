@@ -66,6 +66,24 @@ class PasosTest {
         assertTrue("Y cuántos caben", aviso.contains("$LARGO_MAXIMO_PASO"))
     }
 
+    // --- El "antes de empezar" (8.8) ---
+
+    @Test
+    fun `la frase por defecto del antes de empezar cuenta como vacia`() {
+        // Una receta recién creada dice "No necesita" porque nadie escribió nada, no porque
+        // alguien lo haya decidido. Sin esto, el campo se abriría con esa frase adentro y
+        // habría que borrarla a mano antes de poder poner lo propio.
+        assertFalse(elPasoPrevioDiceAlgo(SIN_PASO_PREVIO))
+        assertFalse(elPasoPrevioDiceAlgo("  $SIN_PASO_PREVIO  "))
+        assertFalse(elPasoPrevioDiceAlgo(""))
+        assertFalse(elPasoPrevioDiceAlgo("   "))
+    }
+
+    @Test
+    fun `un antes de empezar escrito de verdad si dice algo`() {
+        assertTrue(elPasoPrevioDiceAlgo("Tener el bizcocho hecho del día anterior"))
+    }
+
     @Test
     fun `el tope de un paso no es el de un nombre`() {
         // Compartir la función habría obligado a subir el tope de los nombres, o sea a dejar

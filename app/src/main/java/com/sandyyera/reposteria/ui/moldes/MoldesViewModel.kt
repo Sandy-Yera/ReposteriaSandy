@@ -22,6 +22,7 @@ import com.sandyyera.reposteria.logica.moldes.opcionesDeReparto
 import com.sandyyera.reposteria.logica.moldes.queHacenLasMedidasDeCorte
 import com.sandyyera.reposteria.logica.moldes.TipoFormaMolde
 import com.sandyyera.reposteria.logica.validaciones.CampoDeMolde
+import com.sandyyera.reposteria.logica.validaciones.LARGO_MAXIMO_NOTA
 import com.sandyyera.reposteria.logica.validaciones.ErroresMolde
 import com.sandyyera.reposteria.logica.validaciones.camposDe
 import com.sandyyera.reposteria.logica.validaciones.conElCorte
@@ -102,6 +103,9 @@ sealed interface DialogoMolde {
          */
         val trozosDePrueba: String = ""
     ) : DialogoMolde {
+
+        /** Si la nota ya pasó el tope. Lo mira el contador que se muestra mientras se escribe. */
+        val notasSePasan: Boolean get() = notas.trim().length > LARGO_MAXIMO_NOTA
 
         /** Las medidas que hay que pedir ahora mismo. Vacía mientras no haya forma elegida. */
         val campos: List<CampoDeMolde> get() = forma?.let { camposDe(it) } ?: emptyList()
