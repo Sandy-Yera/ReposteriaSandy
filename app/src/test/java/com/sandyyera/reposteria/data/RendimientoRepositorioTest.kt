@@ -329,15 +329,20 @@ class RendimientoRepositorioTest {
     }
 
     @Test
-    fun `las cantidades reescaladas quedan redondeadas como todo lo que se guarda`() = runBlocking {
-        // Si se guardara sin redondear, el subtotal que muestra la pantalla no coincidiría
-        // con el que suma la base.
+    fun `las cantidades reescaladas quedan en dos decimales`() = runBlocking {
+        // **Cambió de cinco a dos** (8.3.1). Los cinco decimales existen por el *valor por
+        // gramo* —$0,06667 es un dato— y en una *cantidad* son la basura que deja la regla de
+        // tres: Sandy lo reportó al reescalar, con "0,50007 g de limón" donde eran 0,5.
+        //
+        // Se sigue guardando redondeado y no exacto, que era el punto original de esta prueba:
+        // si se guardara sin redondear, el subtotal de la pantalla no coincidiría con el que
+        // suma la base.
         val id = recetaConHarina("Salsa")
         repositorio.guardarRendimiento(id, "1", "300")
 
         repositorio.reescalarPorPeso(id, "100")   // factor 1/3
 
-        assertEquals(166.66667, gramosDe(id), 0.000001)
+        assertEquals(166.67, gramosDe(id), 0.000001)
     }
 
     @Test
