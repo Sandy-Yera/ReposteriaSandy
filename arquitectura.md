@@ -2764,6 +2764,49 @@ Cuando no se puede —sin ingredientes, o sin peso final anotado— **se dice po
 arreglarlo** en vez de esconder el botón: uno que aparece y desaparece sin explicación se lee como
 que la app se rompió.
 
+### 14.14 Filtrar el almacén: por cantidad y por qué es cada cosa
+
+Los pidió Sandy cuando el almacén dejó de caber en una pantalla. El buscador por nombre sirve
+cuando uno **sabe qué busca**; esto sirve para lo contrario — cuando lo que se busca es *cuáles*:
+qué se está por acabar, qué hay de sobra, qué es lo que se cuenta por unidad.
+
+**Por cantidad, escribiendo en el mismo buscador.** Las cinco comparaciones son `=300`, `>300`,
+`<300`, `>=300` y `<=300`, y las dos últimas aceptan además `=>300` y `=<300`. Sandy pidió las dos
+formas con todas las letras, y tiene razón: cuál sale primero depende de por dónde uno empiece a
+pensar la frase ("mayor o igual" / "igual o mayor"), y rechazar una obligaría a recordar cuál
+eligió la app en vez de escribir lo que uno quiso decir.
+
+Tres decisiones que no se ven pero mandan:
+
+- **Un número sin signo no es un filtro.** `300` busca el nombre "300". El signo es la señal de
+  "acá vengo a comparar", y sin esa regla un ingrediente llamado "Colorante 300" sería imposible
+  de encontrar.
+- **El filtro no tiene unidad.** `=3` deja pasar las 3 cajas *y* los 3 gramos, que es lo que Sandy
+  pidió al decir "debe funcionar para unidades e ingredientes". Filtrar por unidad es la otra
+  mitad de esta pantalla, y son dos preguntas que conviene poder hacer por separado.
+- **Un filtro mal escrito se dice, no se ignora.** `>abc` avisa qué no se entendió. Tratarlo como
+  una búsqueda por nombre dejaría la lista vacía sin explicación, con el error en la pantalla e
+  invisible. Y mientras el filtro está a medio escribir, la lista **no se vacía**: el `>` de
+  `>=300` es un paso obligado del camino, y ver todo desaparecer en cada tecla se lee como que no
+  hay nada.
+
+La pantalla dice **cómo entendió el filtro** —"Mostrando lo que tiene 300 o más"— por 8.7.1: una
+lista recortada por una regla tiene que decir de qué está hecha. Con `=>` y `>=` significando lo
+mismo, ver tres filas sin saber cómo se leyó pide una confianza que no está ganada.
+
+**Por categoría, con cuatro casillas**: "Va en recetas" / "No va en recetas" y "Por unidad" / "En
+gramos". Son cuatro y no dos interruptores porque cada pregunta tiene **tres** respuestas y no
+dos: sí, no, y "me da igual" — que es la de todos los días y con un interruptor no se puede decir.
+Marcar las dos de un par equivale a no marcar ninguna: podría tratarse como "no pasa nada" —son
+opuestas— pero eso deja la lista vacía sin decir por qué, y nadie lee dos casillas encendidas como
+un error.
+
+**La chuleta va en la pantalla**, detrás de "¿Cómo filtro por cantidad?". Sandy la pidió por
+adelantado —*"para poder recordar, tener un campo que me diga cómo debo escribirlos, para evitar
+olvidar"*— y sale de una lista de `logica/`, no escrita en el Composable: una ayuda escrita aparte
+de la regla que explica se queda mintiendo a la primera que alguien cambia la regla. Es la misma
+decisión que la ayuda de los atajos de los pasos (8.8).
+
 ### 14.12 Lo que este módulo **no** hace todavía
 
 Estas ausencias son deliberadas y no olvidos:
@@ -3042,6 +3085,15 @@ sin leerlo, así que conviene que enseñe la dependencia.
 Las secciones viven en un `enum Seccion` y **solo se agregan cuando existe su pantalla**. Nada de dejarlas puestas en gris a la espera: una opción deshabilitada se toca igual y parece que la app se rompió.
 
 Cada sección conserva su ViewModel al cambiar de una a otra —`viewModel()` los guarda en la Activity, no en el Composable—, así que ir a Recetas y volver a Ingredientes no borra lo que había escrito en el buscador. La sección elegida va en `rememberSaveable` para que girar el teléfono no devuelva al principio.
+
+**La ventana se achica con el teclado, no se desliza.** `android:windowSoftInputMode="adjustResize"`
+en el manifiesto. Sin declararlo, Android elige solo entre achicar y deslizar, y de ahí venía que a
+veces funcionara y otras no. Cuando desliza, Compose cree que su espacio sigue siendo la pantalla
+completa, así que da por visible el renglón que se está escribiendo aunque el teclado lo tape — y
+entonces no desplaza nada. Sandy lo reportó en dos lugares que resultaron ser el mismo problema:
+escribiendo pasos (*"mi pantalla no baja, haciendo que escriba a ciegas"*) y en el cuadro de
+agregar al almacén (*"para avanzar tengo que darle siguiente sí o sí, no me deja hacerlo tocando
+pantalla para bajar"*).
 
 **Abrir el menú saca del campo de texto.** Lo reportó Sandy: con el teclado abierto y el cursor
 parpadeando, el menú se dibujaba encima pero *"se ve todavía el puntero, traspasando así el

@@ -76,6 +76,7 @@ data class AccionesEmpleados(
     val quitarReceta: (RecetaDeUnEmpleado) -> Unit = {},
     val cambiarDias: (String) -> Unit = {},
     val cambiarUnidades: (RecetaDeUnEmpleado, String) -> Unit = { _, _ -> },
+    val soltarUnidades: (RecetaDeUnEmpleado) -> Unit = {},
     val cerrarDialogo: () -> Unit = {},
     val abrirMenu: () -> Unit = {}
 )
@@ -113,6 +114,7 @@ fun ListaEmpleadosScreen(
             quitarReceta = modelo::quitarReceta,
             cambiarDias = modelo::cambiarDias,
             cambiarUnidades = modelo::cambiarUnidades,
+            soltarUnidades = modelo::soltarUnidades,
             cerrarDialogo = modelo::cerrarDialogo,
             abrirMenu = alAbrirMenu
         )
@@ -335,7 +337,7 @@ private fun DetalleDelEmpleado(
             return@Column
         }
 
-        estado.recetas.forEach { receta -> FilaDeSueldo(receta, acciones) }
+        estado.recetas.forEach { receta -> FilaDeSueldo(receta, estado, acciones) }
 
         HorizontalDivider()
         SimulacionDelEmpleado(estado, acciones)
@@ -350,7 +352,11 @@ private fun DetalleDelEmpleado(
  * cabeza para comprobar que la cuenta cierra, que es justo lo que la pantalla ahorra.
  */
 @Composable
-private fun FilaDeSueldo(receta: RecetaDeUnEmpleado, acciones: AccionesEmpleados) {
+private fun FilaDeSueldo(
+    receta: RecetaDeUnEmpleado,
+    estado: EstadoDelEmpleado,
+    acciones: AccionesEmpleados
+) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(Medidas.medio),
@@ -390,10 +396,18 @@ private fun FilaDeSueldo(receta: RecetaDeUnEmpleado, acciones: AccionesEmpleados
                 Cifra("Se lleva", reparto.gananciaEmpleado, destacada = true)
             }
 
+            // **El valor sale del estado y no de `receta.sueldo` directo.** Leyéndolo del `Int`
+            // guardado, el campo no se podía vaciar: borrar el 1 no cambiaba nada y el 1 volvía
+            // a aparecer, así que solo se podía escribir *delante* y convertirlo en 10. Vaciarlo
+            // es el paso obligado para poner otro número.
             CampoNumerico(
-                valor = receta.sueldo.unidadesPorDia.toString(),
+                valor = estado.unidadesDe(receta),
                 alCambiar = { acciones.cambiarUnidades(receta, it) },
+                // Al salir se suelta el campo, para que vuelva a mostrar lo guardado: irse
+                // dejándolo vacío no puede quedar contradiciendo a la simulación de abajo.
+                alSalirDelCampo = { acciones.soltarUnidades(receta) },
                 etiqueta = "¿Cuántas vende al día?",
+                error = estado.errorDeUnidades(receta),
                 // Se dice que es de acá y no de la receta: la receta tiene su propia simulación
                 // (8.7) y son dos preguntas distintas — cuánto vende **este** empleado no es
                 // cuánto se vende en total.

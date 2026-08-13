@@ -10,11 +10,25 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Reposteria">
 
+        <!-- adjustResize: al abrirse el teclado, la ventana se **achica** en vez de deslizarse
+             entera hacia arriba. Es lo que hace que las listas y los cuadros sigan al cursor:
+             sin esto, Compose cree que su espacio sigue siendo la pantalla completa, así que da
+             por visible el renglón que se está escribiendo aunque el teclado lo esté tapando —
+             y entonces no desplaza nada.
+
+             Lo reportó Sandy en dos lugares distintos que resultaron ser el mismo problema:
+             escribiendo pasos ("mi pantalla no baja, haciendo que escriba a ciegas") y en el
+             cuadro de agregar al almacén ("para avanzar tengo que darle siguiente sí o sí, no
+             me deja hacerlo tocando pantalla para bajar").
+
+             Sin declararlo, Android elige solo entre achicar y deslizar, y de ahí venía que a
+             veces funcionara y otras no. -->
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:theme="@style/Theme.Reposteria">
+            android:theme="@style/Theme.Reposteria"
+            android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

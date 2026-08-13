@@ -407,6 +407,27 @@ class IngredientesViewModel(
         calculadora.value = EstadoCalculadora()
     }
 
+    /**
+     * Abre la calculadora **para un ingrediente concreto**, ya elegido como destino (7.2).
+     *
+     * Lo pidió Sandy desde el formulario de edición: *"si quiero usar la calculadora para medirlo,
+     * debería redirigirme a la calculadora con el ingrediente ya seleccionado"*. Hasta acá el
+     * camino era salir del ingrediente, abrir la calculadora, y **volver a buscarlo en la lista**
+     * para elegirlo de destino — tres pasos para decir algo que ya estaba dicho al entrar a
+     * editarlo.
+     *
+     * El cuadro de edición se cierra: son dos pantallas distintas y dejarlo abierto detrás
+     * llevaría a guardar el valor viejo al volver, pisando justo lo que se acaba de calcular.
+     * Lo que se conserva es el **destino**, así que al tocar "Listo" el camino sigue siendo el de
+     * siempre — la confirmación que muestra el valor de antes y el nuevo juntos (7.2).
+     */
+    fun abrirCalculadoraPara(ingrediente: Ingrediente) {
+        dialogo.value = DialogoIngrediente.Ninguno
+        calculadora.value = EstadoCalculadora(
+            destino = DestinoDelValor.Reemplazar(ingrediente.id)
+        )
+    }
+
     fun cerrarCalculadora() {
         calculadora.value = null
     }

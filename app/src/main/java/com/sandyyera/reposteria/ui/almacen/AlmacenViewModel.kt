@@ -14,7 +14,11 @@ import com.sandyyera.reposteria.data.repositorio.QueHacerConElNombre
 import com.sandyyera.reposteria.data.repositorio.RecetaRepositorio
 import com.sandyyera.reposteria.data.repositorio.Resultado
 import com.sandyyera.reposteria.data.repositorio.ResultadoRenombrarEnAlmacen
+import com.sandyyera.reposteria.logica.almacen.LoQueSeBusca
+import com.sandyyera.reposteria.logica.almacen.MarcaDeAlmacen
 import com.sandyyera.reposteria.logica.almacen.RecetaHecha
+import com.sandyyera.reposteria.logica.almacen.dejanPasar
+import com.sandyyera.reposteria.logica.almacen.loQueSeBusca
 import com.sandyyera.reposteria.logica.almacen.RecetaParaElAlmacen
 import com.sandyyera.reposteria.logica.almacen.SentidoDelMovimiento
 import com.sandyyera.reposteria.logica.almacen.VistaPreviaDelDescuento
@@ -477,11 +481,42 @@ data class EstadoAlmacen(
     val todo: List<FilaDeAlmacen> = emptyList(),
     val hayArticulos: Boolean = false,
     val busqueda: String = "",
+    /**
+     * Qué se entendió de lo escrito en el buscador (14.14).
+     *
+     * Va en el estado **ya resuelto** y no como texto crudo para que la pantalla no vuelva a
+     * interpretarlo: el filtro se lee una vez, y lo que se muestra abajo del campo —"mostrando
+     * 300 o más"— sale exactamente de lo que se usó para filtrar. Si se leyera dos veces, un día
+     * dirían cosas distintas y el que estaría mal sería el que no se ve.
+     */
+    val loQueSeBusca: LoQueSeBusca = LoQueSeBusca.PorNombre(""),
+    /** Las casillas de categoría marcadas. Vacío es "no filtra por eso". */
+    val marcas: Set<MarcaDeAlmacen> = emptySet(),
+    val mostrandoLaAyudaDeFiltros: Boolean = false,
     val mensaje: String? = null,
     val cargando: Boolean = true
 ) {
     val almacenVacio: Boolean get() = !cargando && !hayArticulos
     val busquedaSinResultados: Boolean get() = hayArticulos && visibles.isEmpty()
+
+    /** Si hay algo filtrando ahora mismo. Lo mira el mensaje de "no encontré nada". */
+    val hayFiltrosPuestos: Boolean get() = busqueda.isNotBlank() || marcas.isNotEmpty()
+
+    /** El aviso del filtro mal escrito, o `null`. Va junto al campo, no en la franja (8.2). */
+    val errorDelFiltro: String?
+        get() = (loQueSeBusca as? LoQueSeBusca.MalEscrito)?.motivo
+
+    /**
+     * "Mostrando 300 o más", o `null` si no se está filtrando por cantidad.
+     *
+     * Existe por 8.7.1: una lista recortada por una regla tiene que decir de qué está hecha. Sin
+     * esto, escribir `=>300` y ver tres filas obliga a confiar en que se entendió bien — y en un
+     * filtro donde `=>` y `>=` son la misma cosa, esa confianza no está ganada.
+     */
+    val comoSeEntendioElFiltro: String?
+        get() = (loQueSeBusca as? LoQueSeBusca.PorCantidad)?.let {
+            "Mostrando lo que tiene ${it.filtro.comoSeLee}"
+        }
 
     /**
      * Lo que vale todo lo que hay guardado.
@@ -511,22 +546,49 @@ class AlmacenViewModel(
 ) : ViewModel() {
 
     private val busqueda = MutableStateFlow("")
+    private val marcas = MutableStateFlow<Set<MarcaDeAlmacen>>(emptySet())
+    private val ayudaDeFiltros = MutableStateFlow(false)
     private val _dialogo = MutableStateFlow<DialogoAlmacen>(DialogoAlmacen.Ninguno)
     private val mensaje = MutableStateFlow<String?>(null)
 
     val dialogo: StateFlow<DialogoAlmacen> = _dialogo
 
+    /** Lo del buscador y lo de las casillas, juntos: `combine` acepta cinco flujos. */
+    private val comoSeFiltra = combine(
+        busqueda,
+        marcas,
+        ayudaDeFiltros
+    ) { texto, marcadas, ayuda -> Triple(texto, marcadas, ayuda) }
+
     val estado: StateFlow<EstadoAlmacen> = combine(
         almacen.observarTodo(),
-        busqueda,
+        comoSeFiltra,
         mensaje
-    ) { articulos, textoBuscado, mensajeActual ->
+    ) { articulos, (textoBuscado, marcadas, ayuda), mensajeActual ->
         val filas = articulos.map { FilaDeAlmacen(it) }
+        // El texto se lee **una sola vez** y de acá sale tanto lo que se filtra como lo que la
+        // pantalla dice haber entendido. Leerlo dos veces dejaría abierta la puerta a que un día
+        // no coincidan, y el que estaría mal sería justo el que no se ve.
+        val buscado = loQueSeBusca(textoBuscado)
+        // Las casillas se aplican **antes** que el texto, y da igual el orden para el resultado;
+        // se hace así porque es más barato: descarta filas antes de comparar nombres letra a letra.
+        val porCategoria = filas.filter { dejanPasar(marcadas, it.esObjeto, it.vaEnRecetas) }
         EstadoAlmacen(
-            visibles = filtrarPor(filas, textoBuscado) { it.nombre },
+            visibles = when (buscado) {
+                is LoQueSeBusca.PorNombre -> filtrarPor(porCategoria, buscado.texto) { it.nombre }
+                is LoQueSeBusca.PorCantidad ->
+                    porCategoria.filter { buscado.filtro.deja(it.cantidad) }
+                // Un filtro a medio escribir **no vacía la lista**: mientras se teclea `>=300`,
+                // el `>` solo es un paso obligatorio del camino, y ver la lista desaparecer en
+                // cada tecla se lee como que no hay nada. El aviso ya dice qué falta.
+                is LoQueSeBusca.MalEscrito -> porCategoria
+            },
             todo = filas,
             hayArticulos = filas.isNotEmpty(),
             busqueda = textoBuscado,
+            loQueSeBusca = buscado,
+            marcas = marcadas,
+            mostrandoLaAyudaDeFiltros = ayuda,
             mensaje = mensajeActual,
             cargando = false
         )
@@ -538,6 +600,22 @@ class AlmacenViewModel(
 
     fun buscar(texto: String) {
         busqueda.value = texto
+    }
+
+    /** Marca o desmarca una casilla de categoría (14.14). */
+    fun cambiarMarca(marca: MarcaDeAlmacen) {
+        marcas.value = if (marca in marcas.value) marcas.value - marca else marcas.value + marca
+    }
+
+    /** Muestra u oculta la chuleta de cómo se escriben los filtros de cantidad. */
+    fun cambiarAyudaDeFiltros() {
+        ayudaDeFiltros.value = !ayudaDeFiltros.value
+    }
+
+    /** Deja el almacén sin ningún filtro puesto: el texto y las casillas de una vez. */
+    fun limpiarFiltros() {
+        busqueda.value = ""
+        marcas.value = emptySet()
     }
 
     // --- Agregar (14.5 y 14.6) ---

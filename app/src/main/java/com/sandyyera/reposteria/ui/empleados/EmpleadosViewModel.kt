@@ -19,6 +19,7 @@ import com.sandyyera.reposteria.logica.sueldos.SimulacionMultipleResultado
 import com.sandyyera.reposteria.logica.validaciones.errorEnDiasPorSemanaTexto
 import com.sandyyera.reposteria.logica.validaciones.errorEnGananciaDelEmpleado
 import com.sandyyera.reposteria.logica.validaciones.errorEnNombreEscrito
+import com.sandyyera.reposteria.logica.validaciones.errorEnUnidadesPorDiaTexto
 import com.sandyyera.reposteria.logica.validaciones.motivoParaNoTocarAlEmpleado
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -184,10 +185,34 @@ data class EstadoEmpleados(
 data class EstadoDelEmpleado(
     val recetas: List<RecetaDeUnEmpleado> = emptyList(),
     val diasPorSemana: String = "1",
+    /**
+     * Lo que se está escribiendo en "¿cuántas vende al día?", por receta.
+     *
+     * Existe por un campo que **no se podía borrar**: mostraba el número guardado
+     * (`unidadesPorDia.toString()`), así que el 1 de una receta recién asignada volvía a
+     * aparecer apenas se borraba — se podía escribir un 0 delante y quedaba "10", pero no dejar
+     * el campo vacío para escribir otra cosa. Un `Int` no tiene forma de decir "vacío", y ese es
+     * justamente el estado por el que hay que pasar para reemplazar un número.
+     *
+     * Es un mapa por receta y no un solo texto porque en la pantalla hay un campo por receta.
+     */
+    val unidadesEnElCampo: Map<Long, String> = emptyMap(),
     val simulacion: SimulacionMultipleResultado? = null,
     val cargando: Boolean = true
 ) {
     val sinRecetas: Boolean get() = !cargando && recetas.isEmpty()
+
+    /** Lo que va dentro del campo: lo que se está escribiendo, o lo guardado. */
+    fun unidadesDe(receta: RecetaDeUnEmpleado): String =
+        unidadesEnElCampo[receta.recetaId] ?: receta.sueldo.unidadesPorDia.toString()
+
+    /**
+     * El aviso de ese campo, o `null`.
+     *
+     * El vacío **no es un error**: es un número a medio cambiar.
+     */
+    fun errorDeUnidades(receta: RecetaDeUnEmpleado): String? =
+        unidadesDe(receta).takeIf { it.isNotBlank() }?.let { errorEnUnidadesPorDiaTexto(it) }
 
     /**
      * El aviso de los días, o `null`.
@@ -220,6 +245,9 @@ class EmpleadosViewModel(
     // El número de días es del cuadro y no de la base mientras se escribe: guardarlo en cada
     // tecla escribiría "1", "12" y "123" al pasar por un 123.
     private val dias = MutableStateFlow("1")
+    // Lo mismo que `dias`, pero por receta: el campo tiene que poder quedar vacío mientras se
+    // reemplaza el número, y un `Int` guardado no sabe decir "vacío".
+    private val unidadesEnElCampo = MutableStateFlow<Map<Long, String>>(emptyMap())
     private val simulacion = MutableStateFlow<SimulacionMultipleResultado?>(null)
 
     val dialogo: StateFlow<DialogoEmpleados> = _dialogo
@@ -256,11 +284,13 @@ class EmpleadosViewModel(
                 if (cual == null) flowOf(emptyList()) else empleados.observarRecetasDe(cual)
             },
             dias,
+            unidadesEnElCampo,
             simulacion
-        ) { recetas, cuantosDias, resultado ->
+        ) { recetas, cuantosDias, enElCampo, resultado ->
             EstadoDelEmpleado(
                 recetas = recetas,
                 diasPorSemana = cuantosDias,
+                unidadesEnElCampo = enElCampo,
                 simulacion = resultado,
                 cargando = false
             )
@@ -495,8 +525,23 @@ class EmpleadosViewModel(
         }
     }
 
+    /**
+     * Lo que se teclea en "¿cuántas vende al día?".
+     *
+     * **El campo se puede dejar vacío**, y eso es lo que antes no se podía: el valor salía del
+     * `Int` guardado, así que borrar el 1 no cambiaba nada y el 1 volvía a aparecer — se podía
+     * escribir delante y convertirlo en 10, pero no reemplazarlo. Vaciarlo es el paso obligado
+     * para poner otro número, así que el texto vive acá mientras se escribe y a la base solo se
+     * manda lo que ya es un número válido.
+     *
+     * Vacío **no se guarda como 0**: quien está borrando para escribir un 5 no está diciendo
+     * "cero", y guardarlo movería la simulación a cero por un instante en cada corrección.
+     */
     fun cambiarUnidades(receta: RecetaDeUnEmpleado, texto: String) {
-        val cuantas = texto.toIntOrNull() ?: return
+        unidadesEnElCampo.value = unidadesEnElCampo.value + (receta.recetaId to texto)
+        if (errorEnUnidadesPorDiaTexto(texto) != null) return
+
+        val cuantas = texto.trim().toIntOrNull() ?: return
         val cual = abierto.value ?: return
         viewModelScope.launch {
             // A la **misma fila que muestra la pantalla**: escribir en la tabla de detalle y leer
@@ -504,6 +549,17 @@ class EmpleadosViewModel(
             empleados.guardarUnidadesPorDia(cual, receta.recetaId, cuantas)
             recalcularSimulacion()
         }
+    }
+
+    /**
+     * Suelta el campo al salir de él, para que vuelva a mostrar lo guardado.
+     *
+     * Hace falta por el caso de irse dejándolo vacío o a medias: sin esto, el campo se quedaría
+     * en blanco mostrando algo que no es lo que la simulación está usando, y las dos cifras de la
+     * pantalla se contradirían sin que ninguna avise.
+     */
+    fun soltarUnidades(receta: RecetaDeUnEmpleado) {
+        unidadesEnElCampo.value = unidadesEnElCampo.value - receta.recetaId
     }
 
     /**

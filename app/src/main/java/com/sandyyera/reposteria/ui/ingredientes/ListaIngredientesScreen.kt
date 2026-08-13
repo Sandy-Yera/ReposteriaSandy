@@ -73,6 +73,7 @@ data class AccionesIngredientes(
     val cerrarDialogo: () -> Unit = {},
 
     val abrirCalculadora: () -> Unit = {},
+    val abrirCalculadoraPara: (Ingrediente) -> Unit = {},
     val cambiarPrecio: (String) -> Unit = {},
     val cambiarCantidad: (String) -> Unit = {},
     val cambiarUnidad: (UnidadDeCompra) -> Unit = {},
@@ -114,6 +115,7 @@ fun ListaIngredientesScreen(
             confirmarReemplazo = modelo::confirmarReemplazo,
             cerrarDialogo = modelo::cerrarDialogo,
             abrirCalculadora = modelo::abrirCalculadora,
+            abrirCalculadoraPara = modelo::abrirCalculadoraPara,
             cambiarPrecio = modelo::cambiarPrecio,
             cambiarCantidad = modelo::cambiarCantidad,
             cambiarUnidad = modelo::cambiarUnidad,
@@ -194,7 +196,8 @@ fun ListaIngredientes(
             alCambiarNombre = acciones.cambiarNombre,
             alCambiarValor = acciones.cambiarValor,
             alGuardar = acciones.guardar,
-            alCerrar = acciones.cerrarDialogo
+            alCerrar = acciones.cerrarDialogo,
+            alIrALaCalculadora = acciones.abrirCalculadoraPara
         )
 
         is DialogoIngrediente.ConfirmarBorrado -> ConfirmarBorradoIngrediente(

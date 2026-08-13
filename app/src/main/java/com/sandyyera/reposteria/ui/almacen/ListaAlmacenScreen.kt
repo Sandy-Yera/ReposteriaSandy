@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -52,6 +53,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sandyyera.reposteria.data.db.dao.ArticuloConValor
 import com.sandyyera.reposteria.data.repositorio.QueHacerConElNombre
 import com.sandyyera.reposteria.data.repositorio.ResultadoAgregarAlAlmacen
+import com.sandyyera.reposteria.logica.almacen.COMO_FILTRAR_POR_CANTIDAD
+import com.sandyyera.reposteria.logica.almacen.MarcaDeAlmacen
 import com.sandyyera.reposteria.logica.almacen.SentidoDelMovimiento
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.ui.componentes.BarraBusqueda
@@ -63,6 +66,9 @@ import com.sandyyera.reposteria.ui.theme.ReposteriaTheme
 /** Todo lo que se puede pedir desde el almacén. */
 data class AccionesAlmacen(
     val buscar: (String) -> Unit = {},
+    val cambiarMarca: (MarcaDeAlmacen) -> Unit = {},
+    val cambiarAyudaDeFiltros: () -> Unit = {},
+    val limpiarFiltros: () -> Unit = {},
     val abrirAgregar: () -> Unit = {},
     val cambiarNombre: (String) -> Unit = {},
     val cambiarEsObjeto: (Boolean) -> Unit = {},
@@ -120,6 +126,9 @@ fun ListaAlmacenScreen(
         dialogo = dialogo,
         acciones = AccionesAlmacen(
             buscar = modelo::buscar,
+            cambiarMarca = modelo::cambiarMarca,
+            cambiarAyudaDeFiltros = modelo::cambiarAyudaDeFiltros,
+            limpiarFiltros = modelo::limpiarFiltros,
             abrirAgregar = modelo::abrirAgregar,
             cambiarNombre = modelo::cambiarNombre,
             cambiarEsObjeto = modelo::cambiarEsObjeto,
@@ -250,8 +259,9 @@ fun ListaAlmacen(
             BarraBusqueda(
                 texto = estado.busqueda,
                 alCambiar = acciones.buscar,
-                marcador = "Buscar en el almacén"
+                marcador = "Buscar por nombre, o =300 / >300"
             )
+            FiltrosDelAlmacen(estado, acciones)
         }
 
         when {
@@ -262,7 +272,15 @@ fun ListaAlmacen(
             )
             estado.busquedaSinResultados -> MensajeCentrado(
                 titulo = "No encontré eso",
-                detalle = "Prueba con otra palabra."
+                // El vacío **dice qué filtros están puestos**, y no "prueba con otra palabra" a
+                // secas: con una casilla marcada de antes, la lista puede quedar vacía por algo
+                // que no se está mirando, y buscar mejor no arreglaría nada.
+                detalle = if (estado.hayFiltrosPuestos) {
+                    "Ninguna fila pasa los filtros que tienes puestos. " +
+                        "Puedes quitarlos con 'Limpiar filtros'."
+                } else {
+                    "Prueba con otra palabra."
+                }
             )
             else -> LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(Medidas.chico),
@@ -291,6 +309,98 @@ fun ListaAlmacen(
         is DialogoAlmacen.ConfirmarBorradoDelCatalogo ->
             ConfirmarSacarDelCatalogo(dialogo, acciones)
     }
+    }
+}
+
+/**
+ * Los filtros del almacén: lo que se entendió del buscador, las casillas y la chuleta (14.14).
+ *
+ * Los pidió Sandy cuando el almacén dejó de caber en una pantalla. Van los tres juntos y debajo
+ * del buscador porque son **una sola pregunta hecha por partes** —"muéstrame solo esto"— y
+ * repartidos entre un menú y la barra habría que ir a dos lugares para armarla.
+ *
+ * **La frase de lo que se entendió no es de adorno** (8.7.1): una lista recortada por una regla
+ * tiene que decir de qué está hecha. Con `=>` y `>=` significando lo mismo, ver tres filas sin
+ * saber cómo se leyó el filtro obliga a una confianza que no está ganada.
+ */
+@Composable
+private fun FiltrosDelAlmacen(estado: EstadoAlmacen, acciones: AccionesAlmacen) {
+    Column(verticalArrangement = Arrangement.spacedBy(Medidas.minimo)) {
+        // El aviso del filtro mal escrito va **acá arriba, pegado al campo** y no en la franja de
+        // abajo, que el teclado tapa justo mientras se escribe el filtro (8.2).
+        estado.errorDelFiltro?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+        estado.comoSeEntendioElFiltro?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+
+        // Las cuatro casillas, en el orden de los dos pares. Son `FilterChip` y no casillas
+        // cuadradas porque ocupan una franja en vez de cuatro renglones, y acá arriba el espacio
+        // se le está quitando a la lista, que es lo que se vino a mirar.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(Medidas.chico)
+        ) {
+            MarcaDeAlmacen.entries.forEach { marca ->
+                FilterChip(
+                    selected = marca in estado.marcas,
+                    onClick = { acciones.cambiarMarca(marca) },
+                    label = { Text(marca.etiqueta) }
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(onClick = acciones.cambiarAyudaDeFiltros) {
+                Text(
+                    text = if (estado.mostrandoLaAyudaDeFiltros) {
+                        "Ocultar cómo se filtra"
+                    } else {
+                        "¿Cómo filtro por cantidad?"
+                    },
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            // **Solo aparece si hay algo que limpiar.** Un botón que no hace nada la mayor parte
+            // del tiempo enseña a no mirarlo, y este importa justo cuando la lista quedó vacía.
+            if (estado.hayFiltrosPuestos) {
+                TextButton(onClick = acciones.limpiarFiltros) {
+                    Text("Limpiar filtros", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+
+        // La chuleta que Sandy pidió por adelantado, *"para evitar olvidar"*. Sale de la lista de
+        // `logica/` y no está escrita acá: una ayuda escrita aparte de la regla que explica se
+        // queda mintiendo a la primera que alguien cambia la regla.
+        if (estado.mostrandoLaAyudaDeFiltros) {
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            ) {
+                Column(modifier = Modifier.padding(Medidas.chico)) {
+                    COMO_FILTRAR_POR_CANTIDAD.forEach {
+                        Text(text = it, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        }
     }
 }
 

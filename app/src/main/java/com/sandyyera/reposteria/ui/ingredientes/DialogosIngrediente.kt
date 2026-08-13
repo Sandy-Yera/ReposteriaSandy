@@ -52,7 +52,8 @@ fun FormularioIngrediente(
     alCambiarNombre: (String) -> Unit,
     alCambiarValor: (String) -> Unit,
     alGuardar: () -> Unit,
-    alCerrar: () -> Unit
+    alCerrar: () -> Unit,
+    alIrALaCalculadora: (Ingrediente) -> Unit = {}
 ) {
     val editando = estado.editando != null
     val errorNombre = estado.errorNombreVisible
@@ -92,6 +93,28 @@ fun FormularioIngrediente(
                     ayuda = "Se escribe con coma: 1,55",
                     accionDelTeclado = ImeAction.Done
                 )
+
+                // **Solo al editar**, y ahí está la gracia: la calculadora se abre con este
+                // ingrediente ya elegido de destino. Creando uno nuevo no hay a qué apuntar
+                // todavía —el ingrediente aún no existe— y para ese caso la calculadora ya
+                // tiene su "Crear un ingrediente nuevo" (7.2).
+                estado.editando?.let { ingrediente ->
+                    TextButton(
+                        onClick = { alIrALaCalculadora(ingrediente) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "Calcularlo desde lo que costó el paquete",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                    Text(
+                        text = "Vuelve acá para confirmar el cambio, mostrando el valor de " +
+                            "ahora y el nuevo.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         },
         confirmButton = {
