@@ -1,5 +1,6 @@
 package com.sandyyera.reposteria.ui.componentes
 
+import android.view.WindowManager
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.Composable
@@ -66,7 +67,7 @@ fun CuadroDeDialogo(
     AlertDialog(
         onDismissRequest = onDismissRequest,
         confirmButton = {
-            BajarElVelo()
+            AjustarLaVentanaDelCuadro()
             confirmButton()
         },
         modifier = modifier.imePadding(),
@@ -79,24 +80,41 @@ fun CuadroDeDialogo(
 }
 
 /**
- * Baja el oscurecido de la ventana del cuadro a [VELO_DE_LOS_CUADROS]. No dibuja nada.
+ * Los tres ajustes que la ventana del cuadro necesita y `DialogProperties` no sabe decir.
  *
  * **Va adentro de un hueco del cuadro y no arriba, junto al `AlertDialog`.** Ahí afuera
- * `LocalView` es la vista de la app, no la del cuadro —el cuadro es otra ventana— y se estaría
- * bajando el velo de la ventana equivocada. Se elige el hueco del botón de confirmar porque es el
+ * `LocalView` es la vista de la app, no la del cuadro —el cuadro es otra ventana— y se estarían
+ * ajustando las de la ventana equivocada. Se elige el hueco del botón de confirmar porque es el
  * **único obligatorio**: los demás son opcionales, y colgarlo de uno que puede faltar dejaría
- * cuadros con el velo por defecto sin que se note por qué.
+ * cuadros sin ajustar sin que se note por qué.
  *
- * `DialogProperties` no tiene dónde decir esto, así que se pide a la ventana de Android
- * directamente. Es la única parte de la app que baja a ese nivel, y por eso está encerrada acá:
- * escrita en cada cuadro serían 42 lugares donde acordarse.
+ * Es la única parte de la app que baja al nivel de la ventana de Android, y por eso está
+ * encerrada acá: escrita en cada cuadro serían 42 lugares donde acordarse.
  */
 @Composable
-private fun BajarElVelo() {
+private fun AjustarLaVentanaDelCuadro() {
     val vista = LocalView.current
     // En `SideEffect` y no suelto: tocar la ventana es un efecto sobre algo de afuera de Compose,
     // y hacerlo en medio del dibujo es pedir que pase a destiempo.
     SideEffect {
-        (vista.parent as? DialogWindowProvider)?.window?.setDimAmount(VELO_DE_LOS_CUADROS)
+        val ventana = (vista.parent as? DialogWindowProvider)?.window ?: return@SideEffect
+
+        ventana.setDimAmount(VELO_DE_LOS_CUADROS)
+
+        // **Que el sistema no mueva el cuadro: de eso ya se encarga `imePadding`.**
+        //
+        // Eran dos manos moviendo lo mismo, y por eso Sandy vio el cuadro *"subir, luego bajar un
+        // poco, y después aparecer el teclado"*: Android achicaba la ventana por su cuenta —el
+        // `adjustResize` del manifiesto vale también para los cuadros— y encima el relleno del
+        // teclado la empujaba hacia arriba. Cada uno llegaba a su tiempo, y de ahí el tirón.
+        //
+        // Con `ADJUST_NOTHING` la ventana se queda quieta y el teclado sigue llegando como una
+        // medida consultable, que es lo único que `imePadding` necesita.
+        ventana.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
+
+        // **Sin animación propia de aparecer.** Lo pidió Sandy después de ver el velo entrar y
+        // salir. El cuadro aparece de una y lo único que se mueve en pantalla es el teclado
+        // subiendo, que es un movimiento y no tres encimados.
+        ventana.setWindowAnimations(0)
     }
 }

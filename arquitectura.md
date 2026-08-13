@@ -3137,6 +3137,14 @@ contra el 0,6 que usa Android. **No en 0**: el velo es lo que dice que la app de
 esperando una respuesta, y sin nada de oscurecido un cuadro sobre una lista clara se lee como una
 tarjeta más de la lista.
 
+**Y el cuadro lo mueve una sola mano.** Sandy vio el cuadro *"subir, luego bajar un poco, y
+después aparecer el teclado"*: eran dos mecanismos moviendo lo mismo — Android achicaba la ventana
+del cuadro por su cuenta, porque el `adjustResize` del manifiesto vale también para los cuadros, y
+encima `imePadding` la empujaba hacia arriba. Cada uno llegaba a su tiempo, y de ahí el tirón. La
+ventana del cuadro pasa a `SOFT_INPUT_ADJUST_NOTHING` —queda quieta, y el teclado sigue llegando
+como una medida consultable— y pierde su animación de aparecer, así lo único que se mueve al abrir
+un cuadro es el teclado subiendo.
+
 **Pedir desplazar mientras el dedo desplaza es pelear con quien manda.** La otra mitad del arreglo
 del paso "Pasos": la petición de traer el campo a la vista se hacía también al **enfocarlo**, y
 tocando un campo del final y arrastrando de inmediato la pantalla quedaba más arriba de donde
