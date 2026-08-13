@@ -40,20 +40,26 @@ class MainActivity : ComponentActivity() {
         setContent {
             ReposteriaTheme {
                 Surface(
-                    // El color pinta **toda** la ventana, también detrás de las barras del
-                    // sistema. El hueco de las barras lo respetan las pantallas por su cuenta
-                    // (`Scaffold` y `TopAppBar` ya lo hacen), así que acá solo hay que asegurarse
-                    // de que el fondo llegue hasta el canto: sin esto quedaría una franja del
-                    // color del tema de Android, que en modo oscuro se ve blanca.
-                    modifier = Modifier
-                        .fillMaxSize()
-                        // **El único lugar donde se descuenta el teclado.** Puesto en la raíz, todas
-                        // las secciones se achican igual y ninguna tiene que acordarse: es lo que
-                        // hacía `adjustResize` antes de que Android 15 lo ignorara.
-                        .imePadding(),
+                    // **El `Surface` llega hasta el canto y no se achica nunca.** Su color pinta
+                    // toda la ventana, también detrás de las barras del sistema y detrás del
+                    // teclado. El hueco de las barras lo respetan las pantallas por su cuenta
+                    // (`Scaffold` y `TopAppBar` ya lo hacen).
+                    //
+                    // Acá estuvo un error que Sandy pilló de inmediato: el `imePadding` estaba
+                    // **en esta línea**, así que el fondo de la app se achicaba con el teclado y
+                    // por ese hueco asomaba el blanco del tema de Android — en modo oscuro,
+                    // deslumbrante. El relleno tiene que achicar **lo que va adentro**, no el
+                    // color que hay detrás.
+                    modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    NavegacionPrincipal(contenedor = contenedor)
+                    // **El único lugar donde se descuenta el teclado.** Puesto en la raíz, todas
+                    // las secciones se achican igual y ninguna tiene que acordarse: es lo que
+                    // hacía `adjustResize` antes de que Android 15 lo ignorara.
+                    NavegacionPrincipal(
+                        contenedor = contenedor,
+                        modifier = Modifier.imePadding()
+                    )
                 }
             }
         }

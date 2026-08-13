@@ -3145,6 +3145,19 @@ ventana del cuadro pasa a `SOFT_INPUT_ADJUST_NOTHING` —queda quieta, y el tecl
 como una medida consultable— y pierde su animación de aparecer, así lo único que se mueve al abrir
 un cuadro es el teclado subiendo.
 
+**El `imePadding` va sobre lo que va adentro, no sobre el fondo.** Puesto sobre el `Surface` de
+`MainActivity`, el fondo de la app se achica con el teclado y por ese hueco asoma el
+`windowBackground` del tema XML — que es `Light`, o sea blanco, y con el celular en oscuro
+deslumbra. Lo reportó Sandy como *"el velo ya no es gris, es blanco prácticamente"*, y no era el
+velo: era el fondo faltando. El `Surface` llega hasta el canto siempre y el relleno lo lleva
+`NavegacionPrincipal`.
+
+Por lo mismo, el `windowBackground` del tema apunta a `@color/fondo_ventana`, que tiene su versión
+en `values-night/`. Ese color se ve **antes de que exista una sola pantalla de Compose**, así que
+sin él la app arranca con un destello blanco cada vez que se abre en modo oscuro. Está escrito dos
+veces —una para Android y otra en `ui/theme/Color.kt` para Compose— y no hay forma de evitarlo: uno
+se lee antes de que Compose exista. Si cambia el fondo del tema, hay que cambiar los dos.
+
 **Pedir desplazar mientras el dedo desplaza es pelear con quien manda.** La otra mitad del arreglo
 del paso "Pasos": la petición de traer el campo a la vista se hacía también al **enfocarlo**, y
 tocando un campo del final y arrastrando de inmediato la pantalla quedaba más arriba de donde

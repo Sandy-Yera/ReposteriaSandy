@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Lo mismo que `values/colors.xml`, para cuando el celular está en modo oscuro.
+
+    Es el `ChocolateOscuroFondo` de `ui/theme/Color.kt`. Si allá cambia, acá también.
+-->
+<resources>
+    <color name="fondo_ventana">#FF1C1512</color>
+</resources>
