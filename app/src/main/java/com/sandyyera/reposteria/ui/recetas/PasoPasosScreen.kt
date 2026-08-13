@@ -1,6 +1,7 @@
 package com.sandyyera.reposteria.ui.recetas
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -12,6 +13,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
@@ -46,6 +49,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.TextRange
@@ -345,7 +349,14 @@ private fun EncabezadoDeBloque(texto: String, vieneDe: String?, esGeneralAnidado
  *
  * **Tocar el número abre el título.** Es la aplicación de "tocar la cosa hace lo principal"
  * (8.4.1, #3) al único lugar donde cabía: el campo de texto ya está tomado por escribir.
+ *
+ * **La lista sigue al cursor mientras se escribe.** Un paso crece hacia abajo al pasar de renglón,
+ * y quien está escribiendo no puede estar arrastrando la lista con la otra mano para ver lo que
+ * teclea. Se pide con `BringIntoViewRequester`, apuntando al **rectángulo del cursor** y no al
+ * campo entero: un paso largo puede ser más alto que lo que queda de pantalla con el teclado
+ * abierto, y traerlo completo dejaría a la vista su primera línea, que es justo la que no importa.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FilaDeUnPaso(
     numerado: PasoNumerado,
@@ -367,7 +378,31 @@ private fun FilaDeUnPaso(
     // usa `CampoNumerico` para no mandar el cursor al final en cada tecla.
     val texto = estado.textoDe(paso)
     var recordado by remember { mutableStateOf(TextFieldValue(texto, TextRange(texto.length))) }
-    val campo = if (recordado.text == texto) recordado else TextFieldValue(texto, TextRange(texto.length))
+    val campo = if (recordado.text == texto) {
+        recordado
+    } else {
+        TextFieldValue(texto, TextRange(texto.length))
+    }
+
+    // Dónde quedó dibujado cada carácter. Hace falta para saber en qué renglón está el cursor:
+    // sin esto solo se sabe su posición dentro del texto, que no dice nada de la pantalla.
+    var disposicionDelTexto by remember { mutableStateOf<TextLayoutResult?>(null) }
+    val traerALaVista = remember { BringIntoViewRequester() }
+
+    // **Traer el cursor a la vista cada vez que se mueve**, que es lo que Sandy pidió: que la
+    // pantalla baje sola a medida que la línea baja, sin tener que arrastrar la lista con la otra
+    // mano. Va en un `LaunchedEffect` y no dentro de `onValueChange` porque ahí la disposición
+    // todavía es la del texto **anterior**: el renglón nuevo aún no se ha medido, y se pediría
+    // mostrar el lugar donde estaba el cursor antes de escribir.
+    //
+    // **Solo con el foco puesto.** Sin esa condición, cada paso que aparece al desplazar la lista
+    // pediría su turno para verse, y la lista saltaría sola al abrir la receta.
+    LaunchedEffect(campo.selection, disposicionDelTexto, teniaFoco) {
+        if (!teniaFoco) return@LaunchedEffect
+        val disposicion = disposicionDelTexto ?: return@LaunchedEffect
+        val cursor = campo.selection.end.coerceIn(0, disposicion.layoutInput.text.length)
+        traerALaVista.bringIntoView(disposicion.getCursorRect(cursor))
+    }
 
     // Cuando un atajo se reemplaza, el largo del texto cambia y el cursor tiene que ir donde
     // quedó lo insertado. Se avisa de vuelta para que esto no se repita en cada dibujado.
@@ -405,11 +440,13 @@ private fun FilaDeUnPaso(
             placeholder = { Text("Qué se hace en este paso") },
             supportingText = estado.errorDe(paso)?.let { { Text(it) } },
             isError = estado.errorDe(paso) != null,
+            onTextLayout = { disposicionDelTexto = it },
             keyboardOptions = KeyboardOptions(
                 capitalization = KeyboardCapitalization.Sentences
             ),
             modifier = Modifier
                 .weight(1f)
+                .bringIntoViewRequester(traerALaVista)
                 .onFocusChanged { foco ->
                     if (teniaFoco && !foco.isFocused) acciones.guardarPaso(paso.id)
                     teniaFoco = foco.isFocused

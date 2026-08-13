@@ -3117,6 +3117,21 @@ tenga el celular:
 `adjustResize` se queda en el manifiesto: con el borde a borde declarado ya no achica nada, pero es
 lo que hace que el teclado se reporte como una medida en vez de empujar la ventana entera.
 
+**Que el hueco exista no es lo mismo que que la lista se mueva sola.** Lo de arriba deja sitio
+sobre el teclado; que la pantalla *siga al cursor* mientras se escribe es otra cosa, y en el paso
+"Pasos" se pide a mano con `BringIntoViewRequester` (8.8). Se apunta al **rectángulo del cursor** y
+no al campo entero: un paso largo puede ser más alto que lo que queda de pantalla, y traerlo
+completo dejaría a la vista su primera línea, que es justo la que no importa. Se pide desde un
+efecto y no desde `onValueChange` porque ahí la disposición del texto todavía es la **anterior** —
+el renglón nuevo aún no se midió—, y solo con el campo enfocado, o cada paso que aparece al
+desplazar pediría su turno y la lista saltaría sola al abrir la receta.
+
+**El velo gris de los cuadros llega hasta el canto, y eso es correcto.** Con el borde a borde, el
+oscurecido que un diálogo pone detrás cubre la pantalla entera, incluida la zona donde el teclado
+va a aparecer; mientras el teclado sube —unos décimos de segundo— esa franja se ve gris. Antes no
+pasaba porque el velo se quedaba corto, que era el mismo motivo por el que el cuadro tampoco sabía
+del teclado.
+
 **Abrir el menú saca del campo de texto.** Lo reportó Sandy: con el teclado abierto y el cursor
 parpadeando, el menú se dibujaba encima pero *"se ve todavía el puntero, traspasando así el
 menú"*, y el teclado seguía ocupando media pantalla. Se resuelve con un `clearFocus(force = true)`
