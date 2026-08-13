@@ -2801,11 +2801,32 @@ Marcar las dos de un par equivale a no marcar ninguna: podría tratarse como "no
 opuestas— pero eso deja la lista vacía sin decir por qué, y nadie lee dos casillas encendidas como
 un error.
 
-**La chuleta va en la pantalla**, detrás de "¿Cómo filtro por cantidad?". Sandy la pidió por
-adelantado —*"para poder recordar, tener un campo que me diga cómo debo escribirlos, para evitar
-olvidar"*— y sale de una lista de `logica/`, no escrita en el Composable: una ayuda escrita aparte
-de la regla que explica se queda mintiendo a la primera que alguien cambia la regla. Es la misma
-decisión que la ayuda de los atajos de los pasos (8.8).
+**Todo eso vive en un panel flotante, no en la pantalla.** Al principio estaba arriba de la lista,
+y duró poco: entre los dos botones, el valor del almacén, el buscador, las cuatro casillas y la
+chuleta, quedaba una franja para ver lo que uno vino a ver — *"para ver lo que tengo en almacén
+queda muy corto, porque tengo mucho arriba, y si escribo el teclado tapa por completo la zona"*.
+**Filtrar se hace de vez en cuando; mirar la lista, siempre**, así que lo que se va arriba es lo
+primero.
+
+En la pantalla queda una sola franja: el buscador, el botón que abre el panel y —solo si hay algo
+puesto— el de limpiar. El ícono **se enciende cuando hay filtros de categoría**: con el panel
+cerrado es lo único que puede avisar que la lista está recortada por algo que no se está viendo, y
+apagado siempre, una lista corta parecería un almacén vacío.
+
+Lo único que se queda afuera del panel es **lo que habla del texto recién escrito**: el aviso del
+filtro mal escrito y la frase de cómo se entendió. Eso no es una opción que se configura, es la
+respuesta a lo que se está tecleando, y escondida no serviría de nada.
+
+**La chuleta va arriba del panel**, antes de las casillas, que es el orden en que se usan. Sandy la
+pidió por adelantado —*"para poder recordar, tener un campo que me diga cómo debo escribirlos, para
+evitar olvidar"*— y sale de una lista de `logica/`, no escrita en el Composable: una ayuda escrita
+aparte de la regla que explica se queda mintiendo a la primera que alguien cambia la regla. Es la
+misma decisión que la ayuda de los atajos de los pasos (8.8). Dentro del panel dejó de estar detrás
+de un botón: ahí adentro no le quita espacio a nada.
+
+**Las casillas no tienen botón de aplicar.** Se marcan con el panel abierto y la lista se filtra
+detrás. No hay nada que confirmar: marcar *es* el cambio, y un "Aceptar" solo agregaría un toque a
+algo que ya se deshace tocando otra vez.
 
 ### 14.12 Lo que este módulo **no** hace todavía
 

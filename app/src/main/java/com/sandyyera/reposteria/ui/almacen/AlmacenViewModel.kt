@@ -119,6 +119,21 @@ sealed interface DialogoAlmacen {
     data object Ninguno : DialogoAlmacen
 
     /**
+     * El panel de filtros, flotando encima de la lista (14.14).
+     *
+     * **Los filtros salieron de la pantalla y se metieron acá**, y no por gusto: entre los dos
+     * botones de arriba, el valor del almacén, el buscador, las cuatro casillas y la chuleta,
+     * quedaba una franja para ver lo que uno vino a ver. Lo dijo Sandy: *"para ver lo que tengo
+     * en almacén queda muy corto, porque tengo mucho arriba, y si escribo el teclado tapa por
+     * completo la zona"*. Filtrar se hace de vez en cuando; mirar la lista, siempre.
+     *
+     * **No lleva datos.** Lo que el panel dibuja —las casillas marcadas— vive en [EstadoAlmacen],
+     * porque también lo necesita la lista para filtrarse. Duplicarlo acá dejaría dos verdades
+     * sobre lo mismo, que es justo lo que ya costó caro en la simulación de los empleados.
+     */
+    data object Filtros : DialogoAlmacen
+
+    /**
      * Anotar algo que hay: un ingrediente de cocina o cualquier otra cosa (14.5 y 14.6).
      *
      * **Es un solo cuadro y no dos caminos**, porque desde afuera es una sola acción y cuál de
@@ -492,7 +507,6 @@ data class EstadoAlmacen(
     val loQueSeBusca: LoQueSeBusca = LoQueSeBusca.PorNombre(""),
     /** Las casillas de categoría marcadas. Vacío es "no filtra por eso". */
     val marcas: Set<MarcaDeAlmacen> = emptySet(),
-    val mostrandoLaAyudaDeFiltros: Boolean = false,
     val mensaje: String? = null,
     val cargando: Boolean = true
 ) {
@@ -547,24 +561,19 @@ class AlmacenViewModel(
 
     private val busqueda = MutableStateFlow("")
     private val marcas = MutableStateFlow<Set<MarcaDeAlmacen>>(emptySet())
-    private val ayudaDeFiltros = MutableStateFlow(false)
     private val _dialogo = MutableStateFlow<DialogoAlmacen>(DialogoAlmacen.Ninguno)
     private val mensaje = MutableStateFlow<String?>(null)
 
     val dialogo: StateFlow<DialogoAlmacen> = _dialogo
 
     /** Lo del buscador y lo de las casillas, juntos: `combine` acepta cinco flujos. */
-    private val comoSeFiltra = combine(
-        busqueda,
-        marcas,
-        ayudaDeFiltros
-    ) { texto, marcadas, ayuda -> Triple(texto, marcadas, ayuda) }
+    private val comoSeFiltra = combine(busqueda, marcas) { texto, marcadas -> texto to marcadas }
 
     val estado: StateFlow<EstadoAlmacen> = combine(
         almacen.observarTodo(),
         comoSeFiltra,
         mensaje
-    ) { articulos, (textoBuscado, marcadas, ayuda), mensajeActual ->
+    ) { articulos, (textoBuscado, marcadas), mensajeActual ->
         val filas = articulos.map { FilaDeAlmacen(it) }
         // El texto se lee **una sola vez** y de acá sale tanto lo que se filtra como lo que la
         // pantalla dice haber entendido. Leerlo dos veces dejaría abierta la puerta a que un día
@@ -588,7 +597,6 @@ class AlmacenViewModel(
             busqueda = textoBuscado,
             loQueSeBusca = buscado,
             marcas = marcadas,
-            mostrandoLaAyudaDeFiltros = ayuda,
             mensaje = mensajeActual,
             cargando = false
         )
@@ -607,9 +615,9 @@ class AlmacenViewModel(
         marcas.value = if (marca in marcas.value) marcas.value - marca else marcas.value + marca
     }
 
-    /** Muestra u oculta la chuleta de cómo se escriben los filtros de cantidad. */
-    fun cambiarAyudaDeFiltros() {
-        ayudaDeFiltros.value = !ayudaDeFiltros.value
+    /** Abre el panel de filtros (14.14). Va por el canal de los cuadros, como los demás. */
+    fun abrirFiltros() {
+        _dialogo.value = DialogoAlmacen.Filtros
     }
 
     /** Deja el almacén sin ningún filtro puesto: el texto y las casillas de una vez. */

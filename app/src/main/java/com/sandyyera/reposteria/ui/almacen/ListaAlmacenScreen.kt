@@ -18,6 +18,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -67,7 +68,7 @@ import com.sandyyera.reposteria.ui.theme.ReposteriaTheme
 data class AccionesAlmacen(
     val buscar: (String) -> Unit = {},
     val cambiarMarca: (MarcaDeAlmacen) -> Unit = {},
-    val cambiarAyudaDeFiltros: () -> Unit = {},
+    val abrirFiltros: () -> Unit = {},
     val limpiarFiltros: () -> Unit = {},
     val abrirAgregar: () -> Unit = {},
     val cambiarNombre: (String) -> Unit = {},
@@ -127,7 +128,7 @@ fun ListaAlmacenScreen(
         acciones = AccionesAlmacen(
             buscar = modelo::buscar,
             cambiarMarca = modelo::cambiarMarca,
-            cambiarAyudaDeFiltros = modelo::cambiarAyudaDeFiltros,
+            abrirFiltros = modelo::abrirFiltros,
             limpiarFiltros = modelo::limpiarFiltros,
             abrirAgregar = modelo::abrirAgregar,
             cambiarNombre = modelo::cambiarNombre,
@@ -256,12 +257,7 @@ fun ListaAlmacen(
             }
 
             ValorDelAlmacen(estado)
-            BarraBusqueda(
-                texto = estado.busqueda,
-                alCambiar = acciones.buscar,
-                marcador = "Buscar por nombre, o =300 / >300"
-            )
-            FiltrosDelAlmacen(estado, acciones)
+            LineaDeBusqueda(estado, acciones)
         }
 
         when {
@@ -299,6 +295,7 @@ fun ListaAlmacen(
 
     when (dialogo) {
         is DialogoAlmacen.Ninguno -> Unit
+        is DialogoAlmacen.Filtros -> PanelDeFiltros(estado, acciones)
         is DialogoAlmacen.Agregar -> DialogoAgregarAlAlmacen(dialogo, acciones)
         is DialogoAlmacen.CambiarCantidad -> DialogoEditarArticulo(dialogo, acciones)
         is DialogoAlmacen.ElegirQueHacerConElNombre -> DialogoQueHacerConElNombre(dialogo, acciones)
@@ -313,21 +310,57 @@ fun ListaAlmacen(
 }
 
 /**
- * Los filtros del almacén: lo que se entendió del buscador, las casillas y la chuleta (14.14).
+ * La línea del buscador: el campo, el botón de filtros y el de limpiarlos (14.14).
  *
- * Los pidió Sandy cuando el almacén dejó de caber en una pantalla. Van los tres juntos y debajo
- * del buscador porque son **una sola pregunta hecha por partes** —"muéstrame solo esto"— y
- * repartidos entre un menú y la barra habría que ir a dos lugares para armarla.
+ * **Los filtros dejaron de vivir en la pantalla y se mudaron a un panel flotante.** Lo pidió
+ * Sandy con el motivo a la vista: *"para ver lo que tengo en almacén queda muy corto, porque
+ * tengo mucho arriba, y si escribo el teclado tapa por completo la zona"*. Entre los dos botones,
+ * el valor del almacén, el buscador, las cuatro casillas y la chuleta, quedaba una franja para
+ * ver lo que uno vino a ver. Filtrar se hace de vez en cuando; mirar la lista, siempre — así que
+ * lo que se va arriba es lo primero.
  *
- * **La frase de lo que se entendió no es de adorno** (8.7.1): una lista recortada por una regla
- * tiene que decir de qué está hecha. Con `=>` y `>=` significando lo mismo, ver tres filas sin
- * saber cómo se leyó el filtro obliga a una confianza que no está ganada.
+ * Lo único que se queda afuera es **lo que habla del texto recién escrito**: el aviso del filtro
+ * mal escrito y la frase de cómo se entendió. Eso no es una opción que se configura, es la
+ * respuesta a lo que se está tecleando, y escondida en un panel no serviría de nada.
  */
 @Composable
-private fun FiltrosDelAlmacen(estado: EstadoAlmacen, acciones: AccionesAlmacen) {
+private fun LineaDeBusqueda(estado: EstadoAlmacen, acciones: AccionesAlmacen) {
     Column(verticalArrangement = Arrangement.spacedBy(Medidas.minimo)) {
-        // El aviso del filtro mal escrito va **acá arriba, pegado al campo** y no en la franja de
-        // abajo, que el teclado tapa justo mientras se escribe el filtro (8.2).
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            BarraBusqueda(
+                texto = estado.busqueda,
+                alCambiar = acciones.buscar,
+                marcador = "Buscar por nombre, o =300",
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(onClick = acciones.abrirFiltros) {
+                Icon(
+                    imageVector = Icons.Default.List,
+                    contentDescription = "Filtros",
+                    // **Encendido cuando hay filtros puestos.** Con el panel cerrado, este ícono
+                    // es lo único que puede avisar que la lista está recortada por algo que no se
+                    // está viendo; apagado siempre, una lista corta parecería un almacén vacío.
+                    tint = if (estado.marcas.isEmpty()) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    }
+                )
+            }
+            // **Solo aparece si hay algo que limpiar.** Un botón que no hace nada la mayor parte
+            // del tiempo enseña a no mirarlo, y este importa justo cuando la lista quedó vacía.
+            if (estado.hayFiltrosPuestos) {
+                TextButton(onClick = acciones.limpiarFiltros) {
+                    Text("Limpiar", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+
+        // El aviso del filtro mal escrito va **pegado al campo** y no en la franja de abajo, que
+        // el teclado tapa justo mientras se escribe el filtro (8.2).
         estado.errorDelFiltro?.let {
             Text(
                 text = it,
@@ -342,66 +375,88 @@ private fun FiltrosDelAlmacen(estado: EstadoAlmacen, acciones: AccionesAlmacen) 
                 color = MaterialTheme.colorScheme.primary
             )
         }
+    }
+}
 
-        // Las cuatro casillas, en el orden de los dos pares. Son `FilterChip` y no casillas
-        // cuadradas porque ocupan una franja en vez de cuatro renglones, y acá arriba el espacio
-        // se le está quitando a la lista, que es lo que se vino a mirar.
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(Medidas.chico)
-        ) {
-            MarcaDeAlmacen.entries.forEach { marca ->
-                FilterChip(
-                    selected = marca in estado.marcas,
-                    onClick = { acciones.cambiarMarca(marca) },
-                    label = { Text(marca.etiqueta) }
-                )
-            }
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            TextButton(onClick = acciones.cambiarAyudaDeFiltros) {
-                Text(
-                    text = if (estado.mostrandoLaAyudaDeFiltros) {
-                        "Ocultar cómo se filtra"
-                    } else {
-                        "¿Cómo filtro por cantidad?"
-                    },
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
-            // **Solo aparece si hay algo que limpiar.** Un botón que no hace nada la mayor parte
-            // del tiempo enseña a no mirarlo, y este importa justo cuando la lista quedó vacía.
-            if (estado.hayFiltrosPuestos) {
-                TextButton(onClick = acciones.limpiarFiltros) {
-                    Text("Limpiar filtros", style = MaterialTheme.typography.bodySmall)
-                }
-            }
-        }
-
-        // La chuleta que Sandy pidió por adelantado, *"para evitar olvidar"*. Sale de la lista de
-        // `logica/` y no está escrita acá: una ayuda escrita aparte de la regla que explica se
-        // queda mintiendo a la primera que alguien cambia la regla.
-        if (estado.mostrandoLaAyudaDeFiltros) {
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
-                )
+/**
+ * El panel flotante de filtros (14.14).
+ *
+ * Trae **la chuleta arriba y las casillas debajo**, en ese orden y no al revés, porque es el orden
+ * en que se usan: primero se lee cómo se escribe un filtro de cantidad, después se marcan las
+ * categorías. Sandy lo pidió así — *"en la parte superior, el mensaje guía de cómo usar filtro por
+ * cantidad"*—, y de paso la chuleta dejó de estar detrás de un botón: acá adentro no le quita
+ * espacio a nada.
+ *
+ * **Las casillas se marcan con el panel abierto y la lista se filtra detrás**, sin botón de
+ * aplicar. No hay nada que confirmar: marcar es el cambio, y un "Aceptar" solo agregaría un toque
+ * a algo que ya se puede deshacer tocando otra vez.
+ */
+@Composable
+private fun PanelDeFiltros(estado: EstadoAlmacen, acciones: AccionesAlmacen) {
+    CuadroDeDialogo(
+        onDismissRequest = acciones.cerrarDialogo,
+        title = { Text("Filtros") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(Medidas.chico)
             ) {
-                Column(modifier = Modifier.padding(Medidas.chico)) {
-                    COMO_FILTRAR_POR_CANTIDAD.forEach {
-                        Text(text = it, style = MaterialTheme.typography.bodySmall)
+                // La chuleta sale de la lista de `logica/` y no está escrita acá: una ayuda
+                // escrita aparte de la regla que explica se queda mintiendo a la primera que
+                // alguien cambia la regla.
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(Medidas.chico)) {
+                        Text(
+                            text = "Por cantidad, escribiendo en el buscador:",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        COMO_FILTRAR_POR_CANTIDAD.forEach {
+                            Text(text = it, style = MaterialTheme.typography.bodySmall)
+                        }
                     }
                 }
+
+                Text(
+                    text = "Por qué es cada cosa:",
+                    style = MaterialTheme.typography.titleSmall
+                )
+                // Las cuatro casillas, en el orden de los dos pares. Marcar las dos de un par es
+                // lo mismo que no marcar ninguna, y eso se dice abajo en vez de dejarlo adivinar.
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(Medidas.chico)
+                ) {
+                    MarcaDeAlmacen.entries.forEach { marca ->
+                        FilterChip(
+                            selected = marca in estado.marcas,
+                            onClick = { acciones.cambiarMarca(marca) },
+                            label = { Text(marca.etiqueta) }
+                        )
+                    }
+                }
+                Text(
+                    text = "Sin marcar nada se muestra todo. Marcar las dos de un par es lo " +
+                        "mismo que no marcar ninguna.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = acciones.cerrarDialogo) { Text("Listo") }
+        },
+        dismissButton = {
+            if (estado.hayFiltrosPuestos) {
+                TextButton(onClick = acciones.limpiarFiltros) { Text("Limpiar filtros") }
             }
         }
-    }
+    )
 }
 
 /**
