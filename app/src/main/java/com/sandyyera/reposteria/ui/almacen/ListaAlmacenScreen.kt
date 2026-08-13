@@ -19,7 +19,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -59,6 +58,7 @@ import com.sandyyera.reposteria.logica.almacen.SentidoDelMovimiento
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.ui.componentes.BarraBusqueda
 import com.sandyyera.reposteria.ui.componentes.CampoNumerico
+import com.sandyyera.reposteria.ui.componentes.CuadroDeDialogo
 import com.sandyyera.reposteria.ui.componentes.MensajeCentrado
 import com.sandyyera.reposteria.ui.theme.Medidas
 import com.sandyyera.reposteria.ui.theme.ReposteriaTheme
@@ -423,7 +423,7 @@ private fun ConfirmarSacarDelAlmacen(
     dialogo: DialogoAlmacen.ConfirmarBorrado,
     acciones: AccionesAlmacen
 ) {
-    AlertDialog(
+    CuadroDeDialogo(
         onDismissRequest = acciones.cerrarDialogo,
         title = { Text("¿Sacar '${dialogo.fila.nombre}' del almacén?") },
         text = {
@@ -492,7 +492,7 @@ private fun ConfirmarSacarDelCatalogo(
     dialogo: DialogoAlmacen.ConfirmarBorradoDelCatalogo,
     acciones: AccionesAlmacen
 ) {
-    AlertDialog(
+    CuadroDeDialogo(
         onDismissRequest = acciones.cancelarBorradoDelCatalogo,
         title = { Text("¿Eliminar '${dialogo.nombre}' de Ingredientes?") },
         text = {
@@ -657,7 +657,7 @@ private fun DialogoAgregarAlAlmacen(
         return
     }
 
-    AlertDialog(
+    CuadroDeDialogo(
         onDismissRequest = acciones.cerrarDialogo,
         title = { Text("Agregar al almacén") },
         text = {
@@ -788,7 +788,7 @@ private fun DialogoPrecioDistinto(
     val laUnidadDeAntes = if (disputa.existente.esObjeto) "unidad" else "gramo"
     val laUnidadNueva = if (disputa.esObjetoNuevo) "unidad" else "gramo"
 
-    AlertDialog(
+    CuadroDeDialogo(
         onDismissRequest = acciones.cerrarLaDisputaDePrecio,
         title = { Text("'${disputa.existente.nombre}' ya existe") },
         text = {
@@ -860,7 +860,7 @@ private fun DialogoQueHacerConElNombre(
     acciones: AccionesAlmacen
 ) {
     val cuantas = estado.usadoEnRecetas
-    AlertDialog(
+    CuadroDeDialogo(
         onDismissRequest = acciones.cerrarDialogo,
         title = { Text("'${estado.nombreNuevo}' no existe todavía") },
         text = {
@@ -912,7 +912,7 @@ private fun DialogoRenombrarEnAlmacen(
     estado: DialogoAlmacen.Renombrar,
     acciones: AccionesAlmacen
 ) {
-    AlertDialog(
+    CuadroDeDialogo(
         onDismissRequest = acciones.cancelarRenombre,
         title = { Text("Cambiar el nombre") },
         text = {
@@ -964,7 +964,7 @@ private fun DialogoCambiosEnRecetas(
     estado: DialogoAlmacen.ConfirmarCambiosEnRecetas,
     acciones: AccionesAlmacen
 ) {
-    AlertDialog(
+    CuadroDeDialogo(
         onDismissRequest = acciones.cerrarDialogo,
         title = { Text("'${estado.volverA.nombre}' cambia para las recetas") },
         text = {
@@ -1018,7 +1018,7 @@ private fun DialogoDescontarPorRecetas(
     acciones: AccionesAlmacen
 ) {
     val previa = estado.previa
-    AlertDialog(
+    CuadroDeDialogo(
         onDismissRequest = acciones.cerrarDialogo,
         title = { Text(if (previa == null) "¿Qué hiciste?" else "Esto va a quedar") },
         text = {
@@ -1134,7 +1134,7 @@ private fun DialogoEditarArticulo(
     estado: DialogoAlmacen.CambiarCantidad,
     acciones: AccionesAlmacen
 ) {
-    AlertDialog(
+    CuadroDeDialogo(
         onDismissRequest = acciones.cerrarDialogo,
         title = {
             // **Tocar el nombre lo cambia**, que es el mismo gesto del título de una receta

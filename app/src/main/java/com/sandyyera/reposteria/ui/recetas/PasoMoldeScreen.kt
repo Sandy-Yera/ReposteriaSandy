@@ -20,7 +20,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -58,6 +57,7 @@ import com.sandyyera.reposteria.ui.componentes.BarraBusqueda
 import com.sandyyera.reposteria.logica.moldes.FormaDelCorte
 import com.sandyyera.reposteria.logica.moldes.nombreDelCorte
 import com.sandyyera.reposteria.ui.componentes.CampoNumerico
+import com.sandyyera.reposteria.ui.componentes.CuadroDeDialogo
 import com.sandyyera.reposteria.ui.moldes.nombreDeLaForma
 import com.sandyyera.reposteria.ui.theme.Medidas
 import com.sandyyera.reposteria.ui.theme.ReposteriaTheme
@@ -232,7 +232,7 @@ fun PasoMolde(
     when (dialogo) {
         is DialogoMoldeDeReceta.Ninguno -> Unit
         is DialogoMoldeDeReceta.Elegir -> CuadroDeMolde(dialogo, acciones)
-        is DialogoMoldeDeReceta.ConfirmarQuitar -> AlertDialog(
+        is DialogoMoldeDeReceta.ConfirmarQuitar -> CuadroDeDialogo(
             onDismissRequest = acciones.cerrarDialogo,
             title = { Text("¿Dejar de usar molde?") },
             text = {
@@ -348,7 +348,7 @@ private fun CuadroDeMolde(
     estado: DialogoMoldeDeReceta.Elegir,
     acciones: AccionesMoldeDeReceta
 ) {
-    AlertDialog(
+    CuadroDeDialogo(
         onDismissRequest = acciones.cerrarDialogo,
         title = { Text(if (estado.esReescalado) "Cambiar de molde" else "Definir el molde") },
         text = {

@@ -19,7 +19,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -52,6 +51,7 @@ import com.sandyyera.reposteria.logica.formato.formatearMonto
 import com.sandyyera.reposteria.logica.sueldos.SimulacionMultipleResultado
 import com.sandyyera.reposteria.ui.componentes.BarraBusqueda
 import com.sandyyera.reposteria.ui.componentes.CampoNumerico
+import com.sandyyera.reposteria.ui.componentes.CuadroDeDialogo
 import com.sandyyera.reposteria.ui.componentes.MensajeCentrado
 import com.sandyyera.reposteria.ui.theme.Medidas
 
@@ -530,7 +530,7 @@ private fun DialogoNombreDeEmpleado(
     estado: DialogoEmpleados.Nombre,
     acciones: AccionesEmpleados
 ) {
-    AlertDialog(
+    CuadroDeDialogo(
         onDismissRequest = acciones.cerrarDialogo,
         title = { Text(if (estado.editando == null) "Nuevo empleado" else "Cambiar el nombre") },
         text = {
@@ -571,7 +571,7 @@ private fun DialogoNombreRepetido(
     estado: DialogoEmpleados.ConfirmarNombreRepetido,
     acciones: AccionesEmpleados
 ) {
-    AlertDialog(
+    CuadroDeDialogo(
         onDismissRequest = acciones.cerrarDialogo,
         title = { Text("Ya tienes un '${estado.nombre}'") },
         text = {
@@ -600,7 +600,7 @@ private fun DialogoBorrarEmpleado(
     estado: DialogoEmpleados.ConfirmarBorrado,
     acciones: AccionesEmpleados
 ) {
-    AlertDialog(
+    CuadroDeDialogo(
         onDismissRequest = acciones.cerrarDialogo,
         title = { Text("¿Eliminar a ${estado.empleado.nombre}?") },
         text = {
@@ -633,7 +633,7 @@ private fun DialogoBorrarEmpleado(
  */
 @Composable
 private fun DialogoDelSueldo(estado: DialogoEmpleados.Sueldo, acciones: AccionesEmpleados) {
-    AlertDialog(
+    CuadroDeDialogo(
         onDismissRequest = acciones.cerrarDialogo,
         title = { Text(estado.titulo) },
         text = {
@@ -674,7 +674,7 @@ private fun DialogoElegirReceta(
     estado: DialogoEmpleados.ElegirReceta,
     acciones: AccionesEmpleados
 ) {
-    AlertDialog(
+    CuadroDeDialogo(
         onDismissRequest = acciones.cerrarDialogo,
         title = { Text("¿Qué receta vende?") },
         text = {

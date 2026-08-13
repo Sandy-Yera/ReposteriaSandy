@@ -23,7 +23,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -63,6 +62,7 @@ import com.sandyyera.reposteria.logica.precios.DatosCalculoReceta
 import com.sandyyera.reposteria.logica.precios.ModoPrecio
 import com.sandyyera.reposteria.logica.precios.PrecioVigente
 import com.sandyyera.reposteria.ui.componentes.CampoNumerico
+import com.sandyyera.reposteria.ui.componentes.CuadroDeDialogo
 import com.sandyyera.reposteria.ui.theme.Medidas
 import com.sandyyera.reposteria.ui.theme.ReposteriaTheme
 
@@ -608,7 +608,7 @@ private fun FilaDeUnPrecio(fila: FilaDePrecio, acciones: AccionesGastos) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CuadroDePrecio(estado: DialogoGastos.Formulario, acciones: AccionesGastos) {
-    AlertDialog(
+    CuadroDeDialogo(
         onDismissRequest = acciones.cerrarDialogo,
         title = { Text(if (estado.editando != null) "Cambiar el precio" else "Nuevo precio") },
         text = {
@@ -703,7 +703,7 @@ private fun ConfirmarBorrarPrecio(
     estado: DialogoGastos.ConfirmarBorrado,
     acciones: AccionesGastos
 ) {
-    AlertDialog(
+    CuadroDeDialogo(
         onDismissRequest = acciones.cerrarDialogo,
         title = { Text("¿Quitar '${estado.comoSeLlama}'?") },
         text = {

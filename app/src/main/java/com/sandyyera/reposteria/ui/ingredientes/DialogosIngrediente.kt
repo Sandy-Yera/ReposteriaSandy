@@ -11,7 +11,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -30,6 +29,7 @@ import com.sandyyera.reposteria.data.db.entidades.Receta
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.ui.componentes.CampoNumerico
 import com.sandyyera.reposteria.logica.validaciones.LARGO_MAXIMO_NOMBRE
+import com.sandyyera.reposteria.ui.componentes.CuadroDeDialogo
 import com.sandyyera.reposteria.ui.theme.LocalColoresHistorial
 import com.sandyyera.reposteria.ui.theme.Medidas
 import com.sandyyera.reposteria.ui.theme.ReposteriaTheme
@@ -59,7 +59,7 @@ fun FormularioIngrediente(
     val errorNombre = estado.errorNombreVisible
     val errorValor = estado.errorValorVisible
 
-    AlertDialog(
+    CuadroDeDialogo(
         onDismissRequest = alCerrar,
         title = { Text(if (editando) "Editar ingrediente" else "Nuevo ingrediente") },
         text = {
@@ -144,7 +144,7 @@ fun ConfirmarBorradoIngrediente(
 ) {
     val afectadas = estado.recetasAfectadas
 
-    AlertDialog(
+    CuadroDeDialogo(
         onDismissRequest = alCerrar,
         icon = {
             Icon(
@@ -229,7 +229,7 @@ fun ConfirmarReemplazoValor(
     alConfirmar: () -> Unit,
     alCerrar: () -> Unit
 ) {
-    AlertDialog(
+    CuadroDeDialogo(
         onDismissRequest = alCerrar,
         title = { Text("¿Cambiar el valor de '${estado.ingrediente.nombre}'?") },
         text = {

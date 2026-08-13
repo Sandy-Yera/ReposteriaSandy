@@ -22,7 +22,6 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -61,6 +60,7 @@ import com.sandyyera.reposteria.logica.partes.PasoNumerado
 import com.sandyyera.reposteria.logica.partes.PasoParaMostrar
 import com.sandyyera.reposteria.logica.partes.TITULO_GENERAL
 import com.sandyyera.reposteria.logica.partes.TituloDePaso
+import com.sandyyera.reposteria.ui.componentes.CuadroDeDialogo
 import com.sandyyera.reposteria.ui.theme.Medidas
 import com.sandyyera.reposteria.ui.theme.ReposteriaTheme
 
@@ -518,7 +518,7 @@ private fun BotonDeAtajos(alTocar: () -> Unit) {
  */
 @Composable
 private fun CuadroDeAtajos(acciones: AccionesPasos) {
-    AlertDialog(
+    CuadroDeDialogo(
         onDismissRequest = acciones.cerrarAyuda,
         title = { Text("Atajos") },
         text = {
@@ -568,7 +568,7 @@ private fun CuadroDeIngredientes(
     estado: DialogoPasos.ElegirIngrediente,
     acciones: AccionesPasos
 ) {
-    AlertDialog(
+    CuadroDeDialogo(
         onDismissRequest = acciones.cerrarDialogo,
         title = { Text("¿Cuál?") },
         text = {
@@ -631,7 +631,7 @@ private fun CuadroDeIngredientes(
 @Composable
 private fun CuadroDeTitulo(estado: DialogoPasos.ElegirTitulo, acciones: AccionesPasos) {
     val creando = estado.creando
-    AlertDialog(
+    CuadroDeDialogo(
         onDismissRequest = acciones.cerrarDialogo,
         title = { Text(if (creando == null) "¿De qué parte es este paso?" else "Parte nueva") },
         text = {
@@ -732,7 +732,7 @@ private fun CuadroDeTitulo(estado: DialogoPasos.ElegirTitulo, acciones: Acciones
 
 @Composable
 private fun ConfirmarBorrarPaso(estado: DialogoPasos.ConfirmarBorrado, acciones: AccionesPasos) {
-    AlertDialog(
+    CuadroDeDialogo(
         onDismissRequest = acciones.cerrarDialogo,
         title = { Text("¿Quitar este paso?") },
         // Se muestra lo que dice, porque es lo que se pierde y no se puede deshacer.

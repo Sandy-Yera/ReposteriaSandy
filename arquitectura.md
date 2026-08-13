@@ -3086,14 +3086,36 @@ Las secciones viven en un `enum Seccion` y **solo se agregan cuando existe su pa
 
 Cada sección conserva su ViewModel al cambiar de una a otra —`viewModel()` los guarda en la Activity, no en el Composable—, así que ir a Recetas y volver a Ingredientes no borra lo que había escrito en el buscador. La sección elegida va en `rememberSaveable` para que girar el teléfono no devuelva al principio.
 
-**La ventana se achica con el teclado, no se desliza.** `android:windowSoftInputMode="adjustResize"`
-en el manifiesto. Sin declararlo, Android elige solo entre achicar y deslizar, y de ahí venía que a
-veces funcionara y otras no. Cuando desliza, Compose cree que su espacio sigue siendo la pantalla
-completa, así que da por visible el renglón que se está escribiendo aunque el teclado lo tape — y
-entonces no desplaza nada. Sandy lo reportó en dos lugares que resultaron ser el mismo problema:
-escribiendo pasos (*"mi pantalla no baja, haciendo que escriba a ciegas"*) y en el cuadro de
-agregar al almacén (*"para avanzar tengo que darle siguiente sí o sí, no me deja hacerlo tocando
-pantalla para bajar"*).
+#### 12.1.1 El teclado: por qué no basta con `adjustResize`
+
+Sandy lo reportó en dos lugares —escribiendo pasos (*"mi pantalla no baja, escribo a ciegas"*) y en
+el cuadro de agregar al almacén (*"para avanzar tengo que darle siguiente sí o sí"*)— y hay que
+arreglarlo en **tres** lugares, porque son tres mecanismos distintos.
+
+**El primer intento fue declarar `adjustResize` en el manifiesto, y no alcanzó.** Desde Android 15,
+una app con `targetSdk = 35` va borde a borde quiera o no, y ahí `adjustResize` **deja de tener
+efecto**: la ventana ya no se achica al abrirse el teclado. Eso explica exactamente lo que quedó
+después de ese intento — la lista de pasos se desplazaba hasta un fondo que estaba debajo del
+teclado, así que el último paso no había forma de verlo.
+
+Lo que sí funciona, y funciona igual en todas las versiones de Android en vez de depender de cuál
+tenga el celular:
+
+1. **`enableEdgeToEdge()` en la Activity.** Se declara el borde a borde en vez de sufrirlo: así la
+   ventana **nunca** se achica y el teclado siempre llega como una medida consultable. Una regla
+   sola en lugar de dos que se contradicen según el aparato. El hueco de las barras del sistema lo
+   siguen resolviendo `Scaffold` y `TopAppBar`, que ya lo hacían.
+2. **`imePadding()` en la raíz**, sobre el `Surface` de `MainActivity`. Es el único lugar donde se
+   descuenta el teclado: todas las secciones se achican igual y ninguna tiene que acordarse. Es lo
+   que hacía `adjustResize` antes de que Android 15 lo ignorara.
+3. **`CuadroDeDialogo` en vez de `AlertDialog`**, en los 42 cuadros de la app. **Un diálogo es una
+   ventana aparte**, así que nada de lo anterior le llega: cada cuadro tiene que resolver el
+   teclado por su cuenta. Se resuelve en un envoltorio y no cuadro por cuadro porque hacerlo a mano
+   significa que el próximo cuadro que alguien escriba nace roto — la forma de acordarse es no
+   tener que acordarse.
+
+`adjustResize` se queda en el manifiesto: con el borde a borde declarado ya no achica nada, pero es
+lo que hace que el teclado se reporte como una medida en vez de empujar la ventana entera.
 
 **Abrir el menú saca del campo de texto.** Lo reportó Sandy: con el teclado abierto y el cursor
 parpadeando, el menú se dibujaba encima pero *"se ve todavía el puntero, traspasando así el

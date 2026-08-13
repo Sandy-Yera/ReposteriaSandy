@@ -21,7 +21,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -51,6 +50,7 @@ import com.sandyyera.reposteria.data.db.entidades.Receta
 import com.sandyyera.reposteria.logica.formato.formatearMonto
 import com.sandyyera.reposteria.logica.formato.formatearNumero
 import com.sandyyera.reposteria.ui.componentes.BarraBusqueda
+import com.sandyyera.reposteria.ui.componentes.CuadroDeDialogo
 import com.sandyyera.reposteria.ui.componentes.MensajeCentrado
 import com.sandyyera.reposteria.ui.theme.Medidas
 import com.sandyyera.reposteria.ui.theme.ReposteriaTheme
@@ -231,7 +231,7 @@ fun ListaRecetas(
                 alCerrar = acciones.cerrarDialogo
             )
 
-            is DialogoReceta.Bloqueada -> AlertDialog(
+            is DialogoReceta.Bloqueada -> CuadroDeDialogo(
                 onDismissRequest = acciones.cerrarDialogo,
                 icon = {
                     Icon(
@@ -385,7 +385,7 @@ private fun FormularioReceta(
 ) {
     val error = estado.error
 
-    AlertDialog(
+    CuadroDeDialogo(
         onDismissRequest = alCerrar,
         title = { Text("Nueva receta") },
         text = {
@@ -434,13 +434,13 @@ private fun ConfirmarBorradoReceta(
     alConfirmar: () -> Unit,
     alCerrar: () -> Unit
 ) {
-    AlertDialog(
+    CuadroDeDialogo(
         onDismissRequest = alCerrar,
         title = { Text("¿Eliminar '${estado.receta.titulo}'?") },
         text = {
             // **El desplazamiento es de todo el cuerpo y no de cada lista.** Antes solo se movía
             // la lista de recetas que la usan, así que con muchos empleados el cuadro se estiraba
-            // igual. Un solo `verticalScroll` acá adentro deja los botones del `AlertDialog`
+            // igual. Un solo `verticalScroll` acá adentro deja los botones del cuadro
             // fijos abajo, que es lo que Sandy pidió expresamente.
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),

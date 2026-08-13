@@ -20,7 +20,6 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -68,6 +67,7 @@ import com.sandyyera.reposteria.logica.partes.EstadoDelVinculo
 import com.sandyyera.reposteria.logica.partes.MOTIVO_UN_SOLO_NIVEL
 import com.sandyyera.reposteria.ui.componentes.CampoNumerico
 import com.sandyyera.reposteria.ui.componentes.ComboBuscable
+import com.sandyyera.reposteria.ui.componentes.CuadroDeDialogo
 import com.sandyyera.reposteria.ui.theme.Medidas
 import com.sandyyera.reposteria.ui.theme.ReposteriaTheme
 
@@ -397,7 +397,7 @@ fun PasoCantidades(
 
             is DialogoCantidades.Seccion -> DialogoSeccionNueva(dialogo, acciones)
 
-            is DialogoCantidades.RenombrarSeccion -> AlertDialog(
+            is DialogoCantidades.RenombrarSeccion -> CuadroDeDialogo(
                 onDismissRequest = acciones.cerrarDialogo,
                 title = { Text("Nombre de la sección") },
                 text = {
@@ -425,7 +425,7 @@ fun PasoCantidades(
                 }
             )
 
-            is DialogoCantidades.RenombrarReceta -> AlertDialog(
+            is DialogoCantidades.RenombrarReceta -> CuadroDeDialogo(
                 onDismissRequest = acciones.cerrarDialogo,
                 title = { Text("Título de la receta") },
                 text = {
@@ -457,7 +457,7 @@ fun PasoCantidades(
 
             is DialogoCantidades.AvisoDeParte -> DialogoAvisoDeParte(dialogo, acciones)
 
-            is DialogoCantidades.ConfirmarBorrarSeccion -> AlertDialog(
+            is DialogoCantidades.ConfirmarBorrarSeccion -> CuadroDeDialogo(
                 onDismissRequest = acciones.cerrarDialogo,
                 title = { Text("¿Quitar '${dialogo.seccion.seccion.nombreSeccion}'?") },
                 text = {
@@ -663,7 +663,7 @@ private fun DialogoTraerReceta(
     estado: DialogoCantidades.TraerReceta,
     acciones: AccionesCantidades
 ) {
-    AlertDialog(
+    CuadroDeDialogo(
         onDismissRequest = acciones.cerrarDialogo,
         title = { Text("Traer otra receta") },
         text = {
@@ -747,7 +747,7 @@ private fun DialogoAvisoDeParte(
     acciones: AccionesCantidades
 ) {
     when {
-        estado.confirmandoDesvincular -> AlertDialog(
+        estado.confirmandoDesvincular -> CuadroDeDialogo(
             onDismissRequest = acciones.volverDelAviso,
             title = { Text("¿Desvincular?") },
             text = { Text(AVISO_AL_DESVINCULAR) },
@@ -761,7 +761,7 @@ private fun DialogoAvisoDeParte(
             }
         )
 
-        estado.confirmandoBorrar -> AlertDialog(
+        estado.confirmandoBorrar -> CuadroDeDialogo(
             onDismissRequest = acciones.volverDelAviso,
             title = { Text("¿Borrar esta parte?") },
             text = {
@@ -779,7 +779,7 @@ private fun DialogoAvisoDeParte(
             }
         )
 
-        estado.laOriginalSeBorro -> AlertDialog(
+        estado.laOriginalSeBorro -> CuadroDeDialogo(
             onDismissRequest = acciones.cerrarDialogo,
             title = { Text("La receta original ya no está") },
             text = { Text(AVISO_ORIGINAL_BORRADA) },
@@ -795,7 +795,7 @@ private fun DialogoAvisoDeParte(
             }
         )
 
-        else -> AlertDialog(
+        else -> CuadroDeDialogo(
             onDismissRequest = acciones.cerrarDialogo,
             title = {
                 val deDonde = estado.parte.tituloDelOrigen
@@ -909,7 +909,7 @@ private fun DialogoPonerIngrediente(
 ) {
     val elegido = estado.elegido
 
-    AlertDialog(
+    CuadroDeDialogo(
         onDismissRequest = acciones.cerrarDialogo,
         title = {
             Text(if (estado.editando != null) "Cambiar la cantidad" else "Agregar ingrediente")
@@ -999,7 +999,7 @@ private fun DialogoCrearIngrediente(
     estado: DialogoCantidades.CrearIngrediente,
     acciones: AccionesCantidades
 ) {
-    AlertDialog(
+    CuadroDeDialogo(
         onDismissRequest = acciones.cerrarDialogo,
         title = { Text("Ingrediente nuevo") },
         text = {
@@ -1105,7 +1105,7 @@ private fun DialogoSeccionNueva(
     estado: DialogoCantidades.Seccion,
     acciones: AccionesCantidades
 ) {
-    AlertDialog(
+    CuadroDeDialogo(
         onDismissRequest = acciones.cerrarDialogo,
         title = { Text("Agregar sección") },
         text = {
