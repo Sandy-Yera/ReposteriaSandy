@@ -598,6 +598,58 @@ def revisar_aserciones(rutas):
     return problemas
 
 
+# Los parámetros que **de verdad** tienen `OutlinedTextField` y `TextField` de Material3.
+# La lista sale del propio error del compilador, que los enumera enteros al no encontrar
+# candidato. Es un conjunto cerrado y conocido, como el de `org.junit.Assert`.
+PARAMETROS_DE_CAMPO_DE_TEXTO = {
+    "value", "onValueChange", "modifier", "enabled", "readOnly", "textStyle", "label",
+    "placeholder", "leadingIcon", "trailingIcon", "prefix", "suffix", "supportingText",
+    "isError", "visualTransformation", "keyboardOptions", "keyboardActions", "singleLine",
+    "maxLines", "minLines", "interactionSource", "shape", "colors",
+}
+
+
+def revisar_campos_de_texto(rutas):
+    """12. Un parámetro que `OutlinedTextField` o `TextField` de Material3 no tienen.
+
+    Salió de `onTextLayout`, que existe en `BasicTextField` y **no** en los de Material3.
+    Se escribió de memoria, pasó las once revisiones anteriores y reventó la compilación de
+    Sandy con siete errores: el primero por el parámetro y seis más en cascada, porque una
+    llamada que no resuelve deja sin tipo a todos los `it` de sus lambdas.
+
+    Es el mismo caso que las aserciones de JUnit: **no se puede revisar cualquier llamada**
+    sin resolver los tipos, pero acá el conjunto de parámetros es cerrado y está en la
+    documentación. Estos dos campos se usan en toda la app, así que el error se paga caro y
+    la revisión es barata.
+    """
+    problemas = 0
+    for ruta in rutas:
+        codigo = sin_comentarios_ni_textos(open(ruta, encoding="utf-8").read())
+        for llamada in re.finditer(r"(?<![\w.])(OutlinedTextField|TextField)\s*\(", codigo):
+            nombre = llamada.group(1)
+            inicio = llamada.end()
+            profundidad, i = 1, inicio
+            while profundidad and i < len(codigo):
+                if codigo[i] in "([{":
+                    profundidad += 1
+                elif codigo[i] in ")]}":
+                    profundidad -= 1
+                i += 1
+            cuerpo = codigo[inicio:i - 1]
+            # Solo los del primer nivel: los de adentro son de otras funciones.
+            nivel = 0
+            for linea in cuerpo.split("\n"):
+                encontrado = re.match(r"\s*([a-zA-Z]\w*)\s*=(?!=)", linea)
+                if nivel == 0 and encontrado:
+                    param = encontrado.group(1)
+                    if param not in PARAMETROS_DE_CAMPO_DE_TEXTO:
+                        print(f"  {os.path.relpath(ruta, RAIZ)}: {nombre} no tiene el "
+                              f"parámetro '{param}'")
+                        problemas += 1
+                nivel += sum(linea.count(c) for c in "([{") - sum(linea.count(c) for c in ")]}")
+    return problemas
+
+
 def main():
     rutas = archivos_kotlin()
     print(f"Revisando {len(rutas)} archivos Kotlin.\n")
@@ -615,6 +667,7 @@ def main():
         ("Llamadas con punto", revisar_llamadas_con_punto),
         ("DAO falsos completos", revisar_daos_falsos),
         ("Alcance de locales", revisar_alcance_de_locales),
+        ("Campos de texto de Material3", revisar_campos_de_texto),
     ]:
         encontrados = revision(rutas)
         estado = "ok" if encontrados == 0 else f"{encontrados} problema(s)"

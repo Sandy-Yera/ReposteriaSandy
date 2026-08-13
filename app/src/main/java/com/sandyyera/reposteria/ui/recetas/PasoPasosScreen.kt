@@ -49,7 +49,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.TextRange
@@ -384,24 +385,29 @@ private fun FilaDeUnPaso(
         TextFieldValue(texto, TextRange(texto.length))
     }
 
-    // Dónde quedó dibujado cada carácter. Hace falta para saber en qué renglón está el cursor:
-    // sin esto solo se sabe su posición dentro del texto, que no dice nada de la pantalla.
-    var disposicionDelTexto by remember { mutableStateOf<TextLayoutResult?>(null) }
+    // Cuánto mide el campo ahora mismo, en píxeles. De acá sale dónde está su borde de abajo.
+    var altoDelCampo by remember { mutableStateOf(0) }
     val traerALaVista = remember { BringIntoViewRequester() }
 
-    // **Traer el cursor a la vista cada vez que se mueve**, que es lo que Sandy pidió: que la
-    // pantalla baje sola a medida que la línea baja, sin tener que arrastrar la lista con la otra
-    // mano. Va en un `LaunchedEffect` y no dentro de `onValueChange` porque ahí la disposición
-    // todavía es la del texto **anterior**: el renglón nuevo aún no se ha medido, y se pediría
-    // mostrar el lugar donde estaba el cursor antes de escribir.
+    // **Que la pantalla baje sola a medida que la línea baja**, que es lo que Sandy pidió: sin
+    // esto hay que arrastrar la lista con la otra mano para ver lo que se está tecleando.
+    //
+    // Lo que se pide ver es **el borde de abajo del campo** y no el campo entero: un paso de
+    // varios renglones puede ser más alto que lo que queda de pantalla con el teclado abierto, y
+    // pedir el campo completo dejaría a la vista su primera línea — justo la que no importa
+    // mientras se escribe al final. No es exactamente el cursor: `OutlinedTextField` de Material3
+    // no dice dónde quedó dibujado (no tiene `onTextLayout`, eso es de `BasicTextField`), así que
+    // se usa el borde de abajo, que es donde está el cursor mientras uno escribe.
+    //
+    // Va en un efecto y no dentro de `onValueChange` porque ahí el renglón nuevo todavía no se ha
+    // medido: se pediría mostrar el alto que el campo tenía **antes** de escribir.
     //
     // **Solo con el foco puesto.** Sin esa condición, cada paso que aparece al desplazar la lista
     // pediría su turno para verse, y la lista saltaría sola al abrir la receta.
-    LaunchedEffect(campo.selection, disposicionDelTexto, teniaFoco) {
-        if (!teniaFoco) return@LaunchedEffect
-        val disposicion = disposicionDelTexto ?: return@LaunchedEffect
-        val cursor = campo.selection.end.coerceIn(0, disposicion.layoutInput.text.length)
-        traerALaVista.bringIntoView(disposicion.getCursorRect(cursor))
+    LaunchedEffect(campo.text, campo.selection, altoDelCampo, teniaFoco) {
+        if (!teniaFoco || altoDelCampo == 0) return@LaunchedEffect
+        val abajo = altoDelCampo.toFloat()
+        traerALaVista.bringIntoView(Rect(left = 0f, top = abajo - 1f, right = 1f, bottom = abajo))
     }
 
     // Cuando un atajo se reemplaza, el largo del texto cambia y el cursor tiene que ir donde
@@ -440,13 +446,13 @@ private fun FilaDeUnPaso(
             placeholder = { Text("Qué se hace en este paso") },
             supportingText = estado.errorDe(paso)?.let { { Text(it) } },
             isError = estado.errorDe(paso) != null,
-            onTextLayout = { disposicionDelTexto = it },
             keyboardOptions = KeyboardOptions(
                 capitalization = KeyboardCapitalization.Sentences
             ),
             modifier = Modifier
                 .weight(1f)
                 .bringIntoViewRequester(traerALaVista)
+                .onSizeChanged { altoDelCampo = it.height }
                 .onFocusChanged { foco ->
                     if (teniaFoco && !foco.isFocused) acciones.guardarPaso(paso.id)
                     teniaFoco = foco.isFocused
