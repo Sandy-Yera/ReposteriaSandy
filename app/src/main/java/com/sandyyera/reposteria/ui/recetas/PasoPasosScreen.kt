@@ -389,6 +389,13 @@ private fun FilaDeUnPaso(
     var altoDelCampo by remember { mutableStateOf(0) }
     val traerALaVista = remember { BringIntoViewRequester() }
 
+    // Si se escribió algo **desde que este campo tomó el foco**. Sin esta condición, tocar el
+    // campo ya pedía desplazar, y esa petición peleaba con el dedo: Sandy lo reportó como *"le doy
+    // click para escribir, rápidamente tiro hacia abajo, y la pestaña queda más arriba de donde
+    // debe"*. Traer el campo a la vista al enfocarlo **ya lo hace Compose solo**; lo que faltaba
+    // —y lo único que corresponde pedir acá— es seguir al texto mientras crece.
+    var seEscribio by remember { mutableStateOf(false) }
+
     // **Que la pantalla baje sola a medida que la línea baja**, que es lo que Sandy pidió: sin
     // esto hay que arrastrar la lista con la otra mano para ver lo que se está tecleando.
     //
@@ -402,10 +409,13 @@ private fun FilaDeUnPaso(
     // Va en un efecto y no dentro de `onValueChange` porque ahí el renglón nuevo todavía no se ha
     // medido: se pediría mostrar el alto que el campo tenía **antes** de escribir.
     //
-    // **Solo con el foco puesto.** Sin esa condición, cada paso que aparece al desplazar la lista
-    // pediría su turno para verse, y la lista saltaría sola al abrir la receta.
-    LaunchedEffect(campo.text, campo.selection, altoDelCampo, teniaFoco) {
-        if (!teniaFoco || altoDelCampo == 0) return@LaunchedEffect
+    // **Solo con el foco puesto y solo si ya se escribió algo.** Lo primero, porque si no cada
+    // paso que aparece al desplazar la lista pediría su turno para verse y la lista saltaría sola
+    // al abrir la receta. Lo segundo, porque tocar el campo no es pedir que la pantalla se mueva —
+    // de eso ya se encarga Compose— y pedirlo ahí peleaba con el dedo de quien justo empieza a
+    // desplazar.
+    LaunchedEffect(campo.text, altoDelCampo) {
+        if (!teniaFoco || !seEscribio || altoDelCampo == 0) return@LaunchedEffect
         val abajo = altoDelCampo.toFloat()
         traerALaVista.bringIntoView(Rect(left = 0f, top = abajo - 1f, right = 1f, bottom = abajo))
     }
@@ -440,6 +450,7 @@ private fun FilaDeUnPaso(
         OutlinedTextField(
             value = campo,
             onValueChange = {
+                seEscribio = true
                 recordado = it
                 acciones.cambiarTexto(paso.id, it.text, it.selection.end)
             },
@@ -455,6 +466,9 @@ private fun FilaDeUnPaso(
                 .onSizeChanged { altoDelCampo = it.height }
                 .onFocusChanged { foco ->
                     if (teniaFoco && !foco.isFocused) acciones.guardarPaso(paso.id)
+                    // Cada vez que se entra al campo se empieza de nuevo: recién al teclear se
+                    // vuelve a pedir desplazar.
+                    if (!teniaFoco && foco.isFocused) seEscribio = false
                     teniaFoco = foco.isFocused
                 }
         )

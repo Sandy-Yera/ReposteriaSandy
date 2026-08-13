@@ -3128,11 +3128,21 @@ no desde `onValueChange` porque ahí el renglón nuevo todavía no se midió, y 
 enfocado, o cada paso que aparece al desplazar pediría su turno y la lista saltaría sola al abrir
 la receta.
 
-**El velo gris de los cuadros llega hasta el canto, y eso es correcto.** Con el borde a borde, el
+**El velo gris de los cuadros llega hasta el canto, y por eso se bajó.** Con el borde a borde, el
 oscurecido que un diálogo pone detrás cubre la pantalla entera, incluida la zona donde el teclado
 va a aparecer; mientras el teclado sube —unos décimos de segundo— esa franja se ve gris. Antes no
 pasaba porque el velo se quedaba corto, que era el mismo motivo por el que el cuadro tampoco sabía
-del teclado.
+del teclado. Sandy lo pidió *"lo más tenue posible"*, así que `CuadroDeDialogo` lo deja en 0,1
+contra el 0,6 que usa Android. **No en 0**: el velo es lo que dice que la app de atrás está
+esperando una respuesta, y sin nada de oscurecido un cuadro sobre una lista clara se lee como una
+tarjeta más de la lista.
+
+**Pedir desplazar mientras el dedo desplaza es pelear con quien manda.** La otra mitad del arreglo
+del paso "Pasos": la petición de traer el campo a la vista se hacía también al **enfocarlo**, y
+tocando un campo del final y arrastrando de inmediato la pantalla quedaba más arriba de donde
+correspondía. Traer el campo a la vista al enfocarlo ya lo hace Compose solo; lo único que hay que
+pedir a mano es seguir al texto **mientras crece**, o sea solo después de que se haya tecleado
+algo.
 
 **Abrir el menú saca del campo de texto.** Lo reportó Sandy: con el teclado abierto y el cursor
 parpadeando, el menú se dibujaba encima pero *"se ve todavía el puntero, traspasando así el
