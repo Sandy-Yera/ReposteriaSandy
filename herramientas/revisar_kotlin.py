@@ -650,6 +650,73 @@ def revisar_campos_de_texto(rutas):
     return problemas
 
 
+def revisar_propiedades_de_constructor(rutas):
+    """13. Una propiedad del constructor de una clase usada **fuera** de esa clase.
+
+    Es el error de pegar un método en el lugar equivocado del archivo. Pasó dos veces seguidas
+    con el mismo movimiento: agregar una función "al final" y que el final resulte ser el de
+    **otra** declaración —un `sealed interface` que venía después—, no el de la clase. El código
+    queda impecable de leer y no compila, porque ahí adentro `dao` no existe.
+
+    Es la hermana de la revisión 11: aquella mira variables locales entre funciones, y esta mira
+    las propiedades del constructor entre clases. Las dos parten del mismo hecho — el nombre
+    existe en el archivo, y lo único en duda es si existe **ahí**.
+
+    Solo mira clases de nivel superior con paréntesis, que son las que tienen constructor, y solo
+    nombres que no vuelvan a declararse afuera: sin esa condición, un parámetro de otra función
+    llamado igual daría un aviso falso.
+    """
+    problemas = 0
+    for ruta in rutas:
+        lineas = sin_comentarios_ni_textos(open(ruta, encoding="utf-8").read()).split("\n")
+        for i, linea in enumerate(lineas):
+            encabezado = re.match(r"^(?:internal |private )?(?:abstract )?class (\w+)\(", linea)
+            if not encabezado:
+                continue
+            # El constructor termina en la línea que cierra su paréntesis.
+            profundidad, fin_ctor = 0, i
+            for n in range(i, len(lineas)):
+                profundidad += lineas[n].count("(") - lineas[n].count(")")
+                if profundidad <= 0 and n > i or (profundidad == 0 and n == i):
+                    fin_ctor = n
+                    break
+            propiedades = set()
+            for n in range(i, fin_ctor + 1):
+                for prop in re.findall(r"(?:private |internal )?va[lr] (\w+)\s*:", lineas[n]):
+                    propiedades.add(prop)
+            if not propiedades:
+                continue
+            # El cuerpo de la clase llega hasta la primera línea que sea "}" al margen.
+            fin_clase = len(lineas)
+            for n in range(fin_ctor + 1, len(lineas)):
+                if lineas[n] == "}":
+                    fin_clase = n
+                    break
+            afuera = lineas[:i] + lineas[fin_clase + 1:]
+            texto_afuera = "\n".join(afuera)
+            for prop in sorted(propiedades):
+                # Si se vuelve a declarar afuera, el nombre existe ahí por su cuenta.
+                # Cuenta como declarado afuera un `val`/`var` (con tipo o sin él), un parámetro
+                # y una variable de lambda. Sin las tres formas, un nombre corriente como
+                # `recetas` daba aviso por existir en cualquier otra función del archivo.
+                declarado = (
+                    re.search(rf"(?<![\w.])va[lr]\s+{prop}\b", texto_afuera)
+                    or re.search(rf"[(,]\s*{prop}\s*:", texto_afuera)
+                    or re.search(rf"(?<![\w.]){prop}\s*->", texto_afuera)
+                    or re.search(rf"(?<![\w.]){prop}\s*=\s*\w", texto_afuera)
+                    # `vararg nombre:` y `{ nombre, otro ->` (lambda de varios parámetros).
+                    or re.search(rf"vararg\s+{prop}\b", texto_afuera)
+                    or re.search(rf"(?<![\w.]){prop}\s*,[^)\n]*->", texto_afuera)
+                )
+                if declarado:
+                    continue
+                if re.search(rf"(?<![\w.]){prop}\.", texto_afuera):
+                    print(f"  {os.path.relpath(ruta, RAIZ)}: '{prop}' es del constructor de "
+                          f"{encabezado.group(1)} y se usa fuera de esa clase")
+                    problemas += 1
+    return problemas
+
+
 def main():
     rutas = archivos_kotlin()
     print(f"Revisando {len(rutas)} archivos Kotlin.\n")
@@ -668,6 +735,7 @@ def main():
         ("DAO falsos completos", revisar_daos_falsos),
         ("Alcance de locales", revisar_alcance_de_locales),
         ("Campos de texto de Material3", revisar_campos_de_texto),
+        ("Propiedades del constructor", revisar_propiedades_de_constructor),
     ]:
         encontrados = revision(rutas)
         estado = "ok" if encontrados == 0 else f"{encontrados} problema(s)"

@@ -396,21 +396,6 @@ class EmpleadoRepositorio(
         }
         return simulacionMultiple(filas, dias)
     }
-}
-
-/**
- * Cómo terminó crear un empleado.
- *
- * `YaExiste` **no es un rechazo**: dos personas pueden llamarse igual. Lleva el que ya está para
- * poder preguntar "¿es este, o creo otro?", que es una decisión de la pantalla y no del
- * repositorio.
- */
-sealed interface ResultadoCrearEmpleado {
-    data class Creado(val id: Long) : ResultadoCrearEmpleado
-
-    data class YaExiste(val existente: Empleado) : ResultadoCrearEmpleado
-
-    data class NoValido(val motivo: String) : ResultadoCrearEmpleado
 
     /**
      * Lo que se llevan todos los empleados de una receta, para la simulación de esa receta (8.7).
@@ -427,4 +412,19 @@ sealed interface ResultadoCrearEmpleado {
                 seLlevanPorProducto = it.seLlevanPorProducto
             )
         }
+}
+
+/**
+ * Cómo terminó crear un empleado.
+ *
+ * `YaExiste` **no es un rechazo**: dos personas pueden llamarse igual. Lleva el que ya está para
+ * poder preguntar "¿es este, o creo otro?", que es una decisión de la pantalla y no del
+ * repositorio.
+ */
+sealed interface ResultadoCrearEmpleado {
+    data class Creado(val id: Long) : ResultadoCrearEmpleado
+
+    data class YaExiste(val existente: Empleado) : ResultadoCrearEmpleado
+
+    data class NoValido(val motivo: String) : ResultadoCrearEmpleado
 }
