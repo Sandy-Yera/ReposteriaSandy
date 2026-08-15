@@ -94,6 +94,7 @@ class AppContainer(private val context: Context) {
     val almacen: AlmacenRepositorio by lazy {
         AlmacenRepositorio(
             dao = base.almacenDao(),
+            ventas = base.ventaDao(),
             ingredientes = ingredientes,
             recetas = recetas,
             historial = historial

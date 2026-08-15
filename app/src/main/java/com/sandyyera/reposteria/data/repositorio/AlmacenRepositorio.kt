@@ -2,9 +2,12 @@ package com.sandyyera.reposteria.data.repositorio
 
 import com.sandyyera.reposteria.data.db.dao.AlmacenDao
 import com.sandyyera.reposteria.data.db.dao.ArticuloConValor
+import com.sandyyera.reposteria.data.db.dao.VentaDao
 import com.sandyyera.reposteria.data.db.entidades.ArticuloDeAlmacen
 import com.sandyyera.reposteria.data.db.entidades.EntidadEvento
 import com.sandyyera.reposteria.data.db.entidades.Ingrediente
+import com.sandyyera.reposteria.data.db.entidades.MotivoDeMovimiento
+import com.sandyyera.reposteria.data.db.entidades.MovimientoDeAlmacen
 import com.sandyyera.reposteria.data.db.entidades.Receta
 import com.sandyyera.reposteria.data.db.entidades.TipoEvento
 import com.sandyyera.reposteria.logica.almacen.FilaParaDescontar
@@ -17,6 +20,7 @@ import com.sandyyera.reposteria.logica.almacen.vistaPreviaDelDescuento
 import com.sandyyera.reposteria.logica.almacen.resultadoDelMovimiento
 import com.sandyyera.reposteria.logica.busqueda.sonElMismoTexto
 import com.sandyyera.reposteria.logica.validaciones.errorEnNombreEscrito
+import java.time.LocalDate
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 
@@ -28,6 +32,14 @@ import kotlinx.coroutines.flow.first
  */
 class AlmacenRepositorio(
     private val dao: AlmacenDao,
+    /**
+     * Solo para **dejar rastro** de lo que se mueve (18.2).
+     *
+     * La tabla de movimientos vive con las ventas porque de ella sale el costo real de un día,
+     * pero quien mueve el almacén es este repositorio, así que es el que tiene que anotarlo. Es
+     * la deuda que 14.12 dejó escrita: cada fila sabía **cuánto hay** y no **cómo llegó ahí**.
+     */
+    private val ventas: VentaDao,
     private val ingredientes: IngredienteRepositorio,
     // Para el descuento por recetas hechas (14.9): es el único que sabe cuánto lleva cada
     // receta. La flecha va en este sentido y no al revés — las recetas no saben del almacén.
@@ -351,10 +363,24 @@ class AlmacenRepositorio(
      * acto, no veinte, y anotarlo veinte veces taparía el panel de cambios justo con lo que más
      * se repite.
      */
-    suspend fun descontar(previa: VistaPreviaDelDescuento, queSeHizo: String): Resultado {
+    suspend fun descontar(
+        previa: VistaPreviaDelDescuento,
+        queSeHizo: String,
+        /**
+         * Por qué salió: `PRODUCCION` al cocinar (14.9), `VENTA` al registrar una venta (18.4).
+         *
+         * **De esto depende el costo real del informe** (18.2): lo que salió por una venta cuenta
+         * en el día de esa venta, y lo que se gastó cocinando no. Sin el motivo, todas las salidas
+         * se verían iguales y "cuánto costó de verdad lo que vendí" no tendría respuesta.
+         */
+        motivo: MotivoDeMovimiento = MotivoDeMovimiento.PRODUCCION,
+        /** La venta que lo causó, si fue una. Lo que enlaza el movimiento con su día. */
+        ventaId: Long? = null
+    ): Resultado {
         if (!previa.hayAlgoQueDescontar) {
             return Resultado.NoSePudo("No hay nada anotado que descontar")
         }
+        val hoy = LocalDate.now().toEpochDay()
         var movidas = 0
         for (fila in previa.filas) {
             val articulo = dao.obtenerPorIngrediente(fila.ingredienteId) ?: continue
@@ -362,6 +388,22 @@ class AlmacenRepositorio(
                 articulo.copy(
                     cantidad = fila.quedara,
                     actualizadoEn = System.currentTimeMillis()
+                )
+            )
+            // **El rastro se escribe con el valor de hoy, congelado** (18.2). Leyéndolo del
+            // catálogo al hacer el informe, subir el precio de la harina encarecería
+            // retroactivamente todo lo que se vendió el año pasado.
+            ventas.insertarMovimiento(
+                MovimientoDeAlmacen(
+                    ingredienteId = fila.ingredienteId,
+                    nombre = fila.nombre,
+                    // Negativo porque **salió**: la columna lleva el signo para poder totalizarla
+                    // con un `SUM` en vez de un `CASE` en cada consulta.
+                    cantidad = -fila.seUsa,
+                    valorUnitario = ingredientes.obtener(fila.ingredienteId)?.valorPorGramo ?: 0.0,
+                    motivo = motivo,
+                    ventaId = ventaId,
+                    fecha = hoy
                 )
             )
             movidas++

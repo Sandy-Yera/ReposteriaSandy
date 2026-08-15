@@ -1,5 +1,6 @@
 package com.sandyyera.reposteria.data
 
+import com.sandyyera.reposteria.data.db.entidades.MotivoDeMovimiento
 import com.sandyyera.reposteria.data.repositorio.AlmacenRepositorio
 import com.sandyyera.reposteria.data.repositorio.HistorialRepositorio
 import com.sandyyera.reposteria.data.repositorio.IngredienteRepositorio
@@ -37,6 +38,7 @@ class AlmacenRepositorioTest {
     private lateinit var historial: HistorialDaoFalso
     private lateinit var ingredientes: IngredienteRepositorio
     private lateinit var recetas: RecetaRepositorio
+    private lateinit var ventaDao: VentaDaoFalso
     private lateinit var repositorio: AlmacenRepositorio
 
     @Before
@@ -51,8 +53,10 @@ class AlmacenRepositorioTest {
             historial = HistorialRepositorio(historial)
         )
         recetas = RecetaRepositorio(recetasDao, HistorialRepositorio(historial))
+        ventaDao = VentaDaoFalso()
         repositorio = AlmacenRepositorio(
             dao = almacenDao,
+            ventas = ventaDao,
             ingredientes = ingredientes,
             recetas = recetas,
             historial = HistorialRepositorio(historial)
@@ -275,6 +279,47 @@ class AlmacenRepositorioTest {
         repositorio.descontar(previa, "'Torta'")
 
         assertEquals(1000.0, cuantoQueda("Harina"), 0.001)
+    }
+
+    @Test
+    fun `descontar deja el rastro del que sale el costo real`() = runBlocking {
+        // **Es la deuda que 14.12 dejó anotada** y la que sostiene el informe de 18.2: sin este
+        // rastro, cada fila del almacén sabe cuánto hay pero no cómo llegó ahí, y "lo real" del
+        // informe sería lo estimado con otro nombre.
+        anotar("Harina", cantidad = 2000.0, valor = 3.0)
+        val recetaId = recetaCon("Torta", idDelIngrediente("Harina") to 500.0)
+        val previa = repositorio.vistaPreviaDeDescontar(
+            listOf(RecetaHecha(recetaId, "Torta", 2.0))
+        )
+
+        repositorio.descontar(previa, "'Torta'")
+
+        val rastro = ventaDao.movimientos.single()
+        assertEquals("Harina", rastro.nombre)
+        // **Negativo porque salió**: la columna lleva el signo para poder totalizarla con un
+        // `SUM` en vez de un `CASE` en cada consulta.
+        assertEquals(-1000.0, rastro.cantidad, 0.001)
+        assertEquals("Y con el valor de hoy congelado", 3.0, rastro.valorUnitario, 0.001)
+        assertEquals(MotivoDeMovimiento.PRODUCCION, rastro.motivo)
+        assertNull("Cocinar no es vender", rastro.ventaId)
+    }
+
+    @Test
+    fun `descontar por una venta queda marcado como venta`() = runBlocking {
+        // Del motivo depende el costo real del informe: lo que salió por una venta cuenta en el
+        // día de esa venta, y lo que se gastó cocinando no.
+        anotar("Harina", cantidad = 2000.0, valor = 3.0)
+        val recetaId = recetaCon("Torta", idDelIngrediente("Harina") to 500.0)
+        val previa = repositorio.vistaPreviaDeDescontar(
+            listOf(RecetaHecha(recetaId, "Torta", 1.0))
+        )
+
+        repositorio.descontar(previa, "la venta", MotivoDeMovimiento.VENTA, ventaId = 7L)
+
+        val rastro = ventaDao.movimientos.single()
+        assertEquals(MotivoDeMovimiento.VENTA, rastro.motivo)
+        assertEquals(7L, rastro.ventaId)
+        assertEquals("Y el costo real sale de ahí", 1500.0, ventaDao.costoRealDe(7L)!!, 0.001)
     }
 
     @Test

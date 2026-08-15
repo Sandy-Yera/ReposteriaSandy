@@ -11,8 +11,10 @@ import com.sandyyera.reposteria.data.db.dao.LineaConIngrediente
 import com.sandyyera.reposteria.data.db.dao.MoldeDao
 import com.sandyyera.reposteria.data.db.dao.NombreDeIngrediente
 import com.sandyyera.reposteria.data.db.dao.RecetaDao
+import com.sandyyera.reposteria.data.db.dao.ResumenDeUnDia
 import com.sandyyera.reposteria.data.db.dao.SueldosDeUnaReceta
 import com.sandyyera.reposteria.data.db.dao.TrozosDeReceta
+import com.sandyyera.reposteria.data.db.dao.VentaDao
 import com.sandyyera.reposteria.data.db.entidades.ArticuloDeAlmacen
 import com.sandyyera.reposteria.data.db.entidades.Empleado
 import com.sandyyera.reposteria.data.db.entidades.EmpleadoRecetaSueldo
@@ -21,6 +23,8 @@ import com.sandyyera.reposteria.data.db.entidades.EmpleadoSimulacionMultipleDeta
 import com.sandyyera.reposteria.data.db.entidades.EventoCambio
 import com.sandyyera.reposteria.data.db.entidades.Ingrediente
 import com.sandyyera.reposteria.data.db.entidades.Molde
+import com.sandyyera.reposteria.data.db.entidades.MotivoDeMovimiento
+import com.sandyyera.reposteria.data.db.entidades.MovimientoDeAlmacen
 import com.sandyyera.reposteria.data.db.entidades.Receta
 import com.sandyyera.reposteria.data.db.entidades.RecetaDuracion
 import com.sandyyera.reposteria.data.db.entidades.RecetaIngrediente
@@ -29,6 +33,8 @@ import com.sandyyera.reposteria.data.db.entidades.RecetaPrecio
 import com.sandyyera.reposteria.data.db.entidades.RecetaRendimiento
 import com.sandyyera.reposteria.data.db.entidades.RecetaSeccion
 import com.sandyyera.reposteria.data.db.entidades.RecetaSimulacionVenta
+import com.sandyyera.reposteria.data.db.entidades.Venta
+import com.sandyyera.reposteria.data.db.entidades.VentaLinea
 import com.sandyyera.reposteria.data.db.entidades.esTraida
 import com.sandyyera.reposteria.logica.duracion.TipoDuracion
 import com.sandyyera.reposteria.logica.precios.ModoPrecio
@@ -1110,4 +1116,84 @@ class AlmacenDaoFalso(
     private fun avisarAlCatalogo() {
         ingredientes.enElAlmacen.value = filas.value.mapNotNull { it.ingredienteId }.toSet()
     }
+}
+
+/**
+ * El DAO de ventas, en memoria (18.2).
+ *
+ * Nace con los movimientos del almacén y no con las ventas: lo que hacía falta probar primero es
+ * que **descontar deje rastro**, porque de ese rastro sale el costo real del informe. Sin él, "lo
+ * real" sería lo estimado con otro nombre.
+ *
+ * Lo que todavía no se usa **falla ruidosamente**, como el resto de los falsos: devolver listas
+ * vacías de relleno haría pasar pruebas que no probaron nada.
+ */
+class VentaDaoFalso : VentaDao {
+
+    /** Lo anotado, en el orden en que se anotó. Las pruebas lo revisan directamente. */
+    val movimientos = mutableListOf<MovimientoDeAlmacen>()
+
+    private val ventas = MutableStateFlow<List<Venta>>(emptyList())
+    private val lineas = mutableListOf<VentaLinea>()
+    private var siguienteId = 1L
+
+    override fun observarTodas(): Flow<List<Venta>> = ventas
+
+    override suspend fun obtener(ventaId: Long): Venta? =
+        ventas.value.firstOrNull { it.id == ventaId }
+
+    override suspend fun insertar(venta: Venta): Long {
+        val id = siguienteId++
+        ventas.value = ventas.value + venta.copy(id = id)
+        return id
+    }
+
+    override suspend fun actualizar(venta: Venta) {
+        ventas.value = ventas.value.map { if (it.id == venta.id) venta else it }
+    }
+
+    override suspend fun eliminar(ventaId: Long) {
+        ventas.value = ventas.value.filterNot { it.id == ventaId }
+        // Las cascadas declaradas en las entidades, a mano.
+        lineas.removeAll { it.ventaId == ventaId }
+        movimientos.removeAll { it.ventaId == ventaId }
+    }
+
+    override fun observarLineas(ventaId: Long): Flow<List<VentaLinea>> =
+        MutableStateFlow(lineas.filter { it.ventaId == ventaId })
+
+    override suspend fun obtenerLineas(ventaId: Long): List<VentaLinea> =
+        lineas.filter { it.ventaId == ventaId }
+
+    override suspend fun insertarLinea(linea: VentaLinea): Long {
+        val id = siguienteId++
+        lineas += linea.copy(id = id)
+        return id
+    }
+
+    override suspend fun eliminarLinea(lineaId: Long) {
+        lineas.removeAll { it.id == lineaId }
+    }
+
+    override suspend fun insertarMovimiento(movimiento: MovimientoDeAlmacen): Long {
+        val id = siguienteId++
+        movimientos += movimiento.copy(id = id)
+        return id
+    }
+
+    override suspend fun movimientosDe(ventaId: Long): List<MovimientoDeAlmacen> =
+        movimientos.filter { it.ventaId == ventaId }
+
+    override fun observarUltimosMovimientos(cuantos: Int): Flow<List<MovimientoDeAlmacen>> =
+        MutableStateFlow(movimientos.sortedByDescending { it.fecha }.take(cuantos))
+
+    /** El signo cambiado de la consulta real: las salidas se guardan negativas. */
+    override suspend fun costoRealDe(ventaId: Long): Double? =
+        movimientos
+            .filter { it.ventaId == ventaId && it.motivo == MotivoDeMovimiento.VENTA }
+            .takeIf { it.isNotEmpty() }
+            ?.sumOf { -it.cantidad * it.valorUnitario }
+
+    override fun observarResumenPorDia(): Flow<List<ResumenDeUnDia>> =
+        error("observarResumenPorDia todavía no se necesita en las pruebas")
 }
