@@ -264,19 +264,31 @@ class SimulacionMultipleTest {
     }
 
     @Test
-    fun `pedir mas ganancia de la que hay sigue lanzando, no se esconde`() {
-        // Esto no es una receta a medio configurar sino un sueldo mal asignado. Meterlo en
-        // `omitidas` dejaría al empleado con un total silenciosamente menor.
-        val error = runCatching {
-            simulacionMultiple(
-                recetas = listOf(
-                    RecetaEnLaSimulacion(torta(), gananciaEmpleado = 99000.0, unidadesPorDia = 1)
-                ),
-                diasPorSemana = 4
-            )
-        }.exceptionOrNull()
+    fun `un sueldo que ya no cabe se omite con su motivo, y no cierra la app`() {
+        // **Antes esto lanzaba a propósito**, con el argumento de que esconderlo dejaría al
+        // empleado con un total silenciosamente menor. El argumento era bueno y la consecuencia
+        // pésima: cerraba la app al abrir el empleado. Lo encontró Sandy — asignó un sueldo,
+        // después bajó el precio de la receta, y al volver la app se cerraba.
+        //
+        // Y pasa sin que nadie se equivoque: basta que suba la harina para que un sueldo que
+        // cabía ayer no quepa hoy. Omitirlo **diciéndolo** conserva lo que la excepción quería
+        // proteger, que es que no pase desapercibido.
+        val resultado = simulacionMultiple(
+            recetas = listOf(
+                RecetaEnLaSimulacion(torta(), gananciaEmpleado = 99000.0, unidadesPorDia = 1),
+                RecetaEnLaSimulacion(bizcocho(), gananciaEmpleado = 1000.0, unidadesPorDia = 1)
+            ),
+            diasPorSemana = 4
+        )
 
-        assertTrue("Tiene que avisar, no callarse", error is IllegalArgumentException)
+        assertEquals(
+            MotivoDeOmision.EL_SUELDO_YA_NO_CABE,
+            resultado.omitidas.single { it.titulo == torta().titulo }.motivo
+        )
+        assertTrue(
+            "Y las demás recetas del empleado se siguen contando",
+            resultado.ingresoDiario > 0
+        )
     }
 
     @Test

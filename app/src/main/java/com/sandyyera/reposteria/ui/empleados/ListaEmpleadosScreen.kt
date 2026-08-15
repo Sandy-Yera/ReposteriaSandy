@@ -257,18 +257,20 @@ private fun FilaEmpleado(fila: FilaDeEmpleado, acciones: AccionesEmpleados) {
                     .weight(1f)
                     .padding(vertical = Medidas.chico)
             ) {
-                // **Tocar el nombre lo cambia**, como el título de una receta y el del almacén
-                // (8.4.1 #3). El lápiz se fue: lo que se hace seguido se toca.
+                // **Tocar la fila entra al empleado, y el nombre se cambia adentro.** Estaba al
+                // revés: el nombre era lo tocable y ocupaba todo el ancho, así que se comía el
+                // toque de la tarjeta y entrar quedaba reducido a los pocos píxeles del borde.
+                // Lo reportó Sandy — *"solo puedo cambiarle el nombre, no me deja entrar… es como
+                // si hubiera un solo pixel"*.
+                //
+                // Se resuelve con la regla que la app ya usa en recetas y en el almacén: **el
+                // toque de la lista está tomado por abrir**, que es lo que se hace cien veces por
+                // cada renombrado, y renombrar se hace adentro tocando el nombre del encabezado
+                // (8.4.1 #3).
                 Text(
                     text = fila.nombre,
                     style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = Medidas.objetivoTactil)
-                        .clickable(enabled = fila.noSePuedeTocar == null) {
-                            acciones.abrirRenombre(fila)
-                        }
-                        .wrapContentHeight()
+                    modifier = Modifier.fillMaxWidth()
                 )
                 fila.noSePuedeTocar?.let {
                     Text(
@@ -309,10 +311,19 @@ private fun DetalleDelEmpleado(
         verticalArrangement = Arrangement.spacedBy(Medidas.medio)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            // **Acá se renombra**, tocando el nombre, que es donde la app pone siempre esa
+            // acción: adentro de lo que se abrió y no en la lista (8.4.1 #3). El genérico no se
+            // puede renombrar, así que ahí el nombre simplemente no responde al toque.
             Text(
                 text = fila.nombre,
                 style = MaterialTheme.typography.headlineSmall,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = Medidas.objetivoTactil)
+                    .clickable(enabled = fila.noSePuedeTocar == null) {
+                        acciones.abrirRenombre(fila)
+                    }
+                    .wrapContentHeight()
             )
             TextButton(onClick = acciones.cerrarDetalle) { Text("Volver") }
         }
@@ -363,13 +374,28 @@ private fun FilaDeSueldo(
             verticalArrangement = Arrangement.spacedBy(Medidas.minimo)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = receta.titulo,
-                    style = MaterialTheme.typography.titleMedium,
+                // **Tocar el título cambia lo que se lleva**, y ahora se dice con todas las
+                // letras. Sandy no lo encontraba: *"si le pongo un valor a x receta, pero luego
+                // quiero cambiarlo, debo sacarlo y volver a ponerlo"*. El cuadro siempre supo
+                // abrirse con el valor actual puesto; lo que faltaba era que se notara que se
+                // podía abrir.
+                Column(
                     modifier = Modifier
                         .weight(1f)
+                        .heightIn(min = Medidas.objetivoTactil)
                         .clickable { acciones.abrirSueldo(receta) }
-                )
+                        .wrapContentHeight()
+                ) {
+                    Text(
+                        text = receta.titulo,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        text = "Toca para cambiar lo que se lleva",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 IconButton(onClick = { acciones.quitarReceta(receta) }) {
                     Icon(
                         imageVector = Icons.Default.Delete,
@@ -381,12 +407,19 @@ private fun FilaDeSueldo(
 
             val reparto = receta.reparto
             if (reparto == null) {
-                // **Se dice por qué y no se deja el hueco.** `calcularSueldo` lanza con razón
-                // cuando la receta no cubre su costo: no hay ganancia que repartir, y eso es un
-                // dato de la receta que hay que ir a arreglar allá.
+                // **Se dice por qué y no se deja el hueco**, y se distinguen los dos motivos:
+                // que la receta no cubra su costo es un problema de la receta, y que el sueldo
+                // asignado ya no quepa es un problema de este número de acá. Mandar a arreglar
+                // el precio cuando lo que sobra es el sueldo hace perder el viaje.
                 Text(
-                    text = "No se puede repartir todavía: esta receta no cubre su costo con el " +
-                        "precio que tiene.",
+                    text = if (receta.gananciaTotal > 0) {
+                        "Lo que se lleva ya no cabe en la ganancia de esta receta " +
+                            "($${formatearMonto(receta.gananciaTotal)}). Tócala para " +
+                            "corregirlo."
+                    } else {
+                        "No se puede repartir todavía: esta receta no cubre su costo con el " +
+                            "precio que tiene."
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error
                 )

@@ -52,7 +52,21 @@ enum class MotivoDeOmision(val comoSeLee: String) {
      * **No es lo mismo que no tener precio** y por eso no comparte motivo: acá hay una decisión
      * tomada y el problema es cuál. Mezclarlos mandaría a poner un precio que ya existe.
      */
-    SE_VENDE_BAJO_EL_COSTO("se vende bajo su costo")
+    SE_VENDE_BAJO_EL_COSTO("se vende bajo su costo"),
+
+    /**
+     * El sueldo asignado ya no cabe en la ganancia de esa receta.
+     *
+     * **Antes esta era la única que seguía lanzando**, con el argumento de que esconderla dejaría
+     * al empleado con un total silenciosamente menor. El argumento era bueno y la consecuencia
+     * pésima: cerraba la app. Lo encontró Sandy — asignó un sueldo, después bajó el precio de la
+     * receta, y al volver a entrar al empleado la app se cerraba.
+     *
+     * Y pasa **sin que nadie se equivoque**: los precios y los costos se mueven, basta que suba
+     * la harina, así que un sueldo que cabía ayer puede no caber hoy. Omitirla **diciéndolo**
+     * conserva lo que la excepción quería proteger —que no pase desapercibido— sin el cierre.
+     */
+    EL_SUELDO_YA_NO_CABE("el sueldo asignado ya no cabe en su ganancia")
 }
 
 /**
@@ -144,14 +158,19 @@ fun simulacionMultiple(
  * revisara de menos, la excepción caería igual y con ella el total entero; si se revisara de
  * más, quedarían fuera recetas que sí se podían calcular.
  *
- * La ganancia pedida por encima de la total **no se omite**: eso no es una receta a medio
- * configurar sino un sueldo mal asignado, y esconderlo en una lista de omitidas dejaría al
- * empleado con un total silenciosamente menor. Es la única que sigue lanzando.
+ * **Las tres se omiten, ninguna lanza.** La ganancia pedida por encima de la total era la
+ * excepción a esta regla, con el argumento de que esconderla dejaría al empleado con un total
+ * silenciosamente menor. El argumento era bueno y la consecuencia pésima: cerraba la app al abrir
+ * el empleado, y pasaba sin que nadie se equivocara —los precios se mueven, y un sueldo que cabía
+ * ayer puede no caber hoy—. Omitirla **con su propio motivo** conserva lo que la excepción quería
+ * proteger, que es que no pase desapercibido.
  */
 private fun porQueNoSePuedeCalcular(fila: RecetaEnLaSimulacion): MotivoDeOmision? {
     if (!fila.datos.tienePrecio) return MotivoDeOmision.SIN_PRECIO
     if (ingresoBruto(fila.datos) < fila.datos.costoTotal) {
         return MotivoDeOmision.SE_VENDE_BAJO_EL_COSTO
     }
+    val gananciaTotal = ingresoBruto(fila.datos) - fila.datos.costoTotal
+    if (fila.gananciaEmpleado > gananciaTotal) return MotivoDeOmision.EL_SUELDO_YA_NO_CABE
     return null
 }
