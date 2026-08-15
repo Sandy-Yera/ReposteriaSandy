@@ -282,6 +282,30 @@ private fun TarjetaDeLaProyeccion(estado: EstadoSimulacion) {
             Cifra("Cuesta hacerlo", r.costoSemanal)
             Cifra("Te queda", r.gananciaSemanal, destacada = true)
 
+            // **Lo de los empleados se resta acá y no se avisa que falta restarlo** (10.1).
+            // Sandy lo pidió al revés de como se planteó primero, y tiene razón: un número que
+            // hay que corregir de cabeza no es un número, es una tarea pendiente. La cifra
+            // limpia puede salir **negativa**, y eso es justo lo que hay que ver — significa que
+            // con este precio no alcanza para pagar lo comprometido, algo que antes solo se
+            // descubría entrando a Empleados.
+            if (estado.empleados.hayEmpleados) {
+                estado.gananciaLimpiaSemanal?.let {
+                    Cifra("Te queda tras pagarles", it, destacada = true)
+                }
+            }
+            estado.loQueDicenLosEmpleadosDeLaReceta?.let { linea ->
+                Text(
+                    text = linea,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if ((estado.gananciaLimpiaPorProducto ?: 0.0) < 0) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    modifier = Modifier.padding(top = Medidas.minimo)
+                )
+            }
+
             // **De qué está hecho el "Entra".** Va pegado a la cifra, no al pie: es lo que
             // permite comprobarla. Sandy reportó que el número parecía incorrecto, y el
             // problema no era el número sino que no había con qué contrastarlo — la pantalla

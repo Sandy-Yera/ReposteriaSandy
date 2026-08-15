@@ -256,7 +256,6 @@ fun ListaAlmacen(
                 Text("Descontar lo que hice hoy")
             }
 
-            ValorDelAlmacen(estado)
             LineaDeBusqueda(estado, acciones)
         }
 
@@ -612,40 +611,6 @@ private fun ConfirmarSacarDelCatalogo(
             }
         }
     )
-}
-
-/**
- * Lo que vale todo lo guardado, arriba y siempre a la vista.
- *
- * Dice **cuántas cosas quedaron fuera del total** en vez de contarlas como 0: sumar como cero algo
- * cuyo precio no se conoce presentaría "el valor del almacén" ignorando en silencio parte de las
- * filas — un número que se cree y está mal.
- */
-@Composable
-private fun ValorDelAlmacen(estado: EstadoAlmacen) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-            contentColor = MaterialTheme.colorScheme.onTertiaryContainer
-        )
-    ) {
-        Column(modifier = Modifier.padding(Medidas.medio)) {
-            Text("Valor de lo guardado", style = MaterialTheme.typography.bodySmall)
-            Text(
-                text = "$${formatearNumero(estado.valorTotal)}",
-                style = MaterialTheme.typography.headlineMedium
-            )
-            if (estado.sinValor > 0) {
-                Text(
-                    text = "No incluye ${estado.sinValor} " +
-                        if (estado.sinValor == 1) "artículo sin precio"
-                        else "artículos sin precio",
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
-        }
-    }
 }
 
 /** Una cosa guardada: cuánto queda, cuánto vale y desde cuándo no se revisa. */

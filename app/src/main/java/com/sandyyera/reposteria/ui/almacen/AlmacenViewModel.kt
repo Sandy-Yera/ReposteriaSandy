@@ -485,15 +485,6 @@ sealed interface DialogoAlmacen {
 /** Lo que la pantalla del almacén necesita para dibujarse. */
 data class EstadoAlmacen(
     val visibles: List<FilaDeAlmacen> = emptyList(),
-    /**
-     * Todo lo guardado, **sin filtrar por el buscador**.
-     *
-     * Existe porque el valor del almacén se sacaba de [visibles], y eso lo hacía cambiar al
-     * escribir en el buscador: la tarjeta dice "Valor de lo guardado" y mostraba el de lo que
-     * quedó a la vista. Un número que se mueve al buscar es un número que no se puede creer, y es
-     * el mismo error que el total ya evitaba por otro lado al decir cuántas filas no incluye.
-     */
-    val todo: List<FilaDeAlmacen> = emptyList(),
     val hayArticulos: Boolean = false,
     val busqueda: String = "",
     /**
@@ -532,17 +523,6 @@ data class EstadoAlmacen(
             "Mostrando lo que tiene ${it.filtro.comoSeLee}"
         }
 
-    /**
-     * Lo que vale todo lo que hay guardado.
-     *
-     * Suma **solo lo que tiene valor**, y eso se dice al lado en vez de contar el resto como 0.
-     * Un total que se presenta como "el valor del almacén" mientras ignora en silencio algunas
-     * filas es un número que se cree y está mal.
-     */
-    val valorTotal: Double get() = todo.sumOf { it.valor ?: 0.0 }
-
-    /** Cuántas filas quedaron fuera del total por no tener valor. */
-    val sinValor: Int get() = todo.count { it.valor == null }
 }
 
 /**
@@ -592,7 +572,6 @@ class AlmacenViewModel(
                 // cada tecla se lee como que no hay nada. El aviso ya dice qué falta.
                 is LoQueSeBusca.MalEscrito -> porCategoria
             },
-            todo = filas,
             hayArticulos = filas.isNotEmpty(),
             busqueda = textoBuscado,
             loQueSeBusca = buscado,

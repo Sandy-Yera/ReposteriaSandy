@@ -287,7 +287,11 @@ fun NavegacionPrincipal(
                 desplazamientoDePasos = desplazamientoDePasos,
                 modelo = viewModel(
                     viewModelStoreOwner = modelosDeReceta.de(idAbierta),
-                    factory = SimulacionViewModel.fabrica(idAbierta, contenedor.recetas)
+                    factory = SimulacionViewModel.fabrica(
+                        idAbierta,
+                        contenedor.recetas,
+                        contenedor.empleados
+                    )
                 ),
                 pasoActual = pasoActual,
                 alElegirPaso = elegirPaso,

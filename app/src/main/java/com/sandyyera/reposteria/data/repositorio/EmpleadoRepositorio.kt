@@ -10,6 +10,7 @@ import com.sandyyera.reposteria.data.db.entidades.TipoEvento
 import com.sandyyera.reposteria.logica.busqueda.sonElMismoTexto
 import com.sandyyera.reposteria.logica.precios.DatosCalculoReceta
 import com.sandyyera.reposteria.logica.precios.ingresoBruto
+import com.sandyyera.reposteria.logica.simulacion.LoQueSeLlevanLosEmpleados
 import com.sandyyera.reposteria.logica.sueldos.RecetaEnLaSimulacion
 import com.sandyyera.reposteria.logica.sueldos.SimulacionMultipleResultado
 import com.sandyyera.reposteria.logica.sueldos.Sueldo
@@ -21,6 +22,7 @@ import com.sandyyera.reposteria.logica.validaciones.motivoParaNoTocarAlEmpleado
 import com.sandyyera.reposteria.logica.validaciones.textoANumero
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 
 /**
  * Una receta asignada a un empleado, con su sueldo y sus cifras (10.1).
@@ -409,4 +411,20 @@ sealed interface ResultadoCrearEmpleado {
     data class YaExiste(val existente: Empleado) : ResultadoCrearEmpleado
 
     data class NoValido(val motivo: String) : ResultadoCrearEmpleado
+
+    /**
+     * Lo que se llevan todos los empleados de una receta, para la simulación de esa receta (8.7).
+     *
+     * Vive acá y no en `RecetaRepositorio` porque el dato es de los empleados: la receta no sabe
+     * quién la tiene asignada, y hacerle preguntar por eso sería darle una segunda tabla que no
+     * es suya. Se **observa**, así que asignar un sueldo desde la otra sección mueve la
+     * simulación sin que nadie refresque.
+     */
+    fun observarLoQueSeLlevanPor(recetaId: Long): Flow<LoQueSeLlevanLosEmpleados> =
+        dao.observarLoQueSeLlevanPorReceta(recetaId).map {
+            LoQueSeLlevanLosEmpleados(
+                cuantos = it.cuantos,
+                seLlevanPorProducto = it.seLlevanPorProducto
+            )
+        }
 }

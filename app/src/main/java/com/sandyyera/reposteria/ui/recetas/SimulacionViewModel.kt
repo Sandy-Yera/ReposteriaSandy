@@ -5,12 +5,17 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.sandyyera.reposteria.data.repositorio.EmpleadoRepositorio
 import com.sandyyera.reposteria.data.repositorio.RecetaRepositorio
 import com.sandyyera.reposteria.data.repositorio.Resultado
 import com.sandyyera.reposteria.logica.precios.DatosCalculoReceta
 import com.sandyyera.reposteria.logica.precios.RepartoDeVenta
+import com.sandyyera.reposteria.logica.precios.ingresoBruto
 import com.sandyyera.reposteria.logica.precios.precioDeReferencia
+import com.sandyyera.reposteria.logica.simulacion.LoQueSeLlevanLosEmpleados
 import com.sandyyera.reposteria.logica.simulacion.SimulacionResultado
+import com.sandyyera.reposteria.logica.simulacion.gananciaDespuesDeLosEmpleados
+import com.sandyyera.reposteria.logica.simulacion.loQueDicenLosEmpleados
 import com.sandyyera.reposteria.logica.simulacion.loQueSeVendeEnLaSemana
 import com.sandyyera.reposteria.logica.simulacion.promocionesQueSeGananAlJuntar
 import com.sandyyera.reposteria.logica.simulacion.repartoSemanal
@@ -41,6 +46,14 @@ data class EstadoSimulacion(
     val datos: DatosCalculoReceta? = null,
     val diasPorSemana: String = "",
     val unidadesPorDia: String = "",
+    /**
+     * Lo que se llevan **todos** los empleados de esta receta, por producto vendido (10.1).
+     *
+     * Está acá para que la simulación reste de verdad en vez de avisar que no lo hace. Lo pidió
+     * Sandy al revés de como se planteó primero, y tiene razón: un número que hay que corregir
+     * de cabeza no es un número, es una tarea pendiente.
+     */
+    val empleados: LoQueSeLlevanLosEmpleados = LoQueSeLlevanLosEmpleados(0, 0.0),
     val mensaje: String? = null,
     val cargando: Boolean = true
 ) {
@@ -51,6 +64,41 @@ data class EstadoSimulacion(
 
     /** Si lo escrito sirve para guardarse. Lo consulta el guardado automático. */
     val puedeGuardar: Boolean get() = errores.sirve
+
+    /**
+     * Lo que queda por producto **después** de pagar a los empleados (10.1).
+     *
+     * `null` cuando todavía no hay cifras que restar. Puede dar **negativo**, y eso es justo lo
+     * que hay que ver: con ese precio no alcanza para pagar lo comprometido. Antes eso solo se
+     * descubría entrando a Empleados.
+     */
+    val gananciaLimpiaPorProducto: Double?
+        get() = gananciaPorProducto?.let { gananciaDespuesDeLosEmpleados(it, empleados) }
+
+    /**
+     * Lo que queda en la semana **después** de pagar a los empleados.
+     *
+     * Se resta sobre la proyección ya hecha y no se vuelve a proyectar: lo que se llevan es por
+     * producto, así que se multiplica por los mismos días y unidades que el resto de la fila.
+     * Calcularlo aparte sería una segunda versión de la misma cuenta.
+     */
+    val gananciaLimpiaSemanal: Double?
+        get() = resultado?.let {
+            it.gananciaSemanal - empleados.seLlevanPorProducto * (dias ?: 0) * (unidades ?: 0)
+        }
+
+    /** Qué decir del precio respecto de los empleados, o `null` si no hay nada que decir. */
+    val loQueDicenLosEmpleadosDeLaReceta: String?
+        get() = gananciaPorProducto?.let { loQueDicenLosEmpleados(it, empleados) }
+
+    /**
+     * Lo que deja **un producto completo**, antes de los empleados.
+     *
+     * `null` sin precio, y ese guardia no es de adorno: `ingresoBruto` lanza cuando no hay ningún
+     * precio, y llamarlo para dibujar fue exactamente lo que cerró la app en Empleados.
+     */
+    private val gananciaPorProducto: Double?
+        get() = datos?.takeIf { it.tienePrecio }?.let { ingresoBruto(it) - it.costoTotal }
 
     /** Si la receta ya tiene precio: sin él no hay nada que proyectar. */
     val tienePrecio: Boolean get() = datos?.tienePrecio == true
@@ -160,7 +208,10 @@ data class EstadoSimulacion(
  */
 class SimulacionViewModel(
     private val recetaId: Long,
-    private val recetas: RecetaRepositorio
+    private val recetas: RecetaRepositorio,
+    // Solo para saber cuánto se llevan los empleados de esta receta. La receta no sabe quién la
+    // tiene asignada —no es su tabla—, así que el dato lo trae quien sí lo sabe.
+    private val empleados: EmpleadoRepositorio
 ) : ViewModel() {
 
     private val dias = MutableStateFlow("")
@@ -172,12 +223,16 @@ class SimulacionViewModel(
     val estado: StateFlow<EstadoSimulacion> = combine(
         recetas.observarDatosCalculo(recetaId),
         combine(dias, unidades) { d, u -> d to u },
+        // Se **observa** y no se pide una vez: asignarle un empleado a esta receta desde la otra
+        // sección tiene que mover estos números sin que nadie se acuerde de refrescar.
+        empleados.observarLoQueSeLlevanPor(recetaId),
         mensaje
-    ) { datos, escrito, mensajeActual ->
+    ) { datos, escrito, loDeLosEmpleados, mensajeActual ->
         EstadoSimulacion(
             datos = datos,
             diasPorSemana = escrito.first,
             unidadesPorDia = escrito.second,
+            empleados = loDeLosEmpleados,
             mensaje = mensajeActual,
             cargando = false
         )
@@ -243,9 +298,12 @@ class SimulacionViewModel(
     }
 
     companion object {
-        fun fabrica(recetaId: Long, recetas: RecetaRepositorio): ViewModelProvider.Factory =
-            viewModelFactory {
-                initializer { SimulacionViewModel(recetaId, recetas) }
-            }
+        fun fabrica(
+            recetaId: Long,
+            recetas: RecetaRepositorio,
+            empleados: EmpleadoRepositorio
+        ): ViewModelProvider.Factory = viewModelFactory {
+            initializer { SimulacionViewModel(recetaId, recetas, empleados) }
+        }
     }
 }

@@ -5,6 +5,8 @@ import com.sandyyera.reposteria.logica.precios.ModoPrecio
 import com.sandyyera.reposteria.logica.precios.PrecioVigente
 import com.sandyyera.reposteria.logica.precios.ingresoBruto
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -207,5 +209,52 @@ class SimulacionTest {
         assertEquals(2, reparto.cuantasVecesEntra)
         assertEquals(1, reparto.sueltos)
         assertEquals(41000.0, reparto.total, 0.001)   // 16.000 x 2 + 9.000
+    }
+
+    // --- Lo que se llevan los empleados (10.1 en la simulación de la receta) ---
+
+    @Test
+    fun `sin empleados no se descuenta nada, pero se avisa`() {
+        // El aviso va justamente donde **no** hay descuento: el día que se asigne un empleado
+        // estos números van a bajar, y conviene saberlo antes y no después.
+        val nadie = LoQueSeLlevanLosEmpleados(cuantos = 0, seLlevanPorProducto = 0.0)
+
+        assertEquals(7_000.0, gananciaDespuesDeLosEmpleados(7_000.0, nadie), 0.001)
+        assertTrue(loQueDicenLosEmpleados(7_000.0, nadie)!!.contains("sin descuentos por empleado"))
+    }
+
+    @Test
+    fun `con empleados se resta lo que se llevan todos juntos`() {
+        // Una sola cifra y no una por empleado: la simulación de la receta responde "cuánto me
+        // queda a mí", y para eso da igual entre cuántos se reparte lo que se va.
+        val dos = LoQueSeLlevanLosEmpleados(cuantos = 2, seLlevanPorProducto = 2_500.0)
+
+        assertEquals(4_500.0, gananciaDespuesDeLosEmpleados(7_000.0, dos), 0.001)
+        assertTrue(loQueDicenLosEmpleados(7_000.0, dos)!!.contains("2 empleados"))
+    }
+
+    @Test
+    fun `un precio que no alcanza para pagarlos se dice acá y no en Empleados`() {
+        // Es el caso que Sandy quería ver en la simulación: antes había que entrar a Empleados
+        // para descubrir que ese precio ya no daba.
+        val caros = LoQueSeLlevanLosEmpleados(cuantos = 1, seLlevanPorProducto = 9_000.0)
+
+        assertEquals(-2_000.0, gananciaDespuesDeLosEmpleados(7_000.0, caros), 0.001)
+        assertTrue(loQueDicenLosEmpleados(7_000.0, caros)!!.contains("no alcanza para pagar"))
+    }
+
+    @Test
+    fun `justo en el limite todavia alcanza`() {
+        val alRas = LoQueSeLlevanLosEmpleados(cuantos = 1, seLlevanPorProducto = 7_000.0)
+
+        assertEquals(0.0, gananciaDespuesDeLosEmpleados(7_000.0, alRas), 0.001)
+        assertTrue(loQueDicenLosEmpleados(7_000.0, alRas)!!.contains("Ya está descontado"))
+    }
+
+    @Test
+    fun `uno solo se lee en singular`() {
+        val uno = LoQueSeLlevanLosEmpleados(cuantos = 1, seLlevanPorProducto = 100.0)
+
+        assertEquals("1 empleado", uno.comoSeLeeCuantos)
     }
 }

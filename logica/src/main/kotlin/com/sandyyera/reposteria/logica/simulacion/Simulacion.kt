@@ -140,3 +140,65 @@ fun simulacionDeVenta(d: DatosCalculoReceta, dias: Int, unidades: Int): Simulaci
         gananciaMensual = gananciaSemanal * SEMANAS_POR_MES
     )
 }
+
+/**
+ * Lo que los empleados se llevan de una receta, todos juntos (10.1 y 8.7).
+ *
+ * **Una sola cifra y no una por empleado**, que es como Sandy lo pidió: la simulación de una
+ * receta responde "cuánto me queda a mí", y para eso da igual entre cuántos se reparte lo que se
+ * va. El detalle por persona ya está en la sección Empleados, que es donde se decide.
+ *
+ * [seLlevanPorProducto] es lo que sale **al vender un producto completo**, sumando el sueldo
+ * asignado de cada empleado que tenga esta receta. Va por producto y no por semana porque de ahí
+ * cuelgan las tres proyecciones sin volver a multiplicar.
+ */
+data class LoQueSeLlevanLosEmpleados(
+    val cuantos: Int,
+    val seLlevanPorProducto: Double
+) {
+    val hayEmpleados: Boolean get() = cuantos > 0
+
+    /** "2 empleados" / "1 empleado", para escribirlo en una frase. */
+    val comoSeLeeCuantos: String
+        get() = if (cuantos == 1) "1 empleado" else "$cuantos empleados"
+}
+
+/**
+ * La ganancia de una receta después de pagar a los empleados, por producto vendido.
+ *
+ * Sandy lo pidió al revés de como se planteó primero, y tiene razón: en vez de avisar "el precio
+ * visible es sin descuentos" en las recetas que **sí** tienen empleados, lo que corresponde es
+ * **restar de verdad** ahí y dejar el aviso para las que no tienen a nadie asignado. Un número que
+ * hay que corregir de cabeza no es un número, es una tarea pendiente.
+ *
+ * Puede dar **negativo**, y eso es justamente lo que hay que ver: significa que con ese precio no
+ * alcanza para pagar lo comprometido. Antes eso solo se descubría entrando a Empleados.
+ */
+fun gananciaDespuesDeLosEmpleados(
+    gananciaPorProducto: Double,
+    empleados: LoQueSeLlevanLosEmpleados
+): Double = gananciaPorProducto - empleados.seLlevanPorProducto
+
+/**
+ * Qué hay que decir del precio de una receta respecto de sus empleados, o `null` si nada.
+ *
+ * Las tres respuestas posibles, y por qué son tres:
+ *
+ * - **Sin empleados**: se avisa que lo que se ve es sin descuentos, porque el día que se asigne
+ *   uno estos números van a bajar y conviene saberlo antes y no después.
+ * - **Con empleados y alcanza**: se dice cuánto se van, que es la resta que la pantalla ya aplicó.
+ * - **Con empleados y no alcanza**: se dice que ese precio no da para pagarlos. Es el caso que
+ *   Sandy quería ver acá — *"que tales precios se vean negados simplemente porque no se podría
+ *   pagar a los empleados, en vez de que deba ir a empleados para verlo"*.
+ */
+fun loQueDicenLosEmpleados(
+    gananciaPorProducto: Double,
+    empleados: LoQueSeLlevanLosEmpleados
+): String? = when {
+    !empleados.hayEmpleados ->
+        "Lo que se ve es sin descuentos por empleado: todavía no hay ninguno con esta receta."
+    gananciaDespuesDeLosEmpleados(gananciaPorProducto, empleados) < 0 ->
+        "Con este precio no alcanza para pagar a ${empleados.comoSeLeeCuantos} que tienen " +
+            "esta receta asignada."
+    else -> "Ya está descontado lo de ${empleados.comoSeLeeCuantos} que tienen esta receta."
+}

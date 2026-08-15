@@ -11,6 +11,15 @@ import com.sandyyera.reposteria.data.db.entidades.EmpleadoSimulacionMultiple
 import com.sandyyera.reposteria.data.db.entidades.EmpleadoSimulacionMultipleDetalle
 import kotlinx.coroutines.flow.Flow
 
+/**
+ * Cuántos empleados tienen una receta asignada y cuánto se llevan entre todos (8.7).
+ *
+ * Es un tipo propio del DAO —como `ResumenDeUnDia`— y no el de `logica/` directamente: acá se
+ * declara lo que la consulta devuelve, y la conversión la hace el repositorio. Así un cambio en
+ * el tipo de la lógica no obliga a tocar una consulta SQL.
+ */
+data class SueldosDeUnaReceta(val cuantos: Int, val seLlevanPorProducto: Double)
+
 @Dao
 interface EmpleadoDao {
 
@@ -120,4 +129,23 @@ interface EmpleadoDao {
 
     @Query("DELETE FROM empleado_simulacion_multiple_detalle WHERE id = :detalleId")
     suspend fun eliminarDetalle(detalleId: Long)
+
+    /**
+     * Lo que se llevan **todos** los empleados de una receta, por producto vendido.
+     *
+     * Se **observa** y no se pide una vez, por la regla de siempre: la simulación de la receta
+     * muestra la resta ya aplicada, y asignarle un empleado desde la otra sección tiene que
+     * moverla sin que nadie se acuerde de refrescar.
+     *
+     * El `COALESCE` deja 0 cuando no hay ninguno: sin él, `SUM` de nada devuelve `NULL` y la
+     * receta sin empleados no se distinguiría de un error de la consulta.
+     */
+    @Query(
+        """
+        SELECT COUNT(*) AS cuantos,
+               COALESCE(SUM(gananciaEmpleado), 0) AS seLlevanPorProducto
+        FROM empleado_receta_sueldo WHERE recetaId = :recetaId
+        """
+    )
+    fun observarLoQueSeLlevanPorReceta(recetaId: Long): Flow<SueldosDeUnaReceta>
 }

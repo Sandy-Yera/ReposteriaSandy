@@ -11,6 +11,7 @@ import com.sandyyera.reposteria.data.db.dao.LineaConIngrediente
 import com.sandyyera.reposteria.data.db.dao.MoldeDao
 import com.sandyyera.reposteria.data.db.dao.NombreDeIngrediente
 import com.sandyyera.reposteria.data.db.dao.RecetaDao
+import com.sandyyera.reposteria.data.db.dao.SueldosDeUnaReceta
 import com.sandyyera.reposteria.data.db.dao.TrozosDeReceta
 import com.sandyyera.reposteria.data.db.entidades.ArticuloDeAlmacen
 import com.sandyyera.reposteria.data.db.entidades.Empleado
@@ -989,6 +990,22 @@ class EmpleadoDaoFalso : EmpleadoDao {
         detalles.removeAll { it.id == detalleId }
         cambio()
     }
+    /**
+     * Lo que se llevan todos los empleados de una receta, contando sobre las filas de memoria.
+     *
+     * Cuelga de `cambios` como el resto de lo reactivo: asignar un sueldo tiene que mover la
+     * simulación de la receta, y con un `Flow` de un solo valor esa prueba pasaría igual estando
+     * rota.
+     */
+    override fun observarLoQueSeLlevanPorReceta(recetaId: Long): Flow<SueldosDeUnaReceta> =
+        cambios.map {
+            val suyos = sueldos.filter { it.recetaId == recetaId }
+            SueldosDeUnaReceta(
+                cuantos = suyos.size,
+                seLlevanPorProducto = suyos.sumOf { it.gananciaEmpleado }
+            )
+        }
+
 }
 
 /**
