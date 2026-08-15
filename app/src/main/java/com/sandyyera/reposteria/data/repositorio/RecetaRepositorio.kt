@@ -2387,13 +2387,21 @@ class RecetaRepositorio(
      * que "que la acción se cancele y vuelva al valor que tenía" es simplemente no haber
      * escrito: la referencia anterior sigue siendo la que era, sin ningún paso de deshacer.
      */
-    suspend fun elegirPrecioDeReferencia(recetaId: Long, precioId: Long): String? {
+    suspend fun elegirPrecioDeReferencia(
+        recetaId: Long,
+        precioId: Long,
+        // Lo que se llevan los empleados de esta receta, por producto. Llega **por parámetro y no
+        // consultado acá**: el repositorio de empleados ya depende de este, y pedirle el dato
+        // desde adentro cerraría el círculo. Quien lo tiene a mano es la pantalla.
+        seLlevanLosEmpleados: Double = 0.0
+    ): String? {
         val datos = obtenerDatosCalculo(listOf(recetaId))[recetaId]
             ?: return "Esa receta ya no existe"
         val elegido = dao.obtenerPrecios(recetaId).firstOrNull { it.id == precioId }
             ?: return "Ese precio ya no existe"
 
-        errorAlElegirReferencia(elegido.aVigente(), datos)?.let { return it }
+        errorAlElegirReferencia(elegido.aVigente(), datos, seLlevanLosEmpleados)
+            ?.let { return it }
 
         dao.fijarPrecioDeReferencia(recetaId, precioId)
         historial.registrar(

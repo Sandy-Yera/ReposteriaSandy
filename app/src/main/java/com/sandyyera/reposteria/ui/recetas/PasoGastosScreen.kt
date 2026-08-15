@@ -366,6 +366,25 @@ private fun TarjetaDeCifras(estado: EstadoGastos) {
             Cifra("Ganas por cada trozo", estado.gananciaDeCadaTrozo)
             Cifra("Ganas por el producto", estado.gananciaDelProducto, destacada = true)
 
+            // **Lo mismo que en la simulación, y por el mismo motivo** (10.1): estas son las
+            // cifras que se miran para decidir un precio, y decidirlo sin descontar lo
+            // comprometido con los empleados es decidir con un número que no es. Lo pidió Sandy.
+            if (estado.empleados.hayEmpleados) {
+                Cifra("Te queda tras pagarles", estado.gananciaLimpiaDelProducto, destacada = true)
+            }
+            estado.loQueDicenLosEmpleadosDeLaReceta?.let { linea ->
+                Text(
+                    text = linea,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if ((estado.gananciaLimpiaDelProducto ?: 0.0) < 0) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    modifier = Modifier.padding(top = Medidas.minimo)
+                )
+            }
+
             // El aviso del resto va **acá adentro y pegado a las cifras**, no como tarjeta
             // suelta arriba de todo. Estaba arriba y Sandy no lo veía: en un celular queda
             // fuera de la pantalla apenas se desplaza un poco, así que parecía no existir.

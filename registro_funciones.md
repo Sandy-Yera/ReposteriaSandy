@@ -393,11 +393,13 @@ la sección 5 es la fuente.** Sí están registrados los tipos que *no* son tabl
 - Qué hace: elige el precio con el que se calcula todo lo automático — sueldos, simulaciones, ganancia final, trozo ganador.
 - Cómo funciona: recibe el snapshot y devuelve el `PrecioVigente` que tenga `esReferencia = true`. Si ninguno lo tiene —receta recién creada, o filas anteriores a la versión 2 de la base— cae en `precioDeMenorGanancia`, que era el comportamiento anterior. **Es la única entrada a los cálculos automáticos**: nadie debería volver a llamar a `precioDeMenorGanancia` directamente para eso.
 
-### errorAlElegirReferencia ✅ IMPLEMENTADA
+### errorAlElegirReferencia y MENSAJE_NO_ALCANZA_PARA_LOS_EMPLEADOS ✅ IMPLEMENTADAS
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/precios/Precios.kt
 - Qué hace: revisa si un precio puede ser la referencia de la receta.
 - Cómo funciona: recibe el `PrecioVigente` y el snapshot, devuelve el motivo o `null` (mismo formato que las validaciones de 6.2, porque describe algo corregible eligiendo otra promo). **Rechaza los que pierden plata**: de la referencia sale el sueldo, y `calcularSueldo` no puede repartir una ganancia que no existe. **Cubrir el costo justo sí se acepta.** Que un precio no pueda ser referencia no impide guardarlo ni verlo.
 
+
+  **Rechaza además los precios con los que no alcanza para pagar a los empleados** (`seLlevanLosEmpleados`, que llega en 0 desde todo lo que no sabe de empleados). Es la misma regla mirada un paso más allá: de la referencia salen los sueldos, así que elegir un precio con el que el reparto queda imposible deja al empleado con un compromiso que no se puede cumplir. Lo pidió Sandy tras encontrar que la app se lo dejaba elegir — *"debería ser como los precios que generan pérdida, que directamente no me deja seleccionarlos"*. Se compara contra la ganancia del **producto completo** porque el descuento del empleado es por producto y el precio se mide por trozo. El dato llega **por parámetro y no consultado desde el repositorio**: el de empleados ya depende del de recetas, y pedirlo desde adentro cerraría el círculo — quien lo tiene a mano es la pantalla.
 ### MENSAJE_PROMOCION_CON_PERDIDAS ✅ IMPLEMENTADA
 - Ubicación: logica/src/main/kotlin/com/sandyyera/reposteria/logica/precios/Precios.kt
 - Qué hace: el texto que se muestra al intentar poner como referencia un precio que pierde plata.

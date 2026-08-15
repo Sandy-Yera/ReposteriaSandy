@@ -204,6 +204,36 @@ class PreciosTest {
     }
 
     @Test
+    fun `un precio con el que no alcanza para pagar a los empleados no se acepta`() {
+        // Lo pidió Sandy: la app dejaba elegir uno con el que el reparto quedaba imposible, y
+        // eso solo se descubría entrando a Empleados. Es la misma regla del precio que pierde
+        // plata, mirada un paso más allá — de la referencia salen los sueldos.
+        val d = receta(costoTotal = 3000.0, trozos = 6, porTrozo(600.0))
+        // 600 x 6 = 3.600 de ingreso, 3.000 de costo: quedan 600 de ganancia por producto.
+
+        val motivo = errorAlElegirReferencia(porTrozo(600.0), d, seLlevanLosEmpleados = 900.0)
+
+        assertEquals(MENSAJE_NO_ALCANZA_PARA_LOS_EMPLEADOS, motivo)
+    }
+
+    @Test
+    fun `si alcanza justo para pagarles, el precio se acepta`() {
+        // Igual que cubrir el costo justo: no sobra nada, pero tampoco falta.
+        val d = receta(costoTotal = 3000.0, trozos = 6, porTrozo(600.0))
+
+        assertNull(errorAlElegirReferencia(porTrozo(600.0), d, seLlevanLosEmpleados = 600.0))
+    }
+
+    @Test
+    fun `sin empleados el precio se mide como siempre`() {
+        // El parámetro llega en 0 desde todos los lados que no saben de empleados, y ahí la
+        // regla tiene que ser exactamente la de antes.
+        val d = receta(costoTotal = 3000.0, trozos = 6, porTrozo(600.0))
+
+        assertNull(errorAlElegirReferencia(porTrozo(600.0), d, seLlevanLosEmpleados = 0.0))
+    }
+
+    @Test
     fun `una promocion que gana si se acepta`() {
         val d = receta(costoTotal = 3000.0, trozos = 6, porTrozo(600.0))
         assertNull(errorAlElegirReferencia(porTrozo(700.0), d))

@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.sandyyera.reposteria.data.db.entidades.RecetaPrecio
+import com.sandyyera.reposteria.data.repositorio.EmpleadoRepositorio
 import com.sandyyera.reposteria.data.repositorio.RecetaRepositorio
 import com.sandyyera.reposteria.data.repositorio.Resultado
 import com.sandyyera.reposteria.data.db.entidades.aVigente
@@ -27,6 +28,9 @@ import com.sandyyera.reposteria.logica.precios.ingresoBruto
 import com.sandyyera.reposteria.logica.precios.precioPorTrozoDe
 import com.sandyyera.reposteria.logica.precios.trozoGanador
 import com.sandyyera.reposteria.logica.precios.trozosCubiertosPor
+import com.sandyyera.reposteria.logica.simulacion.LoQueSeLlevanLosEmpleados
+import com.sandyyera.reposteria.logica.simulacion.gananciaDespuesDeLosEmpleados
+import com.sandyyera.reposteria.logica.simulacion.loQueDicenLosEmpleados
 import com.sandyyera.reposteria.logica.validaciones.MAXIMA_CANTIDAD_DE_PRECIO
 import com.sandyyera.reposteria.logica.validaciones.descripcionDePromocion
 import com.sandyyera.reposteria.logica.validaciones.revisarPrecio
@@ -168,6 +172,15 @@ data class EstadoGastos(
      * aviso parecen un negocio redondo.
      */
     val tieneIngredientes: Boolean = false,
+    /**
+     * Lo que se llevan **todos** los empleados de esta receta, por producto vendido (10.1).
+     *
+     * Está acá por lo mismo que en la simulación: las cifras de esta pantalla son las que uno
+     * mira para decidir un precio, y decidirlo sin descontar lo comprometido es decidir con un
+     * número que no es. Lo pidió Sandy — *"que en gastos y ganancias también aparezca lo que
+     * hiciste en ganancia simulada"*.
+     */
+    val empleados: LoQueSeLlevanLosEmpleados = LoQueSeLlevanLosEmpleados(0, 0.0),
     val mensaje: String? = null,
     val cargando: Boolean = true
 ) {
@@ -196,6 +209,20 @@ data class EstadoGastos(
         get() = datos?.takeIf { it.tienePrecio }?.let { gananciaPorTrozo(it) }
     val gananciaDelProducto: Double?
         get() = datos?.takeIf { it.tienePrecio }?.let { gananciaFinal(it) }
+
+    /**
+     * Lo que queda del producto **después** de pagar a los empleados (10.1).
+     *
+     * Las mismas dos cifras que la simulación, y por el mismo motivo: estas son las que uno mira
+     * para decidir un precio, y decidirlo sin descontar lo comprometido es decidir con un número
+     * que no es. Puede salir **negativo**, y ahí está el aviso.
+     */
+    val gananciaLimpiaDelProducto: Double?
+        get() = gananciaDelProducto?.let { gananciaDespuesDeLosEmpleados(it, empleados) }
+
+    /** Qué decir del precio respecto de los empleados, o `null` si no hay nada que decir. */
+    val loQueDicenLosEmpleadosDeLaReceta: String?
+        get() = gananciaDelProducto?.let { loQueDicenLosEmpleados(it, empleados) }
     val elTrozoGanador: TrozoGanador?
         get() = datos?.takeIf { it.tienePrecio }?.let { trozoGanador(it) }
 
@@ -270,7 +297,10 @@ data class EstadoGastos(
  */
 class GastosViewModel(
     private val recetaId: Long,
-    private val recetas: RecetaRepositorio
+    private val recetas: RecetaRepositorio,
+    // Solo para lo de los empleados: cuánto se llevan de esta receta. La receta no sabe quién la
+    // tiene asignada —no es su tabla—, así que el dato lo trae quien sí lo sabe.
+    private val empleados: EmpleadoRepositorio
 ) : ViewModel() {
 
     private val mensaje = MutableStateFlow<String?>(null)
@@ -283,12 +313,16 @@ class GastosViewModel(
         recetas.observarDatosCalculo(recetaId),
         recetas.observarPrecios(recetaId),
         recetas.observarIngredientes(recetaId),
+        // Se **observa**: asignarle un empleado a esta receta desde la otra sección tiene que
+        // mover estas cifras sin que nadie se acuerde de refrescar.
+        empleados.observarLoQueSeLlevanPor(recetaId),
         mensaje
-    ) { datos, precios, ingredientes, mensajeActual ->
+    ) { datos, precios, ingredientes, loDeLosEmpleados, mensajeActual ->
         EstadoGastos(
             datos = datos,
             filas = datos?.let { armarFilas(it, precios) }.orEmpty(),
             tieneIngredientes = ingredientes.isNotEmpty(),
+            empleados = loDeLosEmpleados,
             mensaje = mensajeActual,
             cargando = false
         )
@@ -444,7 +478,12 @@ class GastosViewModel(
             return
         }
         viewModelScope.launch {
-            recetas.elegirPrecioDeReferencia(recetaId, precio.id)?.let { mensaje.value = it }
+            // Se le pasa lo de los empleados para que **rechace también los precios con los que
+            // no alcanza a pagarles**, que es lo que Sandy pidió: hasta acá dejaba elegir uno con
+            // el que el reparto quedaba imposible, y eso solo se descubría en Empleados.
+            val seLlevan = estado.value.empleados.seLlevanPorProducto
+            recetas.elegirPrecioDeReferencia(recetaId, precio.id, seLlevan)
+                ?.let { mensaje.value = it }
         }
     }
 
@@ -496,9 +535,12 @@ class GastosViewModel(
     }
 
     companion object {
-        fun fabrica(recetaId: Long, recetas: RecetaRepositorio): ViewModelProvider.Factory =
-            viewModelFactory {
-                initializer { GastosViewModel(recetaId, recetas) }
-            }
+        fun fabrica(
+            recetaId: Long,
+            recetas: RecetaRepositorio,
+            empleados: EmpleadoRepositorio
+        ): ViewModelProvider.Factory = viewModelFactory {
+            initializer { GastosViewModel(recetaId, recetas, empleados) }
+        }
     }
 }

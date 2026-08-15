@@ -170,8 +170,29 @@ const val MENSAJE_PROMOCION_CON_PERDIDAS = "Esta promoción genera pérdidas"
  * pierde plata sigue apareciendo en la lista con su ganancia en rojo, que es justamente
  * la información que hace falta para descartarla.
  */
-fun errorAlElegirReferencia(precio: PrecioVigente, d: DatosCalculoReceta): String? =
-    if (gananciaPorTrozoDe(precio, d) < 0) MENSAJE_PROMOCION_CON_PERDIDAS else null
+fun errorAlElegirReferencia(
+    precio: PrecioVigente,
+    d: DatosCalculoReceta,
+    seLlevanLosEmpleados: Double = 0.0
+): String? = when {
+    gananciaPorTrozoDe(precio, d) < 0 -> MENSAJE_PROMOCION_CON_PERDIDAS
+    // **Un precio que solo pierde después de pagarles tampoco sirve de referencia**, y es la
+    // misma regla mirada un paso más allá: de la referencia salen los sueldos, así que elegir uno
+    // con el que no alcanza para pagarlos deja al empleado con un reparto imposible. Lo pidió
+    // Sandy después de encontrar que la app se lo dejaba elegir — *"debería ser como los precios
+    // que generan pérdida, que directamente no me deja seleccionarlos"*.
+    //
+    // El descuento va **por producto completo** y el precio se mide por trozo, así que se compara
+    // contra la ganancia del producto entero: es lo que el empleado se lleva de una venta.
+    seLlevanLosEmpleados > 0 &&
+        gananciaPorTrozoDe(precio, d) * d.trozos < seLlevanLosEmpleados ->
+        MENSAJE_NO_ALCANZA_PARA_LOS_EMPLEADOS
+    else -> null
+}
+
+/** Lo que se dice de un precio con el que no alcanza para pagar a los empleados (10.1). */
+const val MENSAJE_NO_ALCANZA_PARA_LOS_EMPLEADOS =
+    "Con este precio no alcanza para pagar lo que se llevan los empleados de esta receta"
 
 /**
  * Los dos precios **base** de una receta: uno por trozo suelto y uno por el producto entero.
