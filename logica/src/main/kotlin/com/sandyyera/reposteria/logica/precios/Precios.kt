@@ -1,0 +1,372 @@
+package com.sandyyera.reposteria.logica.precios
+
+import com.sandyyera.reposteria.logica.rendimiento.repartirEntreTrozos
+
+/** Si un precio guardado es por trozo o por producto completo. */
+enum class ModoPrecio { TROZO, PRODUCTO }
+
+/**
+ * Un precio o promoción tal como lo ven las fórmulas.
+ *
+ * Es el equivalente puro de la tabla `receta_precios`: la entidad de Room vive en el
+ * módulo `:app` y se convierte a este tipo al armar el snapshot. Así las fórmulas no
+ * dependen de Android y se pueden probar sin base de datos.
+ *
+ * Significa "vender [cantidad] trozos (o [cantidad] productos completos, según [modo])
+ * por [precioTotal] en total".
+ */
+data class PrecioVigente(
+    val modo: ModoPrecio,
+    val cantidad: Int,
+    val precioTotal: Double,
+    val etiqueta: String? = null,
+    /**
+     * Si es **este** el precio que alimenta las cifras automáticas: sueldos, simulaciones,
+     * ganancia final, trozo ganador.
+     *
+     * Solo uno por receta lo tiene en `true`. Antes no se elegía —siempre mandaba el de
+     * menor ganancia— y eso hacía imposible responder "¿cuánto ganaría con **esta** promo?",
+     * que es justamente para lo que sirve tener varias guardadas.
+     */
+    val esReferencia: Boolean = false,
+    /**
+     * Si es **el precio de todos los días** de su modo: el que se cobra por un trozo suelto o
+     * por un producto entero cuando no hay promoción de por medio.
+     *
+     * Solo uno por receta y por modo lo tiene en `true`, y siempre tiene `cantidad = 1`.
+     *
+     * **No se deduce de `cantidad == 1`, y ahí está el cambio.** Antes se deducía, y por eso la
+     * app solo dejaba guardar un precio de un trozo: un segundo habría sido indistinguible del
+     * primero. Sandy lo reportó al querer tantear —*"si yo quisiera testear el valor de un
+     * trozo, no se me permite; debería estar editando el 1 trozo base todo el rato"*—. Ahora
+     * puede haber varios precios de un trozo y **la app sabe cuál es el de verdad** porque está
+     * marcado, no adivinado.
+     */
+    val esBase: Boolean = false
+)
+
+/**
+ * La foto de una receta que reciben todas las fórmulas de este archivo.
+ *
+ * Se arma una sola vez leyendo la base y se pasa hacia abajo, en vez de que cada fórmula
+ * salga a buscar sus datos: si no, el costo total se recalcularía siete veces seguidas
+ * con el mismo resultado (sección 6.4 de arquitectura.md).
+ */
+data class DatosCalculoReceta(
+    val recetaId: Long,
+    val titulo: String,
+    val costoTotal: Double,
+    val trozos: Int,
+    val precios: List<PrecioVigente>
+) {
+    init {
+        require(trozos >= 1) { "Una receta siempre tiene al menos 1 trozo (llegó $trozos)" }
+    }
+
+    /**
+     * Si la receta ya tiene precio definido.
+     *
+     * Hay que consultarlo **antes** de pedir cualquier cifra automática: una receta a
+     * medio crear en el wizard todavía no pasó por el paso de precios, y la pantalla
+     * debe mostrar un guion en vez de reventar.
+     */
+    val tienePrecio: Boolean get() = precios.isNotEmpty()
+
+    /**
+     * Si hay un precio elegido a mano como referencia.
+     *
+     * Cuando es `false` las cifras igual salen —se usa el de menor ganancia—, pero la
+     * pantalla puede decir que ese es un valor por defecto y no una decisión tomada.
+     */
+    val tieneReferenciaElegida: Boolean get() = precios.any { it.esReferencia }
+}
+
+/** El resultado de [trozoGanador]. */
+data class TrozoGanador(
+    val numero: Int,
+    val ganancia: Double,
+    /**
+     * Si ese trozo existe de verdad en la receta. Cuando es `false`, la receta se vende
+     * bajo su costo: haría falta vender más trozos de los que rinde para recuperarlo.
+     */
+    val alcanzable: Boolean
+)
+
+/** Cuántos trozos cubre un precio: en modo producto, cada unidad son todos los trozos. */
+fun trozosCubiertosPor(precio: PrecioVigente, d: DatosCalculoReceta): Int =
+    if (precio.modo == ModoPrecio.TROZO) precio.cantidad else precio.cantidad * d.trozos
+
+/** Lleva cualquier precio a su equivalente por trozo, para poder compararlos entre sí. */
+fun precioPorTrozoDe(precio: PrecioVigente, d: DatosCalculoReceta): Double {
+    val cubiertos = trozosCubiertosPor(precio, d)
+    require(cubiertos > 0) { "Un precio debe cubrir al menos un trozo (llegó ${precio.cantidad})" }
+    return precio.precioTotal / cubiertos
+}
+
+/** Lo que cuesta producir cada trozo. Igual para todos los precios de la misma receta. */
+fun costoPorTrozo(d: DatosCalculoReceta): Double =
+    repartirEntreTrozos(d.costoTotal, d.trozos)
+
+/** Ganancia por trozo con un precio concreto. Puede ser negativa si no cubre el costo. */
+fun gananciaPorTrozoDe(precio: PrecioVigente, d: DatosCalculoReceta): Double =
+    precioPorTrozoDe(precio, d) - costoPorTrozo(d)
+
+/**
+ * De todos los precios guardados, el que deja menos ganancia: el peor caso.
+ *
+ * **Ya no es lo que alimenta las cifras automáticas** — eso ahora lo decide
+ * [precioDeReferencia]. Sigue existiendo porque es el valor por defecto más prudente
+ * mientras no se haya elegido ninguno a mano.
+ *
+ * Lanza excepción si la receta no tiene ningún precio. Quien la use en un total de varias
+ * recetas debe filtrar antes con [DatosCalculoReceta.tienePrecio], para que una receta a
+ * medio configurar no voltee la suma completa.
+ */
+fun precioDeMenorGanancia(d: DatosCalculoReceta): PrecioVigente =
+    d.precios.minByOrNull { gananciaPorTrozoDe(it, d) }
+        ?: error("La receta '${d.titulo}' no tiene ningún precio guardado todavía")
+
+/**
+ * El precio con el que se calcula todo lo automático: sueldos, simulaciones, ganancia
+ * final, trozo ganador.
+ *
+ * Es el que esté marcado como referencia. Si ninguno lo está —recetas viejas, o una recién
+ * creada— se usa el de menor ganancia, que es el comportamiento anterior y el supuesto más
+ * prudente: nunca promete de más.
+ *
+ * Cambiar cuál es la referencia recalcula todo lo demás sin volver a consultar la base:
+ * las fórmulas trabajan sobre el snapshot que ya está en memoria (6.4).
+ */
+fun precioDeReferencia(d: DatosCalculoReceta): PrecioVigente =
+    d.precios.firstOrNull { it.esReferencia } ?: precioDeMenorGanancia(d)
+
+/**
+ * El precio por trozo que alimenta todas las cifras automáticas de la app.
+ *
+ * **Sale del reparto real y no del precio de la promoción dividido**, que es lo que hacía y
+ * era lo que mentía: con 3 trozos y una promo de 2, dividir da 1.500 por trozo como si los
+ * tres se vendieran así. Acá es lo que entra de verdad por el producto, repartido entre sus
+ * trozos, así que con resto es una mezcla de los dos precios — y todo lo que cuelga de esto
+ * (trozo ganador, ganancia, sueldos, simulación) queda cuadrado sin tocarlo.
+ */
+fun precioEfectivoPorTrozo(d: DatosCalculoReceta): Double =
+    repartirEntreTrozos(repartoDeUnProducto(d).total, d.trozos)
+
+/** Lo que se muestra al intentar poner como referencia un precio que pierde plata. */
+const val MENSAJE_PROMOCION_CON_PERDIDAS = "Esta promoción genera pérdidas"
+
+/**
+ * Revisa si un precio puede ser la referencia de la receta.
+ *
+ * Devuelve el motivo por el que no, o `null` si sirve. Rechaza los que **pierden plata**:
+ * de la referencia salen el sueldo del empleado y las simulaciones, y con una base negativa
+ * esas cuentas no tienen sentido — `calcularSueldo` directamente no puede repartir una
+ * ganancia que no existe.
+ *
+ * **Cubrir el costo justo sí se acepta**: no deja ganancia, pero tampoco pérdida, y hay
+ * recetas que se venden así a propósito.
+ *
+ * Que un precio no pueda ser la referencia no impide guardarlo ni verlo. Una promo que
+ * pierde plata sigue apareciendo en la lista con su ganancia en rojo, que es justamente
+ * la información que hace falta para descartarla.
+ */
+fun errorAlElegirReferencia(
+    precio: PrecioVigente,
+    d: DatosCalculoReceta,
+    seLlevanLosEmpleados: Double = 0.0
+): String? = when {
+    gananciaPorTrozoDe(precio, d) < 0 -> MENSAJE_PROMOCION_CON_PERDIDAS
+    // **Un precio que solo pierde después de pagarles tampoco sirve de referencia**, y es la
+    // misma regla mirada un paso más allá: de la referencia salen los sueldos, así que elegir uno
+    // con el que no alcanza para pagarlos deja al empleado con un reparto imposible. Lo pidió
+    // Sandy después de encontrar que la app se lo dejaba elegir — *"debería ser como los precios
+    // que generan pérdida, que directamente no me deja seleccionarlos"*.
+    //
+    // El descuento va **por producto completo** y el precio se mide por trozo, así que se compara
+    // contra la ganancia del producto entero: es lo que el empleado se lleva de una venta.
+    seLlevanLosEmpleados > 0 &&
+        gananciaPorTrozoDe(precio, d) * d.trozos < seLlevanLosEmpleados ->
+        MENSAJE_NO_ALCANZA_PARA_LOS_EMPLEADOS
+    else -> null
+}
+
+/** Lo que se dice de un precio con el que no alcanza para pagar a los empleados (10.1). */
+const val MENSAJE_NO_ALCANZA_PARA_LOS_EMPLEADOS =
+    "Con este precio no alcanza para pagar lo que se llevan los empleados de esta receta"
+
+/**
+ * Los dos precios **base** de una receta: uno por trozo suelto y uno por el producto entero.
+ *
+ * Son filas de `cantidad = 1` **marcadas con `esBase`**, una por modo. No son una tabla aparte:
+ * "el precio de un trozo" ya es exactamente eso, un precio de un trozo.
+ *
+ * La marca reemplazó a deducirlo de la cantidad. Mientras la base era "la fila de cantidad 1",
+ * no podía haber dos, y guardar un segundo precio de un trozo estaba prohibido — no por una
+ * regla del negocio sino porque la app no habría sabido cuál era cuál.
+ *
+ * Existen como concepto propio porque **son los que sostienen a las promociones**. Una promo
+ * de 2 trozos en una receta que rinde 3 deja uno suelto, y ese suelto tiene que venderse a
+ * algo; sin un precio individual, lo que se muestre de esa venta es inventado (8.6.1).
+ */
+fun precioBasePorTrozo(d: DatosCalculoReceta): PrecioVigente? = baseDe(d.precios, ModoPrecio.TROZO)
+
+fun precioBaseDelProducto(d: DatosCalculoReceta): PrecioVigente? =
+    baseDe(d.precios, ModoPrecio.PRODUCTO)
+
+/**
+ * La base de un modo: la marcada, y si ninguna lo está, la primera de cantidad 1.
+ *
+ * **El respaldo no es adorno.** Los precios guardados antes de que existiera la marca llegan
+ * todos con `esBase = false`; la migración marca el más antiguo de cada modo, pero un dato que
+ * se leyó mal una vez merece una red. Sin el respaldo, una receta vieja mal migrada dejaría de
+ * poder cobrar sus trozos sueltos y las cifras se irían para abajo **sin avisar**, que es la
+ * peor forma de fallar.
+ */
+private fun baseDe(precios: List<PrecioVigente>, modo: ModoPrecio): PrecioVigente? =
+    precios.firstOrNull { it.modo == modo && it.esBase }
+        ?: precios.firstOrNull { it.modo == modo && it.cantidad == 1 }
+
+/**
+ * Si un precio es la base de su modo, y no una promoción ni una alternativa.
+ *
+ * **Ya no es `cantidad == 1`**: desde que se pueden guardar varios precios de un trozo, la
+ * cantidad dejó de distinguirlos. Lo que distingue a la base es estar marcada.
+ */
+fun esPrecioBase(precio: PrecioVigente): Boolean = precio.esBase
+
+/**
+ * Si un precio **puede** ser la base de su modo.
+ *
+ * Una promoción no puede: la base es lo que se cobra por **uno**, y de ahí sale el precio de
+ * los trozos que sobran cuando una promo no divide exacto. Una base de 2 no tendría cómo
+ * cobrar el suelto que ella misma deja.
+ */
+fun puedeSerBase(precio: PrecioVigente): Boolean = precio.cantidad == 1
+
+/**
+ * Cuáles de los dos precios base todavía no están puestos.
+ *
+ * **Es la única definición de "falta una base" de la app**, y por eso recibe la lista de
+ * precios y no el snapshot: la usan los dos lados que tienen que estar de acuerdo — la
+ * pantalla, para pedirlos y para no dejar escribir una promoción antes de tiempo, y el
+ * repositorio, que es el que decide de verdad al guardar. Escrita dos veces serían dos reglas
+ * que se separan en cuanto una cambie, y la pantalla habilitaría un botón que el repositorio
+ * rechaza.
+ *
+ * El orden importa: primero el del trozo, que es por donde se empieza, y el cuadro de precio
+ * nuevo se abre justo en el primero que devuelva esta lista. Lo da el orden del enum, que ya
+ * tiene `TROZO` antes que `PRODUCTO`; recorrer `entries` en vez de escribir los dos casos a
+ * mano deja un solo lugar donde ese orden vive.
+ */
+fun basesQueFaltanEn(precios: List<PrecioVigente>): List<ModoPrecio> =
+    ModoPrecio.entries.filter { baseDe(precios, it) == null }
+
+/** Lo que se muestra cuando una promoción no divide exacto y sobra un trozo (8.6.1). */
+const val AVISO_TROZO_SUELTO = "Se usó el valor individual"
+
+/**
+ * Cómo se reparte de verdad una venta entre una promoción y lo que sobra.
+ *
+ * [cuantasVecesEntra] es cuántas veces cabe la promoción completa, y [sueltos] lo que queda
+ * fuera, que se vende al precio base. [total] ya es la suma de las dos cosas.
+ *
+ * [faltaElPrecioSuelto] marca el único caso que no se puede calcular: sobró algo y no hay
+ * precio individual con el que venderlo. Ahí [total] cuenta **solo las promociones**, y la
+ * pantalla tiene que decir que falta en vez de mostrar un número que da menos de lo real.
+ */
+data class RepartoDeVenta(
+    val cuantasVecesEntra: Int,
+    val sueltos: Int,
+    val total: Double,
+    val faltaElPrecioSuelto: Boolean
+) {
+    /** Si hubo resto, que es cuando corresponde avisar. */
+    val huboResto: Boolean get() = sueltos > 0
+}
+
+/**
+ * Lo que entra **de verdad** al vender un producto completo al precio de referencia (8.6.1).
+ *
+ * Corrige un error que se veía en el celular y no en las cuentas: con una receta de 3 trozos
+ * y una promoción de "2 por $3.000", la app decía que entraban $4.500 — el precio por trozo
+ * multiplicado por tres. Pero esa promoción **solo existe cuando se llevan dos**; el tercero
+ * se vende suelto, a su propio precio. Los $4.500 eran una cifra creíble y falsa, que es la
+ * peor clase.
+ *
+ * La regla es la misma para los dos modos, cambiando qué se cuenta: una promoción por trozos
+ * se reparte sobre los trozos que rinde la receta, y una por productos completos sobre **un**
+ * producto, que es lo que este número mide. De ahí sale, sin pedirlo, la respuesta a la duda
+ * de qué pasa al vender varios: no se toca acá, se resuelve donde se cuentan varios — la
+ * simulación reparte sobre el total que se venda, no multiplica esto (8.7).
+ */
+fun repartoDeUnProducto(d: DatosCalculoReceta): RepartoDeVenta {
+    val referencia = precioDeReferencia(d)
+    // En modo trozo se reparten los trozos de la receta; en modo producto, un producto.
+    val aVender = if (referencia.modo == ModoPrecio.TROZO) d.trozos else 1
+    val suelto = if (referencia.modo == ModoPrecio.TROZO) {
+        precioBasePorTrozo(d)
+    } else {
+        precioBaseDelProducto(d)
+    }
+    return repartir(aVender, referencia, suelto)
+}
+
+/**
+ * El reparto en crudo, para que la simulación pueda usarlo sobre otro total (8.7).
+ *
+ * Está separado de [repartoDeUnProducto] porque el número que se reparte cambia según quién
+ * pregunte, pero la regla no: tantas promociones como quepan, el resto al precio individual.
+ */
+fun repartir(
+    aVender: Int,
+    promocion: PrecioVigente,
+    precioIndividual: PrecioVigente?
+): RepartoDeVenta {
+    require(aVender >= 0) { "No se puede repartir una venta negativa (llegó $aVender)" }
+    // La misma red que tenía `precioPorTrozoDe`, que acá se había perdido: con cantidad 0 la
+    // división entera lanza `ArithmeticException`, que no explica nada. Lo pilló la prueba
+    // que existía justamente para eso.
+    require(promocion.cantidad > 0) {
+        "Un precio debe cubrir al menos un trozo (llegó ${promocion.cantidad})"
+    }
+    val veces = aVender / promocion.cantidad
+    val sueltos = aVender % promocion.cantidad
+    val porLosSueltos = precioIndividual?.let { it.precioTotal * sueltos } ?: 0.0
+    return RepartoDeVenta(
+        cuantasVecesEntra = veces,
+        sueltos = sueltos,
+        total = veces * promocion.precioTotal + porLosSueltos,
+        faltaElPrecioSuelto = sueltos > 0 && precioIndividual == null
+    )
+}
+
+/** Lo que entra al vender el producto completo, sin descontar nada. */
+fun ingresoBruto(d: DatosCalculoReceta): Double = repartoDeUnProducto(d).total
+
+/** Ganancia por trozo al precio vigente. Puede ser negativa. */
+fun gananciaPorTrozo(d: DatosCalculoReceta): Double =
+    precioEfectivoPorTrozo(d) - costoPorTrozo(d)
+
+/** Ganancia del producto completo. Puede ser negativa. */
+fun gananciaFinal(d: DatosCalculoReceta): Double = ingresoBruto(d) - d.costoTotal
+
+/**
+ * A partir de qué trozo vendido la receta deja de perder plata.
+ *
+ * Con costo 1.400 y trozos a 500, el tercero es el primero que supera el costo y deja
+ * 100 de ganancia. Si el costo se cubriera justo (1.500 con trozos a 500), el ganador es
+ * el cuarto: empatar no es ganar.
+ *
+ * Devuelve además si ese trozo existe: con costo 5.000, trozos a 500 y solo 8 trozos,
+ * el número da 11 y no hay forma de llegar. La pantalla debe mostrar la advertencia en
+ * vez del número.
+ */
+fun trozoGanador(d: DatosCalculoReceta): TrozoGanador {
+    val precioTrozo = precioEfectivoPorTrozo(d)
+    val n = (d.costoTotal / precioTrozo).toInt() + 1
+    return TrozoGanador(
+        numero = n,
+        ganancia = n * precioTrozo - d.costoTotal,
+        alcanzable = n <= d.trozos
+    )
+}

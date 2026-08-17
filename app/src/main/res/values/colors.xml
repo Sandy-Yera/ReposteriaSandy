@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    El fondo de la **ventana**, que no es el mismo que el fondo que pinta Compose.
+
+    Se ve en dos momentos, los dos antes o fuera de lo que Compose dibuja:
+
+    - Al abrir la app, mientras el tema se arma. Sin esto, con la app en oscuro, el arranque
+      es un destello blanco.
+    - En cualquier zona que Compose deje sin pintar. Pasó con el teclado: el `imePadding`
+      estaba puesto sobre el `Surface`, así que el fondo de la app se achicaba y por el hueco
+      asomaba el blanco del tema de Android. Eso ya se arregló, pero el color de abajo tiene
+      que acompañar igual — es la red por si vuelve a quedar un hueco.
+
+    El valor es el mismo `CremaFondo` de `ui/theme/Color.kt`, y el de `values-night/` es el
+    mismo `ChocolateOscuroFondo`. **Están escritos dos veces y no hay forma de evitarlo**: uno
+    lo lee Android antes de que exista Compose y el otro lo lee Compose. Si alguna vez cambia
+    el color de fondo del tema, hay que cambiar los dos o el arranque va a destellar.
+-->
+<resources>
+    <color name="fondo_ventana">#FFFFF8F0</color>
+</resources>

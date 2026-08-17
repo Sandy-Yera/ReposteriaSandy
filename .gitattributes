@@ -1,17 +1,56 @@
-# Por defecto, normalizar texto y usar LF
+# ---- Qué hace este archivo ----
+# Le dice a Git cómo tratar cada tipo de archivo: qué es texto (y con qué salto de
+# línea) y qué es binario (que no debe tocar nunca). Sin esto, clonar el repo en
+# Windows y en Linux puede dar archivos distintos, y una imagen puede corromperse
+# porque Git creyó que era texto y le "arregló" los saltos de línea.
+
+# Por defecto: Git decide si es texto y, si lo es, lo guarda con LF
 * text=auto eol=lf
 
-# Gradle wrapper: siempre LF (aunque no tenga extensión .sh, es un script de shell)
-/gradlew text eol=lf
-*.sh text eol=lf
-
-# Scripts de Windows: siempre CRLF
-*.bat text eol=crlf
+# ---- Scripts: el salto de línea decide si se pueden ejecutar ----
+# gradlew con CRLF no arranca en Linux ni en Mac; gradlew.bat con LF falla en Windows.
+/gradlew     text eol=lf
+*.sh         text eol=lf
+# Los scripts de herramientas/ se corren con `python3 archivo.py`. Con CRLF, la línea
+# del intérprete queda con un retorno de carro pegado y Linux no encuentra el programa.
+*.py         text eol=lf
 /gradlew.bat text eol=crlf
+*.bat        text eol=crlf
+*.cmd        text eol=crlf
 
-# Binarios: que Git no intente tocar saltos de línea ni mostrar diffs de texto
-*.jar binary
-*.png binary
-*.jpg binary
-*.jks binary
+# ---- Binarios: Git no debe tocarlos ni intentar mostrarlos como texto ----
+# WebP es el más importante acá: Android Studio convierte solo los íconos del
+# launcher a .webp, así que van a aparecer sin que nadie los cree a mano.
+*.webp     binary
+*.png      binary
+*.jpg      binary
+*.jpeg     binary
+*.gif      binary
+*.ico      binary
+*.ttf      binary
+*.otf      binary
+*.jar      binary
+*.aar      binary
+*.so       binary
+*.apk      binary
+*.aab      binary
+*.zip      binary
+*.pdf      binary
+*.jks      binary
 *.keystore binary
+
+# ---- Diffs más legibles ----
+# Con esto la cabecera de cada bloque del diff dice a qué función pertenece el cambio,
+# en vez de mostrar solo números de línea.
+*.kt   diff=kotlin
+*.kts  diff=kotlin
+*.java diff=java
+*.md   diff=markdown
+*.py   diff=python
+
+# ---- Estadísticas de GitHub ----
+# El wrapper de Gradle no es código nuestro: sin esto GitHub cuenta gradlew.bat y
+# clasifica el repositorio como si fuera un proyecto de Batchfile.
+/gradlew          linguist-vendored
+/gradlew.bat      linguist-vendored
+gradle/wrapper/** linguist-vendored

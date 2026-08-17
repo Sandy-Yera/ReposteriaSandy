@@ -1,0 +1,465 @@
+package com.sandyyera.reposteria.ui.recetas
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
+import com.sandyyera.reposteria.data.db.entidades.Molde
+import com.sandyyera.reposteria.data.repositorio.MoldeRepositorio
+import com.sandyyera.reposteria.data.repositorio.RecetaRepositorio
+import com.sandyyera.reposteria.data.repositorio.Resultado
+import com.sandyyera.reposteria.logica.busqueda.filtrarPor
+import com.sandyyera.reposteria.logica.formato.formatearMientrasSeEscribe
+import com.sandyyera.reposteria.logica.formato.formatearNumero
+import com.sandyyera.reposteria.logica.moldes.DimensionesMolde
+import com.sandyyera.reposteria.logica.moldes.ModoReescalado
+import com.sandyyera.reposteria.logica.moldes.medidasEnTexto
+import com.sandyyera.reposteria.logica.moldes.TipoFormaMolde
+import com.sandyyera.reposteria.logica.validaciones.CampoDeMolde
+import com.sandyyera.reposteria.logica.validaciones.camposDe
+import com.sandyyera.reposteria.logica.moldes.FormaDelCorte
+import com.sandyyera.reposteria.logica.moldes.corteEfectivoDe
+import com.sandyyera.reposteria.logica.moldes.corteSugerido
+import com.sandyyera.reposteria.logica.moldes.avisoDeMedidasDeCorteAjenas
+import com.sandyyera.reposteria.logica.moldes.queHacenLasMedidasDeCorte
+import com.sandyyera.reposteria.logica.moldes.nombreDelCorte
+import com.sandyyera.reposteria.logica.validaciones.conElCorte
+import com.sandyyera.reposteria.logica.validaciones.dimensionesDesde
+import com.sandyyera.reposteria.logica.validaciones.errorEnMedidasDeCorte
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+
+/**
+ * De dónde salen las medidas del molde que se está eligiendo (9.3).
+ *
+ * Son dos caminos y **no da lo mismo cuál**: el guardado deja la receta enlazada al
+ * catálogo, así que una corrección de medidas le llega sola; el de prueba la deja suelta,
+ * con sus medidas fijas. Se elige a propósito y no por descarte.
+ */
+enum class OrigenDelMolde {
+    /** Uno del catálogo. La receta queda enlazada y recibe sus correcciones. */
+    GUARDADO,
+
+    /** Medidas escritas a mano, sin guardar el molde. La receta queda sin vínculo. */
+    PRUEBA
+}
+
+/** Qué hay abierto encima del paso del molde. */
+sealed interface DialogoMoldeDeReceta {
+
+    data object Ninguno : DialogoMoldeDeReceta
+
+    /**
+     * Elegir el molde: uno del catálogo o uno de prueba.
+     *
+     * [esReescalado] cambia lo que significa aceptar. En `false` es la primera vez y solo se
+     * guardan las medidas — no hay original contra el cual comparar, así que no hay factor
+     * ni modo que elegir (9.3). En `true` ya hay molde y hay que decidir qué se conserva.
+     */
+    data class Elegir(
+        val esReescalado: Boolean,
+        val origen: OrigenDelMolde = OrigenDelMolde.GUARDADO,
+        val busqueda: String = "",
+        val elegido: Molde? = null,
+        val forma: TipoFormaMolde? = null,
+        val medidas: Map<CampoDeMolde, String> = emptyMap(),
+        val modo: ModoReescalado = ModoReescalado.CAPACIDAD,
+        val guardando: Boolean = false,
+        val rechazo: String? = null,
+        /** El catálogo ya filtrado por el buscador. Lo rellena el `combine`, no se escribe. */
+        val candidatos: List<Molde> = emptyList(),
+        /**
+         * El molde que la receta usa **ahora**, si es uno del catálogo.
+         *
+         * Se muestra marcado y no se puede tocar: elegirlo no cambiaría nada, y un toque que
+         * no hace nada deja dudando —el mismo criterio que la ficha del paso actual—. Además
+         * es la respuesta a "¿en cuál estoy?", que al cambiar de molde no se ve por ningún
+         * lado. En modo prueba es `null`: ahí la receta no está enlazada a ninguno.
+         */
+        val moldeActualId: Long? = null,
+
+        // --- Cómo se corta (9.4), solo en modo prueba ---
+        /** `null` = el que corresponda a la forma. Solo hay que elegirlo en dos formas. */
+        val corte: FormaDelCorte? = null,
+        val largoDeCorte: String = "",
+        val anchoDeCorte: String = ""
+    ) : DialogoMoldeDeReceta {
+
+        /** Por qué no se puede elegir este molde, o `null` si se puede. */
+        fun motivoNoDisponible(molde: Molde): String? =
+            if (molde.id == moldeActualId) "En uso" else null
+
+        /** Las medidas que hay que pedir, si se está midiendo a mano. */
+        val campos: List<CampoDeMolde>
+            get() = if (origen == OrigenDelMolde.PRUEBA) forma?.let { camposDe(it) }.orEmpty()
+            else emptyList()
+
+        /**
+         * El corte que se va a guardar: el elegido, o el que sugiere la forma.
+         *
+         * Mismas tres propiedades que el formulario del catálogo, y **no es duplicación
+         * evitable**: son dos cuadros distintos con dos estados distintos. Lo que sí es único
+         * es la regla, que vive en `corteSugerido` y la consultan los dos.
+         */
+        val corteEfectivo: FormaDelCorte? get() = corte ?: corteSugerido(forma)
+
+        /**
+         * Si se ofrece elegir cómo se corta. Solo midiendo a mano: eligiendo del catálogo, el
+         * corte viene con el molde y volver a preguntarlo sería pedir que confirmen algo ya
+         * contestado —y peor, dejaría dos respuestas para el mismo molde.
+         *
+         * Dentro del modo prueba **se ofrece en todas las formas**, no solo donde `corteSugerido`
+         * no sabe qué contestar. Es el mismo cambio que en el catálogo y por el mismo motivo: la
+         * sugerencia puede no acertar, y un molde rectangular cortado en cuñas no tenía cómo
+         * decirse. Sandy lo pidió justo desde acá — "pedí prestado un molde", o sea modo prueba.
+         */
+        val hayQuePreguntarElCorte: Boolean
+            get() = origen == OrigenDelMolde.PRUEBA && forma != null
+
+        /**
+         * Si se ofrecen las dos medidas del corte escritas a mano.
+         *
+         * **En cualquier forma que se corte en cuadrícula**, y no solo donde hacen falta. En el
+         * triángulo y el exótico son la única manera de saber el tamaño del trozo; en el
+         * rectángulo y el cuadrado son opcionales, pero tienen que estar igual: son la forma de
+         * mandar sobre la suposición del lado más largo (ver [laFormaYaDaLosLados]).
+         */
+        val pideMedidasDeCorte: Boolean
+            get() = origen == OrigenDelMolde.PRUEBA &&
+                corteEfectivo == FormaDelCorte.CUADRICULA && forma != null
+
+        /**
+         * Si esta forma **ya da** los lados por su cuenta, o sea si anotarlos es opcional.
+         *
+         * Cambia solo el texto de ayuda, y ese texto es toda la diferencia: en un triángulo,
+         * sin anotarlos la app no puede decir nada; en un rectángulo son la forma de **mandar
+         * sobre la suposición** — se corta el lado más largo salvo que alguien diga otra cosa,
+         * y ese "otra cosa" se escribe acá. Lo preguntó Sandy con un molde de 8 × 4: quería
+         * cortar el 4 y no tenía cómo decirlo.
+         */
+        val laFormaYaDaLosLados: Boolean
+            get() = forma == TipoFormaMolde.RECTANGULO || forma == TipoFormaMolde.CUADRADO
+
+        /** Lo que esté mal en las medidas del corte, que son opcionales. */
+        val errorCorte: String? get() = errorEnMedidasDeCorte(largoDeCorte, anchoDeCorte)
+
+        /**
+         * Las dimensiones que van a quedar, o `null` si todavía falta algo.
+         *
+         * **En modo prueba el corte se pega acá**, con `conElCorte`, que es la misma función
+         * que usa el catálogo. Antes no se pegaba en ninguna parte y ese era el agujero: medir
+         * un molde dentro de la receta perdía el corte entero, así que un molde exótico medido
+         * así nunca podía decir de qué porte quedaba el trozo. Eligiendo del catálogo no hace
+         * falta, porque las dimensiones del molde ya lo traen.
+         */
+        val dimensiones: DimensionesMolde?
+            get() = when (origen) {
+                OrigenDelMolde.GUARDADO -> elegido?.dimensiones
+                OrigenDelMolde.PRUEBA -> dimensionesDesde(forma, medidas)
+                    ?.takeIf { errorCorte == null }
+                    ?.let { conElCorte(it, corteEfectivo, largoDeCorte, anchoDeCorte) }
+            }
+
+        /** A qué molde del catálogo queda enlazada la receta. `null` en modo prueba. */
+        val moldeOrigenId: Long?
+            get() = if (origen == OrigenDelMolde.GUARDADO) elegido?.id else null
+
+        val puedeGuardar: Boolean get() = dimensiones != null && !guardando
+
+        /**
+         * Qué está haciendo el par de medidas de corte anotadas, o `null` si no hay ninguna.
+         *
+         * La misma frase que en el catálogo, por la misma razón: el campo cambia el reparto y
+         * hasta ahora no lo decía. Se lee de [dimensiones] y no de los textos crudos, así que
+         * un molde elegido del catálogo también la muestra.
+         */
+        val explicacionDelCorte: String?
+            get() = dimensiones?.let { queHacenLasMedidasDeCorte(it, ::formatearNumero) }
+
+        /** El aviso de que lo anotado para cortar no son los lados de este molde (9.4.4). */
+        val avisoDelCorte: String?
+            get() = dimensiones?.let { avisoDeMedidasDeCorteAjenas(it, ::formatearNumero) }
+    }
+
+    /** La confirmación antes de dejar de usar molde. */
+    data object ConfirmarQuitar : DialogoMoldeDeReceta
+}
+
+/** Lo que el paso del molde necesita para dibujarse. */
+data class EstadoMoldeDeReceta(
+    val usaMolde: Boolean = false,
+    val dimensiones: DimensionesMolde? = null,
+    val moldeEnlazado: Molde? = null,
+    /** Si hay peso anotado. De eso depende que se pueda quitar el molde (6.2). */
+    val tienePesoFinal: Boolean = false,
+    val mensaje: String? = null,
+    val cargando: Boolean = true
+) {
+    /**
+     * Las medidas del molde **tal como se tomaron**: 30 × 20 cm, 6 de alto.
+     *
+     * Es lo primero que hay que ver y hasta ahora no estaba: la tarjeta mostraba el área y el
+     * volumen, que son números calculados y sirven para comparar dos moldes, pero no
+     * responden la pregunta con la que uno se para frente al mueble — *¿cuál era el de 20 por
+     * 30?*.
+     *
+     * **Consulta `usaMolde` y no solo si hay dimensiones**, igual que [areaYVolumen]:
+     * `quitarMolde` **conserva las medidas a propósito**, por si fue un error y se vuelve
+     * atrás, así que la fila sigue teniéndolas. Sin esa condición, una receta que acababa de
+     * dejar de usar molde seguía mostrando sus centímetros debajo de "No utiliza molde".
+     */
+    val medidasDelMolde: String?
+        get() = dimensiones?.takeIf { usaMolde }?.let { medidasEnTexto(it, ::formatearNumero) }
+
+    /** El área y el volumen calculados, que sirven para comparar un molde con otro. */
+    val areaYVolumen: String?
+        get() = dimensiones?.takeIf { usaMolde }?.let { d ->
+            runCatching {
+                "${formatearNumero(d.areaCm2)} cm² · ${formatearNumero(d.volumenCm3)} cm³"
+            }.getOrNull()
+        }
+
+    /**
+     * Cómo se corta este molde, en palabras (9.4).
+     *
+     * Va acá y no solo en rendimiento porque son dos preguntas distintas: allá se muestra **de
+     * qué tamaño** queda cada trozo, que necesita saber cuántos son; acá **cómo se parte**, que
+     * es del molde y se contesta al definirlo. Sin esto, alguien que contestó "en cuñas" al
+     * medir un molde exótico no tenía dónde comprobar que quedó anotado.
+     *
+     * Sale de `corteEfectivoDe`, así que un molde guardado antes de la versión 4 también
+     * contesta si su forma lo permite.
+     */
+    val comoSeCorta: String?
+        get() = dimensiones?.takeIf { usaMolde }?.let { corteEfectivoDe(it) }?.let { nombreDelCorte(it) }
+
+    /**
+     * Si la receta está recibiendo correcciones del catálogo.
+     *
+     * Se muestra porque es la diferencia invisible entre los dos orígenes: dos recetas con
+     * las mismas medidas se comportan distinto según esto, y sin decirlo nadie lo sabría.
+     */
+    val enlazadaAlCatalogo: Boolean get() = moldeEnlazado != null
+}
+
+/**
+ * El cerebro del paso "Molde" de una receta (8.3.1 y 9.3).
+ *
+ * **Salió de `RendimientoViewModel`, que hacía las dos cosas.** Rendimiento mezclaba dos
+ * preguntas que se responden en momentos distintos —qué molde se usa, y cuánto rinde— y una
+ * de ellas, el reescalado, es la operación más delicada de la app: multiplica todas las
+ * cantidades de la receta. Compartir pantalla con dos campos de texto la dejaba a un toque
+ * de distancia de quien solo venía a corregir los trozos (8.4.1, #2).
+ *
+ * **No confundir con `MoldesViewModel`** (en plural, en `ui/moldes/`): ese es el catálogo de
+ * moldes de la app. Este es el molde de **una** receta, y lo único que hace con el catálogo
+ * es leerlo para elegir de ahí.
+ *
+ * Lo propio de acá es la distinción que más caro sale si se confunde: **definir el molde por
+ * primera vez no es reescalar**. La primera vez no hay original contra el cual comparar, así
+ * que no hay factor, no se elige modo y las cantidades quedan como se escribieron. Del
+ * segundo molde en adelante sí, y ahí hay que decidir qué se conserva (9.3).
+ */
+class MoldeDeRecetaViewModel(
+    private val recetaId: Long,
+    private val recetas: RecetaRepositorio,
+    private val moldes: MoldeRepositorio
+) : ViewModel() {
+
+    private val mensaje = MutableStateFlow<String?>(null)
+    private val _dialogo = MutableStateFlow<DialogoMoldeDeReceta>(DialogoMoldeDeReceta.Ninguno)
+
+    /**
+     * Lo que hay abierto encima, **fuera del `combine` del estado** (12.2.1).
+     *
+     * El cuadro de elegir molde tiene buscador y hasta cuatro campos de texto, y un campo
+     * que recibe su valor con retraso termina con el cursor donde no va.
+     */
+    val dialogo: StateFlow<DialogoMoldeDeReceta> = combine(
+        _dialogo,
+        moldes.observarTodos()
+    ) { abierto, catalogo ->
+        // Los candidatos se rellenan acá y no se escriben: la lista filtrada es una vista
+        // del catálogo, no un dato que el cuadro tenga que mantener al día.
+        if (abierto is DialogoMoldeDeReceta.Elegir) {
+            abierto.copy(candidatos = filtrarPor(catalogo, abierto.busqueda) { it.nombre })
+        } else {
+            abierto
+        }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = DialogoMoldeDeReceta.Ninguno
+    )
+
+    /**
+     * Lo que muestra la pantalla, **observando la base y no leyéndola una vez** (12.2.1).
+     *
+     * El rendimiento lo escriben dos pantallas: acá se elige el molde, y en el paso siguiente
+     * se anota el peso. Con una lectura de una sola vez cada ViewModel se quedaba con su foto
+     * y las dos se contradecían — anotar el peso en Rendimiento y volver acá con el botón de
+     * "Quitar el molde" todavía apagado, porque este lado seguía creyendo que no había peso.
+     */
+    val estado: StateFlow<EstadoMoldeDeReceta> = combine(
+        recetas.observarRendimiento(recetaId),
+        mensaje,
+        moldes.observarTodos()
+    ) { rendimiento, mensajeActual, catalogo ->
+        EstadoMoldeDeReceta(
+            usaMolde = rendimiento?.usaMolde ?: false,
+            dimensiones = rendimiento?.dimensiones,
+            moldeEnlazado = rendimiento?.moldeOrigenId
+                ?.let { id -> catalogo.firstOrNull { it.id == id } },
+            tienePesoFinal = rendimiento?.pesoFinalG != null,
+            mensaje = mensajeActual,
+            cargando = false
+        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = EstadoMoldeDeReceta()
+    )
+
+    /**
+     * Abre el cuadro de molde, sabiendo solo si es la primera vez o un reescalado.
+     *
+     * Esa distinción no la decide la pantalla: sale de si la receta ya tiene molde guardado.
+     */
+    fun abrirElegirMolde() {
+        viewModelScope.launch {
+            val actual = recetas.obtenerRendimiento(recetaId)
+            _dialogo.value = DialogoMoldeDeReceta.Elegir(
+                esReescalado = actual?.usaMolde == true && actual.dimensiones != null,
+                // Sale de la misma lectura que ya se hacía para saber si es reescalado. No
+                // se observa porque el molde de la receta no puede cambiar mientras este
+                // cuadro está abierto: cambiarlo es justamente lo que lo cierra.
+                moldeActualId = actual?.moldeOrigenId
+            )
+        }
+    }
+
+    fun cambiarOrigenDelMolde(origen: OrigenDelMolde) = enElegir {
+        it.copy(origen = origen, rechazo = null)
+    }
+
+    fun buscarMolde(texto: String) = enElegir { it.copy(busqueda = texto) }
+
+    fun elegirMoldeGuardado(molde: Molde) = enElegir { it.copy(elegido = molde, rechazo = null) }
+
+    fun elegirFormaDePrueba(forma: TipoFormaMolde) = enElegir {
+        it.copy(forma = forma, rechazo = null)
+    }
+
+    fun cambiarMedidaDePrueba(campo: CampoDeMolde, texto: String) = enElegir {
+        it.copy(
+            medidas = it.medidas + (campo to formatearMientrasSeEscribe(texto)),
+            rechazo = null
+        )
+    }
+
+    // --- Cómo se corta (9.4). Solo aplican midiendo a mano; del catálogo viene con el molde ---
+
+    fun elegirCorte(corte: FormaDelCorte) = enElegir { it.copy(corte = corte, rechazo = null) }
+
+    fun cambiarLargoDeCorte(texto: String) = enElegir {
+        it.copy(largoDeCorte = formatearMientrasSeEscribe(texto), rechazo = null)
+    }
+
+    fun cambiarAnchoDeCorte(texto: String) = enElegir {
+        it.copy(anchoDeCorte = formatearMientrasSeEscribe(texto), rechazo = null)
+    }
+
+    fun elegirModoDeReescalado(modo: ModoReescalado) = enElegir {
+        it.copy(modo = modo, rechazo = null)
+    }
+
+    /**
+     * Aplica lo elegido: define el molde, o reescala.
+     *
+     * Las dos ramas van por funciones distintas del repositorio a propósito. Podría ser una
+     * sola que "haga lo que corresponda", pero entonces un error en la condición reescalaría
+     * una receta que solo quería estrenar molde, y eso no se ve hasta que las cantidades ya
+     * están mal.
+     *
+     * El aviso de un reescalado **manda a rendimiento**: ahí quedó el peso multiplicado
+     * esperando que alguien lo compruebe (8.4.1, #4), y desde acá no se ve.
+     */
+    fun confirmarMolde() {
+        val cuadro = _dialogo.value as? DialogoMoldeDeReceta.Elegir ?: return
+        if (!cuadro.puedeGuardar) return
+        val dimensiones = cuadro.dimensiones ?: return
+
+        _dialogo.value = cuadro.copy(guardando = true)
+
+        viewModelScope.launch {
+            val resultado = if (cuadro.esReescalado) {
+                recetas.reescalarPorMolde(recetaId, dimensiones, cuadro.modo, cuadro.moldeOrigenId)
+            } else {
+                recetas.definirMolde(recetaId, dimensiones, cuadro.moldeOrigenId)
+            }
+
+            when (resultado) {
+                is Resultado.Listo -> {
+                    _dialogo.value = DialogoMoldeDeReceta.Ninguno
+                    mensaje.value = if (cuadro.esReescalado) {
+                        "Se reescaló la receta. Revisa el peso en Rendimiento."
+                    } else {
+                        "Listo, la receta ya tiene molde"
+                    }
+                }
+                // Al cuadro y no a la franja de abajo: sigue abierto y el motivo
+                // -"Demasiado riesgo. Mejor escale con el otro método"- hay que leerlo ahí,
+                // que es donde está el selector de modo que lo resuelve.
+                is Resultado.NoSePudo -> enElegir {
+                    it.copy(guardando = false, rechazo = resultado.motivo)
+                }
+            }
+        }
+    }
+
+    fun pedirQuitarMolde() {
+        _dialogo.value = DialogoMoldeDeReceta.ConfirmarQuitar
+    }
+
+    fun confirmarQuitarMolde() {
+        viewModelScope.launch {
+            when (val r = recetas.quitarMolde(recetaId)) {
+                is Resultado.Listo -> mensaje.value = "La receta ya no usa molde"
+                is Resultado.NoSePudo -> mensaje.value = r.motivo
+            }
+            _dialogo.value = DialogoMoldeDeReceta.Ninguno
+        }
+    }
+
+    fun cerrarDialogo() {
+        _dialogo.value = DialogoMoldeDeReceta.Ninguno
+    }
+
+    fun mensajeMostrado() {
+        mensaje.value = null
+    }
+
+    private fun enElegir(
+        cambio: (DialogoMoldeDeReceta.Elegir) -> DialogoMoldeDeReceta.Elegir
+    ) {
+        _dialogo.update { actual ->
+            if (actual is DialogoMoldeDeReceta.Elegir) cambio(actual) else actual
+        }
+    }
+
+    companion object {
+        fun fabrica(
+            recetaId: Long,
+            recetas: RecetaRepositorio,
+            moldes: MoldeRepositorio
+        ): ViewModelProvider.Factory = viewModelFactory {
+            initializer { MoldeDeRecetaViewModel(recetaId, recetas, moldes) }
+        }
+    }
+}

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Tema base solo para el arranque. Los colores reales los pone Compose en ui/theme.
+
+        El `windowBackground` **sí importa** aunque Compose pinte todo encima: es lo que se ve
+        mientras la app arranca, antes de que exista una sola pantalla. El padre es un tema
+        `Light` y con él la app abría en blanco incluso con el celular en oscuro; apuntando a
+        `@color/fondo_ventana`, que tiene su versión en `values-night/`, el arranque acompaña.
+    -->
+    <style name="Theme.Reposteria" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/fondo_ventana</item>
+    </style>
+</resources>

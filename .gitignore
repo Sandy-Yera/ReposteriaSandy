@@ -1,35 +1,82 @@
-# ---- Gradle / Android Studio ----
-*.iml
+# ---- Gradle / compilación ----
 .gradle/
-/local.properties
-/.idea/caches/
-/.idea/libraries/
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
-/build/
-*/build/
+**/build/
 /captures/
 .externalNativeBuild/
 .cxx/
+/out/
+# Kotlin 2.x deja acá sus archivos de sesión
+.kotlin/
+
+# ---- Artefactos compilados de Android ----
 *.apk
 *.aab
 *.ap_
 *.dex
+*.aar
 
-# ---- Firma de la app (release APK, Fase 13) ----
+# ---- Android Studio / IntelliJ ----
+# Se ignora .idea/ completo y no archivo por archivo: varios de sus xml guardan rutas
+# absolutas de esta máquina y hasta identificadores del celular conectado
+# (deploymentTargetDropDown.xml), que no le sirven a nadie más y ensucian los diffs.
+.idea/
+*.iml
+# Apunta al Android SDK de cada máquina; cada quien tiene el suyo
+local.properties
+
+# ---- Firma de la app (APK de release, Fase 15) ----
+# Si esto se filtra, cualquiera puede firmar apps haciéndose pasar por esta.
 *.jks
 *.keystore
 keystore.properties
 
-# ---- Credenciales / configuración local ----
-local.properties
-*.env
-secrets.properties
+# ---- Credenciales ----
+# El de arriba de todo es el importante para este proyecto: al configurar OAuth en la
+# Fase 0, Google Cloud Console hace descargar un archivo llamado exactamente
+# "client_secret_XXXX.apps.googleusercontent.com.json". Ese NO puede terminar en GitHub.
+client_secret*.json
+credentials.json
+service-account*.json
 google-services.json
+secrets.properties
+*.env
+.env.*
+*.pem
+*.key
+*.p12
 
-# ---- Kotlin / logs varios ----
+# ---- Datos personales ----
+# La base de datos de la app lleva recetas, costos, márgenes de ganancia y sueldos de
+# empleados: información del negocio, no código. Si alguna vez se copia el .db del
+# celular al proyecto para revisar algo, que no se suba por accidente.
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+# herramientas/respaldo_bd.sh guarda las copias en $HOME por defecto, o donde diga
+# REPOSTERIA_RESPALDOS. Si alguien apunta esa variable dentro del repo, las tres líneas de
+# arriba ya tapan los archivos; esta tapa además la carpeta entera.
+respaldos-reposteria/
+
+# ---- Python (los scripts de herramientas/) ----
+# Se corren con python3 directamente, pero basta con que alguien importe uno para que
+# Python deje su caché compilada al lado del archivo.
+__pycache__/
+*.pyc
+
+# ---- Varios del sistema y logs ----
+.DS_Store
+Thumbs.db
 *.hprof
 *.log
+
+# ---- Excepciones: esto SÍ se versiona ----
+# El wrapper de Gradle debe viajar con el repo para que se pueda compilar sin tener
+# Gradle instalado. La negación va al final a propósito: si alguien agrega "*.jar"
+# más arriba (es común en plantillas de Android), esta línea lo sigue rescatando.
+!gradle/wrapper/gradle-wrapper.jar
+
+# Los esquemas que Room exporta en app/schemas/*.json también se versionan: son el
+# registro de las migraciones y perderlos arriesga los datos ya guardados en el celular.
+# No hay regla arriba que los ignore; queda anotado para que nadie la agregue.

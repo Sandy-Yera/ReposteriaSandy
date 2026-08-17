@@ -1,0 +1,1026 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 2,
+    "identityHash": "8eae78d3551730f87623e6b8801453cd",
+    "entities": [
+      {
+        "tableName": "ingredientes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `nombre` TEXT NOT NULL COLLATE NOCASE, `valorPorGramo` REAL NOT NULL, `creadoEn` INTEGER NOT NULL, `actualizadoEn` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nombre",
+            "columnName": "nombre",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "valorPorGramo",
+            "columnName": "valorPorGramo",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "creadoEn",
+            "columnName": "creadoEn",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "actualizadoEn",
+            "columnName": "actualizadoEn",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_ingredientes_nombre",
+            "unique": true,
+            "columnNames": [
+              "nombre"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_ingredientes_nombre` ON `${TABLE_NAME}` (`nombre`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "recetas",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `titulo` TEXT NOT NULL, `pasoPrevio` TEXT NOT NULL, `creadoEn` INTEGER NOT NULL, `actualizadoEn` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "titulo",
+            "columnName": "titulo",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pasoPrevio",
+            "columnName": "pasoPrevio",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "creadoEn",
+            "columnName": "creadoEn",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "actualizadoEn",
+            "columnName": "actualizadoEn",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "receta_secciones",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `recetaId` INTEGER NOT NULL, `nombreSeccion` TEXT NOT NULL, `orden` INTEGER NOT NULL, FOREIGN KEY(`recetaId`) REFERENCES `recetas`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "recetaId",
+            "columnName": "recetaId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nombreSeccion",
+            "columnName": "nombreSeccion",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "orden",
+            "columnName": "orden",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_receta_secciones_recetaId",
+            "unique": false,
+            "columnNames": [
+              "recetaId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_receta_secciones_recetaId` ON `${TABLE_NAME}` (`recetaId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "recetas",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "recetaId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "receta_ingredientes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `seccionId` INTEGER NOT NULL, `ingredienteId` INTEGER NOT NULL, `cantidadG` REAL NOT NULL, `orden` INTEGER NOT NULL, FOREIGN KEY(`seccionId`) REFERENCES `receta_secciones`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "seccionId",
+            "columnName": "seccionId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ingredienteId",
+            "columnName": "ingredienteId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cantidadG",
+            "columnName": "cantidadG",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "orden",
+            "columnName": "orden",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_receta_ingredientes_seccionId",
+            "unique": false,
+            "columnNames": [
+              "seccionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_receta_ingredientes_seccionId` ON `${TABLE_NAME}` (`seccionId`)"
+          },
+          {
+            "name": "index_receta_ingredientes_ingredienteId",
+            "unique": false,
+            "columnNames": [
+              "ingredienteId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_receta_ingredientes_ingredienteId` ON `${TABLE_NAME}` (`ingredienteId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "receta_secciones",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "seccionId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "receta_rendimiento",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`recetaId` INTEGER NOT NULL, `usaMolde` INTEGER NOT NULL, `moldeOrigenId` INTEGER, `pesoFinalG` REAL, `trozos` INTEGER NOT NULL, `molde_tipoForma` TEXT, `molde_largoCm` REAL, `molde_anchoCm` REAL, `molde_ladoCm` REAL, `molde_diametroCm` REAL, `molde_baseTrianguloCm` REAL, `molde_alturaTrianguloCm` REAL, `molde_volumenExoticoCm3` REAL, `molde_alturaMoldeCm` REAL, PRIMARY KEY(`recetaId`), FOREIGN KEY(`recetaId`) REFERENCES `recetas`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`moldeOrigenId`) REFERENCES `moldes`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "recetaId",
+            "columnName": "recetaId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "usaMolde",
+            "columnName": "usaMolde",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "moldeOrigenId",
+            "columnName": "moldeOrigenId",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "pesoFinalG",
+            "columnName": "pesoFinalG",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "trozos",
+            "columnName": "trozos",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dimensiones.tipoForma",
+            "columnName": "molde_tipoForma",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dimensiones.largoCm",
+            "columnName": "molde_largoCm",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dimensiones.anchoCm",
+            "columnName": "molde_anchoCm",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dimensiones.ladoCm",
+            "columnName": "molde_ladoCm",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dimensiones.diametroCm",
+            "columnName": "molde_diametroCm",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dimensiones.baseTrianguloCm",
+            "columnName": "molde_baseTrianguloCm",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dimensiones.alturaTrianguloCm",
+            "columnName": "molde_alturaTrianguloCm",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dimensiones.volumenExoticoCm3",
+            "columnName": "molde_volumenExoticoCm3",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dimensiones.alturaMoldeCm",
+            "columnName": "molde_alturaMoldeCm",
+            "affinity": "REAL",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "recetaId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_receta_rendimiento_moldeOrigenId",
+            "unique": false,
+            "columnNames": [
+              "moldeOrigenId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_receta_rendimiento_moldeOrigenId` ON `${TABLE_NAME}` (`moldeOrigenId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "recetas",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "recetaId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "moldes",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "moldeOrigenId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "receta_duracion",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`recetaId` INTEGER NOT NULL, `tipo` TEXT NOT NULL, `apto` INTEGER NOT NULL, `cantidad` INTEGER, `unidad` TEXT, PRIMARY KEY(`recetaId`, `tipo`), FOREIGN KEY(`recetaId`) REFERENCES `recetas`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "recetaId",
+            "columnName": "recetaId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tipo",
+            "columnName": "tipo",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "apto",
+            "columnName": "apto",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cantidad",
+            "columnName": "cantidad",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "unidad",
+            "columnName": "unidad",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "recetaId",
+            "tipo"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": [
+          {
+            "table": "recetas",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "recetaId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "receta_precios",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `recetaId` INTEGER NOT NULL, `modo` TEXT NOT NULL, `cantidad` INTEGER NOT NULL, `precioTotal` REAL NOT NULL, `etiqueta` TEXT, `esReferencia` INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(`recetaId`) REFERENCES `recetas`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "recetaId",
+            "columnName": "recetaId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "modo",
+            "columnName": "modo",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cantidad",
+            "columnName": "cantidad",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "precioTotal",
+            "columnName": "precioTotal",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "etiqueta",
+            "columnName": "etiqueta",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "esReferencia",
+            "columnName": "esReferencia",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_receta_precios_recetaId",
+            "unique": false,
+            "columnNames": [
+              "recetaId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_receta_precios_recetaId` ON `${TABLE_NAME}` (`recetaId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "recetas",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "recetaId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "receta_pasos",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `recetaId` INTEGER NOT NULL, `orden` INTEGER NOT NULL, `contenido` TEXT NOT NULL, FOREIGN KEY(`recetaId`) REFERENCES `recetas`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "recetaId",
+            "columnName": "recetaId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "orden",
+            "columnName": "orden",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contenido",
+            "columnName": "contenido",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_receta_pasos_recetaId",
+            "unique": false,
+            "columnNames": [
+              "recetaId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_receta_pasos_recetaId` ON `${TABLE_NAME}` (`recetaId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "recetas",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "recetaId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "receta_simulacion_venta",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`recetaId` INTEGER NOT NULL, `diasPorSemana` INTEGER NOT NULL, `unidadesPorDia` INTEGER NOT NULL, PRIMARY KEY(`recetaId`), FOREIGN KEY(`recetaId`) REFERENCES `recetas`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "recetaId",
+            "columnName": "recetaId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "diasPorSemana",
+            "columnName": "diasPorSemana",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unidadesPorDia",
+            "columnName": "unidadesPorDia",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "recetaId"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": [
+          {
+            "table": "recetas",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "recetaId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "moldes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `nombre` TEXT NOT NULL, `creadoEn` INTEGER NOT NULL, `actualizadoEn` INTEGER NOT NULL, `tipoForma` TEXT, `largoCm` REAL, `anchoCm` REAL, `ladoCm` REAL, `diametroCm` REAL, `baseTrianguloCm` REAL, `alturaTrianguloCm` REAL, `volumenExoticoCm3` REAL, `alturaMoldeCm` REAL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nombre",
+            "columnName": "nombre",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "creadoEn",
+            "columnName": "creadoEn",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "actualizadoEn",
+            "columnName": "actualizadoEn",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dimensiones.tipoForma",
+            "columnName": "tipoForma",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dimensiones.largoCm",
+            "columnName": "largoCm",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dimensiones.anchoCm",
+            "columnName": "anchoCm",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dimensiones.ladoCm",
+            "columnName": "ladoCm",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dimensiones.diametroCm",
+            "columnName": "diametroCm",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dimensiones.baseTrianguloCm",
+            "columnName": "baseTrianguloCm",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dimensiones.alturaTrianguloCm",
+            "columnName": "alturaTrianguloCm",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dimensiones.volumenExoticoCm3",
+            "columnName": "volumenExoticoCm3",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dimensiones.alturaMoldeCm",
+            "columnName": "alturaMoldeCm",
+            "affinity": "REAL",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "empleados",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `nombre` TEXT NOT NULL, `esGenerico` INTEGER NOT NULL, `creadoEn` INTEGER NOT NULL, `actualizadoEn` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nombre",
+            "columnName": "nombre",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "esGenerico",
+            "columnName": "esGenerico",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "creadoEn",
+            "columnName": "creadoEn",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "actualizadoEn",
+            "columnName": "actualizadoEn",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "empleado_receta_sueldo",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `empleadoId` INTEGER NOT NULL, `recetaId` INTEGER NOT NULL, `gananciaEmpleado` REAL NOT NULL, `diasPorSemana` INTEGER NOT NULL, `unidadesPorDia` INTEGER NOT NULL, FOREIGN KEY(`empleadoId`) REFERENCES `empleados`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`recetaId`) REFERENCES `recetas`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "empleadoId",
+            "columnName": "empleadoId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "recetaId",
+            "columnName": "recetaId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "gananciaEmpleado",
+            "columnName": "gananciaEmpleado",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "diasPorSemana",
+            "columnName": "diasPorSemana",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unidadesPorDia",
+            "columnName": "unidadesPorDia",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_empleado_receta_sueldo_empleadoId_recetaId",
+            "unique": true,
+            "columnNames": [
+              "empleadoId",
+              "recetaId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_empleado_receta_sueldo_empleadoId_recetaId` ON `${TABLE_NAME}` (`empleadoId`, `recetaId`)"
+          },
+          {
+            "name": "index_empleado_receta_sueldo_recetaId",
+            "unique": false,
+            "columnNames": [
+              "recetaId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_empleado_receta_sueldo_recetaId` ON `${TABLE_NAME}` (`recetaId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "empleados",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "empleadoId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "recetas",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "recetaId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "empleado_simulacion_multiple",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`empleadoId` INTEGER NOT NULL, `diasPorSemana` INTEGER NOT NULL, PRIMARY KEY(`empleadoId`), FOREIGN KEY(`empleadoId`) REFERENCES `empleados`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "empleadoId",
+            "columnName": "empleadoId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "diasPorSemana",
+            "columnName": "diasPorSemana",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "empleadoId"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": [
+          {
+            "table": "empleados",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "empleadoId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "empleado_simulacion_multiple_detalle",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `empleadoId` INTEGER NOT NULL, `recetaId` INTEGER NOT NULL, `unidadesPorDia` INTEGER NOT NULL, FOREIGN KEY(`empleadoId`) REFERENCES `empleado_simulacion_multiple`(`empleadoId`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`recetaId`) REFERENCES `recetas`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "empleadoId",
+            "columnName": "empleadoId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "recetaId",
+            "columnName": "recetaId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unidadesPorDia",
+            "columnName": "unidadesPorDia",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_empleado_simulacion_multiple_detalle_empleadoId_recetaId",
+            "unique": true,
+            "columnNames": [
+              "empleadoId",
+              "recetaId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_empleado_simulacion_multiple_detalle_empleadoId_recetaId` ON `${TABLE_NAME}` (`empleadoId`, `recetaId`)"
+          },
+          {
+            "name": "index_empleado_simulacion_multiple_detalle_recetaId",
+            "unique": false,
+            "columnNames": [
+              "recetaId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_empleado_simulacion_multiple_detalle_recetaId` ON `${TABLE_NAME}` (`recetaId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "empleado_simulacion_multiple",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "empleadoId"
+            ],
+            "referencedColumns": [
+              "empleadoId"
+            ]
+          },
+          {
+            "table": "recetas",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "recetaId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "eventos_cambio",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `tipo` TEXT NOT NULL, `entidad` TEXT NOT NULL, `descripcion` TEXT NOT NULL, `detalleAdicional` TEXT, `creadoEn` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tipo",
+            "columnName": "tipo",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "entidad",
+            "columnName": "entidad",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "descripcion",
+            "columnName": "descripcion",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "detalleAdicional",
+            "columnName": "detalleAdicional",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "creadoEn",
+            "columnName": "creadoEn",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_eventos_cambio_creadoEn",
+            "unique": false,
+            "columnNames": [
+              "creadoEn"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_eventos_cambio_creadoEn` ON `${TABLE_NAME}` (`creadoEn`)"
+          }
+        ],
+        "foreignKeys": []
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '8eae78d3551730f87623e6b8801453cd')"
+    ]
+  }
+}
