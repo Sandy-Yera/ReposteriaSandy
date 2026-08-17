@@ -8,6 +8,7 @@ import com.sandyyera.reposteria.data.repositorio.HistorialRepositorio
 import com.sandyyera.reposteria.data.repositorio.IngredienteRepositorio
 import com.sandyyera.reposteria.data.repositorio.MoldeRepositorio
 import com.sandyyera.reposteria.data.repositorio.RecetaRepositorio
+import com.sandyyera.reposteria.data.repositorio.VentaRepositorio
 
 /**
  * Arma y guarda las piezas compartidas de la app: la base de datos y los repositorios.
@@ -112,6 +113,22 @@ class AppContainer(private val context: Context) {
      * Va en un solo sentido: recetas no sabe nada de empleados. Lo que pasa al borrar una receta
      * lo resuelven las cascadas de la base, no una llamada de vuelta.
      */
+    /**
+     * Las ventas y su informe (sección 18).
+     *
+     * Depende del almacén y no al revés: registrar una venta puede descontar, y el almacén no
+     * sabe de ventas — salvo por la tabla de movimientos, que él mismo llena porque es quien
+     * mueve el stock.
+     */
+    val ventas: VentaRepositorio by lazy {
+        VentaRepositorio(
+            dao = base.ventaDao(),
+            recetas = recetas,
+            almacen = almacen,
+            historial = historial
+        )
+    }
+
     val empleados: EmpleadoRepositorio by lazy {
         EmpleadoRepositorio(
             dao = base.empleadoDao(),
