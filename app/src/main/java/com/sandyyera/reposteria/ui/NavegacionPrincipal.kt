@@ -2,6 +2,7 @@ package com.sandyyera.reposteria.ui
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
@@ -63,6 +64,8 @@ import com.sandyyera.reposteria.ui.recetas.SimulacionViewModel
 import com.sandyyera.reposteria.ui.recetas.TituloDeRecetaViewModel
 import com.sandyyera.reposteria.ui.recetas.RecetasViewModel
 import com.sandyyera.reposteria.ui.theme.Medidas
+import com.sandyyera.reposteria.ui.ventas.ListaVentasScreen
+import com.sandyyera.reposteria.ui.ventas.VentasViewModel
 import kotlinx.coroutines.launch
 
 /**
@@ -70,7 +73,7 @@ import kotlinx.coroutines.launch
  *
  * Lo que todavía no exista se agrega al llegar su fase, y queda **fuera del enum** a propósito en
  * vez de puesto en gris: una opción que no lleva a ninguna parte se toca igual, y da la impresión
- * de que algo se rompió. Ventas entra con la Fase 12.
+ * de que algo se rompió. Ventas entró con la Fase 12; el historial de cambios espera a la 13.
  */
 enum class Seccion(val titulo: String, val icono: ImageVector) {
     /**
@@ -87,6 +90,16 @@ enum class Seccion(val titulo: String, val icono: ImageVector) {
     INGREDIENTES("Ingredientes", Icons.Default.ShoppingCart),
     MOLDES("Moldes", Icons.Default.Star),
     RECETAS("Recetas", Icons.Default.Favorite),
+
+    /**
+     * Va **después de Recetas y antes de Empleados** (18).
+     *
+     * Por el orden de "lo que hay que tener antes": una venta se anota contra una receta, y la
+     * comparación con lo estimado necesita que esa receta tenga precio. Y por el otro criterio, el
+     * de cuánto se abre: esto se anota al cerrar el día, mientras que los repartos de Empleados se
+     * acuerdan una vez y se miran de vez en cuando.
+     */
+    VENTAS("Ventas", Icons.Default.DateRange),
 
     /**
      * Va **al final** y no junto a Ingredientes, aunque el orden sea el de "lo que hay que tener
@@ -466,6 +479,11 @@ private fun MenuDeSecciones(
                 modelo = viewModel(
                     factory = IngredientesViewModel.fabrica(contenedor.ingredientes)
                 ),
+                alAbrirMenu = abrirMenu
+            )
+
+            Seccion.VENTAS -> ListaVentasScreen(
+                modelo = viewModel(factory = VentasViewModel.fabrica(contenedor.ventas)),
                 alAbrirMenu = abrirMenu
             )
 

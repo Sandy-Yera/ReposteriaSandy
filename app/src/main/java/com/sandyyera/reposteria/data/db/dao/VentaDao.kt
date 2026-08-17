@@ -55,7 +55,36 @@ interface VentaDao {
     @Query("DELETE FROM ventas WHERE id = :ventaId")
     suspend fun eliminar(ventaId: Long)
 
+    /**
+     * Las ventas de un día, para el detalle del informe.
+     *
+     * Son varias y no una: una venta es un día y una lista (18.1), pero nada obliga a anotarlo
+     * todo de una vez — se puede registrar la feria de la mañana y agregar el pedido de la tarde.
+     * Cada una lleva su propio `descontoDelAlmacen`, que es lo que hace que valga la pena verlas
+     * separadas en vez de sumadas.
+     */
+    @Query("SELECT * FROM ventas WHERE fecha = :fecha ORDER BY id")
+    fun observarDelDia(fecha: Long): Flow<List<Venta>>
+
     // --- Sus líneas ---
+
+    /**
+     * Todas las líneas de un día, de todas sus ventas.
+     *
+     * Va como una consulta y no como un `observarLineas` por venta: con una suscripción por venta,
+     * un día con cuatro ventas serían cinco flujos que se combinan y se vuelven a combinar cada
+     * vez que se agrega una. El `ventaId` viene en cada fila, así que agruparlas es cosa de quien
+     * las dibuja.
+     */
+    @Query(
+        """
+        SELECT l.* FROM venta_lineas l
+        INNER JOIN ventas v ON v.id = l.ventaId
+        WHERE v.fecha = :fecha
+        ORDER BY l.ventaId, l.id
+        """
+    )
+    fun observarLineasDelDia(fecha: Long): Flow<List<VentaLinea>>
 
     @Query("SELECT * FROM venta_lineas WHERE ventaId = :ventaId ORDER BY id")
     fun observarLineas(ventaId: Long): Flow<List<VentaLinea>>

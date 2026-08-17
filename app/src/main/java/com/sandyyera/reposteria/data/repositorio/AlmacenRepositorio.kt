@@ -375,12 +375,25 @@ class AlmacenRepositorio(
          */
         motivo: MotivoDeMovimiento = MotivoDeMovimiento.PRODUCCION,
         /** La venta que lo causó, si fue una. Lo que enlaza el movimiento con su día. */
-        ventaId: Long? = null
+        ventaId: Long? = null,
+        /**
+         * A qué día pertenece la salida, como `epochDay`. Hoy si no se dice.
+         *
+         * **No siempre es hoy, y suponerlo rompía el informe.** El costo real de un día sale de
+         * sumar los movimientos que llevan *esa* fecha (18.2), así que descontar el lunes una venta
+         * del sábado cargaba el costo al lunes: el sábado quedaba sin costo real —como si no
+         * hubiera descontado— y el lunes con uno de más. Los dos días quedaban mal a la vez, y
+         * ninguno de los dos números se veía raro.
+         *
+         * Al cocinar (`PRODUCCION`) el día sí es hoy, y por eso ese es el valor por defecto: lo que
+         * sale del frasco sale cuando se cocina.
+         */
+        fecha: Long? = null
     ): Resultado {
         if (!previa.hayAlgoQueDescontar) {
             return Resultado.NoSePudo("No hay nada anotado que descontar")
         }
-        val hoy = LocalDate.now().toEpochDay()
+        val cuando = fecha ?: LocalDate.now().toEpochDay()
         var movidas = 0
         for (fila in previa.filas) {
             val articulo = dao.obtenerPorIngrediente(fila.ingredienteId) ?: continue
@@ -403,7 +416,7 @@ class AlmacenRepositorio(
                     valorUnitario = ingredientes.obtener(fila.ingredienteId)?.valorPorGramo ?: 0.0,
                     motivo = motivo,
                     ventaId = ventaId,
-                    fecha = hoy
+                    fecha = cuando
                 )
             )
             movidas++

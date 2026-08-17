@@ -164,6 +164,49 @@ class VentaRepositorioTest {
     }
 
     @Test
+    fun `el movimiento se anota en el dia de la venta y no en el de hoy`() = runBlocking {
+        // **Descontar no siempre pasa el mismo día que la venta**, y suponerlo rompía el informe
+        // en dos días a la vez: descontar el lunes una venta del sábado cargaba el costo al lunes
+        // —el sábado quedaba como si no hubiera descontado, y el lunes con un costo de más—.
+        // Ninguno de los dos números se ve raro, que es lo que lo hacía peligroso.
+        val id = receta()
+        almacen.agregar("Harina Torta", false, true, 5000.0, 1.0, null, reemplazarElPrecio = true)
+        val ventaId = registrar(id, unidades = 1, precio = 5000.0)
+
+        repositorio.descontarDelAlmacen(ventaId)
+
+        assertEquals(hoy, ventaDao.movimientos.single().fecha)
+    }
+
+    @Test
+    fun `el informe del dia junta lo estimado con lo real`() = runBlocking {
+        // El recorrido entero, que es donde se juntan las tres piezas: lo congelado al registrar,
+        // los movimientos del descuento, y la suma por día.
+        val id = receta()
+        almacen.agregar("Harina Torta", false, true, 5000.0, 1.0, null, reemplazarElPrecio = true)
+        val ventaId = registrar(id, unidades = 2, precio = 5000.0)
+        repositorio.descontarDelAlmacen(ventaId)
+
+        val dia = repositorio.observarResumenPorDia().first().single()
+        assertEquals(hoy, dia.fecha)
+        assertEquals("Cobrado: 2 x 5.000", 10000.0, dia.ingresoReal, 0.001)
+        assertEquals("Estimado: 2 x 4.000", 8000.0, dia.ingresoEstimado, 0.001)
+        assertEquals("Estimado: 2 x 1.000", 2000.0, dia.costoEstimado, 0.001)
+        assertEquals("Y el real, de los movimientos", 2000.0, dia.costoReal!!, 0.001)
+    }
+
+    @Test
+    fun `un dia sin descuento sale en el informe con el costo real en nulo`() = runBlocking {
+        // Un informe que escondiera los días que no descontaron haría creer que se vendió menos, y
+        // uno que pusiera 0 diría que fue gratis. El `null` es el que dice "no se sabe".
+        registrar(receta(), unidades = 1, precio = 5000.0)
+
+        val dia = repositorio.observarResumenPorDia().first().single()
+        assertEquals(5000.0, dia.ingresoReal, 0.001)
+        assertNull(dia.costoReal)
+    }
+
+    @Test
     fun `una venta recien registrada todavia no descontó`() = runBlocking {
         val ventaId = registrar(receta(), unidades = 1, precio = 5000.0)
 

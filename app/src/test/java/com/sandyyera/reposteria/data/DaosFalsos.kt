@@ -1159,8 +1159,19 @@ class VentaDaoFalso : VentaDao {
         movimientos.removeAll { it.ventaId == ventaId }
     }
 
+    override fun observarDelDia(fecha: Long): Flow<List<Venta>> =
+        MutableStateFlow(ventas.value.filter { it.fecha == fecha }.sortedBy { it.id })
+
     override fun observarLineas(ventaId: Long): Flow<List<VentaLinea>> =
         MutableStateFlow(lineas.filter { it.ventaId == ventaId })
+
+    /** El `INNER JOIN` de la consulta real: solo las líneas cuyas ventas caen ese día. */
+    override fun observarLineasDelDia(fecha: Long): Flow<List<VentaLinea>> {
+        val delDia = ventas.value.filter { it.fecha == fecha }.map { it.id }.toSet()
+        return MutableStateFlow(
+            lineas.filter { it.ventaId in delDia }.sortedWith(compareBy({ it.ventaId }, { it.id }))
+        )
+    }
 
     override suspend fun obtenerLineas(ventaId: Long): List<VentaLinea> =
         lineas.filter { it.ventaId == ventaId }
@@ -1194,6 +1205,36 @@ class VentaDaoFalso : VentaDao {
             .takeIf { it.isNotEmpty() }
             ?.sumOf { -it.cantidad * it.valorUnitario }
 
-    override fun observarResumenPorDia(): Flow<List<ResumenDeUnDia>> =
-        error("observarResumenPorDia todavía no se necesita en las pruebas")
+    /**
+     * El `GROUP BY v.fecha` de la consulta real, con la subconsulta de los movimientos.
+     *
+     * Se imita con cuidado porque **las dos trampas del SQL viven acá**. La suma de movimientos va
+     * aparte y no cruzada con las líneas: uniendo las dos tablas de detalle contra la misma
+     * cabecera, cada línea multiplicaría cada movimiento y los totales saldrían inflados. Y el
+     * costo real es `null` —no 0— cuando el día no tiene movimientos de venta: un falso que
+     * devolviera 0 aprobaría una pantalla que dice "costó nada" donde debería decir "no se sabe".
+     */
+    override fun observarResumenPorDia(): Flow<List<ResumenDeUnDia>> {
+        val porDia = ventas.value.groupBy { it.fecha }
+        return MutableStateFlow(
+            porDia.map { (fecha, delDia) ->
+                val suyas = delDia.map { it.id }.toSet()
+                val lineasDelDia = lineas.filter { it.ventaId in suyas }
+                val deVenta = movimientos.filter {
+                    it.fecha == fecha && it.motivo == MotivoDeMovimiento.VENTA
+                }
+                ResumenDeUnDia(
+                    fecha = fecha,
+                    ingresoReal = lineasDelDia.sumOf { it.unidades * it.precioUnitario },
+                    ingresoEstimado = lineasDelDia.sumOf {
+                        it.unidades * it.precioEstimadoUnitario
+                    },
+                    costoEstimado = lineasDelDia.sumOf { it.unidades * it.costoEstimadoUnitario },
+                    // El signo cambiado, igual que en la consulta: las salidas van negativas.
+                    costoReal = deVenta.takeIf { it.isNotEmpty() }
+                        ?.sumOf { -it.cantidad * it.valorUnitario }
+                )
+            }.sortedByDescending { it.fecha }
+        )
+    }
 }

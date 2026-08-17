@@ -37,6 +37,13 @@ import sys
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+# Lo que puede ir entre la sangría y el `fun` de un método. Se escribe una sola vez: son los
+# mismos para cualquier revisión que necesite reconocer la declaración de una función.
+MODIFICADORES_DE_FUN = (
+    "(?:suspend|private|internal|protected|public|open|override|inline|operator|"
+    "abstract|final|tailrec|infix|external)"
+)
+
 # Nombres que no hace falta importar: vienen de Kotlin o del propio lenguaje.
 CONOCIDOS = {
     "String", "Int", "Long", "Double", "Boolean", "Float", "List", "Map", "Set", "Unit",
@@ -312,7 +319,18 @@ def revisar_llamadas_con_punto(rutas):
         # calzaba en una línea en blanco y los saltos hacían de "sangría" — o sea que *toda*
         # función suelta precedida de una línea vacía parecía un método, y la revisión no
         # marcaba nunca nada. Se pilló comprobando que atrapara el error que la motivó.
-        con_punto |= set(re.findall(r"^[ \t]+fun\s+(?:<[^>]*>\s*)?(\w+)\s*\(", codigo, re.M))
+        #
+        # **Los modificadores van adentro del patrón.** Sin ellos, `    suspend fun x(` no
+        # contaba como método, así que cualquier nombre de `:logica` redeclarado como método
+        # `suspend` quedaba marcado aunque el punto fuera correcto. Lo destapó
+        # `VentaRepositorio.vistaPreviaDelDescuento`, que sí existe.
+        con_punto |= set(
+            re.findall(
+                r"^[ \t]+(?:" + MODIFICADORES_DE_FUN + r"\s+)*fun\s+(?:<[^>]*>\s*)?(\w+)\s*\(",
+                codigo,
+                re.M
+            )
+        )
         con_punto |= set(re.findall(r"\bfun\s+(?:<[^>]*>\s*)?[\w.<>]+\.(\w+)\s*\(", codigo))
 
     candidatas = sueltas - con_punto
@@ -329,7 +347,8 @@ def revisar_llamadas_con_punto(rutas):
         codigo = re.sub(r"\bcom(?:\.\w+)+\.", "", codigo)
         malas = {n for n in candidatas if re.search(r"\.\s*" + n + r"\s*[({]", codigo)}
         if malas:
-            print(f"  ¿llamada con punto? {os.path.relpath(ruta, RAIZ)}: {', '.join(sorted(malas))}")
+            cuales = ", ".join(sorted(malas))
+            print(f"  ¿llamada con punto? {os.path.relpath(ruta, RAIZ)}: {cuales}")
             problemas += 1
     return problemas
 

@@ -9,6 +9,7 @@ import com.sandyyera.reposteria.data.db.entidades.Venta
 import com.sandyyera.reposteria.data.db.entidades.VentaLinea
 import com.sandyyera.reposteria.logica.almacen.RecetaHecha
 import com.sandyyera.reposteria.logica.almacen.VistaPreviaDelDescuento
+import com.sandyyera.reposteria.logica.precios.DatosCalculoReceta
 import com.sandyyera.reposteria.logica.precios.ingresoBruto
 import kotlinx.coroutines.flow.Flow
 
@@ -55,6 +56,25 @@ class VentaRepositorio(
 
     /** Estimado contra real, día por día (18.2). Lo que dibuja el informe. */
     fun observarResumenPorDia(): Flow<List<ResumenDeUnDia>> = dao.observarResumenPorDia()
+
+    /** Las ventas de un día, con sus líneas aparte. Lo que se ve al abrir un día del informe. */
+    fun observarDelDia(fecha: Long): Flow<List<Venta>> = dao.observarDelDia(fecha)
+
+    fun observarLineasDelDia(fecha: Long): Flow<List<VentaLinea>> = dao.observarLineasDelDia(fecha)
+
+    /**
+     * Las recetas que se pueden vender, con su costo y sus precios del momento.
+     *
+     * **Se ofrecen todas, también las que no tienen precio.** Al revés que al asignarle una receta
+     * a un empleado —donde sin precio no hay ganancia que repartir y la receta ni se ofrece—, acá
+     * lo que falta es la estimación y no la venta: se puede haber vendido algo a lo que nunca se le
+     * puso precio de referencia, y negarse a anotarlo perdería la venta de verdad por no tener la
+     * estimada. Lo que la app no sabe entra en 0 y se dice (18.1).
+     */
+    suspend fun recetasParaVender(): List<DatosCalculoReceta> {
+        val ids = recetas.obtenerTodasUnaVez().map { it.id }
+        return recetas.obtenerDatosCalculo(ids).values.sortedBy { it.titulo.lowercase() }
+    }
 
     /**
      * Registra una venta: un día y lo que se vendió (18.1).
@@ -142,7 +162,11 @@ class VentaRepositorio(
             previa = previa,
             queSeHizo = "la venta",
             motivo = MotivoDeMovimiento.VENTA,
-            ventaId = ventaId
+            ventaId = ventaId,
+            // **El día de la venta y no el de hoy.** El costo real de un día sale de sumar los
+            // movimientos con esa fecha (18.2): descontar el lunes una venta del sábado cargaría
+            // el costo al lunes, y el sábado quedaría como si no hubiera descontado.
+            fecha = venta.fecha
         )
         if (resultado is Resultado.NoSePudo) return resultado
 
