@@ -81,7 +81,7 @@ base_rows = [(d(1), "AM", *T, 100, 3, 0), (d(1), "PM", "Diego", "Elena", "Felipe
 panel_cases = [
     ("Desde escrito como texto", {"B7": "01/11"}, lambda p: p["H16"].value == 3),
     ("Desde posterior a Hasta (se invierten)", {"B7": d(2), "D7": d(1)}, lambda p: p["H16"].value == 3),
-    ("Persona que no existe", {"J7": "Zoe"}, lambda p: p["H16"].value == 0 and "lista" in str(p["B4"].value or "")),
+    ("Persona que no existe", {"J7": "Zoe"}, lambda p: p["H16"].value == 0 and "Personal" in str(p["B4"].value or "")),
     ("Mín. turnos = 0", {"L7": 0}, lambda p: str(p["B34"].value).startswith("Sin")),
     ("Mín. turnos en texto 'tres'", {"L7": "tres"}, lambda p: str(p["B34"].value).startswith("Sin")),
     ("Turno en minúscula 'pm'", {"F7": "pm"}, lambda p: p["H16"].value == 1),

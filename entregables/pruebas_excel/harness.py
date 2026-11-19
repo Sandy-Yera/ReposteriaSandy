@@ -37,7 +37,7 @@ def build_case(template, out, auto_rows=(), deliv_rows=(), personal=None, panel=
         for c, v in zip("BCDEFGHIQ", row): a[f"{c}{R0+i}"] = v
     for i, row in enumerate(deliv_rows):
         if row is None: continue
-        for c, v in zip("BCDFG", row): d[f"{c}{R0+i}"] = v
+        for c, v in zip("BCDFH", row): d[f"{c}{R0+i}"] = v
     for k, v in (panel or {}).items(): p[k] = v
     if extra: extra(wb)
     wb.save(out)
