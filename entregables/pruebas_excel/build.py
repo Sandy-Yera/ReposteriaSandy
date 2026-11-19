@@ -269,7 +269,8 @@ cols = [  # (letra, encabezado, ancho, tipo)
     ("BQ", "aux_r2Board", 6, "aux"), ("BR", "aux_r2Corredor", 6, "aux"), ("BS", "aux_r2Trio", 6, "aux"),
     ("BT", "aux_segValido", 6, "aux"), ("BU", "aux_margenPM", 6, "aux"), ("BV", "aux_trioComparables", 6, "aux"),
     ("BW", "aux_trioSumaR", 6, "aux"), ("BX", "aux_trioSumaR2", 6, "aux"), ("BY", "aux_trioC", 6, "aux"),
-    ("BZ", "aux_trioN2", 6, "aux"),
+    ("BZ", "aux_trioN2", 6, "aux"), ("CA", "aux_diaSemana", 6, "aux"), ("CB", "aux_diaSeg", 6, "aux"),
+    ("CC", "aux_diaVsNormal", 6, "aux"),
 ]
 title(au, "Registro Auto", None, 17, 15)
 au.row_dimensions[3].height = 38
@@ -326,7 +327,10 @@ for r in range(R0, R1 + 1):
         "Y": f'=IF(V{r}=1,K{r}*L{r},0)',
         "Z": f'=IF(N{r}="Sí",1,0)',
         "AA": f'=IF(AND(W{r}=1,S{r}<>""),S{r},"")',
-        "AB": f'=IF(AND(U{r}=1,O{r}<>""),O{r}+ROW()/10000000000,"")',
+        "AB": f'=IF(AND(U{r}=1,ISNUMBER(CC{r})),CC{r}+ROW()/10000000,"")',
+        "CA": f'=IF(O{r}="","",WEEKDAY(AG{r},2))',
+        "CB": f'=IF(O{r}="","",O{r}*86400)',
+        "CC": f'=IF(CA{r}="","",IF(INDEX(diaN,CA{r})>1,(CB{r}-INDEX(diaBase,CA{r}))*INDEX(diaN,CA{r})/(INDEX(diaN,CA{r})-1),""))',
         "AC": f'=IF(AI{r}="",0,COUNTIF({rng("AI")},AI{r}))',
         "AD": f'=V{r}*T{r}',
         "AE": f'=IF(ISBLANK(G{r}),"",IFERROR(IF(OR(--G{r}<0,--G{r}<>INT(--G{r}),--G{r}>{MAX_AUTOS}),"",--G{r}),""))',
@@ -350,9 +354,9 @@ for r in range(R0, R1 + 1):
         "AW": f'=IF(OR(AS{r}="",N(BV{r})<fMin,N(AT{r})<=0),"",BW{r}/(BV{r}+kTrio)+MATCH(AA{r},{rng("AA")},0)/1000000000)',
         "AX": f'=IF(OR(LEFT(M{r},7)="Revisar",LEFT(M{r},5)="Falta"),1,0)',
         # ---- comparación justa: contexto (turno × día de semana) y "contra los demás" ----
-        "AY": f'=IF(AND(U{r}=1,AI{r}<>""),IF(AF{r}="PM",7,0)+WEEKDAY(AG{r},2),"")',
-        "AZ": f'=IF(OR(V{r}<>1,AY{r}=""),"",L{r}*86400-INDEX(ctxBase,AY{r}))',
-        "BT": f'=IF(V{r}=1,L{r}*86400,"")',
+        "AY": f'=IF(AI{r}<>"",IF(AF{r}="PM",7,0)+WEEKDAY(AG{r},2),"")',
+        "AZ": f'=IF(OR(N{r}="",AY{r}=""),"",L{r}*86400-INDEX(ctxBase,AY{r}))',
+        "BT": f'=IF(N{r}<>"",L{r}*86400,"")',
         "BU": f'=IF(AND(AF{r}="PM",N(AJ{r})>0,N(K{r})>0),0.5*(AE{r}+AJ{r})/K{r},0)',
         "BG": f'=IF(OR(AY{r}="",S{r}=""),"",AY{r}*10000+MATCH(S{r},{rng("S")},0))',
         "BV": f'=IF(AS{r}="","",COUNTIFS({rng("AA")},AA{r},{rng("BO")},">-1E9"))',
@@ -384,7 +388,7 @@ for r in range(R0, R1 + 1):
     au[f"B{r}"].number_format = DATE
     for c_ in "JLO": au[f"{c_}{r}"].number_format = TIME
     au[f"Q{r}"].alignment = Alignment(horizontal="left", vertical="center", wrap_text=False, indent=1)
-add_table(au, "TablaAuto", f"B7:BZ{R1}")
+add_table(au, "TablaAuto", f"B7:CC{R1}")
 au.freeze_panes = "D8"
 
 ejemplos_auto = [
@@ -636,6 +640,18 @@ for g in range(1, 15):
     ca[f"D{r}"] = f'=SUMIF({ra("AY")},A{r},{ra("BT")})'
     ca[f"E{r}"] = f'=IF(C{r}>0,D{r}/C{r},0)'
 wb.defined_names["ctxN"] = DefinedName("ctxN", attr_text=f"Calculos!$B${CTX0}:$B${CTX0+13}")
+# lo normal de cada día de la semana para el resultado final del día (1 = lunes … 7 = domingo)
+DIA0 = 140
+for j, h in enumerate(["dia_semana", "dias", "suma_seg", "lo_normal_seg"]):
+    put(ca, f"{L(1 + j)}{DIA0 - 1}", h)
+for d in range(1, 8):
+    r = DIA0 + d - 1
+    ca[f"A{r}"] = d
+    ca[f"B{r}"] = f'=COUNTIF({ra("CA")},A{r})'
+    ca[f"C{r}"] = f'=SUMIF({ra("CA")},A{r},{ra("CB")})'
+    ca[f"D{r}"] = f'=IF(B{r}>0,C{r}/B{r},0)'
+wb.defined_names["diaN"] = DefinedName("diaN", attr_text=f"Calculos!$B${DIA0}:$B${DIA0+6}")
+wb.defined_names["diaBase"] = DefinedName("diaBase", attr_text=f"Calculos!$D${DIA0}:$D${DIA0+6}")
 wb.defined_names["ctxBase"] = DefinedName("ctxBase", attr_text=f"Calculos!$E${CTX0}:$E${CTX0+13}")
 
 # bloques por estación: datos crudos (para mostrar) + ajuste justo (para ordenar)
@@ -812,7 +828,7 @@ CMP_END = r + len(rows_cmp)
 r = CMP_END + 2
 pan.row_dimensions[r - 1].height = 14
 section(r, "Ranking por estación (Auto)",
-        "Orden justo: cada turno se compara con los DEMÁS turnos del mismo tipo y día de la semana (así no gana quien solo trabaja turnos fáciles), "
+        "Orden justo: cada turno se compara con los DEMÁS turnos del mismo tipo y día de la semana de todo el historial (así no gana quien solo trabaja turnos fáciles), "
         "y a quien tiene pocos turnos se le acerca a lo normal (método bayesiano). Negativo = más rápido que lo normal. ± = margen del 95 %: "
         "si dos márgenes se cruzan, la diferencia puede ser suerte. \"Tiempo real\" es el promedio sin ajustar.")
 pan.row_dimensions[r + 1].height = 40
@@ -888,10 +904,10 @@ TR_END = r + 5
 # ----- Mejores días -----
 r = TR_END + 2
 pan.row_dimensions[r - 1].height = 14
-section(r, "Mejores días", "Ordenados por el resultado final del día (lo que marca el sistema al cierre). Respeta el rango de fechas.")
+section(r, "Mejores días", "Ordenados por cuánto mejor fue el día frente a lo normal de SU día de la semana (un sábado rápido vale más que un martes normal). \"Tiempo del día\" es el resultado oficial del sistema. Respeta el rango de fechas.")
 r += 2
 pan.row_dimensions[r].height = 24
-heads = [("B", "B", "#"), ("C", "D", "Fecha"), ("E", "F", "Tiempo del día"), ("G", "H", "AM real"), ("I", "J", "PM real"), ("K", "K", "Autos"), ("L", "M", "Resultado")]
+heads = [("B", "B", "#"), ("C", "D", "Fecha"), ("E", "E", "Tiempo del día"), ("F", "F", "vs. su día"), ("G", "G", "AM real"), ("H", "H", "PM real"), ("I", "I", "Autos"), ("J", "M", "Resultado")]
 for a, b, h in heads:
     if a != b: merge(pan, f"{a}{r}:{b}{r}", h, f=font(10, True, "FFFFFF"), fl=fill(ACC), al=CENTER)
     else: put(pan, f"{a}{r}", h, f=font(10, True, "FFFFFF"), fl=fill(ACC), al=CENTER)
@@ -903,17 +919,18 @@ for k in range(1, 6):
     fecha = f"INDEX({ra('AG')},{m})"
     vals = [("B", "B", f'=IF(ISNUMBER(SMALL({DS},{k})),{k},"")', None),
             ("C", "D", f'=IFERROR({fecha},IF({k}=1,"Sin datos",""))', "ddd dd-mmm-yy"),
-            ("E", "F", f'=IFERROR(INDEX({ra("O")},{m}),"")', TIME),
-            ("G", "H", f'=IFERROR(IF(COUNTIFS({ra("AI")},{fecha}*10+1,{N_},"?*")=0,"—",SUMIF({ra("AI")},{fecha}*10+1,{ra("L")})),"")', TIME),
-            ("I", "J", f'=IFERROR(IF(INDEX({ra("L")},{m})="","—",INDEX({ra("L")},{m})),"")', TIME),
-            ("K", "K", f'=IFERROR(INDEX({ra("G")},{m}),"")', "#,##0"),
-            ("L", "M", f'=IFERROR(INDEX({ra("P")},{m}),"")', None)]
+            ("E", "E", f'=IFERROR(INDEX({ra("O")},{m}),"")', TIME),
+            ("F", "F", f'=IFERROR(INDEX({ra("CC")},{m}),"")', FMT_AJ),
+            ("G", "G", f'=IFERROR(IF(COUNTIFS({ra("AI")},{fecha}*10+1,{N_},"?*")=0,"—",SUMIF({ra("AI")},{fecha}*10+1,{ra("L")})),"")', TIME),
+            ("H", "H", f'=IFERROR(IF(INDEX({ra("L")},{m})="","—",INDEX({ra("L")},{m})),"")', TIME),
+            ("I", "I", f'=IFERROR(INDEX({ra("G")},{m}),"")', "#,##0"),
+            ("J", "M", f'=IFERROR(INDEX({ra("P")},{m}),"")', None)]
     for a, b, v, nf in vals:
         if a != b: pan.merge_cells(f"{a}{rr}:{b}{rr}")
         put(pan, f"{a}{rr}", v, f=font(10, a in "BE"), al=CENTER, nf=nf, bd=BOT)
         pan[f"{b}{rr}"].border = BOT
-    for a in "EGI": cf_time(pan, f"{a}{rr}", f"{a}{rr}")
-    cf_text(pan, f"L{rr}", f"L{rr}", [('LEFT({c},7)="Cumplió"', G_LT, G_TX), ('LEFT({c},5)="Falló"', RD_F, RD_T)])
+    for a in "EGH": cf_time(pan, f"{a}{rr}", f"{a}{rr}")
+    cf_text(pan, f"J{rr}", f"J{rr}", [('LEFT({c},7)="Cumplió"', G_LT, G_TX), ('LEFT({c},5)="Falló"', RD_F, RD_T)])
 pan.freeze_panes = "A9"
 protect(pan)
 
@@ -969,7 +986,7 @@ bloques = [
         "Si arriba del Panel aparece un aviso rojo con ⚠, léelo: dice qué filas o filtros hay que revisar.",
     ]),
     ("6b", "Cómo leer los rankings (para premiar con justicia)", [
-        "El orden NO es el tiempo crudo. Cada turno se compara con los demás turnos del mismo tipo (AM o PM) y del mismo día de la semana. Así nadie gana solo por trabajar en turnos más tranquilos.",
+        "El orden NO es el tiempo crudo. Cada turno se compara con los demás turnos del mismo tipo (AM o PM) y del mismo día de la semana de todo el historial. Así nadie gana solo por trabajar en turnos más tranquilos, y funciona igual para una semana o un mes.",
         "\"vs. lo normal\": segundos más rápido (negativo, ej. −12 s) o más lento (positivo) que lo normal en sus turnos.",
         "\"± margen\": cuánto puede variar ese número por azar (95 % de seguridad). Si los márgenes de dos personas se cruzan, la diferencia entre ellas puede ser suerte.",
         "\"Lectura\": \"Más rápido que lo normal\" solo aparece cuando la ventaja es clara aun con el margen. \"Dentro de lo normal\" = no hay pruebas de que sea mejor ni peor.",

@@ -116,10 +116,11 @@ def run(seed, filtros_list):
                 eq(f"{tag} trio {k+1} vacío", p[f"F{rr}"].value, None)
         for k in range(5):
             if k < len(exp["dias_top"]):
-                O, _, r = exp["dias_top"][k]
+                dev, _, r = exp["dias_top"][k]
                 eq(f"{tag} dia {k+1} fecha", fecha(p[f"C{69+k}"].value), r["fecha"])
-                eq(f"{tag} dia {k+1} tiempo_t", p[f"E{69+k}"].value, float(O))
-                eq(f"{tag} dia {k+1} resultado", p[f"L{69+k}"].value, r["P"])
+                eq(f"{tag} dia {k+1} tiempo_t", p[f"E{69+k}"].value, float(r["O"]))
+                eq(f"{tag} dia {k+1} ajustado", round(p[f"F{69+k}"].value, 3), round(dev, 3) + 0.0)
+                eq(f"{tag} dia {k+1} resultado", p[f"J{69+k}"].value, r["P"])
 
 
 d = dt.date

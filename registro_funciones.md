@@ -475,3 +475,13 @@ Generador del archivo `entregables/Registro_Rendimiento_Auto_Delivery.xlsx` y su
 - Ubicación: entregables/pruebas_excel/valida_metodo.py
 - Qué hace: correlación de rangos, ranking justo en Python y fuente del generador de datos de test_verdad.
 - Cómo funciona: valida el método en 12 semillas (correlación, confusores, cobertura del margen y falsos positivos) sin usar Excel.
+
+### DIA0, diaN, diaBase
+- Ubicación: entregables/pruebas_excel/build.py
+- Qué hace: tabla de "lo normal" del resultado final del día para cada día de la semana (Calculos!A140:D146), con nombres definidos para cantidad de días y promedio.
+- Cómo funciona: usa todo el historial (columnas CA y CB del registro). La usa aux_diaVsNormal.
+
+### columnas CA–CC de Registro Auto (mejores días justos)
+- Ubicación: entregables/pruebas_excel/build.py
+- Qué hace: aux_diaSemana (1–7), aux_diaSeg (resultado del día en segundos) y aux_diaVsNormal (cuánto mejor o peor fue el día frente a lo normal de su día de la semana, sin incluirse a sí mismo).
+- Cómo funciona: aux_diaScore (AB) ordena "Mejores días" con este desvío, filtrado por el rango de fechas. Si ese día de la semana tiene un solo registro, queda vacío.

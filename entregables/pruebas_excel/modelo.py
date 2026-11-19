@@ -113,10 +113,10 @@ def panel(auto, deliv, personal, desde=None, hasta=None, turno="Total", persona=
                       dl=sum(x["conc"] == "Sí" for x in dd) / len(dd) if dd else None)
     res["tabla"] = tab
     # ---- Ranking ajustado (comparación justa) ----
-    # Contexto g = (turno, día de la semana). "Lo normal" B_g = promedio por turno de los turnos válidos del rango en g.
+    # Contexto g = (turno, día de la semana). "Lo normal" B_g = promedio por turno de los turnos válidos de TODO el historial en g.
     # Cada turno se compara contra los DEMÁS del mismo contexto (sin incluirse): r = (L - B_g) * N_g / (N_g - n_gi),
-    # con N_g y n_gi contados sobre turnos programados del rango (fecha y turno válidos), sin depender del tiempo.
-    U = [r for r in F if in_range(r["fecha"])]
+    # con N_g y n_gi contados sobre todos los turnos programados (fecha y turno válidos), sin depender del tiempo ni del filtro.
+    U = F
     ctx = lambda r: (r["turno"], r["fecha"].weekday())
     Ng, cnt_role, Sv, Nv = {}, {}, {}, {}
     for r in U:
@@ -125,7 +125,8 @@ def panel(auto, deliv, personal, desde=None, hasta=None, turno="Total", persona=
             cnt_role[(role, g, r[role].lower())] = cnt_role.get((role, g, r[role].lower()), 0) + 1
         tk = (r["caj"] + " · " + r["board"] + " · " + r["corr"]).lower()
         cnt_role[("trio", g, tk)] = cnt_role.get(("trio", g, tk), 0) + 1
-    for r in V:
+    for r in F:
+        if r["cumple"] is None: continue
         g = ctx(r); Sv[g] = Sv.get(g, 0) + r["L"]; Nv[g] = Nv.get(g, 0) + 1
     def loo(r, role, key):
         g = ctx(r); n_ = Ng[g] - cnt_role[(role, g, key.lower())]
@@ -155,7 +156,19 @@ def panel(auto, deliv, personal, desde=None, hasta=None, turno="Total", persona=
         comp = [dict(r, res=x) for r in todas for x in [loo(r, "trio", " · ".join(k))] if x is not None]
         if len(todas) >= minimo and len(comp) >= minimo and sum(r["K"] for r in todas) > 0: grupos.append((idx, k, comp, todas))
     res["trios"] = bayes(grupos)[:5]
-    days = sorted([(r["O"], r["i"], r) for r in F if in_range(r["fecha"]) and r["O"] is not None])[:5]
+    # Mejores días: cada día se compara con lo normal de SU día de la semana (todo el historial, sin incluirse a sí mismo)
+    dsum, dn = {}, {}
+    for r in F:
+        if r["O"] is not None:
+            w = r["fecha"].weekday(); dsum[w] = dsum.get(w, 0) + r["O"]; dn[w] = dn.get(w, 0) + 1
+    days = []
+    for r in F:
+        if r["O"] is None or not in_range(r["fecha"]): continue
+        w = r["fecha"].weekday()
+        if dn[w] - 1 <= 0: continue
+        dev = (r["O"] - dsum[w] / dn[w]) * dn[w] / (dn[w] - 1)
+        days.append((dev, r["i"], r))
+    days = sorted(days)[:5]
     res["dias_top"] = days
     if canal == "Delivery":
         for k in ("autos", "t", "pct", "turnos", "dias"): res[k] = "—"
