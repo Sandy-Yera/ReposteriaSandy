@@ -29,6 +29,7 @@ def filas(auto):
         L = None
         if not dup:
             if r["turno"] == "AM": L = J
+            elif cnt[(r["fecha"], "AM")] > 1: L = None     # AM repetido: el PM no se puede calcular
             elif K > 0: L = J if amA == 0 else (J * r["autos"] - amP) / K
         cumple = None if L is None or round(L) <= 0 else ("Sí" if round(L) < 240 else "No")
         O = J if (r["turno"] == "PM" and not dup) else None

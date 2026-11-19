@@ -1,14 +1,13 @@
 """Detecta referencias circulares reales. Agrupa por columna las filas de datos (8..fin) de las hojas de registro."""
 import re, sys
 from openpyxl import load_workbook
-from openpyxl.utils import column_index_from_string
+from openpyxl.utils import column_index_from_string, get_column_letter as gl
 wb = load_workbook(sys.argv[1])
 names = {n: v.attr_text for n, v in wb.defined_names.items()}
 GROUPED = {"Registro Auto": 8, "Registro Delivery": 8, "Calculos": 3}
 def node(sheet, col, row):
     if sheet in GROUPED and row >= GROUPED[sheet]: return f"{sheet}!{col}*"
     return f"{sheet}!{col}{row}"
-ref_re = re.compile(r"(?:'([^']+)'|([A-Za-z]+))?!?\$?([A-Z]{1,3})\$?(\d+)(?::\$?([A-Z]{1,3})\$?(\d+))?")
 tok = re.compile(r"(?:'[^']+'|[A-Za-z_]+)!\$?[A-Z]{1,3}\$?\d+(?::\$?[A-Z]{1,3}\$?\d+)?|\$?[A-Z]{1,3}\$?\d+(?::\$?[A-Z]{1,3}\$?\d+)?|[A-Za-z_][A-Za-z_0-9]*")
 def refs(sheet, f):
     f = re.sub(r'"[^"]*"', '""', f)
@@ -22,7 +21,6 @@ def refs(sheet, f):
         c1, r1 = m.group(3), int(m.group(4))
         c2, r2 = (m.group(5) or c1), int(m.group(6) or r1)
         for ci in range(column_index_from_string(c1), column_index_from_string(c2) + 1):
-            from openpyxl.utils import get_column_letter as gl
             col = gl(ci)
             if sh in GROUPED and r2 >= GROUPED[sh]:
                 out.add(f"{sh}!{col}*")

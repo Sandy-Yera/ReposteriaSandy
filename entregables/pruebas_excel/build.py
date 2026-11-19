@@ -72,6 +72,13 @@ def title(ws, text, sub, last_col, nav_col):
         ws.row_dimensions[3].height = 20
         merge(ws, f"B3:{L(last_col)}3", sub, f=font(10, c=MUTED), al=Alignment(vertical="center"))
 
+def dv(prompt=None, **k):
+    k.setdefault("showErrorMessage", True)
+    v = DataValidation(**k)
+    if prompt:
+        v.showInputMessage = True; v.promptTitle = prompt[0]; v.prompt = prompt[1]
+    return v
+
 UNLOCK = Protection(locked=False)
 def unlock(ws, *refs):
     for ref in refs:
@@ -105,6 +112,11 @@ def lvl(x):
     return (f'IF({s}<=0,"Revisar datos",IF({s}<60,"Excelencia máxima",IF({s}<120,"Excelencia",'
             f'IF({s}<180,"Muy bueno",IF({s}<240,"Cumple",IF({s}<300,"No cumple (alerta)","No cumple"))))))')
 
+def lvl_s(sec):
+    """Nivel a partir de segundos enteros ya calculados (columna aux_segReal)."""
+    return (f'IF({sec}<=0,"Revisar datos",IF({sec}<60,"Excelencia máxima",IF({sec}<120,"Excelencia",'
+            f'IF({sec}<180,"Muy bueno",IF({sec}<240,"Cumple",IF({sec}<300,"No cumple (alerta)","No cumple"))))))')
+
 def cf_time(ws, rng, first):
     s = f"ROUND({first}*86400,0)"
     ws.conditional_formatting.add(rng, FormulaRule(formula=[f'AND(ISNUMBER({first}),{s}>0,{s}<240)'], fill=fill(G_LT), font=Font(name=FONT, color=G_TX, bold=True), stopIfTrue=True))
@@ -123,6 +135,21 @@ RA = "'Registro Auto'"
 RD = "'Registro Delivery'"
 def ra(col): return f"{RA}!${col}${R0}:${col}${R1}"
 def rd(col): return f"{RD}!${col}${R0}:${col}${R1}"
+def rng(col): return f"${col}${R0}:${col}${R1}"
+
+def f_turno(c):
+    """Fórmula que normaliza un turno escrito a mano: 'AM'/'PM' (acepta am, a.m., 'PM '), '?' si es inválido, '' si está vacío."""
+    tx = f'UPPER(SUBSTITUTE(SUBSTITUTE(TRIM({c}),".","")," ",""))'
+    return f'=IF(ISBLANK({c}),"",IFERROR(IF(OR({tx}="AM",{tx}="PM"),{tx},"?"),"?"))'
+
+def f_fecha(c):
+    """Fórmula que devuelve la fecha como número entero si es una fecha real entre 2020 y 2099; si no, ''."""
+    return f'=IFERROR(IF(AND(ISNUMBER({c}),{c}>={FECHA_MIN},{c}<{FECHA_MAX}),INT({c}),""),"")'
+
+def dv_fecha(ejemplo, extra="", error_extra=""):
+    """Validación de fecha (2020-2099) con cartel de ayuda y mensaje de error con un ejemplo."""
+    return dv(("Fecha", f"Escríbela así: {ejemplo}{extra}"), type="date", operator="between", formula1=str(FECHA_MIN),
+              formula2=str(FECHA_MAX - 1), errorTitle="Fecha", error=f"Escribe la fecha así: {ejemplo}{error_extra}")
 
 # =====================================================================
 # INICIO
@@ -194,10 +221,15 @@ cols = [  # (letra, encabezado, ancho, tipo)
     ("O", "Tiempo del día", 11, "calc"), ("P", "Resultado del día", 19, "calc"), ("Q", "Observaciones", 40, "in"),
     ("R", "aux_prodSistema", 6, "aux"), ("S", "aux_trio", 6, "aux"), ("T", "aux_persona", 6, "aux"),
     ("U", "aux_enRango", 6, "aux"), ("V", "aux_valido", 6, "aux"), ("W", "aux_validoTurno", 6, "aux"),
-    ("X", "aux_kpi", 6, "aux"), ("Y", "aux_prodReal", 6, "aux"), ("Z", "aux_trioPrimero", 6, "aux"),
-    ("AA", "aux_trioN", 6, "aux"), ("AB", "aux_diaScore", 6, "aux"), ("AC", "aux_repetida", 6, "aux"),
+    ("X", "aux_kpi", 6, "aux"), ("Y", "aux_prodReal", 6, "aux"), ("Z", "aux_cumple", 6, "aux"),
+    ("AA", "aux_trioFiltrado", 6, "aux"), ("AB", "aux_diaScore", 6, "aux"), ("AC", "aux_repetida", 6, "aux"),
     ("AD", "aux_validoPersona", 6, "aux"), ("AE", "aux_autos", 6, "aux"), ("AF", "aux_turno", 6, "aux"),
-    ("AG", "aux_fecha", 6, "aux"), ("AH", "aux_nombresFuera", 6, "aux"),
+    ("AG", "aux_fecha", 6, "aux"), ("AH", "aux_nombresFuera", 6, "aux"), ("AI", "aux_clave", 6, "aux"),
+    ("AJ", "aux_amAutos", 6, "aux"), ("AK", "aux_amProd", 6, "aux"), ("AL", "aux_amFilas", 6, "aux"),
+    ("AM", "aux_segSistema", 6, "aux"), ("AN", "aux_segReal", 6, "aux"), ("AO", "aux_cajeroFiltrado", 6, "aux"),
+    ("AP", "aux_boardFiltrado", 6, "aux"), ("AQ", "aux_corredorFiltrado", 6, "aux"), ("AR", "aux_trioVez", 6, "aux"),
+    ("AS", "aux_trioTurnos", 6, "aux"), ("AT", "aux_trioAutos", 6, "aux"), ("AU", "aux_trioProd", 6, "aux"),
+    ("AV", "aux_trioCumple", 6, "aux"), ("AW", "aux_trioScore", 6, "aux"), ("AX", "aux_revisar", 6, "aux"),
 ]
 title(au, "Registro Auto", None, 17, 15)
 au.row_dimensions[3].height = 38
@@ -223,28 +255,27 @@ au["L7"].comment = Comment("AM = tiempo del sistema.\nPM = (tiempo día × autos
                            "Muestra el rendimiento real de cada turno.", "Registro")
 au["O7"].comment = Comment("Resultado final del día: lo que marca el sistema al cierre (fila PM).", "Registro")
 
-rng = lambda c: f"${c}${R0}:${c}${R1}"
 for r in range(R0, R1 + 1):
-    amA = f'SUMIFS({rng("AE")},{rng("AG")},AG{r},{rng("AF")},"AM")'
-    amP = f'SUMIFS({rng("R")},{rng("AG")},AG{r},{rng("AF")},"AM")'
-    s = f"ROUND(L{r}*86400,0)"
+    # Índice: clave numérica fecha*10+turno (1=AM, 2=PM). Atajo local: el AM del día suele estar en la fila de arriba.
+    amKey = f'AG{r}*10+1'
+    cond = f'AND(AF{r-1}="AM",AG{r-1}=AG{r})' if r > R0 else 'FALSE'
     hasT = f'OR(NOT(ISBLANK(H{r})),NOT(ISBLANK(I{r})))'
     hN = f'IF(ISBLANK(H{r}),0,--H{r})'
     iN = f'IF(ISBLANK(I{r}),0,--I{r})'
     X = f'IF(AND(ISNUMBER(H{r}),H{r}>0,H{r}<1),ROUND(H{r}*1440,0),IF(OR({hN}<0,{iN}<0,{hN}<>INT({hN})),NA(),{hN}*60+{iN}))'
-    tx = f'UPPER(SUBSTITUTE(SUBSTITUTE(TRIM(C{r}),".","")," ",""))'
+    pmOnly = f'OR(AF{r}<>"PM",AG{r}="")'
     f = {
-        "J": f'=IF(NOT({hasT}),"",IFERROR(IF({X}>{MAX_SEG},"",{X}/86400),""))',
-        "K": f'=IF(OR(AG{r}="",AF{r}="",AF{r}="?",AE{r}=""),"",IF(AF{r}="AM",AE{r},AE{r}-{amA}))',
-        "L": f'=IF(OR(K{r}="",J{r}="",AC{r}>1),"",IF(AF{r}="AM",J{r},IF(K{r}<=0,"",IF({amA}=0,J{r},(R{r}-{amP})/K{r}))))',
+        "J": f'=IF(AM{r}="","",IF(AM{r}>{MAX_SEG},"",AM{r}/86400))',
+        "K": f'=IF(OR(AG{r}="",AF{r}="",AF{r}="?",AE{r}=""),"",IF(AF{r}="AM",AE{r},AE{r}-AJ{r}))',
+        "L": f'=IF(OR(K{r}="",J{r}="",AC{r}>1,N(AL{r})>1),"",IF(AF{r}="AM",J{r},IF(K{r}<=0,"",IF(AJ{r}=0,J{r},(R{r}-AK{r})/K{r}))))',
         "M": (f'=IF(COUNTA(B{r}:I{r})=0,"",IF(ISBLANK(B{r}),"Revisar: falta fecha",IF(AG{r}="","Revisar: fecha no válida",'
-              f'IF(AF{r}="","Revisar: falta turno",IF(AF{r}="?","Revisar: turno no válido (AM o PM)",IF(AC{r}>1,"Revisar: fila repetida",'
+              f'IF(AF{r}="","Revisar: falta turno",IF(AF{r}="?","Revisar: turno no válido (AM o PM)",IF(AC{r}>1,"Revisar: fila repetida",IF(N(AL{r})>1,"Revisar: el AM de este día está repetido",'
               f'IF(AND(NOT(ISBLANK(G{r})),AE{r}=""),"Revisar: autos no válidos",IF(AND({hasT},J{r}=""),"Revisar: tiempo no válido",'
               f'IF(OR(AE{r}="",J{r}=""),"Falta autos o tiempo",IF(AND(AF{r}="PM",K{r}<=0),"Revisar: autos del día menores que AM",'
-              f'IF(L{r}="","Revisar datos",{lvl("L"+str(r))})))))))))))'),
-        "N": f'=IF(L{r}="","",IF({s}<=0,"",IF({s}<240,"Sí","No")))',
+              f'IF(L{r}="","Revisar datos",{lvl_s("AN"+str(r))}))))))))))))'),
+        "N": f'=IF(AN{r}="","",IF(AN{r}<=0,"",IF(AN{r}<240,"Sí","No")))',
         "O": f'=IF(OR(AF{r}<>"PM",J{r}="",AC{r}>1,AG{r}=""),"",J{r})',
-        "P": f'=IF(O{r}="","",IF(ROUND(O{r}*86400,0)<240,"Cumplió","Falló")&IF(COUNTIFS({rng("AG")},AG{r},{rng("AF")},"AM")=0," (solo PM)",""))',
+        "P": f'=IF(O{r}="","",IF(ROUND(O{r}*86400,0)<240,"Cumplió","Falló")&IF(AL{r}=0," (solo PM)",""))',
         "R": f'=IF(OR(J{r}="",AE{r}=""),0,J{r}*AE{r})',
         "S": f'=IFERROR(IF(OR(D{r}="",E{r}="",F{r}=""),"",D{r}&" · "&E{r}&" · "&F{r}),"")',
         "T": f'=IFERROR(IF(fPersona="Todas",1,IF(OR(TRIM(D{r})=fPersona,TRIM(E{r})=fPersona,TRIM(F{r})=fPersona),1,0)),0)',
@@ -253,15 +284,31 @@ for r in range(R0, R1 + 1):
         "W": f'=IF(AND(V{r}=1,OR(fTurno="Total",AF{r}=fTurno)),1,0)',
         "X": f'=W{r}*T{r}',
         "Y": f'=IF(V{r}=1,K{r}*L{r},0)',
-        "Z": f'=IF(AND(W{r}=1,S{r}<>""),IF(COUNTIFS(S${R0}:S{r},S{r},W${R0}:W{r},1)=1,1,0),0)',
-        "AA": f'=IF(Z{r}=1,COUNTIF(Z${R0}:Z{r},1),"")',
+        "Z": f'=IF(N{r}="Sí",1,0)',
+        "AA": f'=IF(AND(W{r}=1,S{r}<>""),S{r},"")',
         "AB": f'=IF(AND(U{r}=1,O{r}<>""),O{r}+ROW()/10000000000,"")',
-        "AC": f'=IF(OR(AG{r}="",AF{r}="",AF{r}="?"),0,COUNTIFS({rng("AG")},AG{r},{rng("AF")},AF{r}))',
+        "AC": f'=IF(AI{r}="",0,COUNTIF({rng("AI")},AI{r}))',
         "AD": f'=V{r}*T{r}',
         "AE": f'=IF(ISBLANK(G{r}),"",IFERROR(IF(OR(--G{r}<0,--G{r}<>INT(--G{r}),--G{r}>{MAX_AUTOS}),"",--G{r}),""))',
-        "AF": f'=IF(ISBLANK(C{r}),"",IFERROR(IF(OR({tx}="AM",{tx}="PM"),{tx},"?"),"?"))',
-        "AG": f'=IFERROR(IF(AND(ISNUMBER(B{r}),B{r}>={FECHA_MIN},B{r}<{FECHA_MAX}),INT(B{r}),""),"")',
+        "AF": f_turno(f"C{r}"),
+        "AG": f_fecha(f"B{r}"),
         "AH": "=" + "+".join(f'IFERROR(AND(ISTEXT({c}{r}),COUNTIF(Personal!$B$8:$B$107,{c}{r})=0)*1,0)' for c in "DEF"),
+        "AI": f'=IF(OR(AG{r}="",AF{r}="",AF{r}="?"),"",AG{r}*10+IF(AF{r}="AM",1,2))',
+        "AJ": f'=IF({pmOnly},"",IF(AL{r}=1,IF({cond},N(AE{r-1 if r > R0 else r}),SUMIF({rng("AI")},{amKey},{rng("AE")})),0))',
+        "AK": f'=IF({pmOnly},"",IF(AL{r}=1,IF({cond},N(R{r-1 if r > R0 else r}),SUMIF({rng("AI")},{amKey},{rng("R")})),0))',
+        "AL": f'=IF({pmOnly},"",COUNTIF({rng("AI")},{amKey}))',
+        "AM": f'=IF(NOT({hasT}),"",IFERROR({X},""))',
+        "AN": f'=IF(L{r}="","",ROUND(L{r}*86400,0))',
+        "AO": f'=IF(W{r}=1,IFERROR(IF(ISTEXT(D{r}),D{r},""),""),"")',
+        "AP": f'=IF(W{r}=1,IFERROR(IF(ISTEXT(E{r}),E{r},""),""),"")',
+        "AQ": f'=IF(W{r}=1,IFERROR(IF(ISTEXT(F{r}),F{r},""),""),"")',
+        "AR": f'=IF(AA{r}="","",COUNTIF(AA${R0}:AA{r},AA{r}))',
+        "AS": f'=IF(AR{r}=fMin,COUNTIF({rng("AA")},AA{r}),"")',
+        "AT": f'=IF(AS{r}="","",SUMIF({rng("AA")},AA{r},{rng("K")}))',
+        "AU": f'=IF(AS{r}="","",SUMIF({rng("AA")},AA{r},{rng("Y")}))',
+        "AV": f'=IF(AS{r}="","",SUMIF({rng("AA")},AA{r},{rng("Z")}))',
+        "AW": f'=IF(AS{r}="","",IF(AT{r}>0,AU{r}/AT{r}+MATCH(AA{r},{rng("AA")},0)/1000000000000,""))',
+        "AX": f'=IF(OR(LEFT(M{r},7)="Revisar",LEFT(M{r},5)="Falta"),1,0)',
     }
     au.row_dimensions[r].height = 22
     for letter, _, _, kind in cols:
@@ -276,7 +323,7 @@ for r in range(R0, R1 + 1):
     au[f"B{r}"].number_format = DATE
     for c_ in "JLO": au[f"{c_}{r}"].number_format = TIME
     au[f"Q{r}"].alignment = Alignment(horizontal="left", vertical="center", wrap_text=False, indent=1)
-add_table(au, "TablaAuto", f"B7:AH{R1}")
+add_table(au, "TablaAuto", f"B7:AX{R1}")
 au.freeze_panes = "D8"
 
 ejemplos_auto = [
@@ -286,18 +333,12 @@ ejemplos_auto = [
     (dt.date(2026, 11, 17), "PM", "Ana", "Elena", "Carla", 200, 4, 0, "EJEMPLO – borrar · AM falló, PM lo logró, pero el día falló"),
 ]
 
-def dv(prompt=None, **k):
-    k.setdefault("showErrorMessage", True)
-    v = DataValidation(**k)
-    if prompt:
-        v.showInputMessage = True; v.promptTitle = prompt[0]; v.prompt = prompt[1]
-    return v
 v_turno = dv(("Turno", "Elige AM o PM con la flechita."), type="list", formula1='"AM,PM"', errorTitle="Turno", error="Elige AM o PM con la flechita de la celda.")
 v_pers = dv(("Nombre", "Elige con la flechita. Si no aparece, agrégalo en la hoja Personal."), type="list", formula1="ListaPersonal", errorTitle="Nombre", error="Elige un nombre con la flechita. Si la persona no está, agrégala primero en la hoja Personal.")
 v_autos = dv(("Autos", "El número de autos que marca el sistema. Solo números, ej: 120."), type="whole", operator="between", formula1="0", formula2=str(MAX_AUTOS), errorTitle="Autos", error="Escribe solo el número de autos, sin letras. Ejemplo: 120")
 v_min = dv(("Minutos", "Solo los minutos. Para 3:25 escribe 3 aquí y 25 en Seg."), type="whole", operator="between", formula1="0", formula2="19", errorTitle="Minutos", error="Escribe solo los minutos (0 a 19). Para 3:25 escribe 3 aquí y 25 en la casilla de al lado.")
 v_seg = dv(("Segundos", "Solo los segundos. Para 3:25 escribe 25 aquí."), type="whole", operator="between", formula1="0", formula2="59", errorTitle="Segundos", error="Escribe solo los segundos (0 a 59).")
-v_fecha = dv(("Fecha", "Escríbela así: 16-11-2026"), type="date", operator="between", formula1=str(FECHA_MIN), formula2=str(FECHA_MAX - 1), errorTitle="Fecha", error="Escribe la fecha así: 16-11-2026")
+v_fecha = dv_fecha("16-11-2026")
 for v, c_ in [(v_turno, "C"), (v_pers, "D"), (v_pers, "E"), (v_pers, "F"), (v_autos, "G"), (v_min, "H"), (v_seg, "I"), (v_fecha, "B")]:
     v.add(f"{c_}{R0}:{c_}{R1}")
 for v in {id(x): x for x in [v_turno, v_pers, v_autos, v_min, v_seg, v_fecha]}.values():
@@ -324,7 +365,8 @@ de = sheet("Registro Delivery")
 dcols = [("B", "Fecha", 13, "in"), ("C", "Turno", 9, "in"), ("D", "Enlace a la foto (pega la URL de Drive)", 42, "in"),
          ("E", "Abrir", 13, "calc"), ("F", "¿Concuerdan?", 13, "in"), ("G", "Estado", 30, "calc"), ("H", "Observaciones", 40, "in"),
          ("I", "aux_valida", 6, "aux"), ("J", "aux_enRango", 6, "aux"), ("K", "aux_enRangoTurno", 6, "aux"),
-         ("L", "aux_concuerda", 6, "aux"), ("M", "aux_turno", 6, "aux"), ("N", "aux_fecha", 6, "aux"), ("O", "aux_repetida", 6, "aux")]
+         ("L", "aux_concuerda", 6, "aux"), ("M", "aux_turno", 6, "aux"), ("N", "aux_fecha", 6, "aux"), ("O", "aux_repetida", 6, "aux"),
+         ("P", "aux_clave", 6, "aux")]
 title(de, "Registro Delivery", None, 8, 7)
 au_note = ("Una fila por turno. Sube la foto de las comandas junto a la tableta a Drive, copia su enlace y pégalo en la columna "
            "\"Enlace\". Revisa a mano si coinciden y marca Sí o No. La columna Estado te dice si la fila quedó bien.")
@@ -341,9 +383,7 @@ header(de, 7, 2, [c[1] for c in dcols])
 for letter, _, w, kind in dcols:
     de.column_dimensions[letter].width = w
     if kind == "aux": de.column_dimensions[letter].hidden = True
-drng = lambda c: f"${c}${R0}:${c}${R1}"
 for r in range(R0, R1 + 1):
-    tx = f'UPPER(SUBSTITUTE(SUBSTITUTE(TRIM(C{r}),".","")," ",""))'
     f = {"E": f'=IF(ISBLANK(D{r}),"",IFERROR(IF(LEFT(TRIM(D{r}),4)="http",HYPERLINK(TRIM(D{r}),"Abrir foto ↗"),"Enlace no válido"),"Enlace no válido"))',
          "G": (f'=IF(COUNTA(B{r}:D{r},F{r})=0,"",IF(ISBLANK(B{r}),"Revisar: falta fecha",IF(N{r}="","Revisar: fecha no válida",'
                f'IF(M{r}="","Revisar: falta turno",IF(M{r}="?","Revisar: turno no válido (AM o PM)",IF(O{r}>1,"Revisar: fila repetida",'
@@ -353,9 +393,10 @@ for r in range(R0, R1 + 1):
          "J": f'=IF(I{r}=1,IF(AND(N{r}>=fDesde,N{r}<=fHasta),1,0),0)',
          "K": f'=IF(AND(J{r}=1,OR(fTurno="Total",M{r}=fTurno)),1,0)',
          "L": f'=IF(ISBLANK(F{r}),"",IFERROR(IF(OR(TRIM(F{r})="Sí",TRIM(F{r})="Si"),"Sí",IF(TRIM(F{r})="No","No","?")),"?"))',
-         "M": f'=IF(ISBLANK(C{r}),"",IFERROR(IF(OR({tx}="AM",{tx}="PM"),{tx},"?"),"?"))',
-         "N": f'=IFERROR(IF(AND(ISNUMBER(B{r}),B{r}>={FECHA_MIN},B{r}<{FECHA_MAX}),INT(B{r}),""),"")',
-         "O": f'=IF(OR(N{r}="",M{r}="",M{r}="?"),0,COUNTIFS({drng("N")},N{r},{drng("M")},M{r}))'}
+         "M": f_turno(f"C{r}"),
+         "N": f_fecha(f"B{r}"),
+         "O": f'=IF(P{r}="",0,COUNTIF({rng("P")},P{r}))',
+         "P": f'=IF(OR(N{r}="",M{r}="",M{r}="?"),"",N{r}*10+IF(M{r}="AM",1,2))'}
     de.row_dimensions[r].height = 22
     for letter, _, _, kind in dcols:
         c = de[f"{letter}{r}"]
@@ -366,11 +407,11 @@ for r in range(R0, R1 + 1):
         if kind == "in": c.fill = fill(INPUT); c.protection = UNLOCK
         elif kind == "calc": c.fill = fill(CALC)
     de[f"B{r}"].number_format = DATE
-add_table(de, "TablaDelivery", f"B7:O{R1}")
+add_table(de, "TablaDelivery", f"B7:P{R1}")
 de.freeze_panes = "D8"
 v_turno2 = dv(("Turno", "Elige AM o PM con la flechita."), type="list", formula1='"AM,PM"', errorTitle="Turno", error="Elige AM o PM con la flechita de la celda."); v_turno2.add(f"C{R0}:C{R1}")
 v_sn = dv(("¿Concuerdan?", "Elige Sí o No con la flechita."), type="list", formula1='"Sí,No"', errorTitle="¿Concuerdan?", error="Elige Sí o No con la flechita de la celda."); v_sn.add(f"F{R0}:F{R1}")
-v_fecha2 = dv(("Fecha", "Escríbela así: 16-11-2026"), type="date", operator="between", formula1=str(FECHA_MIN), formula2=str(FECHA_MAX - 1), errorTitle="Fecha", error="Escribe la fecha así: 16-11-2026"); v_fecha2.add(f"B{R0}:B{R1}")
+v_fecha2 = dv_fecha("16-11-2026"); v_fecha2.add(f"B{R0}:B{R1}")
 v_link = dv(("Enlace", "Pega aquí el enlace de Drive (Ctrl + V) y presiona Enter."), type="textLength", operator="greaterThan", formula1="0", showErrorMessage=False); v_link.add(f"D{R0}:D{R1}")
 for v in (v_turno2, v_sn, v_fecha2, v_link): de.add_data_validation(v)
 cf_text(de, f"F{R0}:F{R1}", f"$L{R0}", [('{c}="Sí"', G_LT, G_TX), ('{c}="No"', RD_F, RD_T), ('{c}="?"', OR_F, OR_T)])
@@ -405,7 +446,7 @@ for k in range(N_FR):
     c.hyperlink = Hyperlink(ref=ref, location=f"'Horarios'!B{s}", display=c.value)
     c.font = font(9, c=ACC, u="single"); c.alignment = CENTER
 for rr in range(6, 12): ho.row_dimensions[rr].height = 18
-v_fecha3 = dv(("Fecha", "Escríbela así: 10-11-2026"), type="date", operator="between", formula1=str(FECHA_MIN), formula2=str(FECHA_MAX - 1), errorTitle="Fecha", error="Escribe la fecha así: 10-11-2026")
+v_fecha3 = dv_fecha("10-11-2026")
 for k in range(N_FR):
     s = FR0 + k * FR_H
     ho.row_dimensions[s].height = 26
@@ -460,7 +501,7 @@ for r in range(7, RP1 + 1):
 add_table(rp, "TablaReportes", f"B6:G{RP1}")
 rp.freeze_panes = "B7"
 v_tipo = dv(("Tipo", "Elige Mensual o Quincenal con la flechita."), type="list", formula1='"Mensual,Quincenal"', errorTitle="Tipo", error="Elige Mensual o Quincenal con la flechita."); v_tipo.add(f"D7:D{RP1}")
-v_rf = dv(("Fecha", "Escríbela así: 01-11-2026"), type="date", operator="between", formula1=str(FECHA_MIN), formula2=str(FECHA_MAX - 1), errorTitle="Fecha", error="Escribe la fecha así: 01-11-2026"); v_rf.add(f"B7:C{RP1}")
+v_rf = dv_fecha("01-11-2026"); v_rf.add(f"B7:C{RP1}")
 rp.add_data_validation(v_tipo); rp.add_data_validation(v_rf)
 protect(rp)
 ejemplos_rep = [
@@ -523,7 +564,7 @@ for i in range(100):
 wb.defined_names["ListaFiltroPersona"] = DefinedName("ListaFiltroPersona", attr_text="Calculos!$D$2:$D$102")
 
 # bloques de personas por estación: nombre, n, autos, prod, t, pct, score
-roles = [("Cajero", "D", 6), ("Board", "E", 14), ("Corredor", "F", 22)]
+roles = [("Cajero", "AO", 6), ("Board", "AP", 14), ("Corredor", "AQ", 22)]
 for role, rc, c0 in roles:
     cl = [L(c0 + j) for j in range(7)]
     for j, h in enumerate(["nombre", "turnos", "autos", "prod", "tiempo", "pct", "score"]):
@@ -531,37 +572,13 @@ for role, rc, c0 in roles:
     for i in range(100):
         r = 3 + i
         nm, n, au_, pr, t, pc, sc = [f"{x}{r}" for x in cl]
-        crit = f"{ra(rc)},{nm},{ra('W')},1"
         ca[nm] = f'=Calculos!$D${3+i}'
-        ca[n] = f'=IF({nm}="",0,COUNTIFS({crit}))'
-        ca[au_] = f'=IF({n}=0,0,SUMIFS({ra("K")},{crit}))'
-        ca[pr] = f'=IF({n}=0,0,SUMIFS({ra("Y")},{crit}))'
+        ca[n] = f'=IF({nm}="",0,COUNTIF({ra(rc)},{nm}))'
+        ca[au_] = f'=IF({n}=0,0,SUMIF({ra(rc)},{nm},{ra("K")}))'
+        ca[pr] = f'=IF({n}=0,0,SUMIF({ra(rc)},{nm},{ra("Y")}))'
         ca[t] = f'=IF({au_}>0,{pr}/{au_},"")'
-        ca[pc] = f'=IF({n}=0,"",COUNTIFS({crit},{ra("N")},"Sí")/{n})'
-        ca[sc] = f'=IF(AND({n}>=fMin,{t}<>""),{t}+ROW()/10000000000,"")'
-
-# tríos: k, pos, key, caj, board, corr, n, autos, prod, t, pct, score  (AD..AO)
-T0 = 30
-tc = [L(T0 + j) for j in range(12)]
-for j, h in enumerate(["k", "pos", "trio", "cajero", "board", "corredor", "turnos", "autos", "prod", "tiempo", "pct", "score"]):
-    put(ca, f"{tc[j]}1", f"trio_{h}")
-N_TRIO = 400
-for i in range(N_TRIO):
-    r = 3 + i
-    k, pos, key, cj, bo, co, n, aut, pr, t, pc, sc = [f"{x}{r}" for x in tc]
-    ca[k] = i + 1
-    ca[pos] = f'=IFERROR(MATCH({k},{ra("AA")},0),"")'
-    ca[key] = f'=IF({pos}="","",INDEX({ra("S")},{pos}))'
-    ca[cj] = f'=IF({pos}="","",INDEX({ra("D")},{pos}))'
-    ca[bo] = f'=IF({pos}="","",INDEX({ra("E")},{pos}))'
-    ca[co] = f'=IF({pos}="","",INDEX({ra("F")},{pos}))'
-    crit = f"{ra('S')},{key},{ra('W')},1"
-    ca[n] = f'=IF({key}="",0,COUNTIFS({crit}))'
-    ca[aut] = f'=IF({n}=0,0,SUMIFS({ra("K")},{crit}))'
-    ca[pr] = f'=IF({n}=0,0,SUMIFS({ra("Y")},{crit}))'
-    ca[t] = f'=IF({aut}>0,{pr}/{aut},"")'
-    ca[pc] = f'=IF({n}=0,"",COUNTIFS({crit},{ra("N")},"Sí")/{n})'
-    ca[sc] = f'=IF(AND({n}>=fMin,{t}<>""),{t}+ROW()/10000000000,"")'
+        ca[pc] = f'=IF({n}=0,"",SUMIF({ra(rc)},{nm},{ra("Z")})/{n})'
+        ca[sc] = f'=IF(AND({n}>=fMin,{t}<>""),{t}+ROW()/1000000000000,"")'
 
 # =====================================================================
 # PANEL
@@ -572,7 +589,6 @@ title(pan, "Panel de rendimiento", "Todo se actualiza solo. Solo se escriben los
 
 # filtros
 pan.row_dimensions[4].height = 30
-RA_DF = f"{RA}!$D${R0}:$F${R1}"
 PB = f"Personal!$B${P0}:$B${P1}"
 aviso = ('=IFERROR(IF(AND(NOT(ISBLANK(Panel!$B$7)),NOT(ISNUMBER(Panel!$B$7))),"Desde no es una fecha (se ignora). ",""),"Desde no es una fecha (se ignora). ")'
          '&IFERROR(IF(AND(NOT(ISBLANK(Panel!$D$7)),NOT(ISNUMBER(Panel!$D$7))),"Hasta no es una fecha (se ignora). ",""),"Hasta no es una fecha (se ignora). ")'
@@ -581,7 +597,7 @@ aviso = ('=IFERROR(IF(AND(NOT(ISBLANK(Panel!$B$7)),NOT(ISNUMBER(Panel!$B$7))),"D
          '&IFERROR(IF(AND(NOT(ISBLANK(Panel!$H$7)),fCanal="Ambos",UPPER(TRIM(Panel!$H$7))<>"AMBOS"),"Canal no válido: se muestra Ambos. ",""),"Canal no válido: se muestra Ambos. ")'
          f'&IFERROR(IF(AND(fPersona<>"Todas",COUNTIF({PB},fPersona)=0),"La persona elegida no está en Personal. ",""),"")'
          '&IFERROR(IF(AND(NOT(ISBLANK(Panel!$L$7)),NOT(AND(ISNUMBER(Panel!$L$7),Panel!$L$7>=1))),"Mín. turnos no válido: se usa 3. ",""),"Mín. turnos no válido: se usa 3. ")'
-         f'&IF(COUNTIF({ra("M")},"Revisar*")+COUNTIF({ra("M")},"Falta*")>0,COUNTIF({ra("M")},"Revisar*")+COUNTIF({ra("M")},"Falta*")&" fila(s) de Registro Auto por revisar o completar (columna Nivel). ","")'
+         f'&IF(SUM({ra("AX")})>0,SUM({ra("AX")})&" fila(s) de Registro Auto por revisar o completar (columna Nivel). ","")'
          f'&IF(COUNTIF({rd("G")},"Revisar*")+COUNTIF({rd("G")},"Falta*")>0,COUNTIF({rd("G")},"Revisar*")+COUNTIF({rd("G")},"Falta*")&" fila(s) de Registro Delivery por revisar (columna Estado). ","")'
          f'&IF(SUM({ra("AH")})>0,SUM({ra("AH")})&" nombre(s) en Registro Auto no están en Personal (en naranja). ","")'
          '&IF(SUM(Calculos!$E$3:$E$102)>0,"Hay nombres repetidos en Personal (en naranja). ","")'
@@ -604,7 +620,7 @@ for a, b, lab in filtros:
 pan["B7"].number_format = DATE; pan["D7"].number_format = DATE
 pan["F7"] = "Total"; pan["H7"] = "Ambos"; pan["J7"] = "Todas"; pan["L7"] = 3
 unlock(pan, "B7:M7")
-pv = [dv(("Fecha", "Escríbela así: 16-11-2026. Vacío = sin límite."), type="date", operator="between", formula1=str(FECHA_MIN), formula2=str(FECHA_MAX - 1), errorTitle="Fecha", error="Escribe la fecha así: 16-11-2026, o déjala vacía."),
+pv = [dv_fecha("16-11-2026", ". Vacío = sin límite.", ", o déjala vacía."),
       dv(("Turno", "Elige AM, PM o Total con la flechita."), type="list", formula1='"AM,PM,Total"', errorTitle="Turno", error="Elige AM, PM o Total con la flechita."),
       dv(("Canal", "Elige Auto, Delivery o Ambos con la flechita."), type="list", formula1='"Auto,Delivery,Ambos"', errorTitle="Canal", error="Elige Auto, Delivery o Ambos con la flechita."),
       dv(("Persona", "Elige un nombre o Todas con la flechita."), type="list", formula1="ListaFiltroPersona", errorTitle="Persona", error="Elige un nombre de la lista o Todas."),
@@ -643,8 +659,8 @@ c_autos = card(10, 2, "AUTOS ATENDIDOS", f'=IF({AUTO_OK},SUMIFS({K_},{X},1),"—
                f'=IF({AUTO_OK},"Turno: "&fTurno&" · Persona: "&fPersona,"Canal Auto oculto")')
 c_t = card(10, 5, "TIEMPO PROMEDIO REAL", f'=IF({AUTO_OK},IFERROR({auto_t},"—"),"—")', TIME,
            '="Ponderado por autos · meta bajo 4:00"')
-c_pct = card(10, 8, "TURNOS AUTO DENTRO DE LA META", f'=IF({AUTO_OK},IFERROR(COUNTIFS({X},1,{N_},"Sí")/COUNTIFS({X},1),"—"),"—")', "0%",
-             f'=IF({AUTO_OK},COUNTIFS({X},1,{N_},"Sí")&" de "&COUNTIFS({X},1)&" turnos bajo 4:00","")')
+c_pct = card(10, 8, "TURNOS AUTO DENTRO DE LA META", f'=IF({AUTO_OK},IFERROR(SUMIF({X},1,{ra("Z")})/COUNTIFS({X},1),"—"),"—")', "0%",
+             f'=IF({AUTO_OK},SUMIF({X},1,{ra("Z")})&" de "&COUNTIFS({X},1)&" turnos bajo 4:00","")')
 c_del = card(10, 11, "DELIVERY QUE CONCUERDA", f'=IF({DEL_OK},IFERROR(COUNTIFS({d_turn},1,{rd("L")},"Sí")/(COUNTIFS({d_turn},1,{rd("L")},"Sí")+COUNTIFS({d_turn},1,{rd("L")},"No")),"—"),"—")', "0%",
              f'=IF({DEL_OK},COUNTIFS({d_turn},1,{rd("L")},"Sí")&" de "&(COUNTIFS({d_turn},1,{rd("L")},"Sí")+COUNTIFS({d_turn},1,{rd("L")},"No"))&" turnos revisados","Canal Delivery oculto")')
 c_dias = card(15, 2, "DÍAS QUE CUMPLIERON (RESULTADO FINAL)", f'=IF({AUTO_OK},IFERROR(COUNTIFS({ra("U")},1,{ra("P")},"Cumplió*")/COUNTIFS({ra("U")},1,{ra("P")},"?*"),"—"),"—")', "0%",
@@ -679,7 +695,7 @@ rows_cmp = [
     ("Autos atendidos", lambda t: f'=IF({AUTO_OK},SUMIFS({K_},{crit(t)}),"—")', "#,##0"),
     ("Tiempo promedio real", lambda t: f'=IF({AUTO_OK},IFERROR(SUMIFS({Y_},{crit(t)})/SUMIFS({K_},{crit(t)}),"—"),"—")', TIME),
     ("Nivel", None, None),
-    ("Turnos dentro de la meta", lambda t: f'=IF({AUTO_OK},IFERROR(COUNTIFS({crit(t)},{N_},"Sí")/COUNTIFS({crit(t)}),"—"),"—")', "0%"),
+    ("Turnos dentro de la meta", lambda t: f'=IF({AUTO_OK},IFERROR(SUMIFS({ra("Z")},{crit(t)})/COUNTIFS({crit(t)}),"—"),"—")', "0%"),
     ("Turnos auto registrados", lambda t: f'=IF({AUTO_OK},COUNTIFS({crit(t)}),"—")', "0"),
     ("Delivery que concuerda", lambda t: f'=IF({DEL_OK},IFERROR(COUNTIFS({rd("J")},1,{rd("M")},"{t}",{rd("L")},"Sí")/(COUNTIFS({rd("J")},1,{rd("M")},"{t}",{rd("L")},"Sí")+COUNTIFS({rd("J")},1,{rd("M")},"{t}",{rd("L")},"No")),"—"),"—")', "0%"),
 ]
@@ -739,18 +755,18 @@ heads = [("B", "B", "#"), ("C", "D", "Cajero"), ("E", "F", "Board"), ("G", "H", 
 for a, b, h in heads:
     if a != b: merge(pan, f"{a}{r}:{b}{r}", h, f=font(10, True, "FFFFFF"), fl=fill(ACC), al=CENTER)
     else: put(pan, f"{a}{r}", h, f=font(10, True, "FFFFFF"), fl=fill(ACC), al=CENTER)
-tr = lambda j: f"Calculos!${tc[j]}$3:${tc[j]}${2+N_TRIO}"
+TS = ra("AW")
 for k in range(1, 6):
     rr = r + k
     pan.row_dimensions[rr].height = 22
-    m = f"MATCH(SMALL({tr(11)},{k}),{tr(11)},0)"
-    vals = [("B", "B", f'=IFERROR(INDEX({tr(0)},{m}),IF({k}=1,"—",""))', None),
-            ("C", "D", f'=IFERROR(INDEX({tr(3)},{m}),IF({k}=1,"Sin datos suficientes",""))', None),
-            ("E", "F", f'=IFERROR(INDEX({tr(4)},{m}),"")', None), ("G", "H", f'=IFERROR(INDEX({tr(5)},{m}),"")', None),
-            ("I", "I", f'=IFERROR(INDEX({tr(6)},{m}),"")', "0"), ("J", "K", f'=IFERROR(INDEX({tr(9)},{m}),"")', TIME),
-            ("L", "M", f'=IFERROR(INDEX({tr(10)},{m}),"")', "0%")]
+    m = f"MATCH(SMALL({TS},{k}),{TS},0)"
+    vals = [("B", "B", f'=IF(ISNUMBER(SMALL({TS},{k})),{k},"")', None),
+            ("C", "D", f'=IFERROR(INDEX({ra("D")},{m}),IF({k}=1,"Sin datos suficientes",""))', None),
+            ("E", "F", f'=IFERROR(INDEX({ra("E")},{m}),"")', None), ("G", "H", f'=IFERROR(INDEX({ra("F")},{m}),"")', None),
+            ("I", "I", f'=IFERROR(INDEX({ra("AS")},{m}),"")', "0"),
+            ("J", "K", f'=IFERROR(INDEX({ra("AU")},{m})/INDEX({ra("AT")},{m}),"")', TIME),
+            ("L", "M", f'=IFERROR(INDEX({ra("AV")},{m})/INDEX({ra("AS")},{m}),"")', "0%")]
     for a, b, v, nf in vals:
-        if a == "B": v = f'=IF(ISNUMBER(SMALL({tr(11)},{k})),{k},"")'
         if a != b: pan.merge_cells(f"{a}{rr}:{b}{rr}")
         put(pan, f"{a}{rr}", v, f=font(10, a in "BJ"), al=CENTER, nf=nf, bd=BOT)
         pan[f"{b}{rr}"].border = BOT
@@ -776,7 +792,7 @@ for k in range(1, 6):
     vals = [("B", "B", f'=IF(ISNUMBER(SMALL({DS},{k})),{k},"")', None),
             ("C", "D", f'=IFERROR({fecha},IF({k}=1,"Sin datos",""))', DATE),
             ("E", "F", f'=IFERROR(INDEX({ra("O")},{m}),"")', TIME),
-            ("G", "H", f'=IFERROR(IF(COUNTIFS({ra("AG")},{fecha},{C_},"AM",{N_},"?*")=0,"—",SUMIFS({ra("L")},{ra("AG")},{fecha},{C_},"AM")),"")', TIME),
+            ("G", "H", f'=IFERROR(IF(COUNTIFS({ra("AI")},{fecha}*10+1,{N_},"?*")=0,"—",SUMIF({ra("AI")},{fecha}*10+1,{ra("L")})),"")', TIME),
             ("I", "J", f'=IFERROR(IF(INDEX({ra("L")},{m})="","—",INDEX({ra("L")},{m})),"")', TIME),
             ("K", "K", f'=IFERROR(INDEX({ra("G")},{m}),"")', "#,##0"),
             ("L", "M", f'=IFERROR(INDEX({ra("P")},{m}),"")', None)]
@@ -856,6 +872,7 @@ bloques = [
         "Revisar: tiempo no válido → minutos y segundos por separado, solo números. Más de 20 minutos se considera un error de escritura (ej. 325 en vez de 3 y 25).",
         "Revisar: fila repetida → hay dos filas con la misma fecha y turno. Borra la que sobra. Pasa también si anotaste el PM con la fecha del día siguiente.",
         "Revisar: autos del día menores que AM → en la fila PM va el total del día que marca el sistema, no solo los autos de PM.",
+        "Revisar: el AM de este día está repetido → la fila PM no puede calcular su tiempo real hasta que borres el AM que sobra.",
         "Falta autos o tiempo → la fila está a medias: completa lo que falta.",
         "Una fila marcada con Revisar o Falta no cuenta en el Panel hasta que se corrige. Al corregirla, vuelve a contar sola.",
     ]),
