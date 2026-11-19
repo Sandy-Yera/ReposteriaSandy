@@ -139,7 +139,7 @@ Generador del archivo `entregables/Registro_Rendimiento_Auto_Delivery.xlsx` y su
 ### lvl_s
 - Ubicación: entregables/pruebas_excel/build.py
 - Qué hace: igual que `lvl`, pero a partir de segundos enteros ya calculados.
-- Cómo funciona: lo usa la columna Nivel con `aux_segReal`, para no repetir el redondeo seis veces por fila.
+- Cómo funciona: lo usa la columna Nivel con `aux_segReal`, para no repetir el redondeo seis veces por fila. Nivel le agrega DUDOSO cuando corresponde.
 
 ### cf_time
 - Ubicación: entregables/pruebas_excel/build.py
@@ -238,8 +238,8 @@ Generador del archivo `entregables/Registro_Rendimiento_Auto_Delivery.xlsx` y su
 
 ### roles
 - Ubicación: entregables/pruebas_excel/build.py
-- Qué hace: estaciones del ranking (Cajero, Board, Corredor) con su columna prefiltrada y la columna inicial en Calculos.
-- Cómo funciona: las estadísticas usan COUNTIF/SUMIF de una condición sobre AO/AP/AQ, que ya están filtradas por fecha y turno.
+- Qué hace: estaciones del ranking (Cajero, Board, Corredor) con su columna prefiltrada (AO/AP/AQ), su columna de residuo justo (BL/BM/BN), la del residuo al cuadrado (BP/BQ/BR) y la columna inicial de su bloque en Calculos (6, 21, 36).
+- Cómo funciona: las estadísticas crudas y las del ajuste usan COUNTIF/SUMIF de una condición sobre la columna prefiltrada.
 
 ### aviso
 - Ubicación: entregables/pruebas_excel/build.py
@@ -281,9 +281,9 @@ Generador del archivo `entregables/Registro_Rendimiento_Auto_Delivery.xlsx` y su
 - Qué hace: criterios de la tabla AM vs PM vs Total.
 - Cómo funciona: devuelve `aux_validoPersona=1` más el turno (`"*"` para Total).
 
-### rows_cmp, CMP_END, blocks, RK_END, heads, TS, TR_END, DS
+### rows_cmp, CMP_END, RK_END, heads, TS, TR_END, DS
 - Ubicación: entregables/pruebas_excel/build.py
-- Qué hace: estructura del Panel: filas de comparación, bloques del ranking por estación, encabezados, columna de puntaje de tríos (AW) y de días (AB), y filas finales de cada sección.
+- Qué hace: estructura del Panel: filas de comparación, encabezados, columna de puntaje justo de tríos (AW), de días (AB) y filas finales de cada sección.
 - Cómo funciona: los rankings toman el k-ésimo menor puntaje con SMALL y su fila con MATCH.
 
 ### bloques
@@ -400,3 +400,78 @@ Generador del archivo `entregables/Registro_Rendimiento_Auto_Delivery.xlsx` y su
 - Ubicación: entregables/pruebas_excel/test_equivalencia.py
 - Qué hace: generar el mismo año de datos para dos versiones, tomar todos los valores visibles y compararlos con tolerancia.
 - Cómo funciona: reporta las diferencias celda por celda entre la versión anterior y la optimizada.
+
+### Z95
+- Ubicación: entregables/pruebas_excel/build.py, entregables/pruebas_excel/modelo.py
+- Qué hace: factor 1,96 del margen del 95 %.
+- Cómo funciona: margen = Z95 × raíz(s2/(n+k)).
+
+### K_SIN_DATOS, K_TOPE
+- Ubicación: entregables/pruebas_excel/build.py
+- Qué hace: fuerza del ajuste bayesiano, en turnos: 5 cuando no se puede estimar (menos de 2 grupos) y 20 como tope.
+- Cómo funciona: los usa `eb_resumen` para calcular k.
+
+### DUDOSO, DUDOSO_SEG
+- Ubicación: entregables/pruebas_excel/build.py (DUDOSO también en modelo.py)
+- Qué hace: sufijo " · dudoso (PM con pocos autos)" y umbral de 5 s de incertidumbre por redondeo.
+- Cómo funciona: Nivel agrega el sufijo si aux_margenPM ≥ 5 y el tiempo real queda a menos de esa incertidumbre de 4:00.
+
+### FMT_AJ, FMT_MG
+- Ubicación: entregables/pruebas_excel/build.py
+- Qué hace: formatos "+12.3 s" para el puntaje ajustado y "±4.5 s" para el margen.
+- Cómo funciona: se asignan a `number_format` en los rankings.
+
+### eb_resumen
+- Ubicación: entregables/pruebas_excel/build.py
+- Qué hace: escribe en Calculos el ajuste bayesiano empírico (ANOVA de un factor, estimador de momentos) de un conjunto de grupos.
+- Cómo funciona: recibe columna, fila inicial y rangos de n, suma de residuos, suma²/n, suma de cuadrados y n². Usa solo grupos con n ≥ fMin. Retorna las direcciones de s2 (varianza dentro) y k = s2/tau2 (con tope).
+
+### lectura_f
+- Ubicación: entregables/pruebas_excel/build.py
+- Qué hace: fórmula de la lectura en palabras de un puntaje y su margen.
+- Cómo funciona: devuelve "Más rápido que lo normal" si puntaje+margen < 0, "Más lento…" si puntaje−margen > 0, "Dentro de lo normal" en otro caso y "Pocos datos" si no hay margen.
+
+### CTX0, ctxN, ctxBase
+- Ubicación: entregables/pruebas_excel/build.py
+- Qué hace: tabla de los 14 contextos (AM/PM × día de la semana) en Calculos!A110:E123, con nombres definidos para los turnos programados y "lo normal".
+- Cómo funciona: ctxN = COUNTIF de aux_contexto (no depende de los tiempos). ctxBase = promedio de segundos de los turnos válidos del contexto.
+
+### RCOLS
+- Ubicación: entregables/pruebas_excel/build.py
+- Qué hace: columnas de cada bloque de estación en Calculos.
+- Cómo funciona: nombre, turnos, autos, prod, tiempo, pct (datos crudos para mostrar); ajustado, comparables, sumaR, sumaR2, c, n2, margen, lectura (ajuste justo para ordenar).
+
+### TRIO_S2, TRIO_K, kTrio
+- Ubicación: entregables/pruebas_excel/build.py
+- Qué hace: varianza dentro y fuerza del ajuste para los tríos (Calculos!A127…). kTrio es su nombre definido.
+- Cómo funciona: los calcula `eb_resumen` sobre las filas representativas del registro (BV, BW, BX, BY, BZ).
+
+### RANK_HEADS, CF_LECT
+- Ubicación: entregables/pruebas_excel/build.py
+- Qué hace: encabezados de las tablas de ranking por estación y colores de la columna Lectura (verde más rápido, rojo más lento).
+- Cómo funciona: se aplican a las tres tablas apiladas (Cajero, Board, Corredor).
+
+### columnas AY–BZ de Registro Auto (comparación justa)
+- Ubicación: entregables/pruebas_excel/build.py
+- Qué hace: aux_contexto (1–14), aux_desvio (seg − lo normal), índices de persona, claves contexto×persona/trío, conteos por clave, residuos "contra los demás" r = desvío·N/(N−n) y sus cuadrados, segundos válidos, margen de redondeo del PM y estadísticas por trío.
+- Cómo funciona: los conteos dependen solo de fechas, turnos, nombres y filtro de fechas, no de los tiempos, así que escribir minutos o segundos no los recalcula.
+
+### lectura (modelo)
+- Ubicación: entregables/pruebas_excel/modelo.py
+- Qué hace: misma regla de lectura que `lectura_f`, en Python.
+- Cómo funciona: retorna el texto según puntaje y margen.
+
+### bayes
+- Ubicación: entregables/pruebas_excel/modelo.py
+- Qué hace: referencia independiente del ajuste bayesiano empírico por turno (efectos aleatorios, estimador de momentos).
+- Cómo funciona: recibe (orden, clave, filas comparables con res, todas las filas). Retorna dicts con score, margen, lectura, n, tiempo y pct, ordenados por score y orden.
+
+### talento, base (test_verdad)
+- Ubicación: entregables/pruebas_excel/test_verdad.py
+- Qué hace: talento real fijado por persona (segundos) y dificultad de cada contexto, para simular auto por auto con verdad conocida.
+- Cómo funciona: P01 es lento y solo trabaja turnos fáciles; P02 es rápido y solo trabaja turnos difíciles. Se comprueba el tiempo real de PM contra la cota de redondeo y el ranking contra el talento real.
+
+### spearman, ranking_justo, SRC
+- Ubicación: entregables/pruebas_excel/valida_metodo.py
+- Qué hace: correlación de rangos, ranking justo en Python y fuente del generador de datos de test_verdad.
+- Cómo funciona: valida el método en 12 semillas (correlación, confusores, cobertura del margen y falsos positivos) sin usar Excel.

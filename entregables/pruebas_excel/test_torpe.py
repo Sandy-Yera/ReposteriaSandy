@@ -95,9 +95,9 @@ check("Delivery: sin enlace cuenta pero avisa", est(6).startswith("OK") and "enl
 # válidas: fila 0 (enlace error, Sí), 5 (SÍ), 6 (No) -> 3 turnos, 2 Sí
 check("Delivery: cuenta solo las filas válidas (3) y 2 Sí", p["K16"].value == 3 and abs((p["K11"].value or 0) - 2 / 3) < 1e-9, (p["K16"].value, p["K11"].value))
 # Personal
-names_rank = [p[f"{c}{34+k}"].value for c in "B" for k in range(5)]
-check("Personal: nombre repetido no aparece dos veces en el ranking", sum(1 for x in names_rank if str(x).endswith(". Ana")) <= 1, names_rank)
-check("Personal: celda con =1/0 no rompe el ranking", str(p["B34"].value).startswith("1. "), p["B34"].value)
+names_rank = [p[f"C{35+k}"].value for k in range(5)]
+check("Personal: nombre repetido no aparece dos veces en el ranking", sum(1 for x in names_rank if x == "Ana") <= 1, names_rank)
+check("Personal: celda con =1/0 no rompe el ranking", names_rank[0] not in (None, "", "Sin datos suficientes"), p["C35"].value)
 check("Personal: nombre con emoji funciona en el ranking", any("Ána 🍔" in str(x) for x in names_rank), names_rank)
 check("Panel avisa nombres repetidos en Personal", "repetid" in str(p["B4"].value or ""), p["B4"].value)
 
@@ -108,7 +108,7 @@ for desc, flt, fn in [
     ("Filtro Turno con =1/0", {"F7": "=1/0"}, lambda p: p["H16"].value == 2),
     ("Filtro Persona con =1/0", {"J7": "=1/0"}, lambda p: p["H16"].value == 2),
     ("Filtro Desde 'hoy'", {"B7": "hoy"}, lambda p: p["H16"].value == 2 and "fecha" in str(p["B4"].value or "")),
-    ("Mín. turnos 1000", {"L7": 1000}, lambda p: str(p["B34"].value).startswith("Sin")),
+    ("Mín. turnos 1000", {"L7": 1000}, lambda p: str(p["C35"].value).startswith("Sin")),
     ("Desde en 1900 (número 5)", {"B7": 5}, lambda p: p["H16"].value == 2),
 ]:
     res, wb2 = build_case(TEMPLATE, "torpe_p.xlsx", base, [], NAMES, flt)

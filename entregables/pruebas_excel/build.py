@@ -9,7 +9,7 @@ from openpyxl.worksheet.hyperlink import Hyperlink
 from openpyxl.formatting.rule import FormulaRule
 from openpyxl.workbook.defined_name import DefinedName
 from openpyxl.comments import Comment
-from openpyxl.utils import get_column_letter as L
+from openpyxl.utils import get_column_letter as L, column_index_from_string
 
 OUT = sys.argv[1]
 EMPTY = len(sys.argv) > 2 and sys.argv[2] == "empty"
@@ -95,7 +95,13 @@ def protect(ws):
                                     selectUnlockedCells=False, sort=True, autoFilter=False, pivotTables=True)
 
 FECHA_MIN, FECHA_MAX = 43831, 73051   # 01-01-2020 .. 01-01-2100
-MAX_AUTOS, MAX_SEG = 3000, 1200       # límites de sentido común: 3.000 autos por fila, 20 minutos de promedio
+MAX_AUTOS, MAX_SEG = 3000, 1200
+Z95 = 1.96                       # margen del 95 %
+K_SIN_DATOS, K_TOPE = 5, 20      # fuerza del ajuste bayesiano (en turnos) cuando no se puede estimar, y su tope
+DUDOSO = " · dudoso (PM con pocos autos)"
+DUDOSO_SEG = 5                   # incertidumbre por redondeo del sistema desde la que se avisa
+FMT_AJ = '+0.0" s";-0.0" s";0.0" s"'
+FMT_MG = '"±"0.0" s"'       # límites de sentido común: 3.000 autos por fila, 20 minutos de promedio
 
 def add_table(ws, name, ref):
     t = Table(displayName=name, ref=ref)
@@ -116,6 +122,30 @@ def lvl_s(sec):
     """Nivel a partir de segundos enteros ya calculados (columna aux_segReal)."""
     return (f'IF({sec}<=0,"Revisar datos",IF({sec}<60,"Excelencia máxima",IF({sec}<120,"Excelencia",'
             f'IF({sec}<180,"Muy bueno",IF({sec}<240,"Cumple",IF({sec}<300,"No cumple (alerta)","No cumple"))))))')
+
+def eb_resumen(ws, col, row0, n_rng, s_rng, c_rng, q_rng, n2_rng):
+    """Escribe en ws el ajuste bayesiano empírico (ANOVA de un factor, estimador de momentos) sobre los grupos con
+    n >= fMin. Devuelve las direcciones absolutas de s2 (varianza dentro) y k (fuerza del ajuste, en turnos)."""
+    crit = '">="&fMin'
+    vc = L(column_index_from_string(col) + 1)
+    items = [("N", f'=SUMIF({n_rng},{crit})'), ("m", f'=COUNTIF({n_rng},{crit})'), ("S", f'=SUMIF({n_rng},{crit},{s_rng})'),
+             ("C", f'=SUMIF({n_rng},{crit},{c_rng})'), ("Q", f'=SUMIF({n_rng},{crit},{q_rng})'), ("N2", f'=SUMIF({n_rng},{crit},{n2_rng})')]
+    a = {}
+    for i, (lab, frm) in enumerate(items):
+        ws[f"{col}{row0+i}"] = lab; ws[f"{vc}{row0+i}"] = frm; a[lab] = f"${vc}${row0+i}"
+    r = row0 + len(items)
+    ws[f"{col}{r}"] = "s2"; ws[f"{vc}{r}"] = f'=IF({a["N"]}-{a["m"]}>0,({a["Q"]}-{a["C"]})/({a["N"]}-{a["m"]}),"")'
+    ws[f"{col}{r+1}"] = "tau2"
+    ws[f"{vc}{r+1}"] = (f'=IF(AND({a["m"]}>=2,ISNUMBER({vc}{r})),MAX(0,(({a["C"]}-{a["S"]}^2/{a["N"]})/({a["m"]}-1)-{vc}{r})'
+                        f'/(({a["N"]}-{a["N2"]}/{a["N"]})/({a["m"]}-1))),"")')
+    ws[f"{col}{r+2}"] = "k"
+    ws[f"{vc}{r+2}"] = f'=IF(ISNUMBER({vc}{r+1}),IF({vc}{r+1}>0,MIN({vc}{r}/{vc}{r+1},{K_TOPE}),{K_TOPE}),{K_SIN_DATOS})'
+    return f"Calculos!${vc}${r}", f"Calculos!${vc}${r+2}"
+
+def lectura_f(score, margen):
+    """Fórmula de la lectura en palabras de un puntaje ajustado y su margen del 95 %."""
+    return (f'IF({score}="","",IF({margen}="","Pocos datos",IF({score}+{margen}<0,"Más rápido que lo normal",'
+            f'IF({score}-{margen}>0,"Más lento que lo normal","Dentro de lo normal"))))')
 
 def cf_time(ws, rng, first):
     s = f"ROUND({first}*86400,0)"
@@ -230,6 +260,16 @@ cols = [  # (letra, encabezado, ancho, tipo)
     ("AP", "aux_boardFiltrado", 6, "aux"), ("AQ", "aux_corredorFiltrado", 6, "aux"), ("AR", "aux_trioVez", 6, "aux"),
     ("AS", "aux_trioTurnos", 6, "aux"), ("AT", "aux_trioAutos", 6, "aux"), ("AU", "aux_trioProd", 6, "aux"),
     ("AV", "aux_trioCumple", 6, "aux"), ("AW", "aux_trioScore", 6, "aux"), ("AX", "aux_revisar", 6, "aux"),
+    ("AY", "aux_contexto", 6, "aux"), ("AZ", "aux_desvio", 6, "aux"), ("BA", "aux_idxCajero", 6, "aux"),
+    ("BB", "aux_idxBoard", 6, "aux"), ("BC", "aux_idxCorredor", 6, "aux"), ("BD", "aux_kCajero", 6, "aux"),
+    ("BE", "aux_kBoard", 6, "aux"), ("BF", "aux_kCorredor", 6, "aux"), ("BG", "aux_kTrio", 6, "aux"),
+    ("BH", "aux_nCajero", 6, "aux"), ("BI", "aux_nBoard", 6, "aux"), ("BJ", "aux_nCorredor", 6, "aux"),
+    ("BK", "aux_nTrio", 6, "aux"), ("BL", "aux_rCajero", 6, "aux"), ("BM", "aux_rBoard", 6, "aux"),
+    ("BN", "aux_rCorredor", 6, "aux"), ("BO", "aux_rTrio", 6, "aux"), ("BP", "aux_r2Cajero", 6, "aux"),
+    ("BQ", "aux_r2Board", 6, "aux"), ("BR", "aux_r2Corredor", 6, "aux"), ("BS", "aux_r2Trio", 6, "aux"),
+    ("BT", "aux_segValido", 6, "aux"), ("BU", "aux_margenPM", 6, "aux"), ("BV", "aux_trioComparables", 6, "aux"),
+    ("BW", "aux_trioSumaR", 6, "aux"), ("BX", "aux_trioSumaR2", 6, "aux"), ("BY", "aux_trioC", 6, "aux"),
+    ("BZ", "aux_trioN2", 6, "aux"),
 ]
 title(au, "Registro Auto", None, 17, 15)
 au.row_dimensions[3].height = 38
@@ -272,7 +312,7 @@ for r in range(R0, R1 + 1):
               f'IF(AF{r}="","Revisar: falta turno",IF(AF{r}="?","Revisar: turno no válido (AM o PM)",IF(AC{r}>1,"Revisar: fila repetida",IF(N(AL{r})>1,"Revisar: el AM de este día está repetido",'
               f'IF(AND(NOT(ISBLANK(G{r})),AE{r}=""),"Revisar: autos no válidos",IF(AND({hasT},J{r}=""),"Revisar: tiempo no válido",'
               f'IF(OR(AE{r}="",J{r}=""),"Falta autos o tiempo",IF(AND(AF{r}="PM",K{r}<=0),"Revisar: autos del día menores que AM",'
-              f'IF(L{r}="","Revisar datos",{lvl_s("AN"+str(r))}))))))))))))'),
+              f'IF(L{r}="","Revisar datos",{lvl_s("AN"+str(r))}&IF(AND(BU{r}>={DUDOSO_SEG},ABS(AN{r}-240)<BU{r}),"{DUDOSO}","")))))))))))))'),
         "N": f'=IF(AN{r}="","",IF(AN{r}<=0,"",IF(AN{r}<240,"Sí","No")))',
         "O": f'=IF(OR(AF{r}<>"PM",J{r}="",AC{r}>1,AG{r}=""),"",J{r})',
         "P": f'=IF(O{r}="","",IF(ROUND(O{r}*86400,0)<240,"Cumplió","Falló")&IF(AL{r}=0," (solo PM)",""))',
@@ -307,9 +347,30 @@ for r in range(R0, R1 + 1):
         "AT": f'=IF(AS{r}="","",SUMIF({rng("AA")},AA{r},{rng("K")}))',
         "AU": f'=IF(AS{r}="","",SUMIF({rng("AA")},AA{r},{rng("Y")}))',
         "AV": f'=IF(AS{r}="","",SUMIF({rng("AA")},AA{r},{rng("Z")}))',
-        "AW": f'=IF(AS{r}="","",IF(AT{r}>0,AU{r}/AT{r}+MATCH(AA{r},{rng("AA")},0)/1000000000000,""))',
+        "AW": f'=IF(OR(AS{r}="",N(BV{r})<fMin,N(AT{r})<=0),"",BW{r}/(BV{r}+kTrio)+MATCH(AA{r},{rng("AA")},0)/1000000000)',
         "AX": f'=IF(OR(LEFT(M{r},7)="Revisar",LEFT(M{r},5)="Falta"),1,0)',
+        # ---- comparación justa: contexto (turno × día de semana) y "contra los demás" ----
+        "AY": f'=IF(AND(U{r}=1,AI{r}<>""),IF(AF{r}="PM",7,0)+WEEKDAY(AG{r},2),"")',
+        "AZ": f'=IF(OR(V{r}<>1,AY{r}=""),"",L{r}*86400-INDEX(ctxBase,AY{r}))',
+        "BT": f'=IF(V{r}=1,L{r}*86400,"")',
+        "BU": f'=IF(AND(AF{r}="PM",N(AJ{r})>0,N(K{r})>0),0.5*(AE{r}+AJ{r})/K{r},0)',
+        "BG": f'=IF(OR(AY{r}="",S{r}=""),"",AY{r}*10000+MATCH(S{r},{rng("S")},0))',
+        "BV": f'=IF(AS{r}="","",COUNTIFS({rng("AA")},AA{r},{rng("BO")},">-1E9"))',
+        "BW": f'=IF(AS{r}="","",SUMIF({rng("AA")},AA{r},{rng("BO")}))',
+        "BX": f'=IF(AS{r}="","",SUMIF({rng("AA")},AA{r},{rng("BS")}))',
+        "BY": f'=IF(N(BV{r})>0,BW{r}^2/BV{r},"")',
+        "BZ": f'=IF(N(BV{r})>0,BV{r}^2,"")',
     }
+    for idx_c, name_c, k_c, n_c, r_c, r2_c in (("BA", "D", "BD", "BH", "BL", "BP"), ("BB", "E", "BE", "BI", "BM", "BQ"),
+                                                ("BC", "F", "BF", "BJ", "BN", "BR"), (None, None, "BG", "BK", "BO", "BS")):
+        if idx_c:
+            f[idx_c] = f'=IF(ISTEXT({name_c}{r}),IFERROR(MATCH({name_c}{r},Personal!$B$8:$B$107,0),""),"")'
+            f[k_c] = f'=IF(OR(AY{r}="",{idx_c}{r}=""),"",AY{r}*1000+{idx_c}{r})'
+        f[n_c] = f'=IF({k_c}{r}="","",COUNTIF({rng(k_c)},{k_c}{r}))'
+        f[r_c] = (f'=IF(OR(W{r}<>1,AZ{r}="",{k_c}{r}=""),"",IF(INDEX(ctxN,AY{r})-{n_c}{r}>0,'
+                  f'AZ{r}*INDEX(ctxN,AY{r})/(INDEX(ctxN,AY{r})-{n_c}{r}),""))')
+        f[r2_c] = f'=IF({r_c}{r}="","",{r_c}{r}^2)'
+
     au.row_dimensions[r].height = 22
     for letter, _, _, kind in cols:
         c = au[f"{letter}{r}"]
@@ -323,7 +384,7 @@ for r in range(R0, R1 + 1):
     au[f"B{r}"].number_format = DATE
     for c_ in "JLO": au[f"{c_}{r}"].number_format = TIME
     au[f"Q{r}"].alignment = Alignment(horizontal="left", vertical="center", wrap_text=False, indent=1)
-add_table(au, "TablaAuto", f"B7:AX{R1}")
+add_table(au, "TablaAuto", f"B7:BZ{R1}")
 au.freeze_panes = "D8"
 
 ejemplos_auto = [
@@ -348,8 +409,8 @@ cf_time(au, f"J{R0}:J{R1}", f"J{R0}")
 cf_time(au, f"L{R0}:L{R1}", f"L{R0}")
 cf_time(au, f"O{R0}:O{R1}", f"O{R0}")
 cf_text(au, f"M{R0}:M{R1}", f"M{R0}", [
-    ('{c}="Excelencia máxima"', G_DK, "FFFFFF"), ('OR({c}="Excelencia",{c}="Muy bueno")', G_MD, G_TX),
-    ('{c}="Cumple"', G_LT, G_TX), ('{c}="No cumple (alerta)"', OR_F, OR_T), ('{c}="No cumple"', RD_F, RD_T),
+    ('LEFT({c},17)="Excelencia máxima"', G_DK, "FFFFFF"), ('OR(LEFT({c},10)="Excelencia",LEFT({c},9)="Muy bueno")', G_MD, G_TX),
+    ('LEFT({c},6)="Cumple"', G_LT, G_TX), ('LEFT({c},18)="No cumple (alerta)"', OR_F, OR_T), ('LEFT({c},9)="No cumple"', RD_F, RD_T),
     ('LEFT({c},7)="Revisar"', OR_F, OR_T)])
 cf_text(au, f"N{R0}:N{R1}", f"N{R0}", GOOD_BAD)
 cf_text(au, f"P{R0}:P{R1}", f"P{R0}", [('LEFT({c},7)="Cumplió"', G_LT, G_TX), ('LEFT({c},5)="Falló"', RD_F, RD_T)])
@@ -563,22 +624,49 @@ for i in range(100):
     put(ca, f"E{3+i}", f'=IFERROR(IF(AND(ISTEXT(Personal!$B${p}),TRIM(Personal!$B${p}&"")<>"",COUNTIF(Personal!$B${P0}:$B${P1},Personal!$B${p})>1),1,0),0)')
 wb.defined_names["ListaFiltroPersona"] = DefinedName("ListaFiltroPersona", attr_text="Calculos!$D$2:$D$102")
 
-# bloques de personas por estación: nombre, n, autos, prod, t, pct, score
-roles = [("Cajero", "AO", 6), ("Board", "AP", 14), ("Corredor", "AQ", 22)]
-for role, rc, c0 in roles:
-    cl = [L(c0 + j) for j in range(7)]
-    for j, h in enumerate(["nombre", "turnos", "autos", "prod", "tiempo", "pct", "score"]):
-        put(ca, f"{cl[j]}1", f"{role}_{h}")
+# tabla de contextos (1-7 = AM lunes..domingo, 8-14 = PM lunes..domingo)
+CTX0 = 110
+for j, h in enumerate(["contexto", "turnos_programados", "turnos_validos", "suma_seg", "lo_normal_seg"]):
+    put(ca, f"{L(1 + j)}{CTX0 - 1}", h)
+for g in range(1, 15):
+    r = CTX0 + g - 1
+    ca[f"A{r}"] = g
+    ca[f"B{r}"] = f'=COUNTIF({ra("AY")},A{r})'
+    ca[f"C{r}"] = f'=COUNTIFS({ra("AY")},A{r},{ra("BT")},">-1E9")'
+    ca[f"D{r}"] = f'=SUMIF({ra("AY")},A{r},{ra("BT")})'
+    ca[f"E{r}"] = f'=IF(C{r}>0,D{r}/C{r},0)'
+wb.defined_names["ctxN"] = DefinedName("ctxN", attr_text=f"Calculos!$B${CTX0}:$B${CTX0+13}")
+wb.defined_names["ctxBase"] = DefinedName("ctxBase", attr_text=f"Calculos!$E${CTX0}:$E${CTX0+13}")
+
+# bloques por estación: datos crudos (para mostrar) + ajuste justo (para ordenar)
+RCOLS = ["nombre", "turnos", "autos", "prod", "tiempo", "pct", "ajustado", "comparables", "sumaR", "sumaR2", "c", "n2", "margen", "lectura"]
+roles = [("Cajero", "AO", "BL", "BP", 6), ("Board", "AP", "BM", "BQ", 21), ("Corredor", "AQ", "BN", "BR", 36)]
+for role, rc, rr_c, r2_c, c0 in roles:
+    cl = {h: L(c0 + j) for j, h in enumerate(RCOLS)}
+    for h, x in cl.items(): put(ca, f"{x}1", f"{role}_{h}")
+    colr = lambda h: f"${cl[h]}$3:${cl[h]}$102"
+    s2, kk = eb_resumen(ca, cl["nombre"], 104, colr("comparables"), colr("sumaR"), colr("c"), colr("sumaR2"), colr("n2"))
     for i in range(100):
         r = 3 + i
-        nm, n, au_, pr, t, pc, sc = [f"{x}{r}" for x in cl]
-        ca[nm] = f'=Calculos!$D${3+i}'
-        ca[n] = f'=IF({nm}="",0,COUNTIF({ra(rc)},{nm}))'
-        ca[au_] = f'=IF({n}=0,0,SUMIF({ra(rc)},{nm},{ra("K")}))'
-        ca[pr] = f'=IF({n}=0,0,SUMIF({ra(rc)},{nm},{ra("Y")}))'
-        ca[t] = f'=IF({au_}>0,{pr}/{au_},"")'
-        ca[pc] = f'=IF({n}=0,"",SUMIF({ra(rc)},{nm},{ra("Z")})/{n})'
-        ca[sc] = f'=IF(AND({n}>=fMin,{t}<>""),{t}+ROW()/1000000000000,"")'
+        c = {h: f"{x}{r}" for h, x in cl.items()}
+        ca[c["nombre"]] = f'=Calculos!$D${3+i}'
+        ca[c["turnos"]] = f'=IF({c["nombre"]}="",0,COUNTIF({ra(rc)},{c["nombre"]}))'
+        ca[c["autos"]] = f'=IF({c["turnos"]}=0,0,SUMIF({ra(rc)},{c["nombre"]},{ra("K")}))'
+        ca[c["prod"]] = f'=IF({c["turnos"]}=0,0,SUMIF({ra(rc)},{c["nombre"]},{ra("Y")}))'
+        ca[c["tiempo"]] = f'=IF({c["autos"]}>0,{c["prod"]}/{c["autos"]},"")'
+        ca[c["pct"]] = f'=IF({c["turnos"]}=0,"",SUMIF({ra(rc)},{c["nombre"]},{ra("Z")})/{c["turnos"]})'
+        ca[c["comparables"]] = f'=IF({c["turnos"]}=0,0,COUNTIFS({ra(rc)},{c["nombre"]},{ra(rr_c)},">-1E9"))'
+        ca[c["sumaR"]] = f'=IF({c["comparables"]}=0,0,SUMIF({ra(rc)},{c["nombre"]},{ra(rr_c)}))'
+        ca[c["sumaR2"]] = f'=IF({c["comparables"]}=0,0,SUMIF({ra(rc)},{c["nombre"]},{ra(r2_c)}))'
+        ca[c["c"]] = f'=IF({c["comparables"]}>0,{c["sumaR"]}^2/{c["comparables"]},0)'
+        ca[c["n2"]] = f'={c["comparables"]}^2'
+        ca[c["ajustado"]] = (f'=IF(AND({c["comparables"]}>=fMin,N({c["autos"]})>0),'
+                             f'{c["sumaR"]}/({c["comparables"]}+{kk})+ROW()/1000000000,"")')
+        ca[c["margen"]] = f'=IF(OR({c["ajustado"]}="",NOT(ISNUMBER({s2}))),"",{Z95}*SQRT({s2}/({c["comparables"]}+{kk})))'
+        ca[c["lectura"]] = "=" + lectura_f(c["ajustado"], c["margen"])
+put(ca, "A126", "Tríos (filas representativas del registro)")
+TRIO_S2, TRIO_K = eb_resumen(ca, "A", 127, ra("BV"), ra("BW"), ra("BY"), ra("BX"), ra("BZ"))
+wb.defined_names["kTrio"] = DefinedName("kTrio", attr_text=TRIO_K)
 
 # =====================================================================
 # PANEL
@@ -720,38 +808,57 @@ for i, (lab, fn, nf) in enumerate(rows_cmp):
                                                  ('{c}="No cumple (alerta)"', OR_F, OR_T), ('{c}="No cumple"', RD_F, RD_T)])
 CMP_END = r + len(rows_cmp)
 
-# ----- Rankings por estación -----
+# ----- Rankings por estación (ajuste justo) -----
 r = CMP_END + 2
 pan.row_dimensions[r - 1].height = 14
-section(r, "Ranking por estación (Auto)", "Ordenado por tiempo promedio real de los turnos donde estuvo (menor es mejor). Solo entra quien tenga el mínimo de turnos. Respeta fechas y turno: elige AM o PM para ver quién rinde mejor en cada uno.")
-r += 2
-pan.row_dimensions[r].height = 24
-blocks = [("Cajero", 2, roles[0][2]), ("Board", 6, roles[1][2]), ("Corredor", 10, roles[2][2])]
-for role, col0, c0 in blocks:
-    merge(pan, f"{L(col0)}{r}:{L(col0+3)}{r}", role.upper(), f=font(10, True, "FFFFFF"), fl=fill(ACC), al=CENTER)
-    for j, h in enumerate(["Nombre", "Turnos", "Tiempo", "En meta"]):
-        put(pan, f"{L(col0+j)}{r+1}", h, f=font(8, True, MUTED), al=CENTER, bd=BOT)
-pan.row_dimensions[r + 1].height = 18
-for k in range(1, 6):
-    rr = r + 1 + k
-    pan.row_dimensions[rr].height = 22
-    for role, col0, c0 in blocks:
-        nm, n, t, pc, sc = [f"Calculos!${L(c0+j)}$3:${L(c0+j)}$102" for j in (0, 1, 4, 5, 6)]
+section(r, "Ranking por estación (Auto)",
+        "Orden justo: cada turno se compara con los DEMÁS turnos del mismo tipo y día de la semana (así no gana quien solo trabaja turnos fáciles), "
+        "y a quien tiene pocos turnos se le acerca a lo normal (método bayesiano). Negativo = más rápido que lo normal. ± = margen del 95 %: "
+        "si dos márgenes se cruzan, la diferencia puede ser suerte. \"Tiempo real\" es el promedio sin ajustar.")
+pan.row_dimensions[r + 1].height = 40
+pan[f"B{r+1}"].alignment = Alignment(vertical="center", wrap_text=True)
+r += 3
+RANK_HEADS = [("B", "B", "#"), ("C", "D", "Nombre"), ("E", "E", "Turnos"), ("F", "F", "Tiempo real"), ("G", "H", "vs. lo normal"),
+              ("I", "I", "± margen"), ("J", "K", "Lectura"), ("L", "M", "En meta")]
+CF_LECT = [('LEFT({c},11)="Más rápido "', G_LT, G_TX), ('LEFT({c},10)="Más lento "', RD_F, RD_T)]
+for role, rc, rr_c, r2_c, c0 in roles:
+    cl = {h: L(c0 + j) for j, h in enumerate(RCOLS)}
+    colr = lambda h: f"Calculos!${cl[h]}$3:${cl[h]}$102"
+    pan.row_dimensions[r].height = 24
+    merge(pan, f"B{r}:M{r}", role.upper(), f=font(10, True, "FFFFFF"), fl=fill(ACC), al=CENTER)
+    pan.row_dimensions[r + 1].height = 18
+    for a, b, h in RANK_HEADS:
+        if a != b: pan.merge_cells(f"{a}{r+1}:{b}{r+1}")
+        put(pan, f"{a}{r+1}", h, f=font(8, True, MUTED), al=CENTER, bd=BOT); pan[f"{b}{r+1}"].border = BOT
+    sc = colr("ajustado")
+    for k in range(1, 6):
+        rr = r + 1 + k
+        pan.row_dimensions[rr].height = 22
         m = f"MATCH(SMALL({sc},{k}),{sc},0)"
-        put(pan, f"{L(col0)}{rr}", f'=IFERROR("{k}. "&INDEX({nm},{m}),IF({k}=1,"Sin datos suficientes","—"))', f=font(10, True, "1F2933"), al=Alignment(horizontal="left", vertical="center", indent=1, shrink_to_fit=True), bd=BOT)
-        put(pan, f"{L(col0+1)}{rr}", f'=IFERROR(INDEX({n},{m}),"")', f=font(10), al=CENTER, bd=BOT)
-        put(pan, f"{L(col0+2)}{rr}", f'=IFERROR(INDEX({t},{m}),"")', f=font(10, True), al=CENTER, nf=TIME, bd=BOT)
-        put(pan, f"{L(col0+3)}{rr}", f'=IFERROR(INDEX({pc},{m}),"")', f=font(10), al=CENTER, nf="0%", bd=BOT)
-        cf_time(pan, f"{L(col0+2)}{rr}", f"{L(col0+2)}{rr}")
-RK_END = r + 6
+        vals = [("B", "B", f'=IF(ISNUMBER(SMALL({sc},{k})),{k},"")', None),
+                ("C", "D", f'=IFERROR(INDEX({colr("nombre")},{m}),IF({k}=1,"Sin datos suficientes",""))', None),
+                ("E", "E", f'=IFERROR(INDEX({colr("turnos")},{m}),"")', "0"),
+                ("F", "F", f'=IFERROR(INDEX({colr("tiempo")},{m}),"")', TIME),
+                ("G", "H", f'=IFERROR(INDEX({sc},{m}),"")', FMT_AJ),
+                ("I", "I", f'=IFERROR(INDEX({colr("margen")},{m}),"")', FMT_MG),
+                ("J", "K", f'=IFERROR(INDEX({colr("lectura")},{m}),"")', None),
+                ("L", "M", f'=IFERROR(INDEX({colr("pct")},{m}),"")', "0%")]
+        for a, b, v, nf in vals:
+            if a != b: pan.merge_cells(f"{a}{rr}:{b}{rr}")
+            put(pan, f"{a}{rr}", v, f=font(10, a in "BCG"), al=CENTER, nf=nf, bd=BOT); pan[f"{b}{rr}"].border = BOT
+        cf_time(pan, f"F{rr}", f"F{rr}")
+        cf_text(pan, f"J{rr}", f"J{rr}", CF_LECT)
+    r += 8
+RK_END = r - 2
 
-# ----- Ranking de tríos -----
+# ----- Ranking de tríos (ajuste justo) -----
 r = RK_END + 2
 pan.row_dimensions[r - 1].height = 14
-section(r, "Ranking de equipos (tríos Cajero · Board · Corredor)", "Cada combinación distinta de tres personas cuenta como un equipo. Mismo criterio y mínimo de turnos.")
+section(r, "Ranking de equipos (tríos Cajero · Board · Corredor)", "Cada combinación distinta de tres personas cuenta como un equipo. Mismo método justo y mínimo de turnos.")
 r += 2
 pan.row_dimensions[r].height = 24
-heads = [("B", "B", "#"), ("C", "D", "Cajero"), ("E", "F", "Board"), ("G", "H", "Corredor"), ("I", "I", "Turnos"), ("J", "K", "Tiempo real"), ("L", "M", "En meta")]
+heads = [("B", "B", "#"), ("C", "C", "Cajero"), ("D", "D", "Board"), ("E", "E", "Corredor"), ("F", "F", "Turnos"), ("G", "G", "Tiempo real"),
+         ("H", "H", "vs. normal"), ("I", "I", "± margen"), ("J", "K", "Lectura"), ("L", "M", "En meta")]
 for a, b, h in heads:
     if a != b: merge(pan, f"{a}{r}:{b}{r}", h, f=font(10, True, "FFFFFF"), fl=fill(ACC), al=CENTER)
     else: put(pan, f"{a}{r}", h, f=font(10, True, "FFFFFF"), fl=fill(ACC), al=CENTER)
@@ -760,17 +867,22 @@ for k in range(1, 6):
     rr = r + k
     pan.row_dimensions[rr].height = 22
     m = f"MATCH(SMALL({TS},{k}),{TS},0)"
+    mg = f'IFERROR(IF(ISNUMBER({TRIO_S2}),{Z95}*SQRT({TRIO_S2}/(INDEX({ra("BV")},{m})+kTrio)),""),"")'
     vals = [("B", "B", f'=IF(ISNUMBER(SMALL({TS},{k})),{k},"")', None),
-            ("C", "D", f'=IFERROR(INDEX({ra("D")},{m}),IF({k}=1,"Sin datos suficientes",""))', None),
-            ("E", "F", f'=IFERROR(INDEX({ra("E")},{m}),"")', None), ("G", "H", f'=IFERROR(INDEX({ra("F")},{m}),"")', None),
-            ("I", "I", f'=IFERROR(INDEX({ra("AS")},{m}),"")', "0"),
-            ("J", "K", f'=IFERROR(INDEX({ra("AU")},{m})/INDEX({ra("AT")},{m}),"")', TIME),
+            ("C", "C", f'=IFERROR(INDEX({ra("D")},{m}),IF({k}=1,"Sin datos suficientes",""))', None),
+            ("D", "D", f'=IFERROR(INDEX({ra("E")},{m}),"")', None), ("E", "E", f'=IFERROR(INDEX({ra("F")},{m}),"")', None),
+            ("F", "F", f'=IFERROR(INDEX({ra("AS")},{m}),"")', "0"),
+            ("G", "G", f'=IFERROR(INDEX({ra("AU")},{m})/INDEX({ra("AT")},{m}),"")', TIME),
+            ("H", "H", f'=IFERROR(SMALL({TS},{k}),"")', FMT_AJ),
+            ("I", "I", "=" + mg, FMT_MG),
+            ("J", "K", "=IFERROR(" + lectura_f(f"H{rr}", f"I{rr}") + ',"")', None),
             ("L", "M", f'=IFERROR(INDEX({ra("AV")},{m})/INDEX({ra("AS")},{m}),"")', "0%")]
     for a, b, v, nf in vals:
         if a != b: pan.merge_cells(f"{a}{rr}:{b}{rr}")
-        put(pan, f"{a}{rr}", v, f=font(10, a in "BJ"), al=CENTER, nf=nf, bd=BOT)
+        put(pan, f"{a}{rr}", v, f=font(10, a in "BH"), al=Alignment(horizontal="center", vertical="center", shrink_to_fit=True), nf=nf, bd=BOT)
         pan[f"{b}{rr}"].border = BOT
-    cf_time(pan, f"J{rr}", f"J{rr}")
+    cf_time(pan, f"G{rr}", f"G{rr}")
+    cf_text(pan, f"J{rr}", f"J{rr}", CF_LECT)
 TR_END = r + 5
 
 # ----- Mejores días -----
@@ -790,7 +902,7 @@ for k in range(1, 6):
     m = f"MATCH(SMALL({DS},{k}),{DS},0)"
     fecha = f"INDEX({ra('AG')},{m})"
     vals = [("B", "B", f'=IF(ISNUMBER(SMALL({DS},{k})),{k},"")', None),
-            ("C", "D", f'=IFERROR({fecha},IF({k}=1,"Sin datos",""))', DATE),
+            ("C", "D", f'=IFERROR({fecha},IF({k}=1,"Sin datos",""))', "ddd dd-mmm-yy"),
             ("E", "F", f'=IFERROR(INDEX({ra("O")},{m}),"")', TIME),
             ("G", "H", f'=IFERROR(IF(COUNTIFS({ra("AI")},{fecha}*10+1,{N_},"?*")=0,"—",SUMIF({ra("AI")},{fecha}*10+1,{ra("L")})),"")', TIME),
             ("I", "J", f'=IFERROR(IF(INDEX({ra("L")},{m})="","—",INDEX({ra("L")},{m})),"")', TIME),
@@ -856,6 +968,14 @@ bloques = [
         "Mín. turnos ranking: cuántos turnos necesita alguien para entrar al ranking (normal: 3).",
         "Si arriba del Panel aparece un aviso rojo con ⚠, léelo: dice qué filas o filtros hay que revisar.",
     ]),
+    ("6b", "Cómo leer los rankings (para premiar con justicia)", [
+        "El orden NO es el tiempo crudo. Cada turno se compara con los demás turnos del mismo tipo (AM o PM) y del mismo día de la semana. Así nadie gana solo por trabajar en turnos más tranquilos.",
+        "\"vs. lo normal\": segundos más rápido (negativo, ej. −12 s) o más lento (positivo) que lo normal en sus turnos.",
+        "\"± margen\": cuánto puede variar ese número por azar (95 % de seguridad). Si los márgenes de dos personas se cruzan, la diferencia entre ellas puede ser suerte.",
+        "\"Lectura\": \"Más rápido que lo normal\" solo aparece cuando la ventaja es clara aun con el margen. \"Dentro de lo normal\" = no hay pruebas de que sea mejor ni peor.",
+        "A quien tiene pocos turnos se le acerca a lo normal: así una racha corta de suerte no lo pone primero. Con más turnos, su número refleja más su rendimiento real.",
+        "\"Tiempo real\" es el promedio sin ajustar, para referencia. Un cajero rinde con su equipo: el ranking por estación reparte el resultado del turno entre los tres.",
+    ]),
     ("7", "Niveles de tiempo", [
         "0:01 a 0:59 Excelencia máxima · 1:00 a 1:59 Excelencia · 2:00 a 2:59 Muy bueno · 3:00 a 3:59 Cumple.",
         "4:00 a 4:59 No cumple (alerta, naranja) · 5:00 o más No cumple (rojo). La meta es estar por debajo de 4:00.",
@@ -873,6 +993,7 @@ bloques = [
         "Revisar: fila repetida → hay dos filas con la misma fecha y turno. Borra la que sobra. Pasa también si anotaste el PM con la fecha del día siguiente.",
         "Revisar: autos del día menores que AM → en la fila PM va el total del día que marca el sistema, no solo los autos de PM.",
         "Revisar: el AM de este día está repetido → la fila PM no puede calcular su tiempo real hasta que borres el AM que sobra.",
+        "\"… · dudoso (PM con pocos autos)\" → el PM tuvo muy pocos autos y su tiempo real quedó tan cerca de 4:00 que el redondeo del sistema podría cambiar si cumple o no. No es un error: tómalo con cautela.",
         "Falta autos o tiempo → la fila está a medias: completa lo que falta.",
         "Una fila marcada con Revisar o Falta no cuenta en el Panel hasta que se corrige. Al corregirla, vuelve a contar sola.",
     ]),

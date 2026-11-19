@@ -2,6 +2,39 @@
 from collections import defaultdict
 
 FAR = 10**9
+DUDOSO = " · dudoso (PM con pocos autos)"
+Z95 = 1.96
+
+
+def lectura(score, margen):
+    if margen is None: return "Pocos datos"
+    if score + margen < 0: return "Más rápido que lo normal"
+    if score - margen > 0: return "Más lento que lo normal"
+    return "Dentro de lo normal"
+
+
+def bayes(grupos):
+    """grupos: lista de (orden, clave, filas) ya filtrados por mínimo de turnos. Cada fila trae res = segundos vs lo normal.
+    Modelo de efectos aleatorios por turno (ANOVA de un factor, estimador de momentos):
+    res_t = theta_i + e_t,  e_t ~ (0, s2),  theta_i ~ (0, tau2).  Puntaje = estimación bayesiana empírica S_i/(n_i+k), k = s2/tau2.
+    Margen 95% = 1,96 * raíz(s2/(n_i+k))."""
+    st = [(o, c, rr, len(rr), sum(r["res"] for r in rr), sum(r["res"] ** 2 for r in rr), todas) for o, c, rr, todas in grupos]
+    N = sum(x[3] for x in st); m = len(st)
+    St = sum(x[4] for x in st); Ct = sum(x[4] ** 2 / x[3] for x in st); Qt = sum(x[5] for x in st); N2 = sum(x[3] ** 2 for x in st)
+    s2 = (Qt - Ct) / (N - m) if N - m > 0 else None
+    tau2 = None
+    if m >= 2 and s2 is not None:
+        msb = (Ct - St ** 2 / N) / (m - 1); n0 = (N - N2 / N) / (m - 1)
+        tau2 = max(0.0, (msb - s2) / n0)
+    k = 5.0 if tau2 is None else (min(s2 / tau2, 20.0) if tau2 > 0 else 20.0)
+    out = []
+    for o, c, rr, n, S, Q, todas in st:
+        W = sum(r["K"] for r in todas)
+        score = S / (n + k)
+        margen = Z95 * (s2 / (n + k)) ** 0.5 if s2 is not None else None
+        out.append(dict(score=score, orden=o, clave=c, n=len(todas), W=W, t=sum(r["K"] * r["L"] for r in todas) / W,
+                        pct=sum(r["cumple"] == "Sí" for r in todas) / len(todas), margen=margen, lectura=lectura(score, margen)))
+    return sorted(out, key=lambda d: (d["score"], d["orden"]))
 
 
 def nivel(s):
@@ -32,11 +65,15 @@ def filas(auto):
             elif cnt[(r["fecha"], "AM")] > 1: L = None     # AM repetido: el PM no se puede calcular
             elif K > 0: L = J if amA == 0 else (J * r["autos"] - amP) / K
         cumple = None if L is None or round(L) <= 0 else ("Sí" if round(L) < 240 else "No")
+        margen_pm = 0.5 * (r["autos"] + amA) / K if (r["turno"] == "PM" and amA > 0 and K > 0) else 0
         O = J if (r["turno"] == "PM" and not dup) else None
         P = None
         if O is not None:
             P = ("Cumplió" if round(O) < 240 else "Falló") + ("" if cnt[(r["fecha"], "AM")] else " (solo PM)")
-        out.append(dict(r, i=i, J=J, K=K, L=L, cumple=cumple, O=O, P=P, nivel=nivel(L) if L is not None else None))
+        niv = None
+        if L is not None:
+            niv = nivel(L) + (DUDOSO if (margen_pm >= 5 and abs(round(L) - 240) < margen_pm) else "")
+        out.append(dict(r, i=i, J=J, K=K, L=L, cumple=cumple, O=O, P=P, nivel=niv))
     return out
 
 
@@ -75,16 +112,36 @@ def panel(auto, deliv, personal, desde=None, hasta=None, turno="Total", persona=
                       pct=sum(r["cumple"] == "Sí" for r in rows) / len(rows) if rows else None, n=len(rows),
                       dl=sum(x["conc"] == "Sí" for x in dd) / len(dd) if dd else None)
     res["tabla"] = tab
+    # ---- Ranking ajustado (comparación justa) ----
+    # Contexto g = (turno, día de la semana). "Lo normal" B_g = promedio por turno de los turnos válidos del rango en g.
+    # Cada turno se compara contra los DEMÁS del mismo contexto (sin incluirse): r = (L - B_g) * N_g / (N_g - n_gi),
+    # con N_g y n_gi contados sobre turnos programados del rango (fecha y turno válidos), sin depender del tiempo.
+    U = [r for r in F if in_range(r["fecha"])]
+    ctx = lambda r: (r["turno"], r["fecha"].weekday())
+    Ng, cnt_role, Sv, Nv = {}, {}, {}, {}
+    for r in U:
+        g = ctx(r); Ng[g] = Ng.get(g, 0) + 1
+        for role in ("caj", "board", "corr"):
+            cnt_role[(role, g, r[role].lower())] = cnt_role.get((role, g, r[role].lower()), 0) + 1
+        tk = (r["caj"] + " · " + r["board"] + " · " + r["corr"]).lower()
+        cnt_role[("trio", g, tk)] = cnt_role.get(("trio", g, tk), 0) + 1
+    for r in V:
+        g = ctx(r); Sv[g] = Sv.get(g, 0) + r["L"]; Nv[g] = Nv.get(g, 0) + 1
+    def loo(r, role, key):
+        g = ctx(r); n_ = Ng[g] - cnt_role[(role, g, key.lower())]
+        return (r["L"] - Sv[g] / Nv[g]) * Ng[g] / n_ if n_ > 0 else None
     W = [r for r in V if tm(r)]
     rk = {}
+    seen = set(); personas = []
+    for idx, name in enumerate(personal):
+        if name and name.strip() and name.lower() not in seen: seen.add(name.lower()); personas.append((idx, name))
     for role in ("caj", "board", "corr"):
-        lst = []
-        for idx, name in enumerate(personal):
-            rr = [r for r in W if r[role] == name]
-            a_ = sum(r["K"] for r in rr)
-            if len(rr) >= minimo and a_ > 0:
-                lst.append((sum(r["K"] * r["L"] for r in rr) / a_, idx, name, len(rr), sum(r["cumple"] == "Sí" for r in rr) / len(rr)))
-        rk[role] = sorted(lst)[:5]
+        grupos = []
+        for idx, name in personas:
+            todas = [r for r in W if r[role] == name]
+            comp = [dict(r, res=x) for r in todas for x in [loo(r, role, name)] if x is not None]
+            if len(comp) >= minimo and sum(r["K"] for r in todas) > 0: grupos.append((idx, name, comp, todas))
+        rk[role] = bayes(grupos)[:5]
     res["rank"] = rk
     trios, order = defaultdict(list), []
     for r in W:
@@ -92,12 +149,12 @@ def panel(auto, deliv, personal, desde=None, hasta=None, turno="Total", persona=
             k = (r["caj"], r["board"], r["corr"])
             if k not in trios: order.append(k)
             trios[k].append(r)
-    tl = []
+    grupos = []
     for idx, k in enumerate(order):
-        rr = trios[k]; a_ = sum(r["K"] for r in rr)
-        if len(rr) >= minimo and a_ > 0:
-            tl.append((sum(r["K"] * r["L"] for r in rr) / a_, idx, k, len(rr), sum(r["cumple"] == "Sí" for r in rr) / len(rr)))
-    res["trios"] = sorted(tl)[:5]
+        todas = trios[k]
+        comp = [dict(r, res=x) for r in todas for x in [loo(r, "trio", " · ".join(k))] if x is not None]
+        if len(todas) >= minimo and len(comp) >= minimo and sum(r["K"] for r in todas) > 0: grupos.append((idx, k, comp, todas))
+    res["trios"] = bayes(grupos)[:5]
     days = sorted([(r["O"], r["i"], r) for r in F if in_range(r["fecha"]) and r["O"] is not None])[:5]
     res["dias_top"] = days
     if canal == "Delivery":

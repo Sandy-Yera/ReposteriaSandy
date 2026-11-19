@@ -5,8 +5,9 @@ from openpyxl.utils import column_index_from_string, get_column_letter as gl
 wb = load_workbook(sys.argv[1])
 names = {n: v.attr_text for n, v in wb.defined_names.items()}
 GROUPED = {"Registro Auto": 8, "Registro Delivery": 8, "Calculos": 3}
+FIN = {"Registro Auto": 10**6, "Registro Delivery": 10**6, "Calculos": 102}   # en Calculos solo se agrupan las filas de datos 3..102
 def node(sheet, col, row):
-    if sheet in GROUPED and row >= GROUPED[sheet]: return f"{sheet}!{col}*"
+    if sheet in GROUPED and GROUPED[sheet] <= row <= FIN[sheet]: return f"{sheet}!{col}*"
     return f"{sheet}!{col}{row}"
 tok = re.compile(r"(?:'[^']+'|[A-Za-z_]+)!\$?[A-Z]{1,3}\$?\d+(?::\$?[A-Z]{1,3}\$?\d+)?|\$?[A-Z]{1,3}\$?\d+(?::\$?[A-Z]{1,3}\$?\d+)?|[A-Za-z_][A-Za-z_0-9]*")
 def refs(sheet, f):
@@ -22,11 +23,8 @@ def refs(sheet, f):
         c2, r2 = (m.group(5) or c1), int(m.group(6) or r1)
         for ci in range(column_index_from_string(c1), column_index_from_string(c2) + 1):
             col = gl(ci)
-            if sh in GROUPED and r2 >= GROUPED[sh]:
-                out.add(f"{sh}!{col}*")
-                for rr in range(r1, min(r2, GROUPED[sh] - 1) + 1): out.add(f"{sh}!{col}{rr}")
-            else:
-                for rr in range(r1, r2 + 1): out.add(f"{sh}!{col}{rr}")
+            for rr in range(r1, r2 + 1):
+                out.add(node(sh, col, rr))
     return out
 G = {}
 for ws in wb.worksheets:

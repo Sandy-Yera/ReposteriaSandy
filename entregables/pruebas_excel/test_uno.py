@@ -48,7 +48,7 @@ def kpis(doc):
     p = doc.Sheets.getByName("Panel")
     g = lambda r: p.getCellRangeByName(r)
     vals = {}
-    for ref in ["B11", "E11", "H11", "H16", "F23", "H23", "J23", "F24", "H24", "J24", "B34", "F34", "J34", "C43", "C52", "E52"]:
+    for ref in ["B11", "E11", "H11", "H16", "F23", "H23", "J23", "F24", "H24", "J24", "C35", "G35", "C43", "C51", "C60", "H60", "C69", "E69"]:
         vals[ref] = g(ref).getString()
     return vals
 
@@ -79,7 +79,7 @@ de = doc.Sheets.getByName("Registro Delivery")
 check("Delivery: crema libre, gris bloqueado", all(not locked(de, f"{c}50") for c in "BCDFH") and all(locked(de, f"{c}50") for c in "EG"),
       ([locked(de, f"{c}50") for c in "BCDFH"], [locked(de, f"{c}50") for c in "EG"]))
 pn = doc.Sheets.getByName("Panel")
-check("Panel: filtros libres, indicadores bloqueados", all(not locked(pn, f"{c}7") for c in "BDFHJL") and locked(pn, "B11") and locked(pn, "B34"))
+check("Panel: filtros libres, indicadores bloqueados", all(not locked(pn, f"{c}7") for c in "BDFHJL") and locked(pn, "B11") and locked(pn, "C35"))
 ho = doc.Sheets.getByName("Horarios")
 check("Horarios: zona de pegado libre y títulos bloqueados", not locked(ho, "B16") and not locked(ho, "J40") and not locked(ho, "M40") and locked(ho, "B13"),
       (locked(ho, "B16"), locked(ho, "J40"), locked(ho, "M40"), locked(ho, "B13")))

@@ -15,6 +15,8 @@ def eq(label, got, exp, tol_s=0.6):
         ok = got in (None, "", "—")
     elif isinstance(exp, float) and label.endswith("_t"):
         g = secs(got); ok = g is not None and abs(g - exp) <= tol_s
+    elif isinstance(exp, float) and (label.endswith("ajustado") or label.endswith("margen")):
+        ok = isinstance(got, (int, float)) and abs(got - exp) < 0.002
     elif isinstance(exp, float):
         ok = isinstance(got, (int, float)) and abs(got - exp) < 1e-6
     else:
@@ -85,33 +87,39 @@ def run(seed, filtros_list):
                 eq(f"{tag} tabla {t} pct", p[f"{col}26"].value, e["pct"])
                 eq(f"{tag} tabla {t} n", p[f"{col}27"].value, e["n"])
                 eq(f"{tag} tabla {t} del", p[f"{col}28"].value, e["dl"])
-        for role, col in (("caj", 2), ("board", 6), ("corr", 10)):
+        for role, r0 in (("caj", 35), ("board", 43), ("corr", 51)):
             lst = exp["rank"][role]
             for k in range(5):
-                cell = p.cell(34 + k, col).value
+                rr = r0 + k
                 if k < len(lst):
-                    t, _, name, n, pct = lst[k]
-                    eq(f"{tag} rank {role} {k+1} nombre", cell, f"{k+1}. {name}")
-                    eq(f"{tag} rank {role} {k+1} n", p.cell(34 + k, col + 1).value, n)
-                    eq(f"{tag} rank {role} {k+1} tiempo_t", p.cell(34 + k, col + 2).value, t)
-                    eq(f"{tag} rank {role} {k+1} pct", p.cell(34 + k, col + 3).value, pct)
+                    e = lst[k]
+                    eq(f"{tag} rank {role} {k+1} nombre", p[f"C{rr}"].value, e["clave"])
+                    eq(f"{tag} rank {role} {k+1} turnos", p[f"E{rr}"].value, e["n"])
+                    eq(f"{tag} rank {role} {k+1} tiempo_t", p[f"F{rr}"].value, float(e["t"]))
+                    eq(f"{tag} rank {role} {k+1} ajustado", round(p[f"G{rr}"].value, 3) if isinstance(p[f"G{rr}"].value, float) else p[f"G{rr}"].value, round(e["score"], 3) + 0.0)
+                    eq(f"{tag} rank {role} {k+1} margen", p[f"I{rr}"].value, e["margen"] if e["margen"] is None else float(e["margen"]))
+                    eq(f"{tag} rank {role} {k+1} lectura", p[f"J{rr}"].value, e["lectura"])
+                    eq(f"{tag} rank {role} {k+1} pct", p[f"L{rr}"].value, float(e["pct"]))
                 else:
-                    eq(f"{tag} rank {role} {k+1} vacío", cell, "Sin datos suficientes" if k == 0 else "—")
+                    eq(f"{tag} rank {role} {k+1} vacío", p[f"C{rr}"].value, "Sin datos suficientes" if k == 0 else None)
         for k in range(5):
+            rr = 60 + k
             if k < len(exp["trios"]):
-                t, _, key, n, pct = exp["trios"][k]
-                got = (p[f"C{43+k}"].value, p[f"E{43+k}"].value, p[f"G{43+k}"].value)
-                eq(f"{tag} trio {k+1}", got, key)
-                eq(f"{tag} trio {k+1} n", p[f"I{43+k}"].value, n)
-                eq(f"{tag} trio {k+1} tiempo_t", p[f"J{43+k}"].value, t)
+                e = exp["trios"][k]
+                eq(f"{tag} trio {k+1}", (p[f"C{rr}"].value, p[f"D{rr}"].value, p[f"E{rr}"].value), e["clave"])
+                eq(f"{tag} trio {k+1} n", p[f"F{rr}"].value, e["n"])
+                eq(f"{tag} trio {k+1} tiempo_t", p[f"G{rr}"].value, float(e["t"]))
+                eq(f"{tag} trio {k+1} ajustado", round(p[f"H{rr}"].value, 3), round(e["score"], 3) + 0.0)
+                eq(f"{tag} trio {k+1} margen", p[f"I{rr}"].value, e["margen"] if e["margen"] is None else float(e["margen"]))
+                eq(f"{tag} trio {k+1} lectura", p[f"J{rr}"].value, e["lectura"])
             else:
-                eq(f"{tag} trio {k+1} vacío", p[f"I{43+k}"].value, None)
+                eq(f"{tag} trio {k+1} vacío", p[f"F{rr}"].value, None)
         for k in range(5):
             if k < len(exp["dias_top"]):
                 O, _, r = exp["dias_top"][k]
-                eq(f"{tag} dia {k+1} fecha", fecha(p[f"C{52+k}"].value), r["fecha"])
-                eq(f"{tag} dia {k+1} tiempo_t", p[f"E{52+k}"].value, float(O))
-                eq(f"{tag} dia {k+1} resultado", p[f"L{52+k}"].value, r["P"])
+                eq(f"{tag} dia {k+1} fecha", fecha(p[f"C{69+k}"].value), r["fecha"])
+                eq(f"{tag} dia {k+1} tiempo_t", p[f"E{69+k}"].value, float(O))
+                eq(f"{tag} dia {k+1} resultado", p[f"L{69+k}"].value, r["P"])
 
 
 d = dt.date

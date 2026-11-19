@@ -38,8 +38,8 @@ check("Mes completo: ninguna celda con error", not scan_errors(wb), scan_errors(
 p, ho = wb["Panel"], wb["Horarios"]
 check("Panel cuenta los 60 turnos", p["H16"].value == 60, p["H16"].value)
 check("Panel cuenta los 60 turnos de delivery", p["K16"].value == 60, p["K16"].value)
-check("Ranking por estación con datos (mín. 3)", str(p["B34"].value).startswith("1. ") and str(p["F34"].value).startswith("1. "), (p["B34"].value, p["F34"].value))
-check("Mejores días con 5 filas", all(p[f"C{52+k}"].value not in (None, "", "Sin datos") for k in range(5)), [p[f"C{52+k}"].value for k in range(5)])
+check("Ranking por estación con datos (mín. 3)", p["C35"].value not in (None, "", "Sin datos suficientes") and p["C43"].value not in (None, "", "Sin datos suficientes"), (p["C35"].value, p["C43"].value))
+check("Mejores días con 5 filas", all(p[f"C{69+k}"].value not in (None, "", "Sin datos") for k in range(5)), [p[f"C{69+k}"].value for k in range(5)])
 tAM, tPM, tT = secs(p["F24"].value), secs(p["H24"].value), secs(p["J24"].value)
 autosAM, autosPM = p["F23"].value, p["H23"].value
 check("Total del día = promedio ponderado de AM y PM", abs(tT - (tAM * autosAM + tPM * autosPM) / (autosAM + autosPM)) < 0.01, (tAM, tPM, tT))
@@ -52,8 +52,8 @@ check("Delivery: botón Abrir creado", wb["Registro Delivery"]["E8"].value == "A
 
 # filtros en el mismo mes
 for desc, flt, fn in [
-    ("Filtro un día (15-nov)", {"B7": dt.date(2026, 11, 15), "D7": dt.date(2026, 11, 15)}, lambda p: p["H16"].value == 2 and p["J27"].value == 2 and p["C52"].value is not None),
-    ("Filtro semana (10 al 16-nov)", {"B7": dt.date(2026, 11, 10), "D7": dt.date(2026, 11, 16), "L7": 1}, lambda p: p["H16"].value == 14 and str(p["C43"].value) != "Sin datos suficientes"),
+    ("Filtro un día (15-nov)", {"B7": dt.date(2026, 11, 15), "D7": dt.date(2026, 11, 15)}, lambda p: p["H16"].value == 2 and p["J27"].value == 2 and p["C69"].value is not None),
+    ("Filtro semana (10 al 16-nov)", {"B7": dt.date(2026, 11, 10), "D7": dt.date(2026, 11, 16), "L7": 1}, lambda p: p["H16"].value == 14 and str(p["C60"].value) != "Sin datos suficientes"),
     ("Filtro AM", {"F7": "AM"}, lambda p: p["H16"].value == 30),
     ("Filtro persona Ana", {"J7": "Ana"}, lambda p: 0 < p["H16"].value < 60),
 ]:
