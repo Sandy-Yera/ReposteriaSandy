@@ -1008,7 +1008,7 @@ merge(pan, f"B{TR_END+1}:M{TR_END+1}", f'=IF(fAprende=1,IF(ISNUMBER(H{r+1}),"As�
 # ----- Mejores días -----
 r = TR_END + 2
 pan.row_dimensions[r - 1].height = 14
-section(r, "Mejores días", "Ordenados por cuánto mejor fue el día frente a lo normal de SU día de la semana (un sábado rápido vale más que un martes normal). \"Tiempo del día\" es el resultado oficial del sistema. Respeta el rango de fechas.")
+section(r, "Mejores días", "Ordenados por cuánto mejor fue el día frente a lo normal de SU día de la semana (un sábado rápido vale más que un martes normal). \"Tiempo del día\" es el resultado oficial del sistema. Elige una semana en Desde y Hasta para ver sus 7 días ordenados.")
 r += 2
 pan.row_dimensions[r].height = 24
 heads = [("B", "B", "#"), ("C", "D", "Fecha"), ("E", "E", "Tiempo del día"), ("F", "F", "vs. su día"), ("G", "G", "AM real"), ("H", "H", "PM real"), ("I", "I", "Autos"), ("J", "M", "Resultado")]
@@ -1016,7 +1016,8 @@ for a, b, h in heads:
     if a != b: merge(pan, f"{a}{r}:{b}{r}", h, f=font(10, True, "FFFFFF"), fl=fill(ACC), al=CENTER)
     else: put(pan, f"{a}{r}", h, f=font(10, True, "FFFFFF"), fl=fill(ACC), al=CENTER)
 DS = ra("AB")
-for k in range(1, 6):
+TOP_DIAS = 7          # una semana completa: al filtrar una semana se ven sus 7 días ordenados
+for k in range(1, TOP_DIAS + 1):
     rr = r + k
     pan.row_dimensions[rr].height = 22
     m = f"MATCH(SMALL({DS},{k}),{DS},0)"
@@ -1036,8 +1037,8 @@ for k in range(1, 6):
     for a in "EGH": cf_time(pan, f"{a}{rr}", f"{a}{rr}")
     cf_text(pan, f"J{rr}", f"J{rr}", [('LEFT({c},7)="Cumplió"', G_LT, G_TX), ('LEFT({c},5)="Falló"', RD_F, RD_T)])
 DIAS_R0 = r + 1
-pan.row_dimensions[r + 6].height = 20
-merge(pan, f"B{r+6}:M{r+6}", f'=IF(fAprende=1,IF(ISNUMBER(F{DIAS_R0}),"Así se lee: el "&TEXT(C{DIAS_R0},"dd-mm-yyyy")&" fue "&TEXT(ABS(F{DIAS_R0}),"0")&" s "'
+pan.row_dimensions[r + TOP_DIAS + 1].height = 20
+merge(pan, f"B{r+TOP_DIAS+1}:M{r+TOP_DIAS+1}", f'=IF(fAprende=1,IF(ISNUMBER(F{DIAS_R0}),"Así se lee: el "&TEXT(C{DIAS_R0},"dd-mm-yyyy")&" fue "&TEXT(ABS(F{DIAS_R0}),"0")&" s "'
       f'&IF(F{DIAS_R0}<0,"mejor","peor")&" que un "&TEXT(C{DIAS_R0},"dddd")&" normal. Se compara cada día con su mismo día de la semana.",""),"")',
       f=font(8, i=True, c=ACC), al=Alignment(vertical="center"))
 pan.freeze_panes = "A9"
@@ -1148,7 +1149,6 @@ bloques = [
         "Guarda una copia de respaldo: Archivo → Guardar como → ponle un nombre como \"Registro hasta dic-2027\".",
         "En este archivo, borra las celdas crema de los registros (solo crema) y sigue anotando desde arriba. El respaldo queda con todo el historial.",
         "Si el Panel dice \"Hay filas sin fórmulas\", alguien quitó la protección y borró o insertó filas. Lo más seguro es volver a una copia anterior.",
-        "Solo para quien sabe Excel: las hojas se desprotegen en Revisar → Desproteger hoja (no tienen contraseña). Vuelve a protegerlas al terminar.",
     ]),
     ("12", "Límites a tener en cuenta", [
         "Funciona en Excel 2013 o más nuevo, en Windows o Mac. En versiones muy antiguas, en el navegador o en el celular, algunas partes pueden fallar: para anotar datos, usa el computador.",

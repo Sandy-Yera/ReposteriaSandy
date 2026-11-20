@@ -176,7 +176,7 @@ def panel(auto, deliv, personal, desde=None, hasta=None, turno="Total", persona=
         if dn[w] - 1 <= 0: continue
         dev = (r["O"] - dsum[w] / dn[w]) * dn[w] / (dn[w] - 1)
         days.append((dev, r["i"], r))
-    days = sorted(days)[:5]
+    days = sorted(days)[:7]
     res["dias_top"] = days
     if canal == "Delivery":
         for k in ("autos", "t", "pct", "turnos", "dias"): res[k] = "—"

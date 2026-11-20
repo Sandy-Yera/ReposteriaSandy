@@ -114,7 +114,7 @@ def run(seed, filtros_list):
                 eq(f"{tag} trio {k+1} lectura", p[f"J{rr}"].value, e["lectura"])
             else:
                 eq(f"{tag} trio {k+1} vacío", p[f"F{rr}"].value, None)
-        for k in range(5):
+        for k in range(7):
             if k < len(exp["dias_top"]):
                 dev, _, r = exp["dias_top"][k]
                 eq(f"{tag} dia {k+1} fecha", fecha(p[f"C{69+k}"].value), r["fecha"])

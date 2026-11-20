@@ -139,7 +139,7 @@ def verificar_panel(etq):
             cmp(f"trío{k+1} ajustado", v(f"H{rr}"), d["score"], 0.005); cmp(f"trío{k+1} lectura", txt("Panel", f"J{rr}"), d["lectura"])
         else:
             cmp(f"trío{k+1} vacío", txt("Panel", f"F{rr}"), "")
-    for k in range(5):
+    for k in range(7):
         rr = 69 + k
         if k < len(exp["dias_top"]):
             dev, _, r = exp["dias_top"][k]
@@ -262,6 +262,9 @@ def filtro(**kw):
     for ref, v in kw.items(): pegar("Panel", ref, v)
 filtro(B7=INICIO + dt.timedelta(days=9), D7=INICIO + dt.timedelta(days=9)); verificar_panel("Un solo día")
 filtro(B7=INICIO + dt.timedelta(days=7), D7=INICIO + dt.timedelta(days=13)); verificar_panel("Una semana")
+dias_sem = [desde_serial(cel("Panel", f"C{69+k}").getValue()) for k in range(7) if txt("Panel", f"C{69+k}")]
+check("Con una semana elegida, Mejores días muestra exactamente sus 7 días", len(dias_sem) == 7 and len(set(dias_sem)) == 7 and
+      all(INICIO + dt.timedelta(days=7) <= d <= INICIO + dt.timedelta(days=13) for d in dias_sem), dias_sem)
 filtro(B7="", D7=""); escribir("Panel", "F7", "PM"); verificar_panel("Turno PM")
 escribir("Panel", "F7", "AM"); verificar_panel("Turno AM")
 escribir("Panel", "F7", "Total"); escribir("Panel", "J7", "Carla"); verificar_panel("Persona Carla")
