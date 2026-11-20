@@ -580,3 +580,8 @@ Generador del archivo `entregables/Registro_Rendimiento_Auto_Delivery.xlsx` y su
 - Ubicación: entregables/pruebas_excel/auditoria_visible.py
 - Qué hace: revisa que nada importante (enlaces de navegación, avisos, ejemplos y guías del Modo aprendizaje) quede fuera de la primera pantalla sin un enlace visible que lleve ahí. También detecta hipervínculos fijos sobre celdas con fórmula.
 - Cómo funciona: calcula la posición en píxeles de cada columna con sus anchos reales (considera las columnas agrupadas). Un elemento cuenta como alcanzable si está en la pantalla inicial (unos 1.200 px × 30 filas) o si un enlace visible salta a una pantalla donde se ve. Acepta el recorrido natural (bajar por el Panel o las Instrucciones, las guías bajo cada encabezado y seguir a la derecha en la tabla de ejemplos).
+
+### test_sesgos (tal, base, verdad_pm, verdad_dia, dev_real, bloque, spearman, MODO)
+- Ubicación: entregables/pruebas_excel/test_sesgos.py
+- Qué hace: mide la precisión y los sesgos del archivo lleno (1.030 filas ≈ 73 semanas) con verdad conocida, simulando auto por auto. Escenario "limpio" (turnos fáciles/difíciles, muestra chica) y "completo" (además buen compañero, mejora en el tiempo y efecto del volumen).
+- Cómo funciona: no modifica el Excel. Lee los resultados ya calculados (Calculos, registro y Panel) y los compara con el talento real: correlación de los rankings, cobertura del margen ±95 %, falsos "más rápido/lento", tríos, tiempo real de PM frente a la cota de redondeo y desvío de cada día frente al real.
