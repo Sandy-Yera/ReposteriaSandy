@@ -550,3 +550,8 @@ Generador del archivo `entregables/Registro_Rendimiento_Auto_Delivery.xlsx` y su
 - Ubicación: entregables/pruebas_excel/test_aprendizaje_e2e.py
 - Qué hace: prueba de extremo a extremo del Modo aprendizaje en LibreOffice como tester, usuario torpe y destructor.
 - Cómo funciona: escribir_ui escribe como un usuario (respeta la protección) y pegar salta la lista desplegable como un Ctrl+V. foto toma las celdas clave para comparar estados; modo_si y modo_no verifican cada estado. Cambia el interruptor en ambos sentidos y con variantes escritas o pegadas.
+
+### test_vida_real (abrir, escribir, pegar, leer_auto, leer_deliv, personal, filtros, igual, verificar_panel, verificar_ejemplos, anotar_dia, turno_datos, paso)
+- Ubicación: entregables/pruebas_excel/test_vida_real.py
+- Qué hace: prueba del ciclo de vida real del archivo en LibreOffice, en 12 pasos: Modo aprendizaje, desactivarlo, cargar personal y datos escribiendo como usuario, editar, borrar y reponer, errores y su corrección, completar un mes, filtros, cambios en Personal, activar y desactivar con datos reales, Horarios y Reportes, guardar y reabrir.
+- Cómo funciona: después de cada paso, `verificar_panel` lee lo que hay escrito (leer_auto, leer_deliv, personal, filtros), calcula el Panel con `modelo.panel` y lo compara celda por celda (tarjetas, AM/PM, rankings con ajuste, margen y lectura, mejores días). También revisa que ninguna hoja muestre errores. `escribir` respeta protección y listas; `pegar` simula Ctrl+V.
