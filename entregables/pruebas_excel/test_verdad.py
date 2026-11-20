@@ -38,7 +38,7 @@ for k in range(540):
     verdad_pm.append((len(auto_rows) - 1 + 8, sum(pm) / len(pm), len(am), len(pm)))
     for x in fila["AM"][:3] + fila["PM"][:3]: cuenta[x] = cuenta.get(x, 0) + 1
 
-res, wb = build_case(TEMPLATE, "verdad.xlsx", auto_rows[:1100], [], NAMES, {"L7": 3})
+res, wb = build_case(TEMPLATE, "verdad.xlsx", auto_rows[:1030], [], NAMES, {"L7": 3})
 a, ca = wb["Registro Auto"], wb["Calculos"]
 out = []
 def check(n, c, det=""): out.append((n, bool(c), det))
@@ -46,13 +46,13 @@ def check(n, c, det=""): out.append((n, bool(c), det))
 # 1) tiempo real de PM vs verdad, dentro de la cota de redondeo 0,5 s·(autos día + autos AM)/autos PM
 peor, fuera = 0, 0
 for row, real, n_am, n_pm in verdad_pm:
-    if row > 1107: break
+    if row > 1037: break
     L = secs(a[f"L{row}"].value)
     cota = 0.5 * (n_am + n_pm + n_am) / n_pm + 0.51
     if L is None or abs(L - real) > cota: fuera += 1
     peor = max(peor, abs((L or 0) - real) / cota)
 check("Tiempo real PM dentro del error de redondeo del sistema (todas las filas)", fuera == 0, f"fuera={fuera}, peor relación error/cota={peor:.2f}")
-pocos = [(row, real, n_am, n_pm) for row, real, n_am, n_pm in verdad_pm if n_pm <= 20 and row <= 1107]
+pocos = [(row, real, n_am, n_pm) for row, real, n_am, n_pm in verdad_pm if n_pm <= 20 and row <= 1037]
 errs = [abs(secs(a[f"L{r}"].value) - real) for r, real, _, _ in pocos]
 print(f"   PM con pocos autos ({len(pocos)} filas): error máx {max(errs):.1f} s, medio {statistics.mean(errs):.1f} s")
 

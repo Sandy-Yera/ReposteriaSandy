@@ -62,15 +62,15 @@ for desc, flt, fn in [
 
 # archivo lleno: 1.100 filas (≈18 meses) y tiempo de recálculo
 full = []
-for k in range(550):
+for k in range(515):
     f = dt.date(2025, 6, 1) + dt.timedelta(days=k)
     t1, t2 = rnd.sample(NAMES, 3), rnd.sample(NAMES, 3)
     full += [(f, "AM", *t1, 100, 3, rnd.randint(0, 59)), (f, "PM", *t2, 190, 3, rnd.randint(0, 59))]
 t0 = time.time()
 res, wb3 = build_case(TEMPLATE, "e2e_full.xlsx", full, [(r[0], r[1], "https://d/x", "Sí") for r in full], NAMES, {})
 el = time.time() - t0
-check(f"Archivo lleno (1.100 filas) recalcula sin errores ({el:.0f}s incluyendo guardar)", res.get("total_errors") == 0 and not scan_errors(wb3), res)
-check("Archivo lleno: Panel cuenta 1.100 turnos", wb3["Panel"]["H16"].value == 1100, wb3["Panel"]["H16"].value)
+check(f"Archivo lleno (1.030 filas reales) recalcula sin errores ({el:.0f}s incluyendo guardar)", res.get("total_errors") == 0 and not scan_errors(wb3), res)
+check("Archivo lleno: Panel cuenta 1.030 turnos", wb3["Panel"]["H16"].value == 1030, wb3["Panel"]["H16"].value)
 
 print(f"EXTREMO A EXTREMO: {sum(o[1] for o in out)}/{len(out)} correctos")
 for n, ok, det in out: print(("  ✓ " if ok else "  ✗ ") + n + ("" if ok else f"  →  {det}"))

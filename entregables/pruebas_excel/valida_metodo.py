@@ -35,7 +35,7 @@ def ranking_justo(F, nombres, minimo=3):
 tot = {k: [] for k in ("rho_crudo", "rho_justo", "cob", "falsos")}; p01 = {"crudo": 0, "justo": 0}
 for seed in range(1, 13):
     g = {"__name__": "x"}; sys.argv = ["x", "x", str(seed)]; exec(SRC, g)
-    rows = [dict(fecha=r[0], turno=r[1], caj=r[2], board=r[3], corr=r[4], autos=r[5], min=r[6], seg=r[7]) for r in g["auto_rows"][:1100]]
+    rows = [dict(fecha=r[0], turno=r[1], caj=r[2], board=r[3], corr=r[4], autos=r[5], min=r[6], seg=r[7]) for r in g["auto_rows"][:1030]]
     F = [r for r in modelo.filas(rows) if r["cumple"] is not None]
     CAJ, tal = g["CAJ"], g["talento"]
     justo = ranking_justo(F, CAJ)

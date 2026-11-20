@@ -12,7 +12,7 @@ TEMPLATE, TAG = sys.argv[1], sys.argv[2]
 def PV(n, v): p = PropertyValue(); p.Name = n; p.Value = v; return p
 
 NAMES = [f"Persona {i:02d}" for i in range(1, 31)]
-def fill_full(src, dst, seed=11, rows=1100):
+def fill_full(src, dst, seed=11, rows=1030):
     rnd = random.Random(seed)
     wb = load_workbook(src)
     a, d, pe = wb["Registro Auto"], wb["Registro Delivery"], wb["Personal"]
@@ -27,6 +27,7 @@ def fill_full(src, dst, seed=11, rows=1100):
             for col, v in zip("BCDEFGHI", (f, t, c, b, co, au, sec // 60, sec % 60)): a[f"{col}{r}"] = v
             for col, v in zip("BCDF", (f, t, f"https://drive.google.com/{r}", "Sí" if rnd.random() < .8 else "No")): d[f"{col}{r}"] = v
             r += 1
+    wb["Inicio"]["C6"] = "No"
     wb.save(dst)
 
 full = f"bench_{TAG}.xlsx"

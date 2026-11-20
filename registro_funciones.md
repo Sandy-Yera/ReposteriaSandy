@@ -23,8 +23,8 @@ Generador del archivo `entregables/Registro_Rendimiento_Auto_Delivery.xlsx` y su
 
 ### EMPTY
 - Ubicación: entregables/pruebas_excel/build.py
-- Qué hace: indica si el archivo se genera sin filas de ejemplo.
-- Cómo funciona: es True cuando el segundo argumento es `empty`. Las pruebas lo usan para partir de una plantilla vacía.
+- Qué hace: indica si el archivo se genera con el Modo aprendizaje apagado.
+- Cómo funciona: es True cuando el segundo argumento es `empty`; el interruptor de Inicio queda en "No". Las filas reales siempre parten vacías.
 
 ### PRI, ACC, INPUT, CALC, LIGHT, BORDER, MUTED, G_DK, G_MD, G_LT, G_TX, OR_F, OR_T, RD_F, RD_T
 - Ubicación: entregables/pruebas_excel/build.py
@@ -206,10 +206,10 @@ Generador del archivo `entregables/Registro_Rendimiento_Auto_Delivery.xlsx` y su
 - Qué hace: definición de columnas de Registro Auto (letra, encabezado, ancho, tipo in/calc/aux).
 - Cómo funciona: B–Q visibles; R–AX auxiliares ocultas. Las relevantes son: clave índice AI; AM del día AJ/AK/AL; segundos AM/AN; columnas prefiltradas AO–AQ y AA; estadísticas de tríos AR–AW; banderas Z y AX.
 
-### ejemplos_auto, ejemplos_del, ejemplos_rep, nombres_ej
+### generar_ejemplos, EJ_AUTO, EJ_DEL
 - Ubicación: entregables/pruebas_excel/build.py
-- Qué hace: filas de ejemplo marcadas "EJEMPLO – borrar".
-- Cómo funciona: se escriben solo si EMPTY es False.
+- Qué hace: genera los datos inventados del Modo aprendizaje: 4 semanas de marzo 2021 con nombres "(ej.)". Ana es claramente más rápida y Carla más lenta; incluye un PM "dudoso", dos filas con errores típicos y casos de Delivery (No, sin enlace, respuesta inválida).
+- Cómo funciona: semilla fija (siempre los mismos datos). Retorna filas (Auto, Delivery) con su explicación en Observaciones. Se escriben en la zona reservada R_EJ0..R1 como fórmulas de `f_ej`.
 
 ### v_turno, v_pers, v_autos, v_min, v_seg, v_fecha, v_turno2, v_sn, v_fecha2, v_link, v_fecha3, v_tipo, v_rf, v_nom, pv
 - Ubicación: entregables/pruebas_excel/build.py
@@ -319,7 +319,7 @@ Generador del archivo `entregables/Registro_Rendimiento_Auto_Delivery.xlsx` y su
 ### build_case
 - Ubicación: entregables/pruebas_excel/harness.py
 - Qué hace: prepara un caso de prueba: escribe filas de Auto, Delivery, Personal y filtros, guarda, recalcula y relee.
-- Cómo funciona: retorna (JSON de recalc, libro con valores). `extra(wb)` permite cambios adicionales. Escribe el archivo `out`.
+- Cómo funciona: retorna (JSON de recalc, libro con valores). `extra(wb)` permite cambios adicionales; `modo_aprendizaje` ("No" por defecto) fija el interruptor de Inicio. Rechaza más de 1.030 filas (las demás están reservadas para los ejemplos). Escribe el archivo `out`.
 
 ### scan_errors
 - Ubicación: entregables/pruebas_excel/harness.py
@@ -490,3 +490,48 @@ Generador del archivo `entregables/Registro_Rendimiento_Auto_Delivery.xlsx` y su
 - Ubicación: entregables/pruebas_excel/build.py
 - Qué hace: tabla índice persona × contexto en Calculos (una por estación, 100 filas × 14 contextos, desde las columnas 50, 64 y 78) con los turnos programados de cada persona en cada contexto.
 - Cómo funciona: cada casilla es un COUNTIF de la clave. Cada fila del registro consulta su casilla con INDEX(tabla, MOD(clave,1000), INT(clave/1000)), sin contar. Al cambiar un nombre se recalculan unas 420 casillas en lugar de 1.100 conteos.
+
+### R_BANDA, R_EJ0, R1_REAL, N_REAL
+- Ubicación: entregables/pruebas_excel/build.py
+- Qué hace: geometría de la zona de ejemplos: fila separadora 1038, ejemplos 1039–1107, filas reales 8–1037 (1.030).
+- Cómo funciona: solo las filas reales se desbloquean y tienen validaciones. Los avisos de filas libres y de filas sin fórmulas miran solo las reales.
+
+### EJ_NAMES, EJ_OFF
+- Ubicación: entregables/pruebas_excel/build.py
+- Qué hace: nombres inventados de los ejemplos ("Ana (ej.)"…) y desplazamiento de 1.000.000 en las claves de las filas de ejemplo.
+- Cómo funciona: con el desplazamiento, una fila real en la misma fecha y turno que un ejemplo nunca se considera repetida ni se usa como "su AM".
+
+### rar, rdr
+- Ubicación: entregables/pruebas_excel/build.py
+- Qué hace: rango de una columna solo en las filas reales de Registro Auto / Delivery.
+- Cómo funciona: lo usan los avisos (filas por revisar, sin fórmulas, filas libres).
+
+### vacio
+- Ubicación: entregables/pruebas_excel/build.py
+- Qué hace: condición "celda vacía" robusta: vacía, solo espacios o fórmula que devuelve "" (ejemplos ocultos).
+- Cómo funciona: IFERROR(LEN(TRIM(c&""))=0, FALSE). Un error escrito por el usuario no cuenta como vacío. Reemplaza a ISBLANK en las fórmulas por fila.
+
+### si_aprende, f_ej
+- Ubicación: entregables/pruebas_excel/build.py
+- Qué hace: fórmulas que muestran un texto (o un valor de ejemplo) solo con Modo aprendizaje en Sí.
+- Cómo funciona: =IF(fAprende=1, valor, ""). f_ej convierte fechas a DATE(), números y textos.
+
+### fAprende, v_apr
+- Ubicación: entregables/pruebas_excel/build.py
+- Qué hace: interruptor Modo aprendizaje (Inicio!C6, lista Sí/No) y su lectura en Calculos!B8 (1 = Sí, 0 = No; vacío o inválido = Sí).
+- Cómo funciona: con 1 se ven ejemplos y explicaciones y el Panel usa solo filas de ejemplo; con 0 todo eso se vuelve "" y el Panel usa solo filas reales.
+
+### aux_ejemplo (Registro Auto CD, Registro Delivery Q)
+- Ubicación: entregables/pruebas_excel/build.py
+- Qué hace: marca constante 1 en las filas de la zona de ejemplos.
+- Cómo funciona: las fórmulas comparan N(marca)=fAprende para decidir si la fila entra al modo actual (U, contexto, día de semana, Delivery en rango) y para excluir ejemplos de los avisos.
+
+### GUIA_AUTO, GUIA_DEL, EXPL_CARD, DIAS_R0
+- Ubicación: entregables/pruebas_excel/build.py
+- Qué hace: textos de guía bajo cada encabezado de los registros, explicación de cada tarjeta del Panel y fila inicial de "Mejores días" (para la línea "Así se lee").
+- Cómo funciona: todos se muestran solo en Modo aprendizaje; las tarjetas vuelven a su subtítulo normal con No.
+
+### check (test_aprendizaje), reales, deliv
+- Ubicación: entregables/pruebas_excel/test_aprendizaje.py
+- Qué hace: prueba del Modo aprendizaje con datos reales en las mismas fechas que los ejemplos.
+- Cómo funciona: verifica que Sí muestre solo ejemplos y No solo datos reales, que no haya choques ni repetidas, que las filas reales calculen igual en ambos modos, las explicaciones, el filtro con nombre de ejemplo y la protección de la zona.

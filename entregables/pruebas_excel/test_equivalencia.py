@@ -25,7 +25,7 @@ def dataset(seed, shuffle):
              (dt.date(2026, 12, 4), "AM", *NAMES[:3], 100, 3, 0), (dt.date(2026, 12, 4), "AM", *NAMES[:3], 100, 3, 0)]  # repetida sin PM
     deliv += [(dt.date(2026, 12, 1), "AM", "https://x", "si"), (dt.date(2026, 12, 1), "AM", "Sí", None)]
     if shuffle: rnd.shuffle(auto); rnd.shuffle(deliv)
-    return auto[:1100], deliv[:1100]
+    return auto[:1030], deliv[:1030]
 
 def snapshot(wb):
     out = {}
@@ -34,10 +34,10 @@ def snapshot(wb):
         for c in row:
             if c.value not in (None, ""): out[f"Panel!{c.coordinate}"] = c.value
     a = wb["Registro Auto"]
-    for r in range(8, 1108):
+    for r in range(8, 1038):
         for col in "JKLMNOP": out[f"Auto!{col}{r}"] = a[f"{col}{r}"].value
     d = wb["Registro Delivery"]
-    for r in range(8, 1108):
+    for r in range(8, 1038):
         for col in "EG": out[f"Deliv!{col}{r}"] = d[f"{col}{r}"].value
     return out
 
@@ -56,7 +56,7 @@ for flt, seed, sh in scen:
     _, w_new = build_case(NEW, "eq_new.xlsx", auto, deliv, NAMES, flt)
     so, sn = snapshot(w_old), snapshot(w_new)
     a = w_old["Registro Auto"]
-    distintos = len({(a[f"D{r}"].value, a[f"E{r}"].value, a[f"F{r}"].value) for r in range(8, 1108) if a[f"W{r}"].value == 1 and a[f"S{r}"].value})
+    distintos = len({(a[f"D{r}"].value, a[f"E{r}"].value, a[f"F{r}"].value) for r in range(8, 1038) if a[f"W{r}"].value == 1 and a[f"S{r}"].value})
     if distintos > 400:   # la versión anterior tenía tope de 400 tríos: su ranking de tríos no es comparable
         for d in (so, sn):
             for k in [k for k in d if k.startswith("Panel!") and 43 <= int("".join(ch for ch in k.split("!")[1] if ch.isdigit())) <= 47]: d.pop(k)

@@ -24,7 +24,7 @@ def fecha(v):
     return v
 
 
-def build_case(template, out, auto_rows=(), deliv_rows=(), personal=None, panel=None, extra=None):
+def build_case(template, out, auto_rows=(), deliv_rows=(), personal=None, panel=None, extra=None, modo_aprendizaje="No"):
     """auto_rows: tuplas (B..I [,Q]) ; deliv_rows: (B,C,D,F[,G]); panel: dict celda->valor."""
     wb = load_workbook(template)
     a, d, p, pe = wb["Registro Auto"], wb["Registro Delivery"], wb["Panel"], wb["Personal"]
@@ -39,6 +39,8 @@ def build_case(template, out, auto_rows=(), deliv_rows=(), personal=None, panel=
         if row is None: continue
         for c, v in zip("BCDFH", row): d[f"{c}{R0+i}"] = v
     for k, v in (panel or {}).items(): p[k] = v
+    wb["Inicio"]["C6"] = modo_aprendizaje          # las pruebas trabajan con datos reales salvo que se pida lo contrario
+    assert len(auto_rows) <= 1030 and len(deliv_rows) <= 1030, "las filas 1038-1107 están reservadas para los ejemplos"
     if extra: extra(wb)
     wb.save(out)
     res = recalc(out)

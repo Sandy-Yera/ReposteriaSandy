@@ -166,16 +166,34 @@ GOOD_BAD = [('LEFT({c},2)="Sí"', G_LT, G_TX), ('{c}="No"', RD_F, RD_T)]
 
 N_ROWS = 1100
 R0, R1 = 8, 8 + N_ROWS - 1
+R_BANDA = 1038                  # fila separadora de la zona de ejemplos
+R_EJ0 = R_BANDA + 1             # filas 1039..1107: ejemplos inventados (solo visibles en Modo aprendizaje)
+R1_REAL = R_BANDA - 1           # filas reales: 8..1037
+N_REAL = R1_REAL - R0 + 1       # 1.030 filas reales (~16 meses)
+EJ_NAMES = ["Ana (ej.)", "Beto (ej.)", "Carla (ej.)", "Dani (ej.)", "Eli (ej.)", "Fede (ej.)"]
+EJ_OFF = 1000000                # desplazamiento de clave: los ejemplos nunca chocan con filas reales
 RA = "'Registro Auto'"
 RD = "'Registro Delivery'"
 def ra(col): return f"{RA}!${col}${R0}:${col}${R1}"
 def rd(col): return f"{RD}!${col}${R0}:${col}${R1}"
 def rng(col): return f"${col}${R0}:${col}${R1}"
+def rar(col): return f"{RA}!${col}${R0}:${col}${R1_REAL}"   # solo filas reales
+def rdr(col): return f"{RD}!${col}${R0}:${col}${R1_REAL}"
+
+def vacio(c):
+    """Condición: la celda está vacía o solo tiene espacios o una fórmula que devuelve "" (los ejemplos ocultos).
+    Un valor de error NO cuenta como vacío."""
+    return f'IFERROR(LEN(TRIM({c}&""))=0,FALSE)'
+
+def si_aprende(texto):
+    """Fórmula de texto visible solo en Modo aprendizaje."""
+    t = texto.replace('"', '""')
+    return f'=IF(fAprende=1,"{t}","")'
 
 def f_turno(c):
     """Fórmula que normaliza un turno escrito a mano: 'AM'/'PM' (acepta am, a.m., 'PM '), '?' si es inválido, '' si está vacío."""
     tx = f'UPPER(SUBSTITUTE(SUBSTITUTE(TRIM({c}),".","")," ",""))'
-    return f'=IF(ISBLANK({c}),"",IFERROR(IF(OR({tx}="AM",{tx}="PM"),{tx},"?"),"?"))'
+    return f'=IF({vacio(c)},"",IFERROR(IF(OR({tx}="AM",{tx}="PM"),{tx},"?"),"?"))'
 
 def f_fecha(c):
     """Fórmula que devuelve la fecha como número entero si es una fecha real entre 2020 y 2099; si no, ''."""
@@ -196,7 +214,18 @@ ini.row_dimensions[2].height = 40
 merge(ini, "B2:E2", "Registro de rendimiento · Auto y Delivery", f=font(22, True, PRI), al=Alignment(vertical="center"))
 merge(ini, "B3:E3", "Control diario por turno (AM / PM) para el concurso de rendimiento del local.", f=font(11, c=MUTED), al=Alignment(vertical="center"))
 ini.row_dimensions[3].height = 22
-put(ini, "B5", "IR A", f=font(9, True, MUTED))
+put(ini, "B5", "MODO APRENDIZAJE", f=font(9, True, MUTED))
+ini.row_dimensions[6].height = 58
+put(ini, "C6", "No" if EMPTY else "Sí", f=font(16, True, PRI), fl=fill(INPUT), al=CENTER, bd=BOX)
+ini["C6"].protection = UNLOCK
+v_apr = dv(("Modo aprendizaje", "Sí = ejemplos y explicaciones. No = archivo limpio. Tus datos no se borran."), type="list", formula1='"Sí,No"',
+           errorTitle="Modo aprendizaje", error="Elige Sí o No con la flechita.")
+v_apr.add("C6"); ini.add_data_validation(v_apr)
+ini.conditional_formatting.add("C6", FormulaRule(formula=['UPPER(TRIM($C$6&""))<>"NO"'], fill=fill(ACC), font=Font(name=FONT, size=16, bold=True, color="FFFFFF")))
+put(ini, "E6", "Sí = el archivo muestra ejemplos inventados y explicaciones en cada hoja (ideal la primera vez, o para enseñar a alguien nuevo). "
+    "No = archivo limpio para trabajar. Tus datos reales nunca se borran ni se mezclan con los ejemplos: puedes cambiarlo cuando quieras.",
+    f=font(10, c="3E4C59"), al=Alignment(vertical="center", wrap_text=True))
+put(ini, "B8", "IR A", f=font(9, True, MUTED))
 botones = [
     ("Panel", "Panel", "Indicadores, comparación AM vs PM y rankings. Aquí se mira, no se escribe (salvo los filtros)."),
     ("Registro Auto", "Registro Auto", "Anotar cada día los autos y el tiempo que muestra el sistema, por turno."),
@@ -206,7 +235,7 @@ botones = [
     ("Personal", "Personal", "Lista de nombres para los desplegables. Agrega o quita personas aquí."),
     ("Instrucciones", "Instrucciones", "Paso a paso para usar el archivo, pensado para quien no sabe Excel."),
 ]
-r = 6
+r = 9
 for txt, tgt, desc in botones:
     ini.row_dimensions[r].height = 30
     c = link(ini, f"C{r}", txt + "  ›", tgt, white=True)
@@ -275,7 +304,7 @@ cols = [  # (letra, encabezado, ancho, tipo)
     ("BT", "aux_segValido", 6, "aux"), ("BU", "aux_margenPM", 6, "aux"), ("BV", "aux_trioComparables", 6, "aux"),
     ("BW", "aux_trioSumaR", 6, "aux"), ("BX", "aux_trioSumaR2", 6, "aux"), ("BY", "aux_trioC", 6, "aux"),
     ("BZ", "aux_trioN2", 6, "aux"), ("CA", "aux_diaSemana", 6, "aux"), ("CB", "aux_diaSeg", 6, "aux"),
-    ("CC", "aux_diaVsNormal", 6, "aux"),
+    ("CC", "aux_diaVsNormal", 6, "aux"), ("CD", "aux_ejemplo", 6, "aux"),
 ]
 title(au, "Registro Auto", None, 17, 15)
 au.row_dimensions[3].height = 38
@@ -287,7 +316,16 @@ merge(au, "B3:Q3",
 au.row_dimensions[4].height = 20
 merge(au, "B4:Q4", "Fila AM: lo que marca el sistema a las 19:00.   Fila PM: lo que marca al cierre (total del día), con la fecha del día en que empezó el turno "
       "aunque cierres pasada la medianoche.   Tiempo en dos casillas: minutos y segundos (ej. 3 y 25).", f=font(9, True, ACC), al=Alignment(vertical="center"))
-au.row_dimensions[5].height = 8
+au.row_dimensions[5].height = 34
+GUIA_AUTO = {"B": "Fecha del turno. Ej: 16-11-2026", "C": "AM o PM (con la flechita)", "D": "Quién estuvo en la caja", "E": "Quién preparó (board)",
+             "F": "Quién entregó (corredor)", "G": "Autos que marca el sistema", "H": "Solo minutos. Ej: 3", "I": "Solo segundos. Ej: 25",
+             "J": "Se calcula solo", "K": "Autos de este turno", "L": "Tiempo propio del turno", "M": "Nota del turno, o qué corregir",
+             "N": "¿Bajó de 4:00?", "O": "Resultado del día (fila PM)", "P": "¿Cumplió el día?", "Q": "Notas libres (opcional)"}
+for c_, t in GUIA_AUTO.items():
+    put(au, f"{c_}5", si_aprende(t), f=font(8, i=True, c=ACC), al=Alignment(horizontal="center", vertical="center", wrap_text=True))
+au.conditional_formatting.add("B5:Q5", FormulaRule(formula=["fAprende=1"], fill=fill("EAF2F8")))
+c = put(au, "Q2", si_aprende("Ver ejemplos ↓"), f=font(10, True, ACC, u="single"), al=CENTER)
+c.hyperlink = Hyperlink(ref="Q2", location=f"'Registro Auto'!B{R_BANDA}", display="Ver ejemplos")
 au.row_dimensions[6].height = 20
 merge(au, "B6:I6", "✎  LLENAS TÚ", f=font(9, True, OR_T), fl=fill(INPUT), al=CENTER)
 merge(au, "J6:P6", "⚙  SE CALCULA SOLO", f=font(9, True, MUTED), fl=fill(CALC), al=CENTER)
@@ -303,20 +341,22 @@ au["O7"].comment = Comment("Resultado final del día: lo que marca el sistema al
 
 for r in range(R0, R1 + 1):
     # Índice: clave numérica fecha*10+turno (1=AM, 2=PM). Atajo local: el AM del día suele estar en la fila de arriba.
-    amKey = f'AG{r}*10+1'
+    amKey = f'AG{r}*10+1+N(CD{r})*{EJ_OFF}'
     cond = f'AND(AF{r-1}="AM",AG{r-1}=AG{r})' if r > R0 else 'FALSE'
-    hasT = f'OR(NOT(ISBLANK(H{r})),NOT(ISBLANK(I{r})))'
-    hN = f'IF(ISBLANK(H{r}),0,--H{r})'
-    iN = f'IF(ISBLANK(I{r}),0,--I{r})'
+    hasT = f'OR(NOT({vacio(f"H{r}")}),NOT({vacio(f"I{r}")}))'
+    hN = f'IF({vacio(f"H{r}")},0,--H{r})'
+    iN = f'IF({vacio(f"I{r}")},0,--I{r})'
+    todo_vacio = "AND(" + ",".join(vacio(f"{c}{r}") for c in "BCDEFGHI") + ")"
+    enModo = f'N(CD{r})=fAprende'      # la fila pertenece al modo actual (reales o ejemplos)
     X = f'IF(AND(ISNUMBER(H{r}),H{r}>0,H{r}<1),ROUND(H{r}*1440,0),IF(OR({hN}<0,{iN}<0,{hN}<>INT({hN})),NA(),{hN}*60+{iN}))'
     pmOnly = f'OR(AF{r}<>"PM",AG{r}="")'
     f = {
         "J": f'=IF(AM{r}="","",IF(AM{r}>{MAX_SEG},"",AM{r}/86400))',
         "K": f'=IF(OR(AG{r}="",AF{r}="",AF{r}="?",AE{r}=""),"",IF(AF{r}="AM",AE{r},AE{r}-AJ{r}))',
         "L": f'=IF(OR(K{r}="",J{r}="",AC{r}>1,N(AL{r})>1),"",IF(AF{r}="AM",J{r},IF(K{r}<=0,"",IF(AJ{r}=0,J{r},(R{r}-AK{r})/K{r}))))',
-        "M": (f'=IF(COUNTA(B{r}:I{r})=0,"",IF(ISBLANK(B{r}),"Revisar: falta fecha",IF(AG{r}="","Revisar: fecha no válida",'
+        "M": (f'=IF({todo_vacio},"",IF({vacio(f"B{r}")},"Revisar: falta fecha",IF(AG{r}="","Revisar: fecha no válida",'
               f'IF(AF{r}="","Revisar: falta turno",IF(AF{r}="?","Revisar: turno no válido (AM o PM)",IF(AC{r}>1,"Revisar: fila repetida",IF(N(AL{r})>1,"Revisar: el AM de este día está repetido",'
-              f'IF(AND(NOT(ISBLANK(G{r})),AE{r}=""),"Revisar: autos no válidos",IF(AND({hasT},J{r}=""),"Revisar: tiempo no válido",'
+              f'IF(AND(NOT({vacio(f"G{r}")}),AE{r}=""),"Revisar: autos no válidos",IF(AND({hasT},J{r}=""),"Revisar: tiempo no válido",'
               f'IF(OR(AE{r}="",J{r}=""),"Falta autos o tiempo",IF(AND(AF{r}="PM",K{r}<=0),"Revisar: autos del día menores que AM",'
               f'IF(L{r}="","Revisar datos",{lvl_s("AN"+str(r))}&IF(AND(BU{r}>={DUDOSO_SEG},ABS(AN{r}-240)<BU{r}),"{DUDOSO}","")))))))))))))'),
         "N": f'=IF(AN{r}="","",IF(AN{r}<=0,"",IF(AN{r}<240,"Sí","No")))',
@@ -325,7 +365,7 @@ for r in range(R0, R1 + 1):
         "R": f'=IF(OR(J{r}="",AE{r}=""),0,J{r}*AE{r})',
         "S": f'=IFERROR(IF(OR(D{r}="",E{r}="",F{r}=""),"",D{r}&" · "&E{r}&" · "&F{r}),"")',
         "T": f'=IFERROR(IF(fPersona="Todas",1,IF(OR(TRIM(D{r})=fPersona,TRIM(E{r})=fPersona,TRIM(F{r})=fPersona),1,0)),0)',
-        "U": f'=IF(AG{r}="",0,IF(AND(AG{r}>=fDesde,AG{r}<=fHasta),1,0))',
+        "U": f'=IF(OR(AG{r}="",NOT({enModo})),0,IF(AND(AG{r}>=fDesde,AG{r}<=fHasta),1,0))',
         "V": f'=IF(AND(U{r}=1,N{r}<>""),1,0)',
         "W": f'=IF(AND(V{r}=1,OR(fTurno="Total",AF{r}=fTurno)),1,0)',
         "X": f'=W{r}*T{r}',
@@ -333,16 +373,16 @@ for r in range(R0, R1 + 1):
         "Z": f'=IF(N{r}="Sí",1,0)',
         "AA": f'=IF(AND(W{r}=1,S{r}<>""),S{r},"")',
         "AB": f'=IF(AND(U{r}=1,ISNUMBER(CC{r})),CC{r}+ROW()/10000000,"")',
-        "CA": f'=IF(O{r}="","",WEEKDAY(AG{r},2))',
+        "CA": f'=IF(OR(O{r}="",NOT({enModo})),"",WEEKDAY(AG{r},2))',
         "CB": f'=IF(O{r}="","",O{r}*86400)',
         "CC": f'=IF(CA{r}="","",IF(INDEX(diaN,CA{r})>1,(CB{r}-INDEX(diaBase,CA{r}))*INDEX(diaN,CA{r})/(INDEX(diaN,CA{r})-1),""))',
         "AC": f'=IF(AI{r}="",0,COUNTIF({rng("AI")},AI{r}))',
         "AD": f'=V{r}*T{r}',
-        "AE": f'=IF(ISBLANK(G{r}),"",IFERROR(IF(OR(--G{r}<0,--G{r}<>INT(--G{r}),--G{r}>{MAX_AUTOS}),"",--G{r}),""))',
+        "AE": f'=IF({vacio(f"G{r}")},"",IFERROR(IF(OR(--G{r}<0,--G{r}<>INT(--G{r}),--G{r}>{MAX_AUTOS}),"",--G{r}),""))',
         "AF": f_turno(f"C{r}"),
         "AG": f_fecha(f"B{r}"),
-        "AH": "=" + "+".join(f'IFERROR(AND(ISTEXT({c}{r}),COUNTIF(Personal!$B$8:$B$107,{c}{r})=0)*1,0)' for c in "DEF"),
-        "AI": f'=IF(OR(AG{r}="",AF{r}="",AF{r}="?"),"",AG{r}*10+IF(AF{r}="AM",1,2))',
+        "AH": f"=IF(N(CD{r})=1,0," + "+".join(f'IFERROR(AND(ISTEXT({c}{r}),COUNTIF(Personal!$B$8:$B$107,{c}{r})=0)*1,0)' for c in "DEF") + ")",
+        "AI": f'=IF(OR(AG{r}="",AF{r}="",AF{r}="?"),"",AG{r}*10+IF(AF{r}="AM",1,2)+N(CD{r})*{EJ_OFF})',
         "AJ": f'=IF({pmOnly},"",IF(AL{r}=1,IF({cond},N(AE{r-1 if r > R0 else r}),SUMIF({rng("AI")},{amKey},{rng("AE")})),0))',
         "AK": f'=IF({pmOnly},"",IF(AL{r}=1,IF({cond},N(R{r-1 if r > R0 else r}),SUMIF({rng("AI")},{amKey},{rng("R")})),0))',
         "AL": f'=IF({pmOnly},"",COUNTIF({rng("AI")},{amKey}))',
@@ -357,9 +397,9 @@ for r in range(R0, R1 + 1):
         "AU": f'=IF(AS{r}="","",SUMIF({rng("AA")},AA{r},{rng("Y")}))',
         "AV": f'=IF(AS{r}="","",SUMIF({rng("AA")},AA{r},{rng("Z")}))',
         "AW": f'=IF(OR(AS{r}="",N(BV{r})<fMin,N(AT{r})<=0),"",BW{r}/(BV{r}+kTrio)+MATCH(AA{r},{rng("AA")},0)/1000000000)',
-        "AX": f'=IF(OR(LEFT(M{r},7)="Revisar",LEFT(M{r},5)="Falta"),1,0)',
+        "AX": f'=IF(N(CD{r})=1,0,IF(OR(LEFT(M{r},7)="Revisar",LEFT(M{r},5)="Falta"),1,0))',
         # ---- comparación justa: contexto (turno × día de semana) y "contra los demás" ----
-        "AY": f'=IF(AI{r}<>"",IF(AF{r}="PM",7,0)+WEEKDAY(AG{r},2),"")',
+        "AY": f'=IF(AND(AI{r}<>"",{enModo}),IF(AF{r}="PM",7,0)+WEEKDAY(AG{r},2),"")',
         "AZ": f'=IF(OR(N{r}="",AY{r}=""),"",L{r}*86400-INDEX(ctxBase,AY{r}))',
         "BT": f'=IF(N{r}<>"",L{r}*86400,"")',
         "BU": f'=IF(AND(AF{r}="PM",N(AJ{r})>0,N(K{r})>0),0.5*(AE{r}+AJ{r})/K{r},0)',
@@ -372,7 +412,7 @@ for r in range(R0, R1 + 1):
     }
     for name_c, k_c, n_c, r_c in (("D", "BD", "BH", "BL"), ("E", "BE", "BI", "BM"), ("F", "BF", "BJ", "BN"), (None, "BG", "BK", "BO")):
         if name_c:   # clave contexto×persona: el índice de la persona en Personal va dentro de la clave
-            f[k_c] = f'=IF(OR(AY{r}="",NOT(ISTEXT({name_c}{r}))),"",IFERROR(AY{r}*1000+MATCH({name_c}{r},Personal!$B$8:$B$107,0),""))'
+            f[k_c] = f'=IF(OR(AY{r}="",NOT(ISTEXT({name_c}{r}))),"",IFERROR(AY{r}*1000+MATCH({name_c}{r},Calculos!$D$3:$D$102,0),""))'
         f[n_c] = (f'=IF({k_c}{r}="","",INDEX({TABLA_CTX[name_c]},MOD({k_c}{r},1000),INT({k_c}{r}/1000)))' if name_c
                   else f'=IF({k_c}{r}="","",COUNTIF({rng(k_c)},{k_c}{r}))')
         f[r_c] = (f'=IF(OR(W{r}<>1,AZ{r}="",{k_c}{r}=""),"",IF(INDEX(ctxN,AY{r})-{n_c}{r}>0,'
@@ -380,6 +420,7 @@ for r in range(R0, R1 + 1):
     f["BS"] = f'=IF(BO{r}="","",BO{r}^2)'
 
     au.row_dimensions[r].height = 22
+    if r == R_BANDA: f = {}
     for letter, _, _, kind in cols:
         c = au[f"{letter}{r}"]
         if letter in f:
@@ -387,20 +428,16 @@ for r in range(R0, R1 + 1):
         c.border = BOT
         c.font = font(10, c="1F2933" if kind != "calc" else "3E4C59")
         c.alignment = Alignment(horizontal="left" if letter in "DEFMPQ" else "center", vertical="center", indent=1 if letter in "DEFMPQ" else 0)
-        if kind == "in": c.fill = fill(INPUT); c.protection = UNLOCK
+        if kind == "in":
+            if r <= R1_REAL: c.fill = fill(INPUT); c.protection = UNLOCK
+            else: c.fill = fill("FFFFFF")
         elif kind == "calc": c.fill = fill(CALC)
     au[f"B{r}"].number_format = DATE
     for c_ in "JLO": au[f"{c_}{r}"].number_format = TIME
     au[f"Q{r}"].alignment = Alignment(horizontal="left", vertical="center", wrap_text=False, indent=1)
-add_table(au, "TablaAuto", f"B7:CC{R1}")
+add_table(au, "TablaAuto", f"B7:CD{R1}")
 au.freeze_panes = "D8"
 
-ejemplos_auto = [
-    (dt.date(2026, 11, 16), "AM", "Ana", "Bruno", "Carla", 120, 3, 20, "EJEMPLO – borrar"),
-    (dt.date(2026, 11, 16), "PM", "Diego", "Elena", "Felipe", 210, 3, 30, "EJEMPLO – borrar"),
-    (dt.date(2026, 11, 17), "AM", "Diego", "Bruno", "Felipe", 110, 5, 0, "EJEMPLO – borrar"),
-    (dt.date(2026, 11, 17), "PM", "Ana", "Elena", "Carla", 200, 4, 0, "EJEMPLO – borrar · AM falló, PM lo logró, pero el día falló"),
-]
 
 v_turno = dv(("Turno", "Elige AM o PM con la flechita."), type="list", formula1='"AM,PM"', errorTitle="Turno", error="Elige AM o PM con la flechita de la celda.")
 v_pers = dv(("Nombre", "Elige con la flechita. Si no aparece, agrégalo en la hoja Personal."), type="list", formula1="ListaPersonal", errorTitle="Nombre", error="Elige un nombre con la flechita. Si la persona no está, agrégala primero en la hoja Personal.")
@@ -409,7 +446,7 @@ v_min = dv(("Minutos", "Solo los minutos. Para 3:25 escribe 3 aquí y 25 en Seg.
 v_seg = dv(("Segundos", "Solo los segundos. Para 3:25 escribe 25 aquí."), type="whole", operator="between", formula1="0", formula2="59", errorTitle="Segundos", error="Escribe solo los segundos (0 a 59).")
 v_fecha = dv_fecha("16-11-2026")
 for v, c_ in [(v_turno, "C"), (v_pers, "D"), (v_pers, "E"), (v_pers, "F"), (v_autos, "G"), (v_min, "H"), (v_seg, "I"), (v_fecha, "B")]:
-    v.add(f"{c_}{R0}:{c_}{R1}")
+    v.add(f"{c_}{R0}:{c_}{R1_REAL}")
 for v in {id(x): x for x in [v_turno, v_pers, v_autos, v_min, v_seg, v_fecha]}.values():
     au.add_data_validation(v)
 
@@ -422,9 +459,9 @@ cf_text(au, f"M{R0}:M{R1}", f"M{R0}", [
     ('LEFT({c},7)="Revisar"', OR_F, OR_T)])
 cf_text(au, f"N{R0}:N{R1}", f"N{R0}", GOOD_BAD)
 cf_text(au, f"P{R0}:P{R1}", f"P{R0}", [('LEFT({c},7)="Cumplió"', G_LT, G_TX), ('LEFT({c},5)="Falló"', RD_F, RD_T)])
-au.conditional_formatting.add(f"B{R0}:C{R1}", FormulaRule(formula=[f'OR($AC{R0}>1,AND(NOT(ISBLANK($B{R0})),$AG{R0}=""),$AF{R0}="?")'], fill=fill(OR_F), font=Font(name=FONT, color=OR_T, bold=True)))
-au.conditional_formatting.add(f"G{R0}:I{R1}", FormulaRule(formula=[f'OR(AND(NOT(ISBLANK($G{R0})),$AE{R0}=""),LEFT($M{R0},22)="Revisar: tiempo no vál")'], fill=fill(OR_F), font=Font(name=FONT, color=OR_T, bold=True)))
-au.conditional_formatting.add(f"D{R0}:F{R1}", FormulaRule(formula=[f'AND(ISTEXT(D{R0}),COUNTIF(Personal!$B$8:$B$107,D{R0})=0)'], fill=fill(OR_F), font=Font(name=FONT, color=OR_T, bold=True)))
+au.conditional_formatting.add(f"B{R0}:C{R1_REAL}", FormulaRule(formula=[f'OR($AC{R0}>1,AND(NOT({vacio(f"$B{R0}")}),$AG{R0}=""),$AF{R0}="?")'], fill=fill(OR_F), font=Font(name=FONT, color=OR_T, bold=True)))
+au.conditional_formatting.add(f"G{R0}:I{R1_REAL}", FormulaRule(formula=[f'OR(AND(NOT({vacio(f"$G{R0}")}),$AE{R0}=""),LEFT($M{R0},22)="Revisar: tiempo no vál")'], fill=fill(OR_F), font=Font(name=FONT, color=OR_T, bold=True)))
+au.conditional_formatting.add(f"D{R0}:F{R1_REAL}", FormulaRule(formula=[f'AND(ISTEXT(D{R0}),COUNTIF(Personal!$B$8:$B$107,D{R0})=0)'], fill=fill(OR_F), font=Font(name=FONT, color=OR_T, bold=True)))
 protect(au)
 
 # =====================================================================
@@ -435,13 +472,18 @@ dcols = [("B", "Fecha", 13, "in"), ("C", "Turno", 9, "in"), ("D", "Enlace a la f
          ("E", "Abrir", 13, "calc"), ("F", "¿Concuerdan?", 13, "in"), ("G", "Estado", 30, "calc"), ("H", "Observaciones", 40, "in"),
          ("I", "aux_valida", 6, "aux"), ("J", "aux_enRango", 6, "aux"), ("K", "aux_enRangoTurno", 6, "aux"),
          ("L", "aux_concuerda", 6, "aux"), ("M", "aux_turno", 6, "aux"), ("N", "aux_fecha", 6, "aux"), ("O", "aux_repetida", 6, "aux"),
-         ("P", "aux_clave", 6, "aux")]
+         ("P", "aux_clave", 6, "aux"), ("Q", "aux_ejemplo", 6, "aux")]
 title(de, "Registro Delivery", None, 8, 7)
 au_note = ("Una fila por turno. Sube la foto de las comandas junto a la tableta a Drive, copia su enlace y pégalo en la columna "
            "\"Enlace\". Revisa a mano si coinciden y marca Sí o No. La columna Estado te dice si la fila quedó bien.")
 de.row_dimensions[3].height = 34
 merge(de, "B3:H3", au_note, f=font(9, c="3E4C59"), fl=fill(LIGHT), al=LEFT)
-de.row_dimensions[4].height = 8; de.row_dimensions[5].height = 8
+de.row_dimensions[4].height = 8; de.row_dimensions[5].height = 34
+GUIA_DEL = {"B": "Fecha del turno. Ej: 16-11-2026", "C": "AM o PM (con la flechita)", "D": "Pega el enlace de la foto (Ctrl + V)",
+            "E": "Botón que se crea solo", "F": "Sí o No (con la flechita)", "G": "Dice si la fila quedó bien", "H": "Notas libres (opcional)"}
+for c_, t in GUIA_DEL.items():
+    put(de, f"{c_}5", si_aprende(t), f=font(8, i=True, c=ACC), al=Alignment(horizontal="center", vertical="center", wrap_text=True))
+de.conditional_formatting.add("B5:H5", FormulaRule(formula=["fAprende=1"], fill=fill("EAF2F8")))
 de.row_dimensions[6].height = 20
 merge(de, "B6:D6", "✎  LLENAS TÚ", f=font(9, True, OR_T), fl=fill(INPUT), al=CENTER)
 put(de, "E6", "⚙  SOLO", f=font(9, True, MUTED), fl=fill(CALC), al=CENTER)
@@ -453,46 +495,43 @@ for letter, _, w, kind in dcols:
     de.column_dimensions[letter].width = w
     if kind == "aux": de.column_dimensions[letter].hidden = True
 for r in range(R0, R1 + 1):
-    f = {"E": f'=IF(ISBLANK(D{r}),"",IFERROR(IF(LEFT(TRIM(D{r}),4)="http",HYPERLINK(TRIM(D{r}),"Abrir foto ↗"),"Enlace no válido"),"Enlace no válido"))',
-         "G": (f'=IF(COUNTA(B{r}:D{r},F{r})=0,"",IF(ISBLANK(B{r}),"Revisar: falta fecha",IF(N{r}="","Revisar: fecha no válida",'
+    f = {"E": f'=IF({vacio(f"D{r}")},"",IFERROR(IF(LEFT(TRIM(D{r}),4)="http",HYPERLINK(TRIM(D{r}),"Abrir foto ↗"),"Enlace no válido"),"Enlace no válido"))',
+         "G": (f'=IF(AND({vacio(f"B{r}")},{vacio(f"C{r}")},{vacio(f"D{r}")},{vacio(f"F{r}")}),"",IF({vacio(f"B{r}")},"Revisar: falta fecha",IF(N{r}="","Revisar: fecha no válida",'
                f'IF(M{r}="","Revisar: falta turno",IF(M{r}="?","Revisar: turno no válido (AM o PM)",IF(O{r}>1,"Revisar: fila repetida",'
-               f'IF(L{r}="","Falta marcar Sí o No",IF(L{r}="?","Revisar: escribe solo Sí o No",IF(ISBLANK(D{r}),"OK · falta el enlace",'
+               f'IF(L{r}="","Falta marcar Sí o No",IF(L{r}="?","Revisar: escribe solo Sí o No",IF({vacio(f"D{r}")},"OK · falta el enlace",'
                f'IF(IFERROR(LEFT(TRIM(D{r}),4)<>"http",TRUE),"OK · revisa el enlace","OK"))))))))))'),
          "I": f'=IF(LEFT(G{r},2)="OK",1,0)',
-         "J": f'=IF(I{r}=1,IF(AND(N{r}>=fDesde,N{r}<=fHasta),1,0),0)',
+         "J": f'=IF(AND(I{r}=1,N(Q{r})=fAprende),IF(AND(N{r}>=fDesde,N{r}<=fHasta),1,0),0)',
          "K": f'=IF(AND(J{r}=1,OR(fTurno="Total",M{r}=fTurno)),1,0)',
-         "L": f'=IF(ISBLANK(F{r}),"",IFERROR(IF(OR(TRIM(F{r})="Sí",TRIM(F{r})="Si"),"Sí",IF(TRIM(F{r})="No","No","?")),"?"))',
+         "L": f'=IF({vacio(f"F{r}")},"",IFERROR(IF(OR(TRIM(F{r})="Sí",TRIM(F{r})="Si"),"Sí",IF(TRIM(F{r})="No","No","?")),"?"))',
          "M": f_turno(f"C{r}"),
          "N": f_fecha(f"B{r}"),
          "O": f'=IF(P{r}="",0,COUNTIF({rng("P")},P{r}))',
-         "P": f'=IF(OR(N{r}="",M{r}="",M{r}="?"),"",N{r}*10+IF(M{r}="AM",1,2))'}
+         "P": f'=IF(OR(N{r}="",M{r}="",M{r}="?"),"",N{r}*10+IF(M{r}="AM",1,2)+N(Q{r})*{EJ_OFF})'}
     de.row_dimensions[r].height = 22
+    if r == R_BANDA: f = {}
     for letter, _, _, kind in dcols:
         c = de[f"{letter}{r}"]
         if letter in f: c.value = f[letter]
         c.border = BOT
         c.font = font(10, True, ACC, u="single") if letter == "E" else font(10)
         c.alignment = Alignment(horizontal="left" if letter in "DGH" else "center", vertical="center", indent=1 if letter in "DGH" else 0)
-        if kind == "in": c.fill = fill(INPUT); c.protection = UNLOCK
+        if kind == "in":
+            if r <= R1_REAL: c.fill = fill(INPUT); c.protection = UNLOCK
+            else: c.fill = fill("FFFFFF")
         elif kind == "calc": c.fill = fill(CALC)
     de[f"B{r}"].number_format = DATE
-add_table(de, "TablaDelivery", f"B7:P{R1}")
+add_table(de, "TablaDelivery", f"B7:Q{R1}")
 de.freeze_panes = "D8"
-v_turno2 = dv(("Turno", "Elige AM o PM con la flechita."), type="list", formula1='"AM,PM"', errorTitle="Turno", error="Elige AM o PM con la flechita de la celda."); v_turno2.add(f"C{R0}:C{R1}")
-v_sn = dv(("¿Concuerdan?", "Elige Sí o No con la flechita."), type="list", formula1='"Sí,No"', errorTitle="¿Concuerdan?", error="Elige Sí o No con la flechita de la celda."); v_sn.add(f"F{R0}:F{R1}")
-v_fecha2 = dv_fecha("16-11-2026"); v_fecha2.add(f"B{R0}:B{R1}")
-v_link = dv(("Enlace", "Pega aquí el enlace de Drive (Ctrl + V) y presiona Enter."), type="textLength", operator="greaterThan", formula1="0", showErrorMessage=False); v_link.add(f"D{R0}:D{R1}")
+v_turno2 = dv(("Turno", "Elige AM o PM con la flechita."), type="list", formula1='"AM,PM"', errorTitle="Turno", error="Elige AM o PM con la flechita de la celda."); v_turno2.add(f"C{R0}:C{R1_REAL}")
+v_sn = dv(("¿Concuerdan?", "Elige Sí o No con la flechita."), type="list", formula1='"Sí,No"', errorTitle="¿Concuerdan?", error="Elige Sí o No con la flechita de la celda."); v_sn.add(f"F{R0}:F{R1_REAL}")
+v_fecha2 = dv_fecha("16-11-2026"); v_fecha2.add(f"B{R0}:B{R1_REAL}")
+v_link = dv(("Enlace", "Pega aquí el enlace de Drive (Ctrl + V) y presiona Enter."), type="textLength", operator="greaterThan", formula1="0", showErrorMessage=False); v_link.add(f"D{R0}:D{R1_REAL}")
 for v in (v_turno2, v_sn, v_fecha2, v_link): de.add_data_validation(v)
 cf_text(de, f"F{R0}:F{R1}", f"$L{R0}", [('{c}="Sí"', G_LT, G_TX), ('{c}="No"', RD_F, RD_T), ('{c}="?"', OR_F, OR_T)])
 cf_text(de, f"G{R0}:G{R1}", f"$G{R0}", [('{c}="OK"', G_LT, G_TX), ('OR(LEFT({c},7)="Revisar",LEFT({c},5)="Falta")', OR_F, OR_T), ('LEFT({c},4)="OK ·"', CALC, OR_T)])
-de.conditional_formatting.add(f"B{R0}:C{R1}", FormulaRule(formula=[f'OR($O{R0}>1,AND(NOT(ISBLANK($B{R0})),$N{R0}=""),$M{R0}="?")'], fill=fill(OR_F), font=Font(name=FONT, color=OR_T, bold=True)))
+de.conditional_formatting.add(f"B{R0}:C{R1_REAL}", FormulaRule(formula=[f'OR($O{R0}>1,AND(NOT({vacio(f"$B{R0}")}),$N{R0}=""),$M{R0}="?")'], fill=fill(OR_F), font=Font(name=FONT, color=OR_T, bold=True)))
 protect(de)
-ejemplos_del = [
-    (dt.date(2026, 11, 16), "AM", "https://drive.google.com/ejemplo-16nov-am", "Sí", "EJEMPLO – borrar"),
-    (dt.date(2026, 11, 16), "PM", "https://drive.google.com/ejemplo-16nov-pm", "No", "EJEMPLO – borrar · faltó 1 pedido en la foto"),
-    (dt.date(2026, 11, 17), "AM", "https://drive.google.com/ejemplo-17nov-am", "Sí", "EJEMPLO – borrar"),
-    (dt.date(2026, 11, 17), "PM", "https://drive.google.com/ejemplo-17nov-pm", "Sí", "EJEMPLO – borrar"),
-]
 
 # =====================================================================
 # HORARIOS
@@ -543,6 +582,22 @@ for k in range(N_FR):
     put(ho, f"B{s+3}", "◤ Pega aquí", f=font(9, i=True, c=MUTED))
 ho.add_data_validation(v_fecha3)
 ho.freeze_panes = "A4"
+ho.column_dimensions["N"].width = 4; ho.column_dimensions["O"].width = 18; ho.column_dimensions["P"].width = 7
+for c_ in "QRSTUVW": ho.column_dimensions[c_].width = 11
+put(ho, "O13", si_aprende("EJEMPLO (inventado): así queda un horario bien pegado"), f=font(10, True, ACC))
+put(ho, "O14", si_aprende("Fila 1: las fechas · Fila 2: los títulos · luego una fila por persona"), f=font(9, i=True, c=ACC))
+ej_h = [[None, None, "10-mar", "11-mar", "12-mar", "13-mar", "14-mar", "15-mar", "16-mar"],
+        ["Nombre", "Horas", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]]
+turnos_h = ["11:00-19:00", "19:00-02:00", "Libre"]
+for k, nm in enumerate(EJ_NAMES):
+    ej_h.append([nm, 40] + [turnos_h[(k + d) % 3] for d in range(7)])
+for i, row in enumerate(ej_h):
+    for j, v in enumerate(row):
+        cell = ho.cell(16 + i, 15 + j)
+        if v is not None:
+            cell.value = f'=IF(fAprende=1,{v},"")' if isinstance(v, int) else si_aprende(v)
+        cell.font = font(9, i == 1); cell.alignment = Alignment(horizontal="left" if j == 0 else "center", vertical="center")
+ho.conditional_formatting.add(f"O16:W{16 + len(ej_h) - 1}", FormulaRule(formula=["fAprende=1"], fill=fill("EAF2F8"), border=BOX))
 protect(ho)
 
 # =====================================================================
@@ -553,7 +608,9 @@ RP1 = 7 + 300
 rcols = [("B", "Desde", 13, "in"), ("C", "Hasta", 13, "in"), ("D", "Tipo", 13, "in"),
          ("E", "Enlace al reporte (pega la URL de Drive)", 44, "in"), ("F", "Abrir", 15, "calc"), ("G", "Notas", 46, "in")]
 title(rp, "Reportes de delivery", "Una fila por cada reporte mensual o quincenal que llega. Pega el enlace de Drive; la columna \"Abrir\" se crea sola.", 7, 6)
-rp.row_dimensions[4].height = 8; rp.row_dimensions[5].height = 8
+rp.row_dimensions[4].height = 30; rp.row_dimensions[5].height = 8
+merge(rp, "B4:G4", si_aprende("Ejemplo de una fila: Desde 01-03-2021 · Hasta 31-03-2021 · Mensual · el enlace del reporte en Drive · en Notas lo que quieras recordar. "
+      "La columna Abrir crea el botón sola."), f=font(9, i=True, c=ACC), al=LEFT)
 header(rp, 6, 2, [c[1] for c in rcols])
 for letter, _, w, _ in rcols: rp.column_dimensions[letter].width = w
 for r in range(7, RP1 + 1):
@@ -565,7 +622,7 @@ for r in range(7, RP1 + 1):
         c.fill = fill(INPUT if kind == "in" else CALC)
         if kind == "in": c.protection = UNLOCK
         c.alignment = Alignment(horizontal="left" if letter in "EG" else "center", vertical="center", indent=1 if letter in "EG" else 0)
-    rp[f"F{r}"] = f'=IF(ISBLANK(E{r}),"",IFERROR(IF(LEFT(TRIM(E{r}),4)="http",HYPERLINK(TRIM(E{r}),"Abrir reporte ↗"),"Enlace no válido"),"Enlace no válido"))'
+    rp[f"F{r}"] = f'=IF({vacio(f"E{r}")},"",IFERROR(IF(LEFT(TRIM(E{r}),4)="http",HYPERLINK(TRIM(E{r}),"Abrir reporte ↗"),"Enlace no válido"),"Enlace no válido"))'
     rp[f"B{r}"].number_format = DATE; rp[f"C{r}"].number_format = DATE
 add_table(rp, "TablaReportes", f"B6:G{RP1}")
 rp.freeze_panes = "B7"
@@ -573,10 +630,6 @@ v_tipo = dv(("Tipo", "Elige Mensual o Quincenal con la flechita."), type="list",
 v_rf = dv_fecha("01-11-2026"); v_rf.add(f"B7:C{RP1}")
 rp.add_data_validation(v_tipo); rp.add_data_validation(v_rf)
 protect(rp)
-ejemplos_rep = [
-    (dt.date(2026, 10, 1), dt.date(2026, 10, 31), "Mensual", "https://drive.google.com/ejemplo-reporte-oct", "EJEMPLO – borrar"),
-    (dt.date(2026, 11, 1), dt.date(2026, 11, 15), "Quincenal", "https://drive.google.com/ejemplo-reporte-nov-q1", "EJEMPLO – borrar"),
-]
 
 # =====================================================================
 # PERSONAL
@@ -590,7 +643,9 @@ pe.row_dimensions[3].height = 48
 merge(pe, "B3:C3", "Esta lista alimenta los desplegables de Cajero, Board, Corredor y el filtro Persona del Panel. "
       "Escribe un nombre por fila, siempre igual (ej. \"Ana P.\"). Hay espacio para 100. Si alguien se va, déjalo: sus datos antiguos siguen contando. Un nombre repetido se pinta de naranja.",
       f=font(9, c="3E4C59"), fl=fill(LIGHT), al=LEFT)
-pe.row_dimensions[4].height = 8; pe.row_dimensions[5].height = 8; pe.row_dimensions[6].height = 8
+pe.row_dimensions[4].height = 8; pe.row_dimensions[5].height = 34; pe.row_dimensions[6].height = 8
+merge(pe, "B5:C5", si_aprende("Ejemplo: escribe «Ana Pérez» en una fila y «Bruno Díaz» en la siguiente. Los ejemplos del Modo aprendizaje usan nombres "
+      "inventados como «Ana (ej.)», que a propósito NO están en esta lista."), f=font(9, i=True, c=ACC), al=LEFT)
 header(pe, 7, 2, ["Nombre", "Notas (opcional)"])
 for r in range(P0, P1 + 1):
     pe.row_dimensions[r].height = 22
@@ -602,7 +657,6 @@ pe.conditional_formatting.add(f"B{P0}:B{P1}", FormulaRule(formula=[f'AND(ISTEXT(
 v_nom = dv(("Nombre", "Un nombre por fila, siempre escrito igual. Hay espacio para 100."), type="textLength", operator="lessThan", formula1="40", errorTitle="Nombre", error="El nombre es muy largo (máximo 40 letras)."); v_nom.add(f"B{P0}:B{P1}")
 pe.add_data_validation(v_nom)
 protect(pe)
-nombres_ej = ["Ana", "Bruno", "Carla", "Diego", "Elena", "Felipe"]
 
 # =====================================================================
 # CÁLCULOS (oculta)
@@ -618,6 +672,7 @@ for i, (lab, frm) in enumerate([
     ("fCanal", '=IFERROR(IF(TRIM(Panel!$H$7&"")="Auto","Auto",IF(TRIM(Panel!$H$7&"")="Delivery","Delivery","Ambos")),"Ambos")'),
     ("fPersona", '=IFERROR(IF(OR(TRIM(Panel!$J$7&"")="",TRIM(Panel!$J$7&"")="Todas"),"Todas",TRIM(Panel!$J$7)),"Todas")'),
     ("fMin", '=IF(ISNUMBER(Panel!$L$7),IF(Panel!$L$7>=1,INT(Panel!$L$7),3),3)'),
+    ("fAprende", '=IFERROR(IF(UPPER(TRIM(Inicio!$C$6&""))="NO",0,1),1)'),
 ]):
     r = 2 + i
     put(ca, f"A{r}", lab); put(ca, f"B{r}", frm)
@@ -625,7 +680,9 @@ for i, (lab, frm) in enumerate([
 wb.defined_names["ListaPersonal"] = DefinedName("ListaPersonal", attr_text=f"Personal!$B${P0}:$B${P1}")
 put(ca, "D1", "Lista filtro persona"); put(ca, "D2", "Todas")
 for i in range(100):
-    put(ca, f"D{3+i}", f'=IFERROR(IF(OR(TRIM(Personal!$B${P0+i}&"")="",COUNTIF(Personal!$B${P0}:$B${P0+i},Personal!$B${P0+i})>1),"",Personal!$B${P0+i}),"")')
+    real_i = f'IFERROR(IF(OR(TRIM(Personal!$B${P0+i}&"")="",COUNTIF(Personal!$B${P0}:$B${P0+i},Personal!$B${P0+i})>1),"",Personal!$B${P0+i}),"")'
+    ej_i = f'"{EJ_NAMES[i]}"' if i < len(EJ_NAMES) else '""'
+    put(ca, f"D{3+i}", f'=IF(fAprende=1,{ej_i},{real_i})')   # en Modo aprendizaje la lista son los nombres de ejemplo
 put(ca, "E1", "nombre_repetido")
 for i in range(100):
     p = P0 + i
@@ -707,7 +764,8 @@ title(pan, "Panel de rendimiento", "Todo se actualiza solo. Solo se escriben los
 # filtros
 pan.row_dimensions[4].height = 30
 PB = f"Personal!$B${P0}:$B${P1}"
-aviso = ('=IFERROR(IF(AND(NOT(ISBLANK(Panel!$B$7)),NOT(ISNUMBER(Panel!$B$7))),"Desde no es una fecha (se ignora). ",""),"Desde no es una fecha (se ignora). ")'
+aviso = ('=IF(fAprende=1,"MODO APRENDIZAJE: estás viendo datos de EJEMPLO inventados, no los tuyos. Cuando termines de practicar, ve a Inicio y cambia Modo aprendizaje a No. ","")'
+         '&IFERROR(IF(AND(NOT(ISBLANK(Panel!$B$7)),NOT(ISNUMBER(Panel!$B$7))),"Desde no es una fecha (se ignora). ",""),"Desde no es una fecha (se ignora). ")'
          '&IFERROR(IF(AND(NOT(ISBLANK(Panel!$D$7)),NOT(ISNUMBER(Panel!$D$7))),"Hasta no es una fecha (se ignora). ",""),"Hasta no es una fecha (se ignora). ")'
          '&IFERROR(IF(AND(ISNUMBER(Panel!$B$7),ISNUMBER(Panel!$D$7)),IF(Panel!$B$7>Panel!$D$7,"Desde era posterior a Hasta: se invirtieron. ",""),""),"")'
          '&IFERROR(IF(AND(NOT(ISBLANK(Panel!$F$7)),fTurno="Total",UPPER(TRIM(Panel!$F$7))<>"TOTAL"),"Turno no válido: se muestra Total. ",""),"Turno no válido: se muestra Total. ")'
@@ -715,12 +773,12 @@ aviso = ('=IFERROR(IF(AND(NOT(ISBLANK(Panel!$B$7)),NOT(ISNUMBER(Panel!$B$7))),"D
          f'&IFERROR(IF(AND(fPersona<>"Todas",COUNTIF({PB},fPersona)=0),"La persona elegida no está en Personal. ",""),"")'
          '&IFERROR(IF(AND(NOT(ISBLANK(Panel!$L$7)),NOT(AND(ISNUMBER(Panel!$L$7),Panel!$L$7>=1))),"Mín. turnos no válido: se usa 3. ",""),"Mín. turnos no válido: se usa 3. ")'
          f'&IF(SUM({ra("AX")})>0,SUM({ra("AX")})&" fila(s) de Registro Auto por revisar o completar (columna Nivel). ","")'
-         f'&IF(COUNTIF({rd("G")},"Revisar*")+COUNTIF({rd("G")},"Falta*")>0,COUNTIF({rd("G")},"Revisar*")+COUNTIF({rd("G")},"Falta*")&" fila(s) de Registro Delivery por revisar (columna Estado). ","")'
+         f'&IF(COUNTIF({rdr("G")},"Revisar*")+COUNTIF({rdr("G")},"Falta*")>0,COUNTIF({rdr("G")},"Revisar*")+COUNTIF({rdr("G")},"Falta*")&" fila(s) de Registro Delivery por revisar (columna Estado). ","")'
          f'&IF(SUM({ra("AH")})>0,SUM({ra("AH")})&" nombre(s) en Registro Auto no están en Personal (en naranja). ","")'
          '&IF(SUM(Calculos!$E$3:$E$102)>0,"Hay nombres repetidos en Personal (en naranja). ","")'
-         f'&IFERROR(IF(COUNTIFS({ra("B")},"<>",{ra("M")},"")+COUNTIFS({rd("B")},"<>",{rd("G")},"")>0,"Hay filas sin fórmulas (se borraron o se insertó una fila a mano): ver Instrucciones, punto 11. ",""),"")'
-         f'&IF(COUNTA({ra("B")})>={N_ROWS}-60,"Quedan "&({N_ROWS}-COUNTA({ra("B")}))&" filas libres en Registro Auto (ver Instrucciones, punto 11). ","")'
-         f'&IF(COUNTA({rd("B")})>={N_ROWS}-60,"Quedan "&({N_ROWS}-COUNTA({rd("B")}))&" filas libres en Registro Delivery. ","")')
+         f'&IFERROR(IF(COUNTIFS({rar("B")},"<>",{rar("M")},"")+COUNTIFS({rdr("B")},"<>",{rdr("G")},"")>0,"Hay filas sin fórmulas (se borraron o se insertó una fila a mano): ver Instrucciones, punto 11. ",""),"")'
+         f'&IF(COUNTA({rar("B")})>={N_REAL}-60,"Quedan "&({N_REAL}-COUNTA({rar("B")}))&" filas libres en Registro Auto (ver Instrucciones, punto 11). ","")'
+         f'&IF(COUNTA({rdr("B")})>={N_REAL}-60,"Quedan "&({N_REAL}-COUNTA({rdr("B")}))&" filas libres en Registro Delivery. ","")')
 ca["A9"] = "aviso"; ca["B9"] = aviso
 merge(pan, "B4:M4", '=IF(Calculos!$B$9="","","⚠  "&Calculos!$B$9)', f=font(9, True, RD_T), al=Alignment(vertical="center", wrap_text=True))
 pan.row_dimensions[5].height = 18
@@ -745,8 +803,10 @@ pv = [dv_fecha("16-11-2026", ". Vacío = sin límite.", ", o déjala vacía."),
 pv[0].add("B7"); pv[0].add("D7"); pv[1].add("F7"); pv[2].add("H7"); pv[3].add("J7"); pv[4].add("L7")
 for v in pv: pan.add_data_validation(v)
 pan.row_dimensions[8].height = 18
-merge(pan, "B8:M8", "Un solo día: pon la misma fecha en Desde y Hasta.  Una semana: lunes en Desde, domingo en Hasta.  Vacío = todo el historial.  "
-      "Persona filtra solo Auto.", f=font(8, i=True, c=MUTED), al=Alignment(vertical="center"))
+merge(pan, "B8:M8", '=IF(fAprende=1,"PRUEBA ESTO: en Turno elige PM · en Persona elige Ana (ej.) · pon Desde 08-03-2021 y Hasta 14-03-2021 para ver una semana. Mira cómo cambian los números y vuelve a dejarlos vacíos.",'
+      '"Un solo día: pon la misma fecha en Desde y Hasta.  Una semana: lunes en Desde, domingo en Hasta.  Vacío = todo el historial.  Persona filtra solo Auto.")',
+      f=font(8, i=True, c=MUTED), al=Alignment(vertical="center"))
+pan.conditional_formatting.add("B8", FormulaRule(formula=["fAprende=1"], fill=fill("EAF2F8"), font=Font(name=FONT, size=9, bold=True, color=ACC)))
 
 AUTO_OK = 'fCanal<>"Delivery"'
 DEL_OK = 'fCanal<>"Auto"'
@@ -785,6 +845,14 @@ c_dias = card(15, 2, "DÍAS QUE CUMPLIERON (RESULTADO FINAL)", f'=IF({AUTO_OK},I
 c_niv = card(15, 5, "NIVEL DEL PERÍODO", f'=IF(ISNUMBER({c_t}),{lvl(c_t)},"—")', None, '="Según el tiempo promedio real"')
 c_ta = card(15, 8, "TURNOS AUTO REGISTRADOS", f'=IF({AUTO_OK},COUNTIFS({X},1),"—")', "0", '="Con datos completos en el rango"')
 c_td = card(15, 11, "TURNOS DELIVERY REGISTRADOS", f'=IF({DEL_OK},COUNTIFS({d_turn},1,{rd("L")},"Sí")+COUNTIFS({d_turn},1,{rd("L")},"No"),"—")', "0", '="Con Sí/No marcado"')
+EXPL_CARD = {c_autos: "Cuántos autos se atendieron en esas fechas.", c_t: "Espera promedio por auto. Meta: bajo 4:00.",
+             c_pct: "De cada 10 turnos, cuántos bajaron de 4:00.", c_del: "Turnos donde la foto y la tableta coincidieron.",
+             c_dias: "Días cuyo resultado final (al cierre) bajó de 4:00.", c_niv: "La nota general del período según el tiempo promedio.",
+             c_ta: "Filas de Auto completas y sin errores.", c_td: "Filas de Delivery con Sí o No marcado."}
+for celda, txt in EXPL_CARD.items():
+    sub = pan[f"{celda[0]}{int(celda[1:]) + 2}"]
+    orig = sub.value[1:] if isinstance(sub.value, str) and sub.value.startswith("=") else f'"{sub.value}"'
+    sub.value = f'=IF(fAprende=1,"{txt}",{orig})'
 cf_time(pan, c_t, c_t)
 cf_text(pan, c_niv, c_niv, [('{c}="Excelencia máxima"', G_DK, "FFFFFF"), ('OR({c}="Excelencia",{c}="Muy bueno",{c}="Cumple")', G_LT, G_TX),
                             ('{c}="No cumple (alerta)"', OR_F, OR_T), ('{c}="No cumple"', RD_F, RD_T)])
@@ -800,7 +868,8 @@ def section(r, text, note=None):
         merge(pan, f"B{r+1}:M{r+1}", note, f=font(8, i=True, c=MUTED), al=Alignment(vertical="center"))
 
 pan.row_dimensions[19].height = 14
-section(20, "AM  vs  PM  vs  Total del día", "El tiempo de PM es el real del turno (descontando AM). La columna Total coincide con el resultado del sistema al cierre. Respeta fechas, canal y persona.")
+section(20, "AM  vs  PM  vs  Total del día", '=IF(fAprende=1,"Así se lee: compara la mañana (AM) con la tarde-noche (PM). PM muestra su tiempo propio, sin arrastrar lo que pasó en la mañana. Total = lo que marcó el sistema al cerrar.",'
+        '"El tiempo de PM es el real del turno (descontando AM). La columna Total coincide con el resultado del sistema al cierre. Respeta fechas, canal y persona.")')
 r = 22
 pan.row_dimensions[r].height = 26
 merge(pan, f"B{r}:E{r}", "Indicador", f=font(10, True, "FFFFFF"), fl=fill(PRI), al=LEFT)
@@ -878,6 +947,11 @@ for role, rc, rr_c, c0 in roles:
             put(pan, f"{a}{rr}", v, f=font(10, a in "BCG"), al=CENTER, nf=nf, bd=BOT); pan[f"{b}{rr}"].border = BOT
         cf_time(pan, f"F{rr}", f"F{rr}")
         cf_text(pan, f"J{rr}", f"J{rr}", CF_LECT)
+    r0 = r + 2
+    pan.row_dimensions[r + 7].height = 20
+    merge(pan, f"B{r+7}:M{r+7}", f'=IF(fAprende=1,IF(ISNUMBER(G{r0}),"Así se lee: con "&C{r0}&" el tiempo fue "&TEXT(ABS(G{r0}),"0")&" s "&IF(G{r0}<0,"menor","mayor")'
+          f'&" que lo normal en sus turnos, con un margen de ±"&TEXT(I{r0},"0")&" s → "&J{r0}&". Si el margen es más grande que la diferencia, no hay un ganador claro.",""),"")',
+          f=font(8, i=True, c=ACC), al=Alignment(vertical="center"))
     r += 8
 RK_END = r - 2
 
@@ -914,6 +988,11 @@ for k in range(1, 6):
     cf_time(pan, f"G{rr}", f"G{rr}")
     cf_text(pan, f"J{rr}", f"J{rr}", CF_LECT)
 TR_END = r + 5
+pan.row_dimensions[TR_END + 1].height = 20
+merge(pan, f"B{TR_END+1}:M{TR_END+1}", f'=IF(fAprende=1,IF(ISNUMBER(H{r+1}),"Así se lee: con el equipo "&C{r+1}&" · "&D{r+1}&" · "&E{r+1}&" el tiempo fue "&TEXT(ABS(H{r+1}),"0")&" s "'
+      f'&IF(H{r+1}<0,"menor","mayor")&" que lo normal (±"&TEXT(I{r+1},"0")&" s). Cada combinación distinta de 3 personas es un equipo.",'
+      f'"Así se lee: aquí aparecen los equipos (cajero + board + corredor) que trabajaron juntos al menos el mínimo de turnos."),"")',
+      f=font(8, i=True, c=ACC), al=Alignment(vertical="center"))
 
 # ----- Mejores días -----
 r = TR_END + 2
@@ -945,6 +1024,11 @@ for k in range(1, 6):
         pan[f"{b}{rr}"].border = BOT
     for a in "EGH": cf_time(pan, f"{a}{rr}", f"{a}{rr}")
     cf_text(pan, f"J{rr}", f"J{rr}", [('LEFT({c},7)="Cumplió"', G_LT, G_TX), ('LEFT({c},5)="Falló"', RD_F, RD_T)])
+DIAS_R0 = r + 1
+pan.row_dimensions[r + 6].height = 20
+merge(pan, f"B{r+6}:M{r+6}", f'=IF(fAprende=1,IF(ISNUMBER(F{DIAS_R0}),"Así se lee: el "&TEXT(C{DIAS_R0},"dd-mm-yyyy")&" fue "&TEXT(ABS(F{DIAS_R0}),"0")&" s "'
+      f'&IF(F{DIAS_R0}<0,"mejor","peor")&" que un "&TEXT(C{DIAS_R0},"dddd")&" normal. Se compara cada día con su mismo día de la semana.",""),"")',
+      f=font(8, i=True, c=ACC), al=Alignment(vertical="center"))
 pan.freeze_panes = "A9"
 protect(pan)
 
@@ -956,6 +1040,13 @@ ins.column_dimensions["B"].width = 5; ins.column_dimensions["C"].width = 100
 title(ins, "Instrucciones", "Guía rápida. No hace falta saber Excel: solo escribe en las celdas crema.", 3, 4)
 ins.column_dimensions["D"].width = 12; ins.column_dimensions["E"].width = 12
 bloques = [
+    ("★", "Modo aprendizaje (para la primera vez)", [
+        "En Inicio está el interruptor Modo aprendizaje. Con Sí, el archivo muestra ejemplos inventados y explicaciones en cada hoja.",
+        "En Modo aprendizaje el Panel muestra SOLO los ejemplos, para practicar con los filtros sin miedo. Arriba lo avisa en rojo.",
+        "Cuando termines de practicar, cambia Modo aprendizaje a No: los ejemplos y explicaciones desaparecen y el Panel muestra tus datos reales.",
+        "Nada se borra: si llega alguien nuevo, ponlo en Sí para enseñarle y luego vuelve a No. Los ejemplos nunca se mezclan con tus datos.",
+        "Los ejemplos están al final de cada registro (fila 1039) y usan nombres inventados como «Ana (ej.)» y fechas de 2021.",
+    ]),
     ("0", "Lo primero, al abrir el archivo", [
         "Si arriba aparece una franja amarilla que dice \"Vista protegida\" o \"Habilitar edición\", haz clic en \"Habilitar edición\". Sin eso no se puede escribir.",
         "Solo se escribe en las celdas color crema. Las grises se calculan solas y están bloqueadas para que nada se rompa.",
@@ -1031,12 +1122,13 @@ bloques = [
     ("10", "Si algo sale raro", [
         "\"No me deja escribir\" o \"dice que la hoja está protegida\" → hiciste clic en una celda gris. Escribe solo en las crema.",
         "\"Sale un mensaje rojo al escribir\" → el dato no tiene el formato correcto. Lee el mensaje, presiona Reintentar y escríbelo como dice.",
-        "\"Quiero borrar las filas de ejemplo\" → selecciona solo las celdas crema de esas filas (de Fecha a Seg) y presiona Suprimir. Luego haz lo mismo con Observaciones.",
+        "\"Quiero quitar los ejemplos y explicaciones\" → en Inicio cambia Modo aprendizaje a No. No se borra nada: puedes volver a ponerlo en Sí cuando quieras.",
+        "\"Quiero borrar una fila mía que escribí mal\" → selecciona solo sus celdas crema (de Fecha a Seg) y presiona Suprimir. Luego haz lo mismo con Observaciones.",
         "\"Borré algo sin querer\" → presiona Ctrl + Z enseguida. Si ya guardaste, cierra sin guardar y vuelve a abrir.",
         "\"Una celda se puso naranja\" → hay algo mal escrito en esa fila. Lee la columna Nivel (Auto) o Estado (Delivery).",
         "\"El Panel muestra — o Sin datos\" → no hay datos para esos filtros. Prueba dejando Desde y Hasta vacíos.",
     ]),
-    ("11", "Cuando se acaben las filas (después de unos 18 meses)", [
+    ("11", "Cuando se acaben las filas (después de unos 16 meses)", [
         "El Panel avisa cuando quedan menos de 60 filas.",
         "Guarda una copia de respaldo: Archivo → Guardar como → ponle un nombre como \"Registro hasta dic-2027\".",
         "En este archivo, borra las celdas crema de los registros (solo crema) y sigue anotando desde arriba. El respaldo queda con todo el historial.",
@@ -1061,19 +1153,83 @@ for num, head, items in bloques:
 protect(ini); protect(ins)
 wb.security = WorkbookProtection(lockStructure=True)
 
-# ---------- datos de ejemplo ----------
-if not EMPTY:
-    for i, row in enumerate(ejemplos_auto):
-        rr = R0 + i
-        for c_, v in zip("BCDEFGHIQ", row): au[f"{c_}{rr}"] = v
-    for i, row in enumerate(ejemplos_del):
-        rr = R0 + i
-        for c_, v in zip("BCDFH", row): de[f"{c_}{rr}"] = v
-    for i, row in enumerate(ejemplos_rep):
-        rr = 7 + i
-        for c_, v in zip("BCDEG", row): rp[f"{c_}{rr}"] = v
-    for i, nm in enumerate(nombres_ej):
-        pe[f"B{P0+i}"] = nm; pe[f"C{P0+i}"] = "EJEMPLO – borrar o reemplazar"
+# ---------- ejemplos inventados (zona reservada, visibles solo en Modo aprendizaje) ----------
+def generar_ejemplos():
+    """Datos simulados para aprender: 4 semanas de marzo 2021 con nombres inventados. Ana es claramente más rápida
+    y Carla más lenta, para que el Panel muestre lecturas claras. Incluye un PM dudoso y dos filas con errores típicos."""
+    import random
+    rnd = random.Random(2021)
+    ef = {"Ana (ej.)": -35, "Beto (ej.)": 0, "Carla (ej.)": 30, "Dani (ej.)": -8, "Eli (ej.)": 8, "Fede (ej.)": 0}
+    C, B, R = EJ_NAMES[:3], ["Dani (ej.)", "Eli (ej.)", "Beto (ej.)"], ["Fede (ej.)", "Eli (ej.)", "Dani (ej.)"]
+    auto, deliv = [], []
+    ya_explicado = False
+    for k in range(28):
+        f = dt.date(2021, 3, 1) + dt.timedelta(days=k)
+        dia = {}
+        for t in ("AM", "PM"):
+            while True:
+                c, b, co = rnd.choice(C), rnd.choice(B), rnd.choice(R)
+                if len({c, b, co}) == 3: break
+            mu = (200 if t == "AM" else 170) + (30 if f.weekday() >= 5 else 0) + ef[c] + 0.5 * (ef[b] + ef[co]) + rnd.gauss(0, 10)
+            n = rnd.randint(90, 150) if t == "AM" else rnd.randint(50, 120)
+            if k == 9 and t == "PM": n, mu = 12, 236          # PM con pocos autos cerca de 4:00 -> "dudoso"
+            dia[t] = (c, b, co, n, mu)
+        am, pm = dia["AM"], dia["PM"]
+        s_am = round(am[4])
+        if k == 9:   # buscar el tiempo del cierre que deja el PM real justo bajo 4:00 y dentro del error de redondeo ("dudoso")
+            cota = 0.5 * (am[3] + pm[3] + am[3]) / pm[3]
+            for s_dia in range(150, 300):
+                pm_real = (s_dia * (am[3] + pm[3]) - s_am * am[3]) / pm[3]
+                if 240 - cota < round(pm_real) < 240: break
+        else:
+            s_dia = round((am[3] * am[4] + pm[3] * pm[4]) / (am[3] + pm[3]))
+        pm_real = (s_dia * (am[3] + pm[3]) - s_am * am[3]) / pm[3]
+        if k == 0:
+            o_am = "EJEMPLO: así se anota la mañana. A las 19:00 el sistema marcaba estos autos y este tiempo. Nivel dice si bajó de 4:00."
+            o_pm = "EJEMPLO: en la fila PM va lo que marca el sistema al CIERRE (todo el día). El archivo calcula solo el tiempo propio del PM."
+        elif k == 9:
+            o_am, o_pm = "Ejemplo inventado", "EJEMPLO: PM con muy pocos autos. Su tiempo quedó cerca de 4:00, por eso Nivel avisa «dudoso»."
+        elif s_am >= 240 and pm_real < 240 and not ya_explicado:
+            ya_explicado = True
+            o_am, o_pm = "EJEMPLO: la mañana NO bajó de 4:00…", "…pero la noche sí. Mira «Tiempo real» y «Resultado del día»: el día se decide al cierre."
+        else:
+            o_am = o_pm = "Ejemplo inventado"
+        auto.append((f, "AM", am[0], am[1], am[2], am[3], s_am // 60, s_am % 60, o_am))
+        auto.append((f, "PM", pm[0], pm[1], pm[2], am[3] + pm[3], s_dia // 60, s_dia % 60, o_pm))
+        for t in ("AM", "PM"):
+            enlace = f"https://drive.google.com/ejemplo-{f.isoformat()}-{t.lower()}"
+            conc = "No" if rnd.random() < 0.15 else "Sí"
+            obs = "Ejemplo inventado"
+            if k == 0 and t == "AM": obs = "EJEMPLO: pega el enlace de la foto, revisa si coincide con la tableta y marca Sí o No."
+            if k == 2 and t == "PM": conc, obs = "No", "EJEMPLO: «No» = la foto y la tableta NO coincidieron (posible pedido perdido)."
+            if k == 4 and t == "AM": enlace, obs = None, "EJEMPLO: falta el enlace. Cuenta igual, pero conviene pegarlo."
+            if k == 6 and t == "PM": conc, obs = "Sí, pero faltó uno", "EJEMPLO de error: escribe solo Sí o No. El Estado pide corregir."
+            deliv.append((f, t, enlace, conc, obs))
+    auto.append((dt.date(2021, 3, 29), "AM", "Ana (ej.)", "Dani (ej.)", "Fede (ej.)", 110, 325, None,
+                 "EJEMPLO de error: escribieron 325 en minutos (querían 3 y 25). Nivel pide revisar el tiempo."))
+    auto.append((dt.date(2021, 3, 30), "AM", "Beto (ej.)", "Eli (ej.)", "Fede (ej.)", 120, None, None,
+                 "EJEMPLO de fila a medias: falta el tiempo. No cuenta hasta completarla."))
+    return auto, deliv
+
+def f_ej(v):
+    """Fórmula de una celda de ejemplo: muestra el valor solo en Modo aprendizaje."""
+    if v is None: return None
+    if isinstance(v, dt.date): return f'=IF(fAprende=1,DATE({v.year},{v.month},{v.day}),"")'
+    if isinstance(v, (int, float)): return f'=IF(fAprende=1,{v},"")'
+    return si_aprende(v)
+
+EJ_AUTO, EJ_DEL = generar_ejemplos()
+assert len(EJ_AUTO) <= R1 - R_EJ0 + 1 and len(EJ_DEL) <= R1 - R_EJ0 + 1
+for ws, cols_in, filas, flag in ((au, "BCDEFGHIQ", EJ_AUTO, "CD"), (de, "BCDFH", EJ_DEL, "Q")):
+    banda = ws[f"B{R_BANDA}"]
+    banda.value = si_aprende("▼ EJEMPLOS INVENTADOS (Modo aprendizaje). No se mezclan con tus datos y desaparecen al poner Modo aprendizaje en No.")
+    banda.font = font(9, True, "FFFFFF"); banda.alignment = Alignment(horizontal="left", vertical="center")
+    ult = "Q" if ws is au else "H"
+    ws.conditional_formatting.add(f"B{R_BANDA}:{ult}{R_BANDA}", FormulaRule(formula=["fAprende=1"], fill=fill(ACC)))
+    ws.conditional_formatting.add(f"B{R_EJ0}:{ult}{R1}", FormulaRule(formula=["fAprende=1"], fill=fill("EAF2F8")))
+    for r in range(R_EJ0, R1 + 1): ws[f"{flag}{r}"] = 1
+    for i, fila in enumerate(filas):
+        for c_, v in zip(cols_in, fila): ws[f"{c_}{R_EJ0 + i}"] = f_ej(v)
 
 wb.active = 0
 wb.save(OUT)

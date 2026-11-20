@@ -7,6 +7,7 @@ names = {n: v.attr_text for n, v in wb.defined_names.items()}
 GROUPED = {"Registro Auto": 8, "Registro Delivery": 8, "Calculos": 3}
 FIN = {"Registro Auto": 10**6, "Registro Delivery": 10**6, "Calculos": 102}   # en Calculos solo se agrupan las filas de datos 3..102
 def node(sheet, col, row):
+    if sheet == "Calculos" and col in ("A", "B", "C"): return f"{sheet}!{col}{row}"   # filtros, interruptor y aviso: celdas sueltas
     if sheet in GROUPED and GROUPED[sheet] <= row <= FIN[sheet]: return f"{sheet}!{col}*"
     return f"{sheet}!{col}{row}"
 tok = re.compile(r"(?:'[^']+'|[A-Za-z_]+)!\$?[A-Z]{1,3}\$?\d+(?::\$?[A-Z]{1,3}\$?\d+)?|\$?[A-Z]{1,3}\$?\d+(?::\$?[A-Z]{1,3}\$?\d+)?|[A-Za-z_][A-Za-z_0-9]*")
