@@ -844,8 +844,9 @@ section(r, "Ranking por estación (Auto)",
         "Orden justo: cada turno se compara con los DEMÁS turnos del mismo tipo y día de la semana de todo el historial (así no gana quien solo trabaja turnos fáciles), "
         "y a quien tiene pocos turnos se le acerca a lo normal (método bayesiano). Negativo = más rápido que lo normal. ± = margen del 95 %: "
         "si dos márgenes se cruzan, la diferencia puede ser suerte. \"Tiempo real\" es el promedio sin ajustar.")
-pan.row_dimensions[r + 1].height = 40
+pan.row_dimensions[r + 1].height = 54
 pan[f"B{r+1}"].alignment = Alignment(vertical="center", wrap_text=True)
+pan[f"B{r+1}"].font = font(9, i=True, c="3E4C59")
 r += 3
 RANK_HEADS = [("B", "B", "#"), ("C", "D", "Nombre"), ("E", "E", "Turnos"), ("F", "F", "Tiempo real"), ("G", "H", "vs. lo normal"),
               ("I", "I", "± margen"), ("J", "K", "Lectura"), ("L", "M", "En meta")]
@@ -931,13 +932,13 @@ for k in range(1, 6):
     m = f"MATCH(SMALL({DS},{k}),{DS},0)"
     fecha = f"INDEX({ra('AG')},{m})"
     vals = [("B", "B", f'=IF(ISNUMBER(SMALL({DS},{k})),{k},"")', None),
-            ("C", "D", f'=IFERROR({fecha},IF({k}=1,"Sin datos",""))', "ddd dd-mmm-yy"),
+            ("C", "D", f'=IFERROR({fecha},"")', "ddd dd-mmm-yy"),
             ("E", "E", f'=IFERROR(INDEX({ra("O")},{m}),"")', TIME),
             ("F", "F", f'=IFERROR(INDEX({ra("CC")},{m}),"")', FMT_AJ),
             ("G", "G", f'=IFERROR(IF(COUNTIFS({ra("AI")},{fecha}*10+1,{N_},"?*")=0,"—",SUMIF({ra("AI")},{fecha}*10+1,{ra("L")})),"")', TIME),
             ("H", "H", f'=IFERROR(IF(INDEX({ra("L")},{m})="","—",INDEX({ra("L")},{m})),"")', TIME),
             ("I", "I", f'=IFERROR(INDEX({ra("G")},{m}),"")', "#,##0"),
-            ("J", "M", f'=IFERROR(INDEX({ra("P")},{m}),"")', None)]
+            ("J", "M", f'=IFERROR(INDEX({ra("P")},{m}),IF({k}=1,"Faltan datos: se necesitan al menos 2 semanas para comparar cada día con su día de la semana",""))', None)]
     for a, b, v, nf in vals:
         if a != b: pan.merge_cells(f"{a}{rr}:{b}{rr}")
         put(pan, f"{a}{rr}", v, f=font(10, a in "BE"), al=CENTER, nf=nf, bd=BOT)
