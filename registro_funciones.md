@@ -243,8 +243,8 @@ Generador del archivo `entregables/Registro_Rendimiento_Auto_Delivery.xlsx` y su
 
 ### roles
 - Ubicación: entregables/pruebas_excel/build.py
-- Qué hace: estaciones del ranking (Cajero, Board, Corredor) con su columna prefiltrada (AO/AP/AQ), su columna de residuo justo (BL/BM/BN) y la columna inicial de su bloque en Calculos (6, 20, 34).
-- Cómo funciona: las estadísticas crudas y las del ajuste usan COUNTIF/SUMIF de una condición sobre la columna prefiltrada.
+- Qué hace: estaciones del ranking (Cajero, Board, Corredor) con su columna prefiltrada (AO/AP/AQ), su columna de residuo justo de la etapa 1 (BL/BM/BN), su residuo sin compañeros de la etapa 2 (BP/BQ/BR) y la columna inicial de su bloque en Calculos (6, 31, 56).
+- Cómo funciona: las estadísticas crudas y las de ambas etapas del ajuste usan COUNTIF/SUMIF de una condición sobre la columna prefiltrada.
 
 ### aviso
 - Ubicación: entregables/pruebas_excel/build.py
@@ -444,7 +444,7 @@ Generador del archivo `entregables/Registro_Rendimiento_Auto_Delivery.xlsx` y su
 ### RCOLS
 - Ubicación: entregables/pruebas_excel/build.py
 - Qué hace: columnas de cada bloque de estación en Calculos.
-- Cómo funciona: nombre, turnos, autos, prod, tiempo, pct (datos crudos para mostrar); ajustado, comparables, sumaR, c, n2, margen, lectura (ajuste justo para ordenar).
+- Cómo funciona: nombre, turnos, autos, prod, tiempo, pct (datos crudos); comparables, sumaR, c, n2, aj1, m1, lec1 (etapa 1); aporte, aporte_n, aporte_c (aporte de la persona como compañero, centrado); sumaR2, c2, aj2, m2, lec2 (etapa 2, sin el efecto de los compañeros); ajustado = aj2, margen = MAX(m1, m2) y lectura por consenso de ambas etapas (si no coinciden, "Dentro de lo normal").
 
 ### TRIO_S2, TRIO_K, kTrio
 - Ubicación: entregables/pruebas_excel/build.py
@@ -458,7 +458,7 @@ Generador del archivo `entregables/Registro_Rendimiento_Auto_Delivery.xlsx` y su
 
 ### columnas AY–BZ de Registro Auto (comparación justa)
 - Ubicación: entregables/pruebas_excel/build.py
-- Qué hace: aux_contexto (1–14), aux_desvio (seg − lo normal de todo el historial), claves contexto×persona (contexto·1000 + índice en Personal) y contexto×trío, conteos (las personas consultan TABLA_CTX y el trío usa COUNTIF), residuos "contra los demás" r = desvío·N/(N−n), cuadrado del residuo del trío, segundos válidos, margen de redondeo del PM y estadísticas por trío. BA–BC y BP–BR quedan reservadas sin fórmula.
+- Qué hace: aux_contexto (1–14), aux_desvio (seg − lo normal de todo el historial), claves contexto×persona (contexto·1000 + índice en Personal) y contexto×trío, conteos (las personas consultan TABLA_CTX y el trío usa COUNTIF), residuos "contra los demás" r = desvío·N/(N−n), cuadrado del residuo del trío, segundos válidos, margen de redondeo del PM y estadísticas por trío. BP–BR (aux_rSinComp*) = r de la persona menos el aporte centrado (apCajero/apBoard/apCorredor) de sus dos compañeros del turno. BA–BC quedan reservadas sin fórmula.
 - Cómo funciona: los conteos dependen solo de fechas, turnos, nombres y filtro de fechas, no de los tiempos, así que escribir minutos o segundos no los recalcula.
 
 ### lectura (modelo)
@@ -469,7 +469,7 @@ Generador del archivo `entregables/Registro_Rendimiento_Auto_Delivery.xlsx` y su
 ### bayes
 - Ubicación: entregables/pruebas_excel/modelo.py
 - Qué hace: referencia independiente del ajuste bayesiano empírico por turno (efectos aleatorios, estimador de momentos).
-- Cómo funciona: recibe (orden, clave, filas comparables con res, todas las filas) y opcionalmente `s2_comun=(s2,)`, la varianza dentro común de la estación. Retorna dicts con score, margen, lectura, n, tiempo y pct, ordenados por score y orden.
+- Cómo funciona: recibe (orden, clave, filas comparables con res, todas las filas) y opcionalmente `s2_comun=(s2,)`, la varianza dentro común de la estación. Retorna una ListaK (lista con atributo .k, la fuerza del ajuste usada) de dicts con score, margen, lectura, n, tiempo y pct, ordenados por score y orden.
 
 ### talento, base (test_verdad)
 - Ubicación: entregables/pruebas_excel/test_verdad.py
@@ -493,7 +493,7 @@ Generador del archivo `entregables/Registro_Rendimiento_Auto_Delivery.xlsx` y su
 
 ### TABLA_CTX_COL0, TABLA_CTX
 - Ubicación: entregables/pruebas_excel/build.py
-- Qué hace: tabla índice persona × contexto en Calculos (una por estación, 100 filas × 14 contextos, desde las columnas 50, 64 y 78) con los turnos programados de cada persona en cada contexto.
+- Qué hace: tabla índice persona × contexto en Calculos (una por estación, 100 filas × 14 contextos, desde las columnas 82, 96 y 110) con los turnos programados de cada persona en cada contexto.
 - Cómo funciona: cada casilla es un COUNTIF de la clave. Cada fila del registro consulta su casilla con INDEX(tabla, MOD(clave,1000), INT(clave/1000)), sin contar. Al cambiar un nombre se recalculan unas 420 casillas en lugar de 1.100 conteos.
 
 ### R_BANDA, R_EJ0, R1_REAL, N_REAL
@@ -585,3 +585,23 @@ Generador del archivo `entregables/Registro_Rendimiento_Auto_Delivery.xlsx` y su
 - Ubicación: entregables/pruebas_excel/test_sesgos.py
 - Qué hace: mide la precisión y los sesgos del archivo lleno (1.030 filas ≈ 73 semanas) con verdad conocida, simulando auto por auto. Escenario "limpio" (turnos fáciles/difíciles, muestra chica) y "completo" (además buen compañero, mejora en el tiempo y efecto del volumen).
 - Cómo funciona: no modifica el Excel. Lee los resultados ya calculados (Calculos, registro y Panel) y los compara con el talento real: correlación de los rankings, cobertura del margen ±95 %, falsos "más rápido/lento", tríos, tiempo real de PM frente a la cota de redondeo y desvío de cada día frente al real.
+
+### apCajero, apBoard, apCorredor
+- Ubicación: entregables/pruebas_excel/build.py
+- Qué hace: nombres definidos sobre la columna aporte_c de cada estación en Calculos: cuánto acelera o frena cada persona a sus compañeros de turno.
+- Cómo funciona: aporte = sumaR/(comparables + k de la etapa 1), centrado restando el promedio ponderado por comparables (aporte_medio, fila 125). Los usan las columnas BP–BR del registro con INDEX(ap*, MOD(clave,1000)).
+
+### s2_de
+- Ubicación: entregables/pruebas_excel/build.py
+- Qué hace: fórmula de la varianza dentro común de una estación para una etapa del ajuste.
+- Cómo funciona: (SUMSQ(r) − SUMIF(comparables>0, c)) / (COUNT(r) − COUNTIF(comparables>0)) sobre la columna de residuos dada. Se pasa a eb_resumen como s2_externo (etapa 1 fila 104, etapa 2 fila 115).
+
+### ListaK
+- Ubicación: entregables/pruebas_excel/modelo.py
+- Qué hace: lista de resultados de `bayes` que además guarda la fuerza del ajuste k.
+- Cómo funciona: subclase de list con atributo .k. La usa `etapa` para calcular los aportes de compañero con el mismo k que la etapa 1 del Excel.
+
+### etapa (modelo)
+- Ubicación: entregables/pruebas_excel/modelo.py
+- Qué hace: ranking justo por estación en Python, con o sin descuento de compañeros.
+- Cómo funciona: recibe None (etapa 1) o los aportes centrados de la etapa 1 (etapa 2) y retorna por estación (ListaK, aportes centrados). El ranking final ordena por la etapa 2, usa margen max(m1, m2) y lectura por consenso.
