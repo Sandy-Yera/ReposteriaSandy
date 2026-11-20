@@ -313,15 +313,15 @@ cols = [  # (letra, encabezado, ancho, tipo)
 title(au, "Registro Auto", None, 17, 15)
 au.row_dimensions[3].height = 38
 merge(au, "B3:Q3",
-      "Cómo se calcula el tiempo real de PM: el sistema acumula todo el día, no parte de cero a las 19:00. "
+      "Cómo se calcula el tiempo real de PM: el sistema acumula todo el día, no parte de cero a las 17:30. "
       "Por eso:  Tiempo real PM = (tiempo del día × autos del día − tiempo AM × autos AM) ÷ autos PM.  "
       "Así se ve quién falla y quién lo logra en su turno. El resultado final del día es siempre el que muestra el sistema al cierre.",
       f=font(9, c="3E4C59"), fl=fill(LIGHT), al=LEFT)
-au.row_dimensions[4].height = 20
-merge(au, "B4:Q4", "Fila AM: lo que marca el sistema a las 19:00.   Fila PM: lo que marca al cierre (total del día), con la fecha del día en que empezó el turno "
-      "aunque cierres pasada la medianoche.   Tiempo en dos casillas: minutos y segundos (ej. 3 y 25).", f=font(9, True, ACC), al=Alignment(vertical="center"))
+au.row_dimensions[4].height = 30
+merge(au, "B4:Q4", "AM = 11:00 a 17:30 · PM = 17:30 al cierre.   Fila AM: lo que marca el sistema a las 17:30.   Fila PM: lo que marca al cierre (total del día), con la fecha del día en que empezó el turno "
+      "aunque cierres pasada la medianoche.   Tiempo en dos casillas: minutos y segundos (ej. 3 y 25).", f=font(9, True, ACC), al=Alignment(vertical="center", wrap_text=True))
 au.row_dimensions[5].height = 34
-GUIA_AUTO = {"B": "Fecha del turno. Ej: 16-11-2026", "C": "AM o PM (con la flechita)", "D": "Quién estuvo en la caja", "E": "Quién preparó (board)",
+GUIA_AUTO = {"B": "Fecha del turno. Ej: 16-11-2026", "C": "AM (hasta 17:30) o PM", "D": "Quién estuvo en la caja", "E": "Quién preparó (board)",
              "F": "Quién entregó (corredor)", "G": "Autos que marca el sistema", "H": "Solo minutos. Ej: 3", "I": "Solo segundos. Ej: 25",
              "J": "Se calcula solo", "K": "Autos de este turno", "L": "Tiempo propio del turno", "M": "Nota del turno, o qué corregir",
              "N": "¿Bajó de 4:00?", "O": "Resultado del día (fila PM)", "P": "¿Cumplió el día?", "Q": "Notas libres (opcional)"}
@@ -443,7 +443,7 @@ add_table(au, "TablaAuto", f"B7:CD{R1}")
 au.freeze_panes = "D8"
 
 
-v_turno = dv(("Turno", "Elige AM o PM con la flechita."), type="list", formula1='"AM,PM"', errorTitle="Turno", error="Elige AM o PM con la flechita de la celda.")
+v_turno = dv(("Turno", "AM = 11:00 a 17:30 · PM = 17:30 al cierre. Elige con la flechita."), type="list", formula1='"AM,PM"', errorTitle="Turno", error="Elige AM o PM con la flechita de la celda.")
 v_pers = dv(("Nombre", "Elige con la flechita. Si no aparece, agrégalo en la hoja Personal."), type="list", formula1="ListaPersonal", errorTitle="Nombre", error="Elige un nombre con la flechita. Si la persona no está, agrégala primero en la hoja Personal.")
 v_autos = dv(("Autos", "El número de autos que marca el sistema. Solo números, ej: 120."), type="whole", operator="between", formula1="0", formula2=str(MAX_AUTOS), errorTitle="Autos", error="Escribe solo el número de autos, sin letras. Ejemplo: 120")
 v_min = dv(("Minutos", "Solo los minutos. Para 3:25 escribe 3 aquí y 25 en Seg."), type="whole", operator="between", formula1="0", formula2="19", errorTitle="Minutos", error="Escribe solo los minutos (0 a 19). Para 3:25 escribe 3 aquí y 25 en la casilla de al lado.")
@@ -483,7 +483,7 @@ au_note = ("Una fila por turno. Sube la foto de las comandas junto a la tableta 
 de.row_dimensions[3].height = 34
 merge(de, "B3:H3", au_note, f=font(9, c="3E4C59"), fl=fill(LIGHT), al=LEFT)
 de.row_dimensions[4].height = 8; de.row_dimensions[5].height = 34
-GUIA_DEL = {"B": "Fecha del turno. Ej: 16-11-2026", "C": "AM o PM (con la flechita)", "D": "Pega el enlace de la foto (Ctrl + V)",
+GUIA_DEL = {"B": "Fecha del turno. Ej: 16-11-2026", "C": "AM (hasta 17:30) o PM", "D": "Pega el enlace de la foto (Ctrl + V)",
             "E": "Botón que se crea solo", "F": "Sí o No (con la flechita)", "G": "Dice si la fila quedó bien", "H": "Notas libres (opcional)"}
 for c_, t in GUIA_DEL.items():
     put(de, f"{c_}5", si_aprende(t), f=font(8, i=True, c=ACC), al=Alignment(horizontal="center", vertical="center", wrap_text=True))
@@ -527,7 +527,7 @@ for r in range(R0, R1 + 1):
     de[f"B{r}"].number_format = DATE
 add_table(de, "TablaDelivery", f"B7:Q{R1}")
 de.freeze_panes = "D8"
-v_turno2 = dv(("Turno", "Elige AM o PM con la flechita."), type="list", formula1='"AM,PM"', errorTitle="Turno", error="Elige AM o PM con la flechita de la celda."); v_turno2.add(f"C{R0}:C{R1_REAL}")
+v_turno2 = dv(("Turno", "AM = 11:00 a 17:30 · PM = 17:30 al cierre. Elige con la flechita."), type="list", formula1='"AM,PM"', errorTitle="Turno", error="Elige AM o PM con la flechita de la celda."); v_turno2.add(f"C{R0}:C{R1_REAL}")
 v_sn = dv(("¿Concuerdan?", "Elige Sí o No con la flechita."), type="list", formula1='"Sí,No"', errorTitle="¿Concuerdan?", error="Elige Sí o No con la flechita de la celda."); v_sn.add(f"F{R0}:F{R1_REAL}")
 v_fecha2 = dv_fecha("16-11-2026"); v_fecha2.add(f"B{R0}:B{R1_REAL}")
 v_link = dv(("Enlace", "Pega aquí el enlace de Drive (Ctrl + V) y presiona Enter."), type="textLength", operator="greaterThan", formula1="0", showErrorMessage=False); v_link.add(f"D{R0}:D{R1_REAL}")
@@ -595,7 +595,7 @@ put(ho, f"{L(EJ_H_COL)}13", si_aprende("EJEMPLO (inventado): así queda un horar
 put(ho, f"{L(EJ_H_COL)}14", si_aprende("Fila 1: las fechas · Fila 2: los títulos · luego una fila por persona"), f=font(9, i=True, c=ACC))
 ej_h = [[None, None, "10-mar", "11-mar", "12-mar", "13-mar", "14-mar", "15-mar", "16-mar"],
         ["Nombre", "Horas", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]]
-turnos_h = ["11:00-19:00", "19:00-02:00", "Libre"]
+turnos_h = ["11:00-17:30", "17:30-00:00", "Libre"]
 for k, nm in enumerate(EJ_NAMES):
     ej_h.append([nm, 40] + [turnos_h[(k + d) % 3] for d in range(7)])
 for i, row in enumerate(ej_h):
@@ -1066,7 +1066,9 @@ bloques = [
     ]),
     ("1", "Cada día · Auto", [
         "Abre la hoja Registro Auto y baja hasta la primera fila vacía (crema).",
-        "Fila AM: fecha, turno AM, elige Cajero, Board y Corredor de la lista, y anota los autos y el tiempo que marca el sistema a las 19:00.",
+        "Turnos: AM = de 11:00 a 17:30 · PM = de 17:30 al cierre (00:00). La trasnoche no se anota: el sistema no cuenta esos autos.",
+        "Fila AM: fecha, turno AM, elige Cajero, Board y Corredor de la lista, y anota los autos y el tiempo que marca el sistema a las 17:30.",
+        "Revisa el sistema siempre a las 17:30: anotarlo a distintas horas desordena la comparación entre turnos.",
         "Fila PM: lo mismo, pero con lo que marca el sistema al cierre (es el total del día, el archivo separa solo el tiempo de PM).",
         "La fila PM lleva la fecha del día en que empezó el turno, aunque cierres pasada la medianoche. Ejemplo: turno del lunes 16 que cierra a la 01:00 del martes → fecha 16.",
         "El tiempo va en dos casillas: minutos y segundos. Ejemplo: 3 min 25 s → escribe 3 en \"Min\" y 25 en \"Seg\". Si por error escribes 3:25 en \"Min\", el archivo lo entiende igual.",
@@ -1116,7 +1118,7 @@ bloques = [
         "4:00 a 4:59 No cumple (alerta, naranja) · 5:00 o más No cumple (rojo). La meta es estar por debajo de 4:00.",
     ]),
     ("8", "Por qué PM tiene \"tiempo real\"", [
-        "El sistema no parte de cero a las 19:00: su promedio es de todo el día. Para ver el rendimiento propio de PM se usa:",
+        "El sistema no parte de cero a las 17:30: su promedio es de todo el día. Para ver el rendimiento propio de PM se usa:",
         "Tiempo real PM = (tiempo del día × autos del día − tiempo AM × autos AM) ÷ autos PM.",
         "Ejemplo: AM falló con 5:00, PM lo logró con 2:47, pero el resultado final del día fue 4:00 → el día falló.",
     ]),
@@ -1206,7 +1208,7 @@ def generar_ejemplos():
             s_dia = round((am[3] * am[4] + pm[3] * pm[4]) / (am[3] + pm[3]))
         pm_real = (s_dia * (am[3] + pm[3]) - s_am * am[3]) / pm[3]
         if k == 0:
-            o_am = "EJEMPLO: así se anota la mañana. A las 19:00 el sistema marcaba estos autos y este tiempo. Nivel dice si bajó de 4:00."
+            o_am = "EJEMPLO: así se anota la mañana. A las 17:30 el sistema marcaba estos autos y este tiempo. Nivel dice si bajó de 4:00."
             o_pm = "EJEMPLO: en la fila PM va lo que marca el sistema al CIERRE (todo el día). El archivo calcula solo el tiempo propio del PM."
         elif k == 9:
             o_am, o_pm = "Ejemplo inventado", "EJEMPLO: PM con muy pocos autos. Su tiempo quedó cerca de 4:00, por eso Nivel avisa «dudoso»."
