@@ -565,3 +565,13 @@ Generador del archivo `entregables/Registro_Rendimiento_Auto_Delivery.xlsx` y su
 - Ubicación: entregables/pruebas_excel/test_horarios.py
 - Qué hace: prueba de copiar y pegar horarios reales desde otro libro en LibreOffice, con estructuras variables (con o sin título, N.º, Horas, FIRMA, resumen, columnas extra, 23 a 60 personas), usando pegar valores y Ctrl+V.
 - Cómo funciona: lee la geometría del marco desde el archivo, comprueba que el horario quede completo dentro del marco, que los títulos y la semana siguiente queden intactos, que un horario demasiado grande no se pegue a medias, que borrar el marco para corregir funcione con la hoja protegida y que pegar sobre títulos esté bloqueado. Desactiva la pregunta "¿reemplazar contenido?" de LibreOffice para comportarse como Excel.
+
+### enlace_aprende
+- Ubicación: entregables/pruebas_excel/build.py
+- Qué hace: fórmula de un enlace interno que solo se ve en Modo aprendizaje ("Ver ejemplos ↓", el aviso de Horarios hacia el horario de ejemplo y "← Volver a la Semana 1").
+- Cómo funciona: =IF(fAprende=1, HYPERLINK("#Hoja!Celda", texto), ""). Con el modo en No la celda queda vacía y sin enlace; un hipervínculo fijo dejaría ver su destino.
+
+### TOP_DIAS
+- Ubicación: entregables/pruebas_excel/build.py
+- Qué hace: cantidad de filas de "Mejores días" en el Panel (7).
+- Cómo funciona: con una semana filtrada se ven sus 7 días ordenados. El modelo de pruebas también devuelve 7.

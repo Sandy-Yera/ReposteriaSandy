@@ -185,6 +185,12 @@ def vacio(c):
     Un valor de error NO cuenta como vacío."""
     return f'IFERROR(LEN(TRIM({c}&""))=0,FALSE)'
 
+def enlace_aprende(destino, texto):
+    """Enlace interno visible solo en Modo aprendizaje. Usa HYPERLINK() dentro de la fórmula: con el modo en No la celda
+    queda vacía y sin enlace (un hipervínculo fijo dejaría ver su destino en algunos programas)."""
+    t = texto.replace('"', '""')
+    return f'=IF(fAprende=1,HYPERLINK("#{destino}","{t}"),"")'
+
 def si_aprende(texto):
     """Fórmula de texto visible solo en Modo aprendizaje."""
     t = texto.replace('"', '""')
@@ -328,8 +334,7 @@ GUIA_AUTO = {"B": "Fecha del turno. Ej: 16-11-2026", "C": "AM (hasta 17:30) o PM
 for c_, t in GUIA_AUTO.items():
     put(au, f"{c_}5", si_aprende(t), f=font(8, i=True, c=ACC), al=Alignment(horizontal="center", vertical="center", wrap_text=True))
 au.conditional_formatting.add("B5:Q5", FormulaRule(formula=["fAprende=1"], fill=fill("EAF2F8")))
-c = put(au, "Q2", si_aprende("Ver ejemplos ↓"), f=font(10, True, ACC, u="single"), al=CENTER)
-c.hyperlink = Hyperlink(ref="Q2", location=f"'Registro Auto'!B{R_BANDA}", display="Ver ejemplos")
+put(au, "Q2", enlace_aprende(f"'Registro Auto'!B{R_BANDA}", "Ver ejemplos ↓"), f=font(10, True, ACC, u="single"), al=CENTER)
 au.row_dimensions[6].height = 20
 merge(au, "B6:I6", "✎  LLENAS TÚ", f=font(9, True, OR_T), fl=fill(INPUT), al=CENTER)
 merge(au, "J6:P6", "⚙  SE CALCULA SOLO", f=font(9, True, MUTED), fl=fill(CALC), al=CENTER)
@@ -592,6 +597,12 @@ EJ_H_COL = 2 + 18 + 2                                   # columna V: a la derech
 ho.column_dimensions[L(EJ_H_COL - 1)].width = 4; ho.column_dimensions[L(EJ_H_COL)].width = 18; ho.column_dimensions[L(EJ_H_COL + 1)].width = 7
 for j in range(2, 9): ho.column_dimensions[L(EJ_H_COL + j)].width = 11
 put(ho, f"{L(EJ_H_COL)}13", si_aprende("EJEMPLO (inventado): así queda un horario bien pegado"), f=font(10, True, ACC))
+# el ejemplo queda a la derecha de la zona de pegado (fuera de la pantalla): aviso con enlace arriba y enlace de vuelta
+ho.row_dimensions[4].height = 22
+merge(ho, "B4:J4", enlace_aprende(f"'Horarios'!{L(EJ_H_COL)}11", "▶ MODO APRENDIZAJE: hay un horario de ejemplo a la derecha de la Semana 1. Haz clic aquí para verlo."),
+      f=font(10, True, ACC, u="single"), al=Alignment(vertical="center", indent=1))
+ho.conditional_formatting.add("B4:J4", FormulaRule(formula=["fAprende=1"], fill=fill("EAF2F8")))
+put(ho, f"{L(EJ_H_COL)}11", enlace_aprende("'Horarios'!B13", "← Volver a la Semana 1"), f=font(10, True, ACC, u="single"))
 put(ho, f"{L(EJ_H_COL)}14", si_aprende("Fila 1: las fechas · Fila 2: los títulos · luego una fila por persona"), f=font(9, i=True, c=ACC))
 ej_h = [[None, None, "10-mar", "11-mar", "12-mar", "13-mar", "14-mar", "15-mar", "16-mar"],
         ["Nombre", "Horas", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]]
@@ -1090,6 +1101,7 @@ bloques = [
         "Puedes copiar el horario como venga: con o sin título, con la columna de números, con FIRMA o con el resumen de abajo. Cada marco tiene espacio para 60 filas y 18 columnas.",
         "Si Excel no te deja pegar, revisa que hiciste clic en \"◤ Pega aquí\" y no en el título del marco. Si el horario fuera más grande que el marco, Excel no pega nada y la semana siguiente queda intacta.",
         "Si pegaste en el marco equivocado, presiona Ctrl + Z de inmediato para deshacer.",
+        "En Modo aprendizaje hay un horario de ejemplo a la derecha de la Semana 1: arriba de la hoja aparece un enlace para ir a verlo.",
         "Para corregir un horario ya pegado: selecciona toda la zona crema de ese marco, presiona Supr y vuelve a pegar. Si pegas encima sin borrar, pueden quedar filas del horario anterior.",
     ]),
     ("4", "Cuando llega un reporte", [

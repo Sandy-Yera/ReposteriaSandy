@@ -38,6 +38,9 @@ check("Sí: cada tarjeta explica qué significa", ps["B13"].value == "Cuántos a
 check("Sí: el Panel propone probar filtros", str(ps["B8"].value).startswith("PRUEBA ESTO"), ps["B8"].value)
 check("Sí: el ranking explica cómo leerse", str(ps["B40"].value).startswith("Así se lee"), ps["B40"].value)
 check("Sí: guía bajo los encabezados del registro", as_["B5"].value == "Fecha del turno. Ej: 16-11-2026" and an["B5"].value in (None, ""), (as_["B5"].value, an["B5"].value))
+check("Horarios: en Sí hay un aviso con enlace al horario de ejemplo; en No desaparece",
+      str(wsi["Horarios"]["B4"].value).startswith("▶ MODO APRENDIZAJE") and wno["Horarios"]["B4"].value in (None, "") and
+      str(wsi["Horarios"]["V18"].value or "") == "Ana (ej.)" , (wsi["Horarios"]["B4"].value, wno["Horarios"]["B4"].value))
 check("Delivery: No cuenta solo lo real (2) y Sí solo ejemplos", pn["K16"].value == 2 and ps["K16"].value >= 50, (pn["K16"].value, ps["K16"].value))
 # filtro persona con nombre de ejemplo
 _, wp = build_case(TEMPLATE, "apr_p.xlsx", reales, deliv, NAMES, {"L7": 1, "J7": "Ana (ej.)"}, modo_aprendizaje="Sí")
