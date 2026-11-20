@@ -104,7 +104,7 @@ check("Registro Auto: filtros de la tabla siguen permitidos con la protección",
 # ---------- B. Si alguien quita la protección y destruye a propósito ----------
 def unprot(doc):
     for n in doc.Sheets.ElementNames:
-        try: doc.Sheets.getByName(n).unprotect("")
+        try: doc.Sheets.getByName(n).unprotect(os.environ.get("CLAVE_HOJAS", ""))
         except Exception: pass
 
 # B1 ordenar la tabla por fecha descendente

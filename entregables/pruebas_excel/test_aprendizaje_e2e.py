@@ -159,7 +159,7 @@ doc.close(True)
 # ================= D. Destructor (quita la protección) =================
 def unprot(doc):
     for n in doc.Sheets.ElementNames:
-        try: sh(doc, n).unprotect("")
+        try: sh(doc, n).unprotect(os.environ.get("CLAVE_HOJAS", ""))
         except Exception: pass
 doc = load(); unprot(doc)
 pegar(doc, "Inicio", "C6", "No")

@@ -1,4 +1,4 @@
-import sys, datetime as dt
+import sys, os, datetime as dt
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side, Protection
 from openpyxl.worksheet.protection import SheetProtection
@@ -12,6 +12,8 @@ from openpyxl.comments import Comment
 from openpyxl.utils import get_column_letter as L, get_column_letter, column_index_from_string
 
 OUT = sys.argv[1]
+CLAVE = os.environ.get("CLAVE_HOJAS", "")       # clave de protección (no se guarda en el repositorio)
+CREDITO = "Hecho por Gabriel Sandoval"
 EMPTY = len(sys.argv) > 2 and sys.argv[2] == "empty"
 
 # ---------- paleta ----------
@@ -93,6 +95,7 @@ def protect(ws):
                                     formatRows=False, insertColumns=True, insertRows=True, insertHyperlinks=True,
                                     deleteColumns=True, deleteRows=True, selectLockedCells=False,
                                     selectUnlockedCells=False, sort=True, autoFilter=False, pivotTables=True)
+    if CLAVE: ws.protection.password = CLAVE
 
 # tabla persona×contexto (turnos programados) en Calculos: filas 3..102 = Personal 8..107, 14 columnas = contextos
 TABLA_CTX_COL0 = {"D": 82, "E": 96, "F": 110}    # Cajero, Board, Corredor
@@ -220,6 +223,7 @@ ini.row_dimensions[2].height = 40
 merge(ini, "B2:E2", "Registro de rendimiento · Auto y Delivery", f=font(22, True, PRI), al=Alignment(vertical="center"))
 merge(ini, "B3:E3", "Control diario por turno (AM / PM) para el concurso de rendimiento del local.", f=font(11, c=MUTED), al=Alignment(vertical="center"))
 ini.row_dimensions[3].height = 22
+merge(ini, "B4:E4", CREDITO, f=Font(name="Calibri", size=9, italic=True, color=MUTED), al=Alignment(vertical="top"))
 put(ini, "B5", "MODO APRENDIZAJE", f=font(9, True, MUTED))
 ini.row_dimensions[6].height = 58
 put(ini, "C6", "No" if EMPTY else "Sí", f=font(16, True, PRI), fl=fill(INPUT), al=CENTER, bd=BOX)
@@ -804,7 +808,7 @@ wb.defined_names["kTrio"] = DefinedName("kTrio", attr_text=TRIO_K)
 # =====================================================================
 for c_ in "BCDEFGHIJKLM": pan.column_dimensions[c_].width = 12.5
 pan.column_dimensions["N"].width = 3
-title(pan, "Panel de rendimiento", "Todo se actualiza solo. Solo se escriben los filtros (celdas crema).", 13, 12)
+title(pan, "Panel de rendimiento", "Todo se actualiza solo. Solo se escriben los filtros (celdas crema).  ·  " + CREDITO, 13, 12)
 
 # filtros
 pan.row_dimensions[4].height = 30
@@ -1213,8 +1217,10 @@ for num, head, items in bloques:
     ins.row_dimensions[r].height = 12
     r += 1
 
+put(ins, f"C{r}", CREDITO, f=Font(name="Calibri", size=9, italic=True, color=MUTED), al=Alignment(vertical="center", indent=1))
 protect(ini); protect(ins)
 wb.security = WorkbookProtection(lockStructure=True)
+if CLAVE: wb.security.workbookPassword = CLAVE
 
 # ---------- ejemplos inventados (zona reservada, visibles solo en Modo aprendizaje) ----------
 def generar_ejemplos():
@@ -1295,6 +1301,9 @@ for ws, cols_in, filas, flag in ((au, "BCDEFGHIQ", EJ_AUTO, "CD"), (de, "BCDFH",
     for i, fila in enumerate(filas):
         for c_, v in zip(cols_in, fila): ws[f"{c_}{R_EJ0 + i}"] = f_ej(v)
 
+for ws_ in wb.worksheets:                      # pie de página al imprimir, en todas las hojas
+    ws_.oddFooter.right.text = CREDITO; ws_.oddFooter.right.size = 8; ws_.oddFooter.right.color = MUTED
+wb.properties.creator = "Gabriel Sandoval"; wb.properties.lastModifiedBy = "Gabriel Sandoval"
 wb.active = 0
 wb.save(OUT)
 print("ok", OUT)

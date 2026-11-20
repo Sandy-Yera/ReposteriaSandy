@@ -610,3 +610,13 @@ Generador del archivo `entregables/Registro_Rendimiento_Auto_Delivery.xlsx` y su
 - Ubicación: entregables/pruebas_excel/test_compas.py
 - Qué hace: prueba de extremo a extremo de los casos límite de la corrección por compañero (trío fijo, un solo board, compañero estrella, filas desordenadas, mayúsculas, renombre, pocos datos, mínimo alto, archivo lleno).
 - Cómo funciona: `gen` simula turnos con talento conocido; `comparar` arma el caso con build_case, recalcula con LibreOffice y compara los tres rankings del Panel con modelo.panel (acepta filas_mod para comparar contra nombres bien escritos); `leer_rank` lee nombre, turnos, puntaje, margen y lectura del Panel.
+
+### CLAVE, CREDITO
+- Ubicación: entregables/pruebas_excel/build.py
+- Qué hace: clave de protección de hojas y libro, y texto del crédito del autor ("Hecho por Gabriel Sandoval").
+- Cómo funciona: CLAVE se lee de la variable de entorno CLAVE_HOJAS (no se guarda en el repositorio); si existe, `protect` y la protección de estructura la usan. CREDITO aparece en Inicio!B4, en el subtítulo del Panel, al final de Instrucciones, en el pie de página de todas las hojas y en las propiedades del archivo.
+
+### intenta (test_clave)
+- Ubicación: entregables/pruebas_excel/test_clave.py
+- Qué hace: intenta quitar la protección de una hoja con una clave y dice si lo logró.
+- Cómo funciona: llama a unprotect(clave) por UNO, ignora el error y retorna True si la hoja quedó desprotegida. La prueba comprueba que sin clave o con una equivocada no se puede, que con la correcta sí, que el crédito está bloqueado y que el libro guarda el hash de la misma clave.
