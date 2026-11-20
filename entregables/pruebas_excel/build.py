@@ -95,7 +95,7 @@ def protect(ws):
                                     selectUnlockedCells=False, sort=True, autoFilter=False, pivotTables=True)
 
 # tabla persona×contexto (turnos programados) en Calculos: filas 3..102 = Personal 8..107, 14 columnas = contextos
-TABLA_CTX_COL0 = {"D": 50, "E": 64, "F": 78}     # Cajero, Board, Corredor
+TABLA_CTX_COL0 = {"D": 82, "E": 96, "F": 110}    # Cajero, Board, Corredor
 TABLA_CTX = {k: f"Calculos!${get_column_letter(c)}$3:${get_column_letter(c + 13)}$102" for k, c in TABLA_CTX_COL0.items()}
 FECHA_MIN, FECHA_MAX = 43831, 73051   # 01-01-2020 .. 01-01-2100
 MAX_AUTOS, MAX_SEG = 3000, 1200
@@ -309,8 +309,8 @@ cols = [  # (letra, encabezado, ancho, tipo)
     ("BE", "aux_kBoard", 6, "aux"), ("BF", "aux_kCorredor", 6, "aux"), ("BG", "aux_kTrio", 6, "aux"),
     ("BH", "aux_nCajero", 6, "aux"), ("BI", "aux_nBoard", 6, "aux"), ("BJ", "aux_nCorredor", 6, "aux"),
     ("BK", "aux_nTrio", 6, "aux"), ("BL", "aux_rCajero", 6, "aux"), ("BM", "aux_rBoard", 6, "aux"),
-    ("BN", "aux_rCorredor", 6, "aux"), ("BO", "aux_rTrio", 6, "aux"), ("BP", "aux_reservada4", 6, "aux"),
-    ("BQ", "aux_reservada5", 6, "aux"), ("BR", "aux_reservada6", 6, "aux"), ("BS", "aux_r2Trio", 6, "aux"),
+    ("BN", "aux_rCorredor", 6, "aux"), ("BO", "aux_rTrio", 6, "aux"), ("BP", "aux_rSinCompCajero", 6, "aux"),
+    ("BQ", "aux_rSinCompBoard", 6, "aux"), ("BR", "aux_rSinCompCorredor", 6, "aux"), ("BS", "aux_r2Trio", 6, "aux"),
     ("BT", "aux_segValido", 6, "aux"), ("BU", "aux_margenPM", 6, "aux"), ("BV", "aux_trioComparables", 6, "aux"),
     ("BW", "aux_trioSumaR", 6, "aux"), ("BX", "aux_trioSumaR2", 6, "aux"), ("BY", "aux_trioC", 6, "aux"),
     ("BZ", "aux_trioN2", 6, "aux"), ("CA", "aux_diaSemana", 6, "aux"), ("CB", "aux_diaSeg", 6, "aux"),
@@ -427,6 +427,12 @@ for r in range(R0, R1 + 1):
         f[r_c] = (f'=IF(OR(W{r}<>1,AZ{r}="",{k_c}{r}=""),"",IF(INDEX(ctxN,AY{r})-{n_c}{r}>0,'
                   f'AZ{r}*INDEX(ctxN,AY{r})/(INDEX(ctxN,AY{r})-{n_c}{r}),""))')
     f["BS"] = f'=IF(BO{r}="","",BO{r}^2)'
+    # descontar lo que aportan los dos compañeros del turno (su aporte centrado, estimado en la etapa 1)
+    ap = {"D": f'IF(BD{r}="",0,N(INDEX(apCajero,MOD(BD{r},1000))))', "E": f'IF(BE{r}="",0,N(INDEX(apBoard,MOD(BE{r},1000))))',
+          "F": f'IF(BF{r}="",0,N(INDEX(apCorredor,MOD(BF{r},1000))))'}
+    f["BP"] = f'=IF(BL{r}="","",BL{r}-{ap["E"]}-{ap["F"]})'
+    f["BQ"] = f'=IF(BM{r}="","",BM{r}-{ap["D"]}-{ap["F"]})'
+    f["BR"] = f'=IF(BN{r}="","",BN{r}-{ap["D"]}-{ap["E"]})'
 
     au.row_dimensions[r].height = 22
     if r == R_BANDA: f = {}
@@ -735,16 +741,23 @@ wb.defined_names["diaBase"] = DefinedName("diaBase", attr_text=f"Calculos!$D${DI
 wb.defined_names["ctxBase"] = DefinedName("ctxBase", attr_text=f"Calculos!$E${CTX0}:$E${CTX0+13}")
 
 # bloques por estación: datos crudos (para mostrar) + ajuste justo (para ordenar)
-RCOLS = ["nombre", "turnos", "autos", "prod", "tiempo", "pct", "ajustado", "comparables", "sumaR", "c", "n2", "margen", "lectura"]
-roles = [("Cajero", "AO", "BL", 6), ("Board", "AP", "BM", 20), ("Corredor", "AQ", "BN", 34)]
-for role, rc, rr_c, c0 in roles:
+RCOLS = ["nombre", "turnos", "autos", "prod", "tiempo", "pct", "comparables", "sumaR", "c", "n2", "aj1", "m1", "lec1",
+         "aporte", "aporte_n", "aporte_c", "sumaR2", "c2", "aj2", "m2", "lec2", "ajustado", "margen", "lectura"]
+# etapa 1 = comparación justa por contexto; etapa 2 = además descuenta el aporte de los compañeros; final = consenso
+roles = [("Cajero", "AO", "BL", "BP", 6), ("Board", "AP", "BM", "BQ", 31), ("Corredor", "AQ", "BN", "BR", 56)]
+for role, rc, rr_c, r2_c, c0 in roles:
     cl = {h: L(c0 + j) for j, h in enumerate(RCOLS)}
     for h, x in cl.items(): put(ca, f"{x}1", f"{role}_{h}")
     colr = lambda h: f"${cl[h]}$3:${cl[h]}$102"
-    # varianza dentro común de la estación: todos sus turnos comparables (SUMSQ evita una columna de cuadrados por fila)
-    s2_comun = (f'=IFERROR((SUMSQ({ra(rr_c)})-SUMIF({colr("comparables")},">0",{colr("c")}))'
-                f'/(COUNT({ra(rr_c)})-COUNTIF({colr("comparables")},">0")),"")')
-    s2, kk = eb_resumen(ca, cl["nombre"], 104, colr("comparables"), colr("sumaR"), colr("c"), None, colr("n2"), s2_comun)
+    def s2_de(rcol, ccol):
+        return (f'=IFERROR((SUMSQ({ra(rcol)})-SUMIF({colr("comparables")},">0",{colr(ccol)}))'
+                f'/(COUNT({ra(rcol)})-COUNTIF({colr("comparables")},">0")),"")')
+    s2a, k1 = eb_resumen(ca, cl["nombre"], 104, colr("comparables"), colr("sumaR"), colr("c"), None, colr("n2"), s2_de(rr_c, "c"))
+    s2b, k2 = eb_resumen(ca, cl["nombre"], 115, colr("comparables"), colr("sumaR2"), colr("c2"), None, colr("n2"), s2_de(r2_c, "c2"))
+    ca[f"{cl['nombre']}125"] = "aporte_medio"
+    ca[f"{cl['turnos']}125"] = f'=IFERROR(SUM({colr("aporte_n")})/SUMIF({colr("comparables")},">0"),0)'
+    ap_medio = f"Calculos!${cl['turnos']}$125"
+    wb.defined_names[f"ap{role}"] = DefinedName(f"ap{role}", attr_text=f"Calculos!${cl['aporte_c']}$3:${cl['aporte_c']}$102")
     for i in range(100):
         r = 3 + i
         c = {h: f"{x}{r}" for h, x in cl.items()}
@@ -758,11 +771,24 @@ for role, rc, rr_c, c0 in roles:
         ca[c["sumaR"]] = f'=IF({c["comparables"]}=0,0,SUMIF({ra(rc)},{c["nombre"]},{ra(rr_c)}))'
         ca[c["c"]] = f'=IF({c["comparables"]}>0,{c["sumaR"]}^2/{c["comparables"]},0)'
         ca[c["n2"]] = f'={c["comparables"]}^2'
-        ca[c["ajustado"]] = (f'=IF(AND({c["comparables"]}>=fMin,N({c["autos"]})>0),'
-                             f'{c["sumaR"]}/({c["comparables"]}+{kk})+ROW()/1000000000,"")')
-        ca[c["margen"]] = f'=IF(OR({c["ajustado"]}="",NOT(ISNUMBER({s2}))),"",{Z95}*SQRT({s2}/({c["comparables"]}+{kk})))'
-        ca[c["lectura"]] = "=" + lectura_f(c["ajustado"], c["margen"])
-for name_c, kcol, c0, role in (("D", "BD", 50, "Cajero"), ("E", "BE", 64, "Board"), ("F", "BF", 78, "Corredor")):
+        ok_min = f'AND({c["comparables"]}>=fMin,N({c["autos"]})>0)'
+        ca[c["aj1"]] = f'=IF({ok_min},{c["sumaR"]}/({c["comparables"]}+{k1})+ROW()/1000000000,"")'
+        ca[c["m1"]] = f'=IF(OR({c["aj1"]}="",NOT(ISNUMBER({s2a}))),"",{Z95}*SQRT({s2a}/({c["comparables"]}+{k1})))'
+        ca[c["lec1"]] = "=" + lectura_f(c["aj1"], c["m1"])
+        ca[c["aporte"]] = f'=IF({c["comparables"]}>0,{c["sumaR"]}/({c["comparables"]}+{k1}),"")'
+        ca[c["aporte_n"]] = f'=IF({c["comparables"]}>0,{c["aporte"]}*{c["comparables"]},0)'
+        ca[c["aporte_c"]] = f'=IF({c["comparables"]}>0,{c["aporte"]}-{ap_medio},0)'
+        ca[c["sumaR2"]] = f'=IF({c["comparables"]}=0,0,SUMIF({ra(rc)},{c["nombre"]},{ra(r2_c)}))'
+        ca[c["c2"]] = f'=IF({c["comparables"]}>0,{c["sumaR2"]}^2/{c["comparables"]},0)'
+        ca[c["aj2"]] = f'=IF({ok_min},{c["sumaR2"]}/({c["comparables"]}+{k2})+ROW()/1000000000,"")'
+        ca[c["m2"]] = f'=IF(OR({c["aj2"]}="",NOT(ISNUMBER({s2b}))),"",{Z95}*SQRT({s2b}/({c["comparables"]}+{k2})))'
+        ca[c["lec2"]] = "=" + lectura_f(c["aj2"], c["m2"])
+        ca[c["ajustado"]] = f'={c["aj2"]}'
+        ca[c["margen"]] = f'=IF(OR({c["m1"]}="",{c["m2"]}=""),"",MAX({c["m1"]},{c["m2"]}))'
+        ca[c["lectura"]] = (f'=IF({c["ajustado"]}="","",IF({c["margen"]}="","Pocos datos",'
+                            f'IF({c["lec1"]}={c["lec2"]},{c["lec2"]},"Dentro de lo normal")))')
+for name_c, kcol, role in (("D", "BD", "Cajero"), ("E", "BE", "Board"), ("F", "BF", "Corredor")):
+    c0 = TABLA_CTX_COL0[name_c]
     for g in range(1, 15):
         col = L(c0 + g - 1)
         put(ca, f"{col}1", f"{role}_ctx{g}")
@@ -933,7 +959,7 @@ CMP_END = r + len(rows_cmp)
 r = CMP_END + 2
 pan.row_dimensions[r - 1].height = 14
 section(r, "Ranking por estación (Auto)",
-        "Orden justo: cada turno se compara con los DEMÁS turnos del mismo tipo y día de la semana de todo el historial (así no gana quien solo trabaja turnos fáciles), "
+        "Orden justo: cada turno se compara con los DEMÁS turnos del mismo tipo y día de la semana de todo el historial (así no gana quien solo trabaja turnos fáciles) y se descuenta lo que aportan sus compañeros de turno, "
         "y a quien tiene pocos turnos se le acerca a lo normal (método bayesiano). Negativo = más rápido que lo normal. ± = margen del 95 %: "
         "si dos márgenes se cruzan, la diferencia puede ser suerte. \"Tiempo real\" es el promedio sin ajustar.")
 pan.row_dimensions[r + 1].height = 54
@@ -943,7 +969,7 @@ r += 3
 RANK_HEADS = [("B", "B", "#"), ("C", "D", "Nombre"), ("E", "E", "Turnos"), ("F", "F", "Tiempo real"), ("G", "H", "vs. lo normal"),
               ("I", "I", "± margen"), ("J", "K", "Lectura"), ("L", "M", "En meta")]
 CF_LECT = [('LEFT({c},11)="Más rápido "', G_LT, G_TX), ('LEFT({c},10)="Más lento "', RD_F, RD_T)]
-for role, rc, rr_c, c0 in roles:
+for role, rc, rr_c, _r2c, c0 in roles:
     cl = {h: L(c0 + j) for j, h in enumerate(RCOLS)}
     colr = lambda h: f"Calculos!${cl[h]}$3:${cl[h]}$102"
     pan.row_dimensions[r].height = 24
@@ -1125,7 +1151,8 @@ bloques = [
         "\"± margen\": cuánto puede variar ese número por azar (95 % de seguridad). Si los márgenes de dos personas se cruzan, la diferencia entre ellas puede ser suerte.",
         "\"Lectura\": \"Más rápido que lo normal\" solo aparece cuando la ventaja es clara aun con el margen. \"Dentro de lo normal\" = no hay pruebas de que sea mejor ni peor.",
         "A quien tiene pocos turnos se le acerca a lo normal: así una racha corta de suerte no lo pone primero. Con más turnos, su número refleja más su rendimiento real.",
-        "\"Tiempo real\" es el promedio sin ajustar, para referencia. Un cajero rinde con su equipo: el ranking por estación reparte el resultado del turno entre los tres.",
+        "El orden también descuenta lo que aportan los compañeros de turno: nadie queda arriba solo por trabajar siempre con los mejores. \"Más rápido\" solo aparece si la ventaja se mantiene con y sin ese descuento.",
+        "\"Tiempo real\" es el promedio sin ajustar, para referencia.",
     ]),
     ("7", "Niveles de tiempo", [
         "0:01 a 0:59 Excelencia máxima · 1:00 a 1:59 Excelencia · 2:00 a 2:59 Muy bueno · 3:00 a 3:59 Cumple.",

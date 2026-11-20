@@ -33,9 +33,16 @@ def bayes(grupos, s2_comun=None):
         W = sum(r["K"] for r in todas)
         score = S / (n + k)
         margen = Z95 * (s2 / (n + k)) ** 0.5 if s2 is not None else None
-        out.append(dict(score=score, orden=o, clave=c, n=len(todas), W=W, t=sum(r["K"] * r["L"] for r in todas) / W,
+        out.append(dict(score=score, orden=o, clave=c, n=len(todas), W=W, k=k, t=sum(r["K"] * r["L"] for r in todas) / W,
                         pct=sum(r["cumple"] == "Sí" for r in todas) / len(todas), margen=margen, lectura=lectura(score, margen)))
-    return sorted(out, key=lambda d: (d["score"], d["orden"]))
+    res = ListaK(sorted(out, key=lambda d: (d["score"], d["orden"])))
+    res.k = k
+    return res
+
+
+class ListaK(list):
+    """Resultado de bayes: la lista ordenada y además k (sirve aunque nadie llegue al mínimo de turnos)."""
+    k = 5.0
 
 
 def nivel(s):
@@ -137,20 +144,44 @@ def panel(auto, deliv, personal, desde=None, hasta=None, turno="Total", persona=
     seen = set(); personas = []
     for idx, name in enumerate(personal):
         if name and name.strip() and name.lower() not in seen: seen.add(name.lower()); personas.append((idx, name))
+    def etapa(corr_otros):
+        """Ranking por estación. corr_otros: aportes centrados de los compañeros a descontar (etapa 2) o None (etapa 1)."""
+        out = {}
+        for role in ("caj", "board", "corr"):
+            grupos, todos = [], []
+            for idx, name in personas:
+                todas = [r for r in W if r[role] == name]
+                comp = []
+                for r in todas:
+                    x = loo(r, role, name)
+                    if x is None: continue
+                    if corr_otros: x -= sum(corr_otros[o].get(r[o].lower(), 0.0) for o in ("caj", "board", "corr") if o != role)
+                    comp.append(dict(r, res=x))
+                if comp: todos.append((name, comp))
+                if len(comp) >= minimo and sum(r["K"] for r in todas) > 0: grupos.append((idx, name, comp, todas))
+            Na = sum(len(c) for _, c in todos); ma = len(todos)
+            s2c = (sum(x["res"] ** 2 for _, c in todos for x in c) - sum(sum(x["res"] for x in c) ** 2 / len(c) for _, c in todos)) / (Na - ma) if Na - ma > 0 else None
+            lst = bayes(grupos, (s2c,))
+            k = lst.k
+            # aporte como compañero: todos los que tienen al menos un turno comparable, centrado (promedio ponderado = 0)
+            theta = {n.lower(): sum(x["res"] for x in c) / (len(c) + k) for n, c in todos}
+            peso = {n.lower(): len(c) for n, c in todos}
+            mth = sum(theta[n] * peso[n] for n in theta) / sum(peso.values()) if peso else 0.0
+            out[role] = (lst, {n: v - mth for n, v in theta.items()})
+        return out
+    e1 = etapa(None)
+    e2 = etapa({role: e1[role][1] for role in e1})
+    rk = {}
     for role in ("caj", "board", "corr"):
-        grupos = []
-        for idx, name in personas:
-            todas = [r for r in W if r[role] == name]
-            comp = [dict(r, res=x) for r in todas for x in [loo(r, role, name)] if x is not None]
-            if len(comp) >= minimo and sum(r["K"] for r in todas) > 0: grupos.append((idx, name, comp, todas))
-        # varianza dentro común: todos los turnos comparables de la estación (no solo los que llegan al mínimo)
-        todos = []
-        for idx, name in personas:
-            comp = [x for r in W if r[role] == name for x in [loo(r, role, name)] if x is not None]
-            if comp: todos.append(comp)
-        Na = sum(len(c) for c in todos); ma = len(todos)
-        s2c = (sum(x * x for c in todos for x in c) - sum(sum(c) ** 2 / len(c) for c in todos)) / (Na - ma) if Na - ma > 0 else None
-        rk[role] = bayes(grupos, (s2c,))[:5]
+        d1 = {d["clave"]: d for d in e1[role][0]}
+        final = []
+        for d in e2[role][0]:      # orden por la etapa 2 (descuenta compañeros); lectura solo si ambas etapas coinciden
+            a = d1[d["clave"]]
+            mg = None if (d["margen"] is None or a["margen"] is None) else max(d["margen"], a["margen"])
+            lec = d["lectura"] if a["lectura"] == d["lectura"] else "Dentro de lo normal"
+            if mg is None: lec = "Pocos datos"
+            final.append(dict(d, margen=mg, lectura=lec))
+        rk[role] = final[:5]
     res["rank"] = rk
     trios, order = defaultdict(list), []
     for r in W:
