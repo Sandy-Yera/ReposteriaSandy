@@ -544,7 +544,7 @@ ho = sheet("Horarios")
 PASTE_COLS = [L(c) for c in range(2, 2 + 18)]       # zona de pegado B..S (18 columnas): el horario real usa 10-11
 ULT_PEGA = PASTE_COLS[-1]
 ho.column_dimensions["B"].width = 30; ho.column_dimensions["C"].width = 30   # el nombre puede caer en B o en C según cómo se copie
-for c_ in PASTE_COLS[2:]: ho.column_dimensions[c_].width = 16
+for c_ in PASTE_COLS[2:]: ho.column_dimensions[c_].width = 22   # caben turnos como "08:00 - 15:00(60 MINS)"
 title(ho, "Horarios semanales", None, 10, 9)
 ho.row_dimensions[3].height = 34
 merge(ho, "B3:J3", "Cada semana usa el siguiente marco vacío. Escribe las fechas en \"Semana del __ al __\" y pega el horario en la celda "
