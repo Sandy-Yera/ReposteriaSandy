@@ -1148,6 +1148,14 @@ bloques = [
         "Si el Panel dice \"Hay filas sin fórmulas\", alguien quitó la protección y borró o insertó filas. Lo más seguro es volver a una copia anterior.",
         "Solo para quien sabe Excel: las hojas se desprotegen en Revisar → Desproteger hoja (no tienen contraseña). Vuelve a protegerlas al terminar.",
     ]),
+    ("12", "Límites a tener en cuenta", [
+        "Funciona en Excel 2013 o más nuevo, en Windows o Mac. En versiones muy antiguas, en el navegador o en el celular, algunas partes pueden fallar: para anotar datos, usa el computador.",
+        "No conviene abrirlo en Google Sheets: se pierden la protección y algunos avisos.",
+        "Fechas: el computador debe estar configurado en español (día-mes-año). Si está en inglés, \"05-11\" se lee como 11 de mayo.",
+        "Una persona a la vez: si dos lo editan al mismo tiempo, se pueden perder cambios.",
+        "Hay espacio para unos 16 meses de datos (ver punto 11).",
+        "Los rankings necesitan algunas semanas de datos: al comienzo es normal que casi todos salgan \"Dentro de lo normal\".",
+    ]),
 ]
 r = 5
 for num, head, items in bloques:
