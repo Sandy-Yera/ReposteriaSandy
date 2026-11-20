@@ -71,7 +71,7 @@ def errores(doc):
                 if isinstance(v, str) and v.startswith(("#DIV/0!", "#VALUE!", "#REF!", "#NAME?", "#N/A", "#NUM!", "#NULL!", "Err:")): bad.append((n, v))
     return bad[:5]
 FOTO = [("Panel", r) for r in ["B4", "B8", "B11", "E11", "H11", "K11", "B13", "B16", "H16", "K16", "C35", "G35", "J35", "B40", "C60", "C69", "F69"]] + \
-       [("Registro Auto", r) for r in ["B5", "Q2", "M1039", "Q1039", "B1038", "M1058"]] + [("Registro Delivery", "G1039"), ("Horarios", "V16"), ("Inicio", "C6")]
+       [("Registro Auto", r) for r in ["B5", "I2", "M1039", "Q1039", "B1038", "M1058"]] + [("Registro Delivery", "G1039"), ("Horarios", "V16"), ("Inicio", "C6")]
 def foto(doc): return {f"{s}!{r}": val(doc, s, r) for s, r in FOTO}
 def modo_si(f): return f["Panel!H16"] == "56" and "MODO APRENDIZAJE" in f["Panel!B4"] and f["Registro Auto!Q1039"].startswith("EJEMPLO")
 def modo_no(f): return f["Panel!H16"] == str(N_REAL) and "MODO APRENDIZAJE" not in f["Panel!B4"] and f["Registro Auto!Q1039"] == "" and f["Registro Auto!B5"] == ""
@@ -85,7 +85,7 @@ escribir_ui(doc, "Inicio", "C6", "No")
 f1 = foto(doc)
 check("Escribir No (como usuario): Panel con los datos reales, sin aviso, ejemplos y guías ocultos", modo_no(f1), {k: f1[k] for k in ("Panel!H16", "Panel!B4", "Registro Auto!Q1039")})
 check("En No: sin errores en ninguna hoja", not errores(doc), errores(doc))
-check("En No: el horario de ejemplo y el enlace 'Ver ejemplos' desaparecen", f1["Horarios!V16"] == "" and f1["Registro Auto!Q2"] == "")
+check("En No: el horario de ejemplo y el enlace 'Ver ejemplos' desaparecen", f1["Horarios!V16"] == "" and f1["Registro Auto!I2"] == "")
 check("En No: el ranking usa nombres reales", f1["Panel!C35"] in NAMES, f1["Panel!C35"])
 escribir_ui(doc, "Inicio", "C6", "Sí")
 f2 = foto(doc)

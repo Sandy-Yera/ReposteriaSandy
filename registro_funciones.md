@@ -575,3 +575,8 @@ Generador del archivo `entregables/Registro_Rendimiento_Auto_Delivery.xlsx` y su
 - Ubicación: entregables/pruebas_excel/build.py
 - Qué hace: cantidad de filas de "Mejores días" en el Panel (7).
 - Cómo funciona: con una semana filtrada se ven sus 7 días ordenados. El modelo de pruebas también devuelve 7.
+
+### auditoria_visible (ANCHO_PANTALLA, FILAS_PANTALLA, anchos, x_col, visible, tiene_enlace_cerca)
+- Ubicación: entregables/pruebas_excel/auditoria_visible.py
+- Qué hace: revisa que nada importante (enlaces de navegación, avisos, ejemplos y guías del Modo aprendizaje) quede fuera de la primera pantalla sin un enlace visible que lleve ahí. También detecta hipervínculos fijos sobre celdas con fórmula.
+- Cómo funciona: calcula la posición en píxeles de cada columna con sus anchos reales (considera las columnas agrupadas). Un elemento cuenta como alcanzable si está en la pantalla inicial (unos 1.200 px × 30 filas) o si un enlace visible salta a una pantalla donde se ve. Acepta el recorrido natural (bajar por el Panel o las Instrucciones, las guías bajo cada encabezado y seguir a la derecha en la tabla de ejemplos).

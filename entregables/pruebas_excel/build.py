@@ -316,7 +316,7 @@ cols = [  # (letra, encabezado, ancho, tipo)
     ("BZ", "aux_trioN2", 6, "aux"), ("CA", "aux_diaSemana", 6, "aux"), ("CB", "aux_diaSeg", 6, "aux"),
     ("CC", "aux_diaVsNormal", 6, "aux"), ("CD", "aux_ejemplo", 6, "aux"),
 ]
-title(au, "Registro Auto", None, 17, 15)
+title(au, "Registro Auto", None, 17, 7)        # enlaces junto al título: la tabla es ancha y a la derecha quedarían fuera de la pantalla
 au.row_dimensions[3].height = 38
 merge(au, "B3:Q3",
       "Cómo se calcula el tiempo real de PM: el sistema acumula todo el día, no parte de cero a las 17:30. "
@@ -334,7 +334,7 @@ GUIA_AUTO = {"B": "Fecha del turno. Ej: 16-11-2026", "C": "AM (hasta 17:30) o PM
 for c_, t in GUIA_AUTO.items():
     put(au, f"{c_}5", si_aprende(t), f=font(8, i=True, c=ACC), al=Alignment(horizontal="center", vertical="center", wrap_text=True))
 au.conditional_formatting.add("B5:Q5", FormulaRule(formula=["fAprende=1"], fill=fill("EAF2F8")))
-put(au, "Q2", enlace_aprende(f"'Registro Auto'!B{R_BANDA}", "Ver ejemplos ↓"), f=font(10, True, ACC, u="single"), al=CENTER)
+put(au, "I2", enlace_aprende(f"'Registro Auto'!B{R_BANDA}", "Ver ejemplos ↓"), f=font(10, True, ACC, u="single"), al=Alignment(horizontal="left", vertical="center"))
 au.row_dimensions[6].height = 20
 merge(au, "B6:I6", "✎  LLENAS TÚ", f=font(9, True, OR_T), fl=fill(INPUT), al=CENTER)
 merge(au, "J6:P6", "⚙  SE CALCULA SOLO", f=font(9, True, MUTED), fl=fill(CALC), al=CENTER)
@@ -482,7 +482,8 @@ dcols = [("B", "Fecha", 13, "in"), ("C", "Turno", 9, "in"), ("D", "Enlace a la f
          ("I", "aux_valida", 6, "aux"), ("J", "aux_enRango", 6, "aux"), ("K", "aux_enRangoTurno", 6, "aux"),
          ("L", "aux_concuerda", 6, "aux"), ("M", "aux_turno", 6, "aux"), ("N", "aux_fecha", 6, "aux"), ("O", "aux_repetida", 6, "aux"),
          ("P", "aux_clave", 6, "aux"), ("Q", "aux_ejemplo", 6, "aux")]
-title(de, "Registro Delivery", None, 8, 7)
+title(de, "Registro Delivery", None, 8, 6)
+put(de, "H2", enlace_aprende(f"'Registro Delivery'!B{R_BANDA}", "Ver ejemplos ↓"), f=font(10, True, ACC, u="single"), al=Alignment(horizontal="left", vertical="center"))
 au_note = ("Una fila por turno. Sube la foto de las comandas junto a la tableta a Drive, copia su enlace y pégalo en la columna "
            "\"Enlace\". Revisa a mano si coinciden y marca Sí o No. La columna Estado te dice si la fila quedó bien.")
 de.row_dimensions[3].height = 34
@@ -550,7 +551,7 @@ PASTE_COLS = [L(c) for c in range(2, 2 + 18)]       # zona de pegado B..S (18 co
 ULT_PEGA = PASTE_COLS[-1]
 ho.column_dimensions["B"].width = 30; ho.column_dimensions["C"].width = 30   # el nombre puede caer en B o en C según cómo se copie
 for c_ in PASTE_COLS[2:]: ho.column_dimensions[c_].width = 22   # caben turnos como "08:00 - 15:00(60 MINS)"
-title(ho, "Horarios semanales", None, 10, 9)
+title(ho, "Horarios semanales", None, 10, 4)
 ho.row_dimensions[3].height = 34
 merge(ho, "B3:J3", "Cada semana usa el siguiente marco vacío. Escribe las fechas en \"Semana del __ al __\" y pega el horario en la celda "
       "marcada: clic derecho → Pegado especial → Valores y formato de números. Cada marco tiene espacio para 60 filas y 18 columnas: caben el título, la firma, el resumen y columnas de más. Los marcos anteriores no se tocan.", f=font(9, c="3E4C59"), fl=fill(LIGHT), al=LEFT)
@@ -1257,7 +1258,8 @@ EJ_AUTO, EJ_DEL = generar_ejemplos()
 assert len(EJ_AUTO) <= R1 - R_EJ0 + 1 and len(EJ_DEL) <= R1 - R_EJ0 + 1
 for ws, cols_in, filas, flag in ((au, "BCDEFGHIQ", EJ_AUTO, "CD"), (de, "BCDFH", EJ_DEL, "Q")):
     banda = ws[f"B{R_BANDA}"]
-    banda.value = si_aprende("▼ EJEMPLOS INVENTADOS (Modo aprendizaje). No se mezclan con tus datos y desaparecen al poner Modo aprendizaje en No.")
+    banda.value = si_aprende("▼ EJEMPLOS INVENTADOS (Modo aprendizaje). Lee la explicación de cada fila en la columna Observaciones (a la derecha →). "
+                             "No se mezclan con tus datos y desaparecen al poner Modo aprendizaje en No.")
     banda.font = font(9, True, "FFFFFF"); banda.alignment = Alignment(horizontal="left", vertical="center")
     ult = "Q" if ws is au else "H"
     ws.conditional_formatting.add(f"B{R_BANDA}:{ult}{R_BANDA}", FormulaRule(formula=["fAprende=1"], fill=fill(ACC)))
