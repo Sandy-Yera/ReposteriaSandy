@@ -221,7 +221,11 @@ ini["C6"].protection = UNLOCK
 v_apr = dv(("Modo aprendizaje", "Sí = ejemplos y explicaciones. No = archivo limpio. Tus datos no se borran."), type="list", formula1='"Sí,No"',
            errorTitle="Modo aprendizaje", error="Elige Sí o No con la flechita.")
 v_apr.add("C6"); ini.add_data_validation(v_apr)
-ini.conditional_formatting.add("C6", FormulaRule(formula=['UPPER(TRIM($C$6&""))<>"NO"'], fill=fill(ACC), font=Font(name=FONT, size=16, bold=True, color="FFFFFF")))
+ini.conditional_formatting.add("C6", FormulaRule(formula=["fAprende=1"], fill=fill(ACC), font=Font(name=FONT, size=16, bold=True, color="FFFFFF")))
+# 2) estado en palabras, siempre visible
+ini.row_dimensions[7].height = 22
+put(ini, "E7", '=IF(fAprende=1,"Ahora: MODO APRENDIZAJE ACTIVO · se ven ejemplos inventados y explicaciones","Ahora: archivo LIMPIO · solo tus datos reales")',
+    f=font(10, True, ACC), al=Alignment(vertical="center"))
 put(ini, "E6", "Sí = el archivo muestra ejemplos inventados y explicaciones en cada hoja (ideal la primera vez, o para enseñar a alguien nuevo). "
     "No = archivo limpio para trabajar. Tus datos reales nunca se borran ni se mezclan con los ejemplos: puedes cambiarlo cuando quieras.",
     f=font(10, c="3E4C59"), al=Alignment(vertical="center", wrap_text=True))
@@ -672,7 +676,7 @@ for i, (lab, frm) in enumerate([
     ("fCanal", '=IFERROR(IF(TRIM(Panel!$H$7&"")="Auto","Auto",IF(TRIM(Panel!$H$7&"")="Delivery","Delivery","Ambos")),"Ambos")'),
     ("fPersona", '=IFERROR(IF(OR(TRIM(Panel!$J$7&"")="",TRIM(Panel!$J$7&"")="Todas"),"Todas",TRIM(Panel!$J$7)),"Todas")'),
     ("fMin", '=IF(ISNUMBER(Panel!$L$7),IF(Panel!$L$7>=1,INT(Panel!$L$7),3),3)'),
-    ("fAprende", '=IFERROR(IF(UPPER(TRIM(Inicio!$C$6&""))="NO",0,1),1)'),
+    ("fAprende", '=IFERROR(IF(OR(LEFT(UPPER(TRIM(Inicio!$C$6&"")),1)="N",TRIM(Inicio!$C$6&"")="0"),0,1),1)'),
 ]):
     r = 2 + i
     put(ca, f"A{r}", lab); put(ca, f"B{r}", frm)
@@ -770,7 +774,10 @@ aviso = ('=IF(fAprende=1,"MODO APRENDIZAJE: estás viendo datos de EJEMPLO inven
          '&IFERROR(IF(AND(ISNUMBER(Panel!$B$7),ISNUMBER(Panel!$D$7)),IF(Panel!$B$7>Panel!$D$7,"Desde era posterior a Hasta: se invirtieron. ",""),""),"")'
          '&IFERROR(IF(AND(NOT(ISBLANK(Panel!$F$7)),fTurno="Total",UPPER(TRIM(Panel!$F$7))<>"TOTAL"),"Turno no válido: se muestra Total. ",""),"Turno no válido: se muestra Total. ")'
          '&IFERROR(IF(AND(NOT(ISBLANK(Panel!$H$7)),fCanal="Ambos",UPPER(TRIM(Panel!$H$7))<>"AMBOS"),"Canal no válido: se muestra Ambos. ",""),"Canal no válido: se muestra Ambos. ")'
-         f'&IFERROR(IF(AND(fPersona<>"Todas",COUNTIF({PB},fPersona)=0),"La persona elegida no está en Personal. ",""),"")'
+         f'&IFERROR(IF(AND(fPersona<>"Todas",COUNTIF(Calculos!$D$3:$D$102,fPersona)=0),IF(fAprende=1,"En Modo aprendizaje elige una persona de ejemplo «(ej.)» o Todas. ","La persona elegida no está en Personal. "),""),"")'
+         f'&IF(AND(OR(ISNUMBER(Panel!$B$7),ISNUMBER(Panel!$D$7)),SUM({ra("U")})=0,COUNT({ra("AY")})>0),"No hay turnos en las fechas elegidas: deja Desde y Hasta vacíos para ver todo. ","")'
+         f'&IF(AND(fAprende=1,SUMPRODUCT(--(LEN({rar("B")}&"")>0))>0),"Tienes "&SUMPRODUCT(--(LEN({rar("B")}&"")>0))&" fila(s) reales guardadas que no se muestran mientras Modo aprendizaje esté en Sí. ","")'
+         f'&IF(AND(fAprende=0,SUMPRODUCT(--(LEN({RA}!$B${R_EJ0}:$B${R1}&"")>0))+SUMPRODUCT(--(LEN({RD}!$B${R_EJ0}:$B${R1}&"")>0))>0),"Hay datos escritos en la zona de ejemplos (desde la fila {R_EJ0}): ahí no se cuentan. Pásalos a una fila normal. ","")'
          '&IFERROR(IF(AND(NOT(ISBLANK(Panel!$L$7)),NOT(AND(ISNUMBER(Panel!$L$7),Panel!$L$7>=1))),"Mín. turnos no válido: se usa 3. ",""),"Mín. turnos no válido: se usa 3. ")'
          f'&IF(SUM({ra("AX")})>0,SUM({ra("AX")})&" fila(s) de Registro Auto por revisar o completar (columna Nivel). ","")'
          f'&IF(COUNTIF({rdr("G")},"Revisar*")+COUNTIF({rdr("G")},"Falta*")>0,COUNTIF({rdr("G")},"Revisar*")+COUNTIF({rdr("G")},"Falta*")&" fila(s) de Registro Delivery por revisar (columna Estado). ","")'

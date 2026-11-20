@@ -518,8 +518,8 @@ Generador del archivo `entregables/Registro_Rendimiento_Auto_Delivery.xlsx` y su
 
 ### fAprende, v_apr
 - Ubicación: entregables/pruebas_excel/build.py
-- Qué hace: interruptor Modo aprendizaje (Inicio!C6, lista Sí/No) y su lectura en Calculos!B8 (1 = Sí, 0 = No; vacío o inválido = Sí).
-- Cómo funciona: con 1 se ven ejemplos y explicaciones y el Panel usa solo filas de ejemplo; con 0 todo eso se vuelve "" y el Panel usa solo filas reales.
+- Qué hace: interruptor Modo aprendizaje (Inicio!C6, lista Sí/No) y su lectura en Calculos!B8 (1 = Sí, 0 = No).
+- Cómo funciona: cuenta como No todo lo que empiece con N ("no", " NO ", "N", "nop", "No.") y el 0. Lo demás, incluso vacío, texto raro o error, cuenta como Sí. Con 1 se ven ejemplos y explicaciones y el Panel usa solo filas de ejemplo; con 0 todo eso se vuelve "" y el Panel usa solo filas reales. Inicio!E7 muestra el estado en palabras.
 
 ### aux_ejemplo (Registro Auto CD, Registro Delivery Q)
 - Ubicación: entregables/pruebas_excel/build.py
@@ -535,3 +535,18 @@ Generador del archivo `entregables/Registro_Rendimiento_Auto_Delivery.xlsx` y su
 - Ubicación: entregables/pruebas_excel/test_aprendizaje.py
 - Qué hace: prueba del Modo aprendizaje con datos reales en las mismas fechas que los ejemplos.
 - Cómo funciona: verifica que Sí muestre solo ejemplos y No solo datos reales, que no haya choques ni repetidas, que las filas reales calculen igual en ambos modos, las explicaciones, el filtro con nombre de ejemplo y la protección de la zona.
+
+### estado del interruptor (Inicio!E7)
+- Ubicación: entregables/pruebas_excel/build.py
+- Qué hace: dice en palabras en qué modo quedó el archivo ("MODO APRENDIZAJE ACTIVO" o "archivo LIMPIO").
+- Cómo funciona: fórmula sobre fAprende; sirve cuando alguien escribe o pega algo raro en el interruptor.
+
+### avisos de Modo aprendizaje (parte de `aviso`)
+- Ubicación: entregables/pruebas_excel/build.py
+- Qué hace: avisa de filas reales guardadas que no se ven en Sí, fechas filtradas sin turnos, persona que no corresponde al modo y datos escritos en la zona de ejemplos con el modo en No.
+- Cómo funciona: usan SUMPRODUCT(LEN(…)>0) sobre las filas reales o la zona de ejemplos, SUM(aux_enRango) y COUNT(aux_contexto).
+
+### FOTO, foto, modo_si, modo_no, escribir_ui, pegar, errores (test_aprendizaje_e2e)
+- Ubicación: entregables/pruebas_excel/test_aprendizaje_e2e.py
+- Qué hace: prueba de extremo a extremo del Modo aprendizaje en LibreOffice como tester, usuario torpe y destructor.
+- Cómo funciona: escribir_ui escribe como un usuario (respeta la protección) y pegar salta la lista desplegable como un Ctrl+V. foto toma las celdas clave para comparar estados; modo_si y modo_no verifican cada estado. Cambia el interruptor en ambos sentidos y con variantes escritas o pegadas.
