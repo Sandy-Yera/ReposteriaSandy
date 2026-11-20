@@ -13,7 +13,7 @@ def lectura(score, margen):
     return "Dentro de lo normal"
 
 
-def bayes(grupos):
+def bayes(grupos, s2_comun=None):
     """grupos: lista de (orden, clave, filas) ya filtrados por mínimo de turnos. Cada fila trae res = segundos vs lo normal.
     Modelo de efectos aleatorios por turno (ANOVA de un factor, estimador de momentos):
     res_t = theta_i + e_t,  e_t ~ (0, s2),  theta_i ~ (0, tau2).  Puntaje = estimación bayesiana empírica S_i/(n_i+k), k = s2/tau2.
@@ -22,6 +22,7 @@ def bayes(grupos):
     N = sum(x[3] for x in st); m = len(st)
     St = sum(x[4] for x in st); Ct = sum(x[4] ** 2 / x[3] for x in st); Qt = sum(x[5] for x in st); N2 = sum(x[3] ** 2 for x in st)
     s2 = (Qt - Ct) / (N - m) if N - m > 0 else None
+    if s2_comun is not None: s2 = s2_comun[0]
     tau2 = None
     if m >= 2 and s2 is not None:
         msb = (Ct - St ** 2 / N) / (m - 1); n0 = (N - N2 / N) / (m - 1)
@@ -142,7 +143,14 @@ def panel(auto, deliv, personal, desde=None, hasta=None, turno="Total", persona=
             todas = [r for r in W if r[role] == name]
             comp = [dict(r, res=x) for r in todas for x in [loo(r, role, name)] if x is not None]
             if len(comp) >= minimo and sum(r["K"] for r in todas) > 0: grupos.append((idx, name, comp, todas))
-        rk[role] = bayes(grupos)[:5]
+        # varianza dentro común: todos los turnos comparables de la estación (no solo los que llegan al mínimo)
+        todos = []
+        for idx, name in personas:
+            comp = [x for r in W if r[role] == name for x in [loo(r, role, name)] if x is not None]
+            if comp: todos.append(comp)
+        Na = sum(len(c) for c in todos); ma = len(todos)
+        s2c = (sum(x * x for c in todos for x in c) - sum(sum(c) ** 2 / len(c) for c in todos)) / (Na - ma) if Na - ma > 0 else None
+        rk[role] = bayes(grupos, (s2c,))[:5]
     res["rank"] = rk
     trios, order = defaultdict(list), []
     for r in W:

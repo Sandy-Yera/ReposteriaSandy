@@ -19,15 +19,18 @@ def ranking_justo(F, nombres, minimo=3):
     for r in F:
         g = ctx(r); Ng[g] = Ng.get(g, 0) + 1; Ngi[(g, r["caj"])] = Ngi.get((g, r["caj"]), 0) + 1
         Sv[g] = Sv.get(g, 0) + r["L"]; Nv[g] = Nv.get(g, 0) + 1
-    grupos = []
+    grupos, todos = [], []
     for i, n in enumerate(nombres):
         todas = [r for r in F if r["caj"] == n]
         comp = []
         for r in todas:
             g = ctx(r); libres = Ng[g] - Ngi[(g, n)]
             if libres > 0: comp.append(dict(r, res=(r["L"] - Sv[g] / Nv[g]) * Ng[g] / libres))
+        if comp: todos.append(comp)
         if len(comp) >= minimo: grupos.append((i, n, comp, todas))
-    return modelo.bayes(grupos)
+    Na = sum(len(c) for c in todos); ma = len(todos)
+    s2c = (sum(r["res"] ** 2 for c in todos for r in c) - sum(sum(r["res"] for r in c) ** 2 / len(c) for c in todos)) / (Na - ma)
+    return modelo.bayes(grupos, (s2c,))
 
 tot = {k: [] for k in ("rho_crudo", "rho_justo", "cob", "falsos")}; p01 = {"crudo": 0, "justo": 0}
 for seed in range(1, 13):

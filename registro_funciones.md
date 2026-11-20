@@ -238,7 +238,7 @@ Generador del archivo `entregables/Registro_Rendimiento_Auto_Delivery.xlsx` y su
 
 ### roles
 - Ubicación: entregables/pruebas_excel/build.py
-- Qué hace: estaciones del ranking (Cajero, Board, Corredor) con su columna prefiltrada (AO/AP/AQ), su columna de residuo justo (BL/BM/BN), la del residuo al cuadrado (BP/BQ/BR) y la columna inicial de su bloque en Calculos (6, 21, 36).
+- Qué hace: estaciones del ranking (Cajero, Board, Corredor) con su columna prefiltrada (AO/AP/AQ), su columna de residuo justo (BL/BM/BN) y la columna inicial de su bloque en Calculos (6, 20, 34).
 - Cómo funciona: las estadísticas crudas y las del ajuste usan COUNTIF/SUMIF de una condición sobre la columna prefiltrada.
 
 ### aviso
@@ -424,7 +424,7 @@ Generador del archivo `entregables/Registro_Rendimiento_Auto_Delivery.xlsx` y su
 ### eb_resumen
 - Ubicación: entregables/pruebas_excel/build.py
 - Qué hace: escribe en Calculos el ajuste bayesiano empírico (ANOVA de un factor, estimador de momentos) de un conjunto de grupos.
-- Cómo funciona: recibe columna, fila inicial y rangos de n, suma de residuos, suma²/n, suma de cuadrados y n². Usa solo grupos con n ≥ fMin. Retorna las direcciones de s2 (varianza dentro) y k = s2/tau2 (con tope).
+- Cómo funciona: recibe columna, fila inicial y rangos de n, suma de residuos, suma²/n, suma de cuadrados (o None) y n². Usa solo grupos con n ≥ fMin. `s2_externo` permite pasar una varianza dentro común (las estaciones la calculan con SUMSQ sobre todos sus turnos comparables). Retorna las direcciones de s2 y de k = s2/tau2 (con tope).
 
 ### lectura_f
 - Ubicación: entregables/pruebas_excel/build.py
@@ -439,7 +439,7 @@ Generador del archivo `entregables/Registro_Rendimiento_Auto_Delivery.xlsx` y su
 ### RCOLS
 - Ubicación: entregables/pruebas_excel/build.py
 - Qué hace: columnas de cada bloque de estación en Calculos.
-- Cómo funciona: nombre, turnos, autos, prod, tiempo, pct (datos crudos para mostrar); ajustado, comparables, sumaR, sumaR2, c, n2, margen, lectura (ajuste justo para ordenar).
+- Cómo funciona: nombre, turnos, autos, prod, tiempo, pct (datos crudos para mostrar); ajustado, comparables, sumaR, c, n2, margen, lectura (ajuste justo para ordenar).
 
 ### TRIO_S2, TRIO_K, kTrio
 - Ubicación: entregables/pruebas_excel/build.py
@@ -453,7 +453,7 @@ Generador del archivo `entregables/Registro_Rendimiento_Auto_Delivery.xlsx` y su
 
 ### columnas AY–BZ de Registro Auto (comparación justa)
 - Ubicación: entregables/pruebas_excel/build.py
-- Qué hace: aux_contexto (1–14), aux_desvio (seg − lo normal), índices de persona, claves contexto×persona/trío, conteos por clave, residuos "contra los demás" r = desvío·N/(N−n) y sus cuadrados, segundos válidos, margen de redondeo del PM y estadísticas por trío.
+- Qué hace: aux_contexto (1–14), aux_desvio (seg − lo normal de todo el historial), claves contexto×persona (contexto·1000 + índice en Personal) y contexto×trío, conteos (las personas consultan TABLA_CTX y el trío usa COUNTIF), residuos "contra los demás" r = desvío·N/(N−n), cuadrado del residuo del trío, segundos válidos, margen de redondeo del PM y estadísticas por trío. BA–BC y BP–BR quedan reservadas sin fórmula.
 - Cómo funciona: los conteos dependen solo de fechas, turnos, nombres y filtro de fechas, no de los tiempos, así que escribir minutos o segundos no los recalcula.
 
 ### lectura (modelo)
@@ -464,7 +464,7 @@ Generador del archivo `entregables/Registro_Rendimiento_Auto_Delivery.xlsx` y su
 ### bayes
 - Ubicación: entregables/pruebas_excel/modelo.py
 - Qué hace: referencia independiente del ajuste bayesiano empírico por turno (efectos aleatorios, estimador de momentos).
-- Cómo funciona: recibe (orden, clave, filas comparables con res, todas las filas). Retorna dicts con score, margen, lectura, n, tiempo y pct, ordenados por score y orden.
+- Cómo funciona: recibe (orden, clave, filas comparables con res, todas las filas) y opcionalmente `s2_comun=(s2,)`, la varianza dentro común de la estación. Retorna dicts con score, margen, lectura, n, tiempo y pct, ordenados por score y orden.
 
 ### talento, base (test_verdad)
 - Ubicación: entregables/pruebas_excel/test_verdad.py
@@ -485,3 +485,8 @@ Generador del archivo `entregables/Registro_Rendimiento_Auto_Delivery.xlsx` y su
 - Ubicación: entregables/pruebas_excel/build.py
 - Qué hace: aux_diaSemana (1–7), aux_diaSeg (resultado del día en segundos) y aux_diaVsNormal (cuánto mejor o peor fue el día frente a lo normal de su día de la semana, sin incluirse a sí mismo).
 - Cómo funciona: aux_diaScore (AB) ordena "Mejores días" con este desvío, filtrado por el rango de fechas. Si ese día de la semana tiene un solo registro, queda vacío.
+
+### TABLA_CTX_COL0, TABLA_CTX
+- Ubicación: entregables/pruebas_excel/build.py
+- Qué hace: tabla índice persona × contexto en Calculos (una por estación, 100 filas × 14 contextos, desde las columnas 50, 64 y 78) con los turnos programados de cada persona en cada contexto.
+- Cómo funciona: cada casilla es un COUNTIF de la clave. Cada fila del registro consulta su casilla con INDEX(tabla, MOD(clave,1000), INT(clave/1000)), sin contar. Al cambiar un nombre se recalculan unas 420 casillas en lugar de 1.100 conteos.

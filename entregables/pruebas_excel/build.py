@@ -9,7 +9,7 @@ from openpyxl.worksheet.hyperlink import Hyperlink
 from openpyxl.formatting.rule import FormulaRule
 from openpyxl.workbook.defined_name import DefinedName
 from openpyxl.comments import Comment
-from openpyxl.utils import get_column_letter as L, column_index_from_string
+from openpyxl.utils import get_column_letter as L, get_column_letter, column_index_from_string
 
 OUT = sys.argv[1]
 EMPTY = len(sys.argv) > 2 and sys.argv[2] == "empty"
@@ -94,6 +94,9 @@ def protect(ws):
                                     deleteColumns=True, deleteRows=True, selectLockedCells=False,
                                     selectUnlockedCells=False, sort=True, autoFilter=False, pivotTables=True)
 
+# tabla persona×contexto (turnos programados) en Calculos: filas 3..102 = Personal 8..107, 14 columnas = contextos
+TABLA_CTX_COL0 = {"D": 50, "E": 64, "F": 78}     # Cajero, Board, Corredor
+TABLA_CTX = {k: f"Calculos!${get_column_letter(c)}$3:${get_column_letter(c + 13)}$102" for k, c in TABLA_CTX_COL0.items()}
 FECHA_MIN, FECHA_MAX = 43831, 73051   # 01-01-2020 .. 01-01-2100
 MAX_AUTOS, MAX_SEG = 3000, 1200
 Z95 = 1.96                       # margen del 95 %
@@ -123,18 +126,20 @@ def lvl_s(sec):
     return (f'IF({sec}<=0,"Revisar datos",IF({sec}<60,"Excelencia máxima",IF({sec}<120,"Excelencia",'
             f'IF({sec}<180,"Muy bueno",IF({sec}<240,"Cumple",IF({sec}<300,"No cumple (alerta)","No cumple"))))))')
 
-def eb_resumen(ws, col, row0, n_rng, s_rng, c_rng, q_rng, n2_rng):
+def eb_resumen(ws, col, row0, n_rng, s_rng, c_rng, q_rng, n2_rng, s2_externo=None):
     """Escribe en ws el ajuste bayesiano empírico (ANOVA de un factor, estimador de momentos) sobre los grupos con
     n >= fMin. Devuelve las direcciones absolutas de s2 (varianza dentro) y k (fuerza del ajuste, en turnos)."""
     crit = '">="&fMin'
     vc = L(column_index_from_string(col) + 1)
     items = [("N", f'=SUMIF({n_rng},{crit})'), ("m", f'=COUNTIF({n_rng},{crit})'), ("S", f'=SUMIF({n_rng},{crit},{s_rng})'),
-             ("C", f'=SUMIF({n_rng},{crit},{c_rng})'), ("Q", f'=SUMIF({n_rng},{crit},{q_rng})'), ("N2", f'=SUMIF({n_rng},{crit},{n2_rng})')]
+             ("C", f'=SUMIF({n_rng},{crit},{c_rng})'), ("Q", f'=SUMIF({n_rng},{crit},{q_rng})' if q_rng else '=""'),
+             ("N2", f'=SUMIF({n_rng},{crit},{n2_rng})')]
     a = {}
     for i, (lab, frm) in enumerate(items):
         ws[f"{col}{row0+i}"] = lab; ws[f"{vc}{row0+i}"] = frm; a[lab] = f"${vc}${row0+i}"
     r = row0 + len(items)
-    ws[f"{col}{r}"] = "s2"; ws[f"{vc}{r}"] = f'=IF({a["N"]}-{a["m"]}>0,({a["Q"]}-{a["C"]})/({a["N"]}-{a["m"]}),"")'
+    ws[f"{col}{r}"] = "s2"
+    ws[f"{vc}{r}"] = s2_externo or f'=IF({a["N"]}-{a["m"]}>0,({a["Q"]}-{a["C"]})/({a["N"]}-{a["m"]}),"")'
     ws[f"{col}{r+1}"] = "tau2"
     ws[f"{vc}{r+1}"] = (f'=IF(AND({a["m"]}>=2,ISNUMBER({vc}{r})),MAX(0,(({a["C"]}-{a["S"]}^2/{a["N"]})/({a["m"]}-1)-{vc}{r})'
                         f'/(({a["N"]}-{a["N2"]}/{a["N"]})/({a["m"]}-1))),"")')
@@ -260,13 +265,13 @@ cols = [  # (letra, encabezado, ancho, tipo)
     ("AP", "aux_boardFiltrado", 6, "aux"), ("AQ", "aux_corredorFiltrado", 6, "aux"), ("AR", "aux_trioVez", 6, "aux"),
     ("AS", "aux_trioTurnos", 6, "aux"), ("AT", "aux_trioAutos", 6, "aux"), ("AU", "aux_trioProd", 6, "aux"),
     ("AV", "aux_trioCumple", 6, "aux"), ("AW", "aux_trioScore", 6, "aux"), ("AX", "aux_revisar", 6, "aux"),
-    ("AY", "aux_contexto", 6, "aux"), ("AZ", "aux_desvio", 6, "aux"), ("BA", "aux_idxCajero", 6, "aux"),
-    ("BB", "aux_idxBoard", 6, "aux"), ("BC", "aux_idxCorredor", 6, "aux"), ("BD", "aux_kCajero", 6, "aux"),
+    ("AY", "aux_contexto", 6, "aux"), ("AZ", "aux_desvio", 6, "aux"), ("BA", "aux_reservada1", 6, "aux"),
+    ("BB", "aux_reservada2", 6, "aux"), ("BC", "aux_reservada3", 6, "aux"), ("BD", "aux_kCajero", 6, "aux"),
     ("BE", "aux_kBoard", 6, "aux"), ("BF", "aux_kCorredor", 6, "aux"), ("BG", "aux_kTrio", 6, "aux"),
     ("BH", "aux_nCajero", 6, "aux"), ("BI", "aux_nBoard", 6, "aux"), ("BJ", "aux_nCorredor", 6, "aux"),
     ("BK", "aux_nTrio", 6, "aux"), ("BL", "aux_rCajero", 6, "aux"), ("BM", "aux_rBoard", 6, "aux"),
-    ("BN", "aux_rCorredor", 6, "aux"), ("BO", "aux_rTrio", 6, "aux"), ("BP", "aux_r2Cajero", 6, "aux"),
-    ("BQ", "aux_r2Board", 6, "aux"), ("BR", "aux_r2Corredor", 6, "aux"), ("BS", "aux_r2Trio", 6, "aux"),
+    ("BN", "aux_rCorredor", 6, "aux"), ("BO", "aux_rTrio", 6, "aux"), ("BP", "aux_reservada4", 6, "aux"),
+    ("BQ", "aux_reservada5", 6, "aux"), ("BR", "aux_reservada6", 6, "aux"), ("BS", "aux_r2Trio", 6, "aux"),
     ("BT", "aux_segValido", 6, "aux"), ("BU", "aux_margenPM", 6, "aux"), ("BV", "aux_trioComparables", 6, "aux"),
     ("BW", "aux_trioSumaR", 6, "aux"), ("BX", "aux_trioSumaR2", 6, "aux"), ("BY", "aux_trioC", 6, "aux"),
     ("BZ", "aux_trioN2", 6, "aux"), ("CA", "aux_diaSemana", 6, "aux"), ("CB", "aux_diaSeg", 6, "aux"),
@@ -365,15 +370,14 @@ for r in range(R0, R1 + 1):
         "BY": f'=IF(N(BV{r})>0,BW{r}^2/BV{r},"")',
         "BZ": f'=IF(N(BV{r})>0,BV{r}^2,"")',
     }
-    for idx_c, name_c, k_c, n_c, r_c, r2_c in (("BA", "D", "BD", "BH", "BL", "BP"), ("BB", "E", "BE", "BI", "BM", "BQ"),
-                                                ("BC", "F", "BF", "BJ", "BN", "BR"), (None, None, "BG", "BK", "BO", "BS")):
-        if idx_c:
-            f[idx_c] = f'=IF(ISTEXT({name_c}{r}),IFERROR(MATCH({name_c}{r},Personal!$B$8:$B$107,0),""),"")'
-            f[k_c] = f'=IF(OR(AY{r}="",{idx_c}{r}=""),"",AY{r}*1000+{idx_c}{r})'
-        f[n_c] = f'=IF({k_c}{r}="","",COUNTIF({rng(k_c)},{k_c}{r}))'
+    for name_c, k_c, n_c, r_c in (("D", "BD", "BH", "BL"), ("E", "BE", "BI", "BM"), ("F", "BF", "BJ", "BN"), (None, "BG", "BK", "BO")):
+        if name_c:   # clave contexto×persona: el índice de la persona en Personal va dentro de la clave
+            f[k_c] = f'=IF(OR(AY{r}="",NOT(ISTEXT({name_c}{r}))),"",IFERROR(AY{r}*1000+MATCH({name_c}{r},Personal!$B$8:$B$107,0),""))'
+        f[n_c] = (f'=IF({k_c}{r}="","",INDEX({TABLA_CTX[name_c]},MOD({k_c}{r},1000),INT({k_c}{r}/1000)))' if name_c
+                  else f'=IF({k_c}{r}="","",COUNTIF({rng(k_c)},{k_c}{r}))')
         f[r_c] = (f'=IF(OR(W{r}<>1,AZ{r}="",{k_c}{r}=""),"",IF(INDEX(ctxN,AY{r})-{n_c}{r}>0,'
                   f'AZ{r}*INDEX(ctxN,AY{r})/(INDEX(ctxN,AY{r})-{n_c}{r}),""))')
-        f[r2_c] = f'=IF({r_c}{r}="","",{r_c}{r}^2)'
+    f["BS"] = f'=IF(BO{r}="","",BO{r}^2)'
 
     au.row_dimensions[r].height = 22
     for letter, _, _, kind in cols:
@@ -655,13 +659,16 @@ wb.defined_names["diaBase"] = DefinedName("diaBase", attr_text=f"Calculos!$D${DI
 wb.defined_names["ctxBase"] = DefinedName("ctxBase", attr_text=f"Calculos!$E${CTX0}:$E${CTX0+13}")
 
 # bloques por estación: datos crudos (para mostrar) + ajuste justo (para ordenar)
-RCOLS = ["nombre", "turnos", "autos", "prod", "tiempo", "pct", "ajustado", "comparables", "sumaR", "sumaR2", "c", "n2", "margen", "lectura"]
-roles = [("Cajero", "AO", "BL", "BP", 6), ("Board", "AP", "BM", "BQ", 21), ("Corredor", "AQ", "BN", "BR", 36)]
-for role, rc, rr_c, r2_c, c0 in roles:
+RCOLS = ["nombre", "turnos", "autos", "prod", "tiempo", "pct", "ajustado", "comparables", "sumaR", "c", "n2", "margen", "lectura"]
+roles = [("Cajero", "AO", "BL", 6), ("Board", "AP", "BM", 20), ("Corredor", "AQ", "BN", 34)]
+for role, rc, rr_c, c0 in roles:
     cl = {h: L(c0 + j) for j, h in enumerate(RCOLS)}
     for h, x in cl.items(): put(ca, f"{x}1", f"{role}_{h}")
     colr = lambda h: f"${cl[h]}$3:${cl[h]}$102"
-    s2, kk = eb_resumen(ca, cl["nombre"], 104, colr("comparables"), colr("sumaR"), colr("c"), colr("sumaR2"), colr("n2"))
+    # varianza dentro común de la estación: todos sus turnos comparables (SUMSQ evita una columna de cuadrados por fila)
+    s2_comun = (f'=IFERROR((SUMSQ({ra(rr_c)})-SUMIF({colr("comparables")},">0",{colr("c")}))'
+                f'/(COUNT({ra(rr_c)})-COUNTIF({colr("comparables")},">0")),"")')
+    s2, kk = eb_resumen(ca, cl["nombre"], 104, colr("comparables"), colr("sumaR"), colr("c"), None, colr("n2"), s2_comun)
     for i in range(100):
         r = 3 + i
         c = {h: f"{x}{r}" for h, x in cl.items()}
@@ -673,13 +680,19 @@ for role, rc, rr_c, r2_c, c0 in roles:
         ca[c["pct"]] = f'=IF({c["turnos"]}=0,"",SUMIF({ra(rc)},{c["nombre"]},{ra("Z")})/{c["turnos"]})'
         ca[c["comparables"]] = f'=IF({c["turnos"]}=0,0,COUNTIFS({ra(rc)},{c["nombre"]},{ra(rr_c)},">-1E9"))'
         ca[c["sumaR"]] = f'=IF({c["comparables"]}=0,0,SUMIF({ra(rc)},{c["nombre"]},{ra(rr_c)}))'
-        ca[c["sumaR2"]] = f'=IF({c["comparables"]}=0,0,SUMIF({ra(rc)},{c["nombre"]},{ra(r2_c)}))'
         ca[c["c"]] = f'=IF({c["comparables"]}>0,{c["sumaR"]}^2/{c["comparables"]},0)'
         ca[c["n2"]] = f'={c["comparables"]}^2'
         ca[c["ajustado"]] = (f'=IF(AND({c["comparables"]}>=fMin,N({c["autos"]})>0),'
                              f'{c["sumaR"]}/({c["comparables"]}+{kk})+ROW()/1000000000,"")')
         ca[c["margen"]] = f'=IF(OR({c["ajustado"]}="",NOT(ISNUMBER({s2}))),"",{Z95}*SQRT({s2}/({c["comparables"]}+{kk})))'
         ca[c["lectura"]] = "=" + lectura_f(c["ajustado"], c["margen"])
+for name_c, kcol, c0, role in (("D", "BD", 50, "Cajero"), ("E", "BE", 64, "Board"), ("F", "BF", 78, "Corredor")):
+    for g in range(1, 15):
+        col = L(c0 + g - 1)
+        put(ca, f"{col}1", f"{role}_ctx{g}")
+        for i in range(100):
+            r = 3 + i
+            ca[f"{col}{r}"] = f'=IF(Calculos!$D${r}="",0,COUNTIF({ra(kcol)},{g * 1000 + i + 1}))'
 put(ca, "A126", "Tríos (filas representativas del registro)")
 TRIO_S2, TRIO_K = eb_resumen(ca, "A", 127, ra("BV"), ra("BW"), ra("BY"), ra("BX"), ra("BZ"))
 wb.defined_names["kTrio"] = DefinedName("kTrio", attr_text=TRIO_K)
@@ -837,7 +850,7 @@ r += 3
 RANK_HEADS = [("B", "B", "#"), ("C", "D", "Nombre"), ("E", "E", "Turnos"), ("F", "F", "Tiempo real"), ("G", "H", "vs. lo normal"),
               ("I", "I", "± margen"), ("J", "K", "Lectura"), ("L", "M", "En meta")]
 CF_LECT = [('LEFT({c},11)="Más rápido "', G_LT, G_TX), ('LEFT({c},10)="Más lento "', RD_F, RD_T)]
-for role, rc, rr_c, r2_c, c0 in roles:
+for role, rc, rr_c, c0 in roles:
     cl = {h: L(c0 + j) for j, h in enumerate(RCOLS)}
     colr = lambda h: f"Calculos!${cl[h]}$3:${cl[h]}$102"
     pan.row_dimensions[r].height = 24
