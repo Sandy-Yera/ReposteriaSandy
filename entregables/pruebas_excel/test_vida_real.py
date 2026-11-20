@@ -173,7 +173,7 @@ paso("2. Desactivar Modo aprendizaje")
 escribir("Inicio", "C6", "No"); recalc()
 check("Inicio dice 'archivo LIMPIO'", "LIMPIO" in txt("Inicio", "E7"))
 check("Panel vacío y sin aviso", txt("Panel", "H16") == "0" and txt("Panel", "B4") == "", (txt("Panel", "H16"), txt("Panel", "B4")))
-check("Zona de ejemplos, guías y horario de ejemplo ocultos", txt("Registro Auto", "B1039") == "" and txt("Registro Auto", "B5") == "" and txt("Horarios", "O16") == "")
+check("Zona de ejemplos, guías y horario de ejemplo ocultos", txt("Registro Auto", "B1039") == "" and txt("Registro Auto", "B5") == "" and txt("Horarios", "V16") == "")
 verificar_panel("Archivo limpio")
 
 # ================= 3. Agregar personal y la primera semana (escribiendo como usuario) =================
@@ -306,7 +306,7 @@ for i, row in enumerate(grid):
     for j, v in enumerate(row): pegar("Horarios", f"{chr(66 + j)}{16 + i}", v)
 recalc()
 check("Horario pegado en el marco 1", txt("Horarios", "B18") == "Ana" and txt("Horarios", "J25") != "")
-check("El marco 2 sigue vacío y con su título", txt("Horarios", "B64") == "SEMANA 2" and txt("Horarios", "B67") == "◤ Pega aquí")
+check("El marco 2 sigue vacío y con su título", txt("Horarios", "B79") == "SEMANA 2" and txt("Horarios", "B82") == "◤ Pega aquí")
 escribir("Reportes", "B7", "2026-10-01"); escribir("Reportes", "C7", "2026-10-31"); escribir("Reportes", "D7", "Mensual"); escribir("Reportes", "E7", "https://drive.google.com/reporte-oct"); recalc()
 check("Reporte agregado: aparece el botón Abrir", txt("Reportes", "F7") == "Abrir reporte ↗", txt("Reportes", "F7"))
 pegar("Reportes", "E7", "reporte en mi escritorio"); recalc()

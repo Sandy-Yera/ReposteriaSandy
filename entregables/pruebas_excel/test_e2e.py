@@ -25,7 +25,7 @@ horario += [[f"Trabajador {i}", 40] + [rnd.choice(["11:00-19:00", "19:00-02:00",
 
 def extra(wb):
     ho, rp = wb["Horarios"], wb["Reportes"]
-    s = 13 + 51  # marco de la semana 2
+    s = 13 + 66  # marco de la semana 2
     ho[f"C{s+1}"] = dt.date(2026, 11, 10); ho[f"F{s+1}"] = dt.date(2026, 11, 16)
     for i, row in enumerate(horario):
         for j, v in enumerate(row): ho.cell(s + 3 + i, 2 + j, v)
@@ -43,10 +43,10 @@ check("Mejores días con 5 filas", all(p[f"C{69+k}"].value not in (None, "", "Si
 tAM, tPM, tT = secs(p["F24"].value), secs(p["H24"].value), secs(p["J24"].value)
 autosAM, autosPM = p["F23"].value, p["H23"].value
 check("Total del día = promedio ponderado de AM y PM", abs(tT - (tAM * autosAM + tPM * autosPM) / (autosAM + autosPM)) < 0.01, (tAM, tPM, tT))
-s = 13 + 51
+s = 13 + 66
 check("Horario: 32 trabajadores pegados en el marco 2", ho.cell(s + 3 + 33, 2).value == "Trabajador 32", ho.cell(s + 36, 2).value)
 check("Horario: el marco 1 sigue intacto", ho["B16"].value == "◤ Pega aquí" and ho["B14"].value == "Semana del", ho["B16"].value)
-check("Horario: el marco 3 sigue intacto", ho[f"B{13+102}"].value == "SEMANA 3", ho[f"B{13+102}"].value)
+check("Horario: el marco 3 sigue intacto", ho[f"B{13+132}"].value == "SEMANA 3", ho[f"B{13+132}"].value)
 check("Reportes: botón Abrir creado", wb["Reportes"]["F7"].value == "Abrir reporte ↗", wb["Reportes"]["F7"].value)
 check("Delivery: botón Abrir creado", wb["Registro Delivery"]["E8"].value == "Abrir foto ↗", wb["Registro Delivery"]["E8"].value)
 

@@ -221,10 +221,15 @@ Generador del archivo `entregables/Registro_Rendimiento_Auto_Delivery.xlsx` y su
 - Qué hace: columnas de Registro Delivery y su nota explicativa.
 - Cómo funciona: incluye la columna visible Estado (G) y las auxiliares I–P (incluida la clave índice P).
 
-### N_FR, PASTE_H, FR0, FR_H
+### N_FR, PASTE_H, FR0, FR_H, PASTE_COLS, ULT_PEGA
 - Ubicación: entregables/pruebas_excel/build.py
-- Qué hace: geometría de Horarios: 52 marcos, 45 filas pegables cada uno, primer marco en la fila 13 y altura total del marco.
-- Cómo funciona: la zona de pegado (B–M) queda desbloqueada y los títulos bloqueados.
+- Qué hace: geometría de Horarios: 52 marcos con zona de pegado de 60 filas × 18 columnas (B–S), primer marco en la fila 13 y cada marco de 66 filas.
+- Cómo funciona: la zona de pegado queda desbloqueada y los títulos bloqueados. El horario real usa unas 37 filas × 11 columnas (con título, FIRMA y resumen), así que hay margen para más personas y columnas. Si algo no cabe, Excel no pega nada y la semana siguiente queda intacta.
+
+### HO_FILL, HO_FONT, HO_AL_L, HO_AL_C, EJ_H_COL
+- Ubicación: entregables/pruebas_excel/build.py
+- Qué hace: estilos compartidos de la zona de pegado de Horarios y columna donde empieza el horario de ejemplo del Modo aprendizaje (V, a la derecha de la zona de pegado).
+- Cómo funciona: compartir los estilos mantiene el tamaño del archivo bajo, aunque los marcos tengan 18 columnas.
 
 ### RP1, rcols
 - Ubicación: entregables/pruebas_excel/build.py
@@ -555,3 +560,8 @@ Generador del archivo `entregables/Registro_Rendimiento_Auto_Delivery.xlsx` y su
 - Ubicación: entregables/pruebas_excel/test_vida_real.py
 - Qué hace: prueba del ciclo de vida real del archivo en LibreOffice, en 12 pasos: Modo aprendizaje, desactivarlo, cargar personal y datos escribiendo como usuario, editar, borrar y reponer, errores y su corrección, completar un mes, filtros, cambios en Personal, activar y desactivar con datos reales, Horarios y Reportes, guardar y reabrir.
 - Cómo funciona: después de cada paso, `verificar_panel` lee lo que hay escrito (leer_auto, leer_deliv, personal, filtros), calcula el Panel con `modelo.panel` y lo compara celda por celda (tarjetas, AM/PM, rankings con ajuste, margen y lectura, mejores días). También revisa que ninguna hoja muestre errores. `escribir` respeta protección y listas; `pegar` simula Ctrl+V.
+
+### test_horarios (crear_origen, copiar, pegar_en, marco_intacto, zona_vacia, usados)
+- Ubicación: entregables/pruebas_excel/test_horarios.py
+- Qué hace: prueba de copiar y pegar horarios reales desde otro libro en LibreOffice, con estructuras variables (con o sin título, N.º, Horas, FIRMA, resumen, columnas extra, 23 a 60 personas), usando pegar valores y Ctrl+V.
+- Cómo funciona: lee la geometría del marco desde el archivo, comprueba que el horario quede completo dentro del marco, que los títulos y la semana siguiente queden intactos, que un horario demasiado grande no se pegue a medias, que borrar el marco para corregir funcione con la hoja protegida y que pegar sobre títulos esté bloqueado. Desactiva la pregunta "¿reemplazar contenido?" de LibreOffice para comportarse como Excel.

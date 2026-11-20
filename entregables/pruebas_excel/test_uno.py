@@ -81,8 +81,8 @@ check("Delivery: crema libre, gris bloqueado", all(not locked(de, f"{c}50") for 
 pn = doc.Sheets.getByName("Panel")
 check("Panel: filtros libres, indicadores bloqueados", all(not locked(pn, f"{c}7") for c in "BDFHJL") and locked(pn, "B11") and locked(pn, "C35"))
 ho = doc.Sheets.getByName("Horarios")
-check("Horarios: zona de pegado libre y títulos bloqueados", not locked(ho, "B16") and not locked(ho, "J40") and not locked(ho, "M40") and locked(ho, "B13"),
-      (locked(ho, "B16"), locked(ho, "J40"), locked(ho, "M40"), locked(ho, "B13")))
+check("Horarios: zona de pegado libre y títulos bloqueados", not locked(ho, "B16") and not locked(ho, "J40") and not locked(ho, "S75") and locked(ho, "B13") and locked(ho, "B79"),
+      (locked(ho, "B16"), locked(ho, "J40"), locked(ho, "S75"), locked(ho, "B13"), locked(ho, "B79")))
 # intento real de borrar una fila protegida vía la interfaz (dispatcher)
 ctrl = doc.CurrentController; ctrl.setActiveSheet(ra)
 disp = ctx.ServiceManager.createInstanceWithContext("com.sun.star.frame.DispatchHelper", ctx)

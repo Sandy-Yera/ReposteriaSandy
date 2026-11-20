@@ -541,14 +541,16 @@ protect(de)
 # HORARIOS
 # =====================================================================
 ho = sheet("Horarios")
-ho.column_dimensions["B"].width = 26; ho.column_dimensions["C"].width = 9
-for c_ in "DEFGHIJ": ho.column_dimensions[c_].width = 13
+PASTE_COLS = [L(c) for c in range(2, 2 + 18)]       # zona de pegado B..S (18 columnas): el horario real usa 10-11
+ULT_PEGA = PASTE_COLS[-1]
+ho.column_dimensions["B"].width = 30; ho.column_dimensions["C"].width = 30   # el nombre puede caer en B o en C según cómo se copie
+for c_ in PASTE_COLS[2:]: ho.column_dimensions[c_].width = 16
 title(ho, "Horarios semanales", None, 10, 9)
 ho.row_dimensions[3].height = 34
 merge(ho, "B3:J3", "Cada semana usa el siguiente marco vacío. Escribe las fechas en \"Semana del __ al __\" y pega el horario en la celda "
-      "marcada con clic derecho → Pegar valores (ícono 123). Cada marco tiene espacio para 43 personas. Los marcos anteriores no se tocan.", f=font(9, c="3E4C59"), fl=fill(LIGHT), al=LEFT)
+      "marcada: clic derecho → Pegado especial → Valores y formato de números. Cada marco tiene espacio para 60 filas y 18 columnas: caben el título, la firma, el resumen y columnas de más. Los marcos anteriores no se tocan.", f=font(9, c="3E4C59"), fl=fill(LIGHT), al=LEFT)
 put(ho, "B5", "IR A LA SEMANA", f=font(9, True, MUTED))
-N_FR, PASTE_H, FR0 = 52, 45, 13
+N_FR, PASTE_H, FR0 = 52, 60, 13
 FR_H = PASTE_H + 6
 for k in range(N_FR):
     rr, cc = 6 + k // 9, 2 + k % 9
@@ -559,10 +561,12 @@ for k in range(N_FR):
     c.font = font(9, c=ACC, u="single"); c.alignment = CENTER
 for rr in range(6, 12): ho.row_dimensions[rr].height = 18
 v_fecha3 = dv_fecha("10-11-2026")
+HO_FILL, HO_FONT = fill(INPUT), font(10)
+HO_AL_L, HO_AL_C = Alignment(horizontal="left", vertical="center"), Alignment(horizontal="center", vertical="center")
 for k in range(N_FR):
     s = FR0 + k * FR_H
     ho.row_dimensions[s].height = 26
-    merge(ho, f"B{s}:J{s}", f"SEMANA {k+1}", f=font(11, True, "FFFFFF"), fl=fill(PRI), al=LEFT)
+    merge(ho, f"B{s}:{ULT_PEGA}{s}", f"SEMANA {k+1}", f=font(11, True, "FFFFFF"), fl=fill(PRI), al=LEFT)
     ho.row_dimensions[s + 1].height = 24
     put(ho, f"B{s+1}", "Semana del", f=font(10, True, PRI), al=Alignment(horizontal="right", vertical="center", indent=1))
     ho.merge_cells(f"C{s+1}:D{s+1}")
@@ -573,23 +577,22 @@ for k in range(N_FR):
     v_fecha3.add(f"C{s+1}"); v_fecha3.add(f"F{s+1}")
     unlock(ho, f"C{s+1}", f"D{s+1}", f"F{s+1}", f"G{s+1}")
     ho.row_dimensions[s + 2].height = 22
-    merge(ho, f"B{s+2}:J{s+2}", f"▼  PEGA AQUÍ EL HORARIO: clic en la celda B{s+3} → clic derecho → Pegar valores (123)",
+    merge(ho, f"B{s+2}:{ULT_PEGA}{s+2}", f"▼  PEGA AQUÍ EL HORARIO: clic en la celda B{s+3} → clic derecho → Pegado especial → Valores y formato de números  ·  caben 60 filas y 18 columnas",
           f=font(9, True, OR_T), al=Alignment(vertical="center"))
     for rr in range(s + 3, s + 3 + PASTE_H):
         ho.row_dimensions[rr].height = 18
-        for c_ in "KLM": ho[f"{c_}{rr}"].protection = UNLOCK   # margen por si el horario trae columnas de más
-        for c_ in "BCDEFGHIJ":
+        for c_ in PASTE_COLS:
             cell = ho[f"{c_}{rr}"]
-            cell.fill = fill(INPUT); cell.border = BOX; cell.font = font(10); cell.protection = UNLOCK
-            cell.alignment = Alignment(horizontal="left" if c_ == "B" else "center", vertical="center")
-            if rr == s + 3 and c_ != "B": cell.number_format = "d-mmm"
+            cell.fill = HO_FILL; cell.border = BOX; cell.font = HO_FONT; cell.protection = UNLOCK
+            cell.alignment = HO_AL_L if c_ in "BC" else HO_AL_C
     put(ho, f"B{s+3}", "◤ Pega aquí", f=font(9, i=True, c=MUTED))
 ho.add_data_validation(v_fecha3)
 ho.freeze_panes = "A4"
-ho.column_dimensions["N"].width = 4; ho.column_dimensions["O"].width = 18; ho.column_dimensions["P"].width = 7
-for c_ in "QRSTUVW": ho.column_dimensions[c_].width = 11
-put(ho, "O13", si_aprende("EJEMPLO (inventado): así queda un horario bien pegado"), f=font(10, True, ACC))
-put(ho, "O14", si_aprende("Fila 1: las fechas · Fila 2: los títulos · luego una fila por persona"), f=font(9, i=True, c=ACC))
+EJ_H_COL = 2 + 18 + 2                                   # columna V: a la derecha de la zona de pegado, con una columna de aire
+ho.column_dimensions[L(EJ_H_COL - 1)].width = 4; ho.column_dimensions[L(EJ_H_COL)].width = 18; ho.column_dimensions[L(EJ_H_COL + 1)].width = 7
+for j in range(2, 9): ho.column_dimensions[L(EJ_H_COL + j)].width = 11
+put(ho, f"{L(EJ_H_COL)}13", si_aprende("EJEMPLO (inventado): así queda un horario bien pegado"), f=font(10, True, ACC))
+put(ho, f"{L(EJ_H_COL)}14", si_aprende("Fila 1: las fechas · Fila 2: los títulos · luego una fila por persona"), f=font(9, i=True, c=ACC))
 ej_h = [[None, None, "10-mar", "11-mar", "12-mar", "13-mar", "14-mar", "15-mar", "16-mar"],
         ["Nombre", "Horas", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]]
 turnos_h = ["11:00-19:00", "19:00-02:00", "Libre"]
@@ -597,11 +600,11 @@ for k, nm in enumerate(EJ_NAMES):
     ej_h.append([nm, 40] + [turnos_h[(k + d) % 3] for d in range(7)])
 for i, row in enumerate(ej_h):
     for j, v in enumerate(row):
-        cell = ho.cell(16 + i, 15 + j)
+        cell = ho.cell(16 + i, EJ_H_COL + j)
         if v is not None:
             cell.value = f'=IF(fAprende=1,{v},"")' if isinstance(v, int) else si_aprende(v)
         cell.font = font(9, i == 1); cell.alignment = Alignment(horizontal="left" if j == 0 else "center", vertical="center")
-ho.conditional_formatting.add(f"O16:W{16 + len(ej_h) - 1}", FormulaRule(formula=["fAprende=1"], fill=fill("EAF2F8"), border=BOX))
+ho.conditional_formatting.add(f"{L(EJ_H_COL)}16:{L(EJ_H_COL + 8)}{16 + len(ej_h) - 1}", FormulaRule(formula=["fAprende=1"], fill=fill("EAF2F8"), border=BOX))
 protect(ho)
 
 # =====================================================================
@@ -1080,9 +1083,11 @@ bloques = [
         "En el Excel del horario, selecciona desde la celda de arriba a la izquierda (A1) hasta la última persona y la columna Domingo. Copia con Ctrl + C.",
         "En este archivo, abre Horarios y usa el primer marco vacío (los enlaces \"Semana 1, 2, 3…\" de arriba te llevan directo).",
         "Escribe las fechas en \"Semana del __ al __\".",
-        "Haz clic en la celda que dice \"◤ Pega aquí\" → clic derecho → Opciones de pegado → Valores (ícono 123). Así el marco no pierde su formato.",
-        "Cada marco tiene espacio para 43 personas. Si Excel no te deja pegar, revisa que hiciste clic en \"◤ Pega aquí\" y no en el título del marco.",
+        "Haz clic en la celda que dice \"◤ Pega aquí\" → clic derecho → Pegado especial → \"Valores y formato de números\". Así las fechas se ven bien y el marco no pierde su formato. (\"Pegar valores\" también sirve.)",
+        "Puedes copiar el horario como venga: con o sin título, con la columna de números, con FIRMA o con el resumen de abajo. Cada marco tiene espacio para 60 filas y 18 columnas.",
+        "Si Excel no te deja pegar, revisa que hiciste clic en \"◤ Pega aquí\" y no en el título del marco. Si el horario fuera más grande que el marco, Excel no pega nada y la semana siguiente queda intacta.",
         "Si pegaste en el marco equivocado, presiona Ctrl + Z de inmediato para deshacer.",
+        "Para corregir un horario ya pegado: selecciona toda la zona crema de ese marco, presiona Supr y vuelve a pegar. Si pegas encima sin borrar, pueden quedar filas del horario anterior.",
     ]),
     ("4", "Cuando llega un reporte", [
         "En Reportes: escribe desde, hasta, elige Mensual o Quincenal, pega el enlace de Drive (Ctrl + V) y agrega notas si quieres.",
