@@ -605,3 +605,8 @@ Generador del archivo `entregables/Registro_Rendimiento_Auto_Delivery.xlsx` y su
 - Ubicación: entregables/pruebas_excel/modelo.py
 - Qué hace: ranking justo por estación en Python, con o sin descuento de compañeros.
 - Cómo funciona: recibe None (etapa 1) o los aportes centrados de la etapa 1 (etapa 2) y retorna por estación (ListaK, aportes centrados). El ranking final ordena por la etapa 2, usa margen max(m1, m2) y lectura por consenso.
+
+### gen, a_dicts, leer_rank, comparar (test_compas)
+- Ubicación: entregables/pruebas_excel/test_compas.py
+- Qué hace: prueba de extremo a extremo de los casos límite de la corrección por compañero (trío fijo, un solo board, compañero estrella, filas desordenadas, mayúsculas, renombre, pocos datos, mínimo alto, archivo lleno).
+- Cómo funciona: `gen` simula turnos con talento conocido; `comparar` arma el caso con build_case, recalcula con LibreOffice y compara los tres rankings del Panel con modelo.panel (acepta filas_mod para comparar contra nombres bien escritos); `leer_rank` lee nombre, turnos, puntaje, margen y lectura del Panel.
