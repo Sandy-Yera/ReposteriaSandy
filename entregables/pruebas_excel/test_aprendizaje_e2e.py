@@ -71,10 +71,13 @@ def errores(doc):
                 if isinstance(v, str) and v.startswith(("#DIV/0!", "#VALUE!", "#REF!", "#NAME?", "#N/A", "#NUM!", "#NULL!", "Err:")): bad.append((n, v))
     return bad[:5]
 FOTO = [("Panel", r) for r in ["B4", "B8", "B11", "E11", "H11", "K11", "B13", "B16", "H16", "K16", "C35", "G35", "J35", "B40", "C60", "C69", "F69"]] + \
-       [("Registro Auto", r) for r in ["B5", "I2", "M1039", "Q1039", "B1038", "M1058"]] + [("Registro Delivery", "G1039"), ("Horarios", "V16"), ("Inicio", "C6")]
+       [("Registro Auto", r) for r in ["B5", "I2", "M1039", "Q1039", "B1038", "M1058"]] + [("Registro Delivery", "G1039"), ("Registro Delivery", "H2"), ("Horarios", "V16"), ("Horarios", "B4"), ("Horarios", "V11"), ("Inicio", "C6")]
 def foto(doc): return {f"{s}!{r}": val(doc, s, r) for s, r in FOTO}
-def modo_si(f): return f["Panel!H16"] == "56" and "MODO APRENDIZAJE" in f["Panel!B4"] and f["Registro Auto!Q1039"].startswith("EJEMPLO")
-def modo_no(f): return f["Panel!H16"] == str(N_REAL) and "MODO APRENDIZAJE" not in f["Panel!B4"] and f["Registro Auto!Q1039"] == "" and f["Registro Auto!B5"] == ""
+def modo_si(f): return (f["Panel!H16"] == "56" and "MODO APRENDIZAJE" in f["Panel!B4"] and f["Registro Auto!Q1039"].startswith("EJEMPLO")
+                        and f["Registro Auto!I2"] == "Ver ejemplos ↓" and f["Registro Delivery!H2"] == "Ver ejemplos ↓"
+                        and f["Horarios!B4"].startswith("▶ MODO APRENDIZAJE") and f["Horarios!V11"] == "← Volver a la Semana 1")
+def modo_no(f): return (f["Panel!H16"] == str(N_REAL) and "MODO APRENDIZAJE" not in f["Panel!B4"] and f["Registro Auto!Q1039"] == "" and f["Registro Auto!B5"] == ""
+                        and f["Registro Auto!I2"] == "" and f["Registro Delivery!H2"] == "" and f["Horarios!B4"] == "" and f["Horarios!V11"] == "")
 
 # ================= A. El interruptor funciona en ambos sentidos =================
 doc = load()
