@@ -47,7 +47,7 @@ No mezcla ni modifica las entradas de arriba.
 ### Config
 - Ubicación: excel/Figuras.xlsx (hoja Config, tabla tblTC)
 - Qué hace: Parámetros editables y tabla de tipos de cambio.
-- Cómo funciona: B3 modo práctica, B4-B5 límites, B6 máx. productos, B7 contar por, B8 día de pago (13), B9 arancel, B10 IVA, B11 hoy opcional, B12 hoy de práctica. tblTC en A16:C216.
+- Cómo funciona: B3 modo práctica, B4-B5 límites, B6 máx. productos, B7 contar por, B8 día de pago (13), B9 arancel, B10 IVA, B11 hoy opcional, B12 hoy de práctica. Columna C 'Revisar' (C3:C12) avisa valores vacíos o mal escritos y qué valor por defecto se usa. tblTC en A16:C216.
 
 ### Ayuda
 - Ubicación: excel/Figuras.xlsx (hoja Ayuda)
@@ -114,7 +114,7 @@ No mezcla ni modifica las entradas de arriba.
 ### cfgHoyReal
 - Ubicación: excel/Figuras.xlsx (nombre definido)
 - Qué hace: Referencia con nombre usada por las fórmulas.
-- Cómo funciona: Fórmula: Config!B11 si tiene fecha; si no, HOY().
+- Cómo funciona: Fórmula: Config!B11 si es una fecha (ISNUMBER); si no, HOY().
 
 ### cfgHoyPractica
 - Ubicación: excel/Figuras.xlsx (nombre definido)
@@ -125,6 +125,21 @@ No mezcla ni modifica las entradas de arriba.
 - Ubicación: excel/Figuras.xlsx (nombre definido)
 - Qué hace: Referencia con nombre usada por las fórmulas.
 - Cómo funciona: Columnas A, B y C de tblTC (filas 17-216).
+
+### cfgPractica
+- Ubicación: excel/Figuras.xlsx (nombre definido)
+- Qué hace: Verdadero si el modo práctica está activo.
+- Cómo funciona: LEFT(TRIM(Config!B3),1)="S": acepta Sí, si, SI. Reemplaza las comparaciones cfgModo="Sí".
+
+### cfgLimNormalV / cfgLimExcV / cfgMaxProdV / cfgDiaPagoV
+- Ubicación: excel/Figuras.xlsx (nombre definido)
+- Qué hace: Valores seguros de los parámetros de Config.
+- Cómo funciona: Si la celda está vacía, no es número o está fuera de rango, usan 200.000 / 300.000 / 2 / 13. Las fórmulas usan estos nombres, no las celdas directas.
+
+### cfgArancelV / cfgIVAV
+- Ubicación: excel/Figuras.xlsx (nombre definido)
+- Qué hace: Porcentajes seguros de arancel e IVA.
+- Cómo funciona: Si el valor es mayor a 1 se interpreta como porcentaje entero (6 → 6%); vacío o texto → 6% / 19%.
 
 ### lstSiNo / lstMonedas / lstTipoPago / lstMeses / lstAnios / lstManual
 - Ubicación: excel/Figuras.xlsx (nombre definido)
@@ -181,7 +196,7 @@ No mezcla ni modifica las entradas de arriba.
 ### Compras: Pagado figura / Pagado envío
 - Ubicación: excel/Figuras.xlsx
 - Qué hace: Fórmula por fila/celda (ver encabezado y su nota).
-- Cómo funciona: SUMIFS en Pagos por ID y Tipo.
+- Cómo funciona: SUMIFS en Pagos por ID, Tipo ("Fig*"/"Env*") y Validación = "OK": un pago inválido o a una figura cancelada no cuenta.
 
 ### Compras: Estado producto
 - Ubicación: excel/Figuras.xlsx
@@ -226,7 +241,7 @@ No mezcla ni modifica las entradas de arriba.
 ### Compras: Avisos de datos
 - Ubicación: excel/Figuras.xlsx
 - Qué hace: Fórmula por fila/celda (ver encabezado y su nota).
-- Cómo funciona: TEXTJOIN de faltantes: fecha salida, moneda, precio, TC, grupo, TC del envío.
+- Cómo funciona: TEXTJOIN de: falta/repetido ID, fecha salida no válida, cantidad/precio/moneda/TC no válidos, TC USD/JPY fuera de rango, TC usado en CLP, pago especial fuera de mes o no fecha, envío no válido, grupo faltante o inexistente, TC del envío y 'Cerrada sin pagos'.
 
 ### Compras: N lista / Etiqueta lista
 - Ubicación: excel/Figuras.xlsx
@@ -236,17 +251,17 @@ No mezcla ni modifica las entradas de arriba.
 ### Pagos: ID / Clave mes pago / Validación
 - Ubicación: excel/Figuras.xlsx
 - Qué hace: Fórmula por fila/celda (ver encabezado y su nota).
-- Cómo funciona: ID = MAYUSC(IZQUIERDA(Asociado,4)); clave del mes de pago; Validación revisa datos, ID, producto vacío o cancelado, pagos de figura a grupos y envíos acumulados.
+- Cómo funciona: ID tolerante (texto antes de '·', sin espacios, letra + número rellenado a 3 dígitos; un número solo = C###); clave del mes de pago; Validación revisa datos, fecha, monto > 0, tipo, ID existente y no repetido, producto vacío o cancelado, pagos de figura a grupos y envíos acumulados. Solo 'OK' cuenta en los totales.
 
 ### Envíos acumulados: N envíos / Suma / Pagado / Fecha / Estado / Ahorro / Impuestos est. grupo
 - Ubicación: excel/Figuras.xlsx
 - Qué hace: Fórmula por fila/celda (ver encabezado y su nota).
-- Cómo funciona: COUNTIFS/SUMIFS sobre Compras (grupo, acumulado Sí, no cancelada) y SUMIFS/MAXIFS sobre Pagos (Envío, grupo). Ahorro = suma - pagado si Pagado.
+- Cómo funciona: COUNTIFS/SUMIFS sobre Compras (grupo, acumulado "S*", manual "<>Can*") y SUMIFS/MAXIFS sobre Pagos ("Env*", grupo, Validación OK). Ahorro = suma - pagado si Pagado.
 
 ### Ahorro: resumen
 - Ubicación: excel/Figuras.xlsx
 - Qué hace: Fórmula por fila/celda (ver encabezado y su nota).
-- Cómo funciona: Hoy, total abonado, pagos de figuras desde el primer abono (SUMIFS con fecha >= MIN de abonos), saldo, saldo extra, atrasado (falta de meses < mes actual) y clave del mes actual.
+- Cómo funciona: Hoy, total abonado (solo abonos OK), pagos de figuras válidos desde el primer abono OK, saldo, saldo extra, atrasado (falta de meses < mes actual) y clave del mes actual.
 
 ### Ahorro: plan (A pagar / Primer pago / Ahorrado / Falta juntar / Meses / Cuota / Apartar)
 - Ubicación: excel/Figuras.xlsx
@@ -267,6 +282,36 @@ No mezcla ni modifica las entradas de arriba.
 - Ubicación: excel/Figuras.xlsx
 - Qué hace: Fórmula por fila/celda (ver encabezado y su nota).
 - Cómo funciona: Pendientes del mes, pagados en el mes, total sin pagar, ahorro de grupos; impuestos de figuras del mes y de envíos pagados en el mes (con arancel e IVA por separado).
+
+### Compras: Integridad
+- Ubicación: excel/Figuras.xlsx
+- Qué hace: Detecta si alguien escribió encima de una celda calculada.
+- Cómo funciona: AND de ISFORMULA sobre 13 columnas calculadas de la fila; 'OK' si están intactas (vacío si la fila no tiene producto), si no 'Fórmulas borradas: copia la fila de arriba'.
+
+### Pagos: Integridad
+- Ubicación: excel/Figuras.xlsx
+- Qué hace: Detecta fórmulas borradas en ID, clave o Validación del pago.
+- Cómo funciona: ISFORMULA sobre esas 3 celdas.
+
+### Envíos acumulados: Integridad
+- Ubicación: excel/Figuras.xlsx
+- Qué hace: Detecta fórmulas borradas en el grupo.
+- Cómo funciona: ISFORMULA sobre N envíos, suma, pagado, estado, ahorro, impuestos y usado.
+
+### Ahorro: Revisar (abonos)
+- Ubicación: excel/Figuras.xlsx
+- Qué hace: Valida cada abono.
+- Cómo funciona: OK si la fecha es fecha y el monto es número > 0; si no, el motivo. Solo los abonos OK suman (SUMIFS/MINIFS con Revisar = "OK").
+
+### Panel: Revisión del libro
+- Ubicación: excel/Figuras.xlsx
+- Qué hace: Cuenta lo que hay que revisar en el libro.
+- Cómo funciona: Config (columna Revisar ≠ OK), Compras con avisos, canceladas con pagos, pagos y abonos no OK, fórmulas borradas (columnas Integridad) y datos escritos debajo de las filas preparadas. La fila 3 muestra 'todo OK', el total pendiente o la guía 'EMPIEZA AQUÍ' si no hay datos reales.
+
+### Panel: selector tolerante
+- Ubicación: excel/Figuras.xlsx
+- Qué hace: Interpreta el mes y año elegidos.
+- Cómo funciona: Mes: número 1-12 o las 3 primeras letras ('Julio' → jul); vacío o inválido = mes de hoy. Año: 2000-2100; vacío = año de hoy. Resultado en pnlClave.
 
 ## Funciones del generador (excel/generar_figuras.py)
 
@@ -363,7 +408,7 @@ No mezcla ni modifica las entradas de arriba.
 ### hoja_compras
 - Ubicación: excel/generar_figuras.py
 - Qué hace: Crea una hoja de compras (real o práctica).
-- Cómo funciona: Fórmulas por fila, formatos, validaciones, colores, tabla y alto de fila para la foto.
+- Cómo funciona: Recibe hoja, nombre, hoja de pagos, hoja de grupos y tabla. Fórmulas por fila (tolerantes a texto y mayúsculas), formatos, validaciones, colores, tabla y alto de fila para la foto.
 
 ### hoja_pagos
 - Ubicación: excel/generar_figuras.py
