@@ -1,8 +1,9 @@
 """Genera excel/Figuras.xlsx: registro de compras de figuras (CLP) pensado para Excel móvil.
 
 Uso:  python3 excel/generar_figuras.py [ruta_salida.xlsx]
-Sin macros, sin Power Query, sin conexiones externas. Solo tablas, validación de datos,
-formato condicional y fórmulas estándar (más TEXTJOIN y MAXIFS, disponibles en Excel móvil).
+Sin macros, sin Power Query. Solo tablas, validación de datos, formato condicional y fórmulas
+estándar (más TEXTJOIN, MAXIFS y MINIFS, disponibles en Excel móvil). Única excepción opcional:
+la columna Foto usa IMAGE (IMAGEN), que descarga la foto desde el link que escribas.
 """
 import sys
 from datetime import date
@@ -10,7 +11,7 @@ from datetime import date
 from openpyxl import Workbook
 from openpyxl.comments import Comment
 from openpyxl.formatting.rule import FormulaRule
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.workbook.defined_name import DefinedName
 from openpyxl.worksheet.datavalidation import DataValidation
@@ -20,14 +21,18 @@ from openpyxl.worksheet.table import Table, TableStyleInfo
 FILAS_COMPRAS = 200   # filas de datos preparadas en cada hoja de compras
 FILAS_PAGOS = 300
 FILAS_GRUPOS = 50
+FILAS_ABONOS = 200
 FILA_ENC = 4          # fila de encabezados de las tablas
 FILA_INI = 5          # primera fila de datos
+MESES_PLAN = 24       # meses que muestra el plan de ahorro (desde el mes actual)
 
 FUENTE = "Arial"
 FMT_CLP = '"$"#,##0;-"$"#,##0;"$"0'
+FMT_CLP_VACIO = '"$"#,##0;-"$"#,##0;""'
 FMT_TC = '#,##0.00'
 FMT_FECHA = 'dd-mm-yyyy'
 FMT_MES = 'mmm-yyyy'
+FMT_PCT = '0.0%'
 
 AZUL_ENC = PatternFill("solid", fgColor="1F4E78")    # encabezado de campo que escribes tú
 GRIS_ENC = PatternFill("solid", fgColor="595959")    # encabezado de campo calculado
@@ -35,9 +40,11 @@ AMARILLO = PatternFill("solid", fgColor="FFF2CC")    # celdas de ingreso
 ROJO_FILL = PatternFill("solid", fgColor="FFC7CE")
 VERDE_FILL = PatternFill("solid", fgColor="C6EFCE")
 NARANJA_FILL = PatternFill("solid", fgColor="FCE4D6")
+GRIS_FILL = PatternFill("solid", fgColor="EDEDED")
 BLANCO_FILL = PatternFill("solid", fgColor="FFFFFF")
 ROJO_TXT = "9C0006"
 VERDE_TXT = "006100"
+NARANJA_TXT = "833C0B"
 
 MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
 
@@ -45,34 +52,44 @@ MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "
 COLS_COMPRAS = [
     ("id", "ID", 6, False, "Identificador fijo del producto (C001, C002...). No lo cambies: los pagos se enlazan a este ID."),
     ("prod", "Producto", 22, True, "Nombre de la figura. Al escribirlo, la fila se activa."),
+    ("foto", "Foto", 10, False, "Calculado: muestra la foto del 'Link imagen' con la función IMAGEN. Si tu Excel no la tiene, verás un error solo aquí: ignóralo."),
     ("cant", "Cantidad", 8, True, "Unidades compradas. Si lo dejas vacío se toma 1."),
-    ("total", "Total figura CLP", 13, False, "Calculado: cantidad x precio unitario x tipo de cambio aplicado, redondeado a pesos. No incluye envío."),
-    ("reglas", "Reglas", 30, False, "Calculado: OK, o el motivo en rojo (mes bloqueado o límite superado) para el mes de este producto. Solo cuentan figuras, nunca envíos."),
-    ("estado", "Estado producto", 11, False, "Calculado: Pendiente (sin pagos), Parcial, Pagado (pagado >= total) o Cerrado (si marcas Cerrar = Sí)."),
-    ("cerrar", "Cerrar", 8, True, "Sí = das el producto por terminado aunque lo pagado no calce exacto. La diferencia queda en 'Diferencia figura'."),
-    ("fecha", "Fecha compra", 11, True, "Fecha en que compraste. Se usa para el mes (si no indicas mes asignado) y para buscar el tipo de cambio sugerido."),
-    ("mesasig", "Mes asignado", 11, True, "Opcional. Cualquier fecha dentro del mes al que quieres asignar la compra. Vacío = mes de la fecha de compra."),
+    ("total", "Total figura CLP", 13, False, "Calculado: cantidad x precio unitario x tipo de cambio aplicado, redondeado a pesos. No incluye envío ni impuestos."),
+    ("reglas", "Reglas", 30, False, "Calculado: OK, o el motivo en rojo (mes bloqueado o límite superado) para el mes de este producto. Solo cuentan figuras, nunca envíos ni impuestos."),
+    ("estado", "Estado producto", 11, False, "Calculado: Pendiente (sin pagos), Parcial, Pagado (pagado >= total), Cerrado o Cancelado (según 'Estado manual')."),
+    ("manual", "Estado manual", 10, True, "Activa (o vacío) = normal. Cerrada = das el producto por terminado aunque lo pagado no calce. Cancelada = reserva cancelada: deja de contar en todo."),
+    ("salida", "Fecha salida original", 11, True, "Fecha de lanzamiento original de la preventa. Define el mes de la compra y el pago del día 13. Si después se atrasa, NO la cambies (usa 'Salida actual')."),
+    ("fpago", "Fecha pago", 11, False, "Calculado: 'Pago especial' si lo escribiste; si no, el día de pago de Config (13) del mes de salida original."),
+    ("reserva", "Fecha reserva", 11, True, "Informativo: cuándo reservaste."),
+    ("salact", "Salida actual", 11, True, "Opcional e informativo: nueva fecha si la tienda atrasó la salida. No cambia el mes ni el pago."),
+    ("pagoesp", "Pago especial", 11, True, "Opcional: fecha de pago si esta figura se paga otro día (ej. antes del 13). Sigue contando para su mes."),
     ("tienda", "Tienda", 14, True, "Nombre de la tienda de origen."),
     ("link", "Link", 18, True, "Enlace al producto o a la orden."),
+    ("linkimg", "Link imagen", 18, True, "Opcional: link DIRECTO de la foto (en el celular: mantén presionada la foto en la tienda > 'Copiar dirección de imagen')."),
     ("moneda", "Moneda", 8, True, "Moneda del precio: CLP, USD o JPY."),
     ("precio", "Precio unitario", 11, True, "Precio de UNA unidad, en la moneda indicada."),
-    ("tcusado", "TC usado", 9, True, "Pesos por 1 USD o 1 JPY el día de la compra. Escríbelo para fijarlo: así el historial no cambia si editas la tabla de Config. En CLP déjalo vacío."),
-    ("tcsug", "TC sugerido", 9, False, "Calculado: último tipo de cambio de Config con fecha igual o anterior a la compra. Solo referencia para copiarlo a 'TC usado'."),
+    ("tcusado", "TC usado", 9, True, "Pesos por 1 USD o 1 JPY del día de pago. Escríbelo para fijarlo: así el historial no cambia si editas la tabla de Config. En CLP déjalo vacío."),
+    ("tcsug", "TC sugerido", 9, False, "Calculado: último tipo de cambio de Config con fecha igual o anterior a la fecha de pago. Solo referencia para copiarlo a 'TC usado'."),
     ("tcapl", "TC aplicado", 9, False, "Calculado: 1 si es CLP; 'TC usado' si lo escribiste; si no, el sugerido (aparece aviso 'TC no fijado')."),
-    ("envmonto", "Envío monto", 10, True, "Costo de envío de este producto en su moneda. 0 o vacío = sin envío."),
+    ("envmonto", "Envío monto", 10, True, "Costo de envío (solo flete, sin aduana ni IVA) de este producto enviado solo, en su moneda. 0 o vacío = sin envío."),
     ("envmoneda", "Envío moneda", 8, True, "Moneda del envío: CLP, USD o JPY. Vacío = misma moneda del producto."),
-    ("envclp", "Envío CLP", 10, False, "Calculado: envío en pesos. Si es la misma moneda del producto usa su TC aplicado; si es otra, el TC sugerido de Config para esa fecha."),
-    ("acum", "Envío acumulado", 9, True, "Sí = el envío se paga en conjunto con otros (grupo de Envíos acumulados). No = se paga solo."),
+    ("envclp", "Envío CLP", 10, False, "Calculado: envío en pesos. Si es la misma moneda del producto usa su TC aplicado; si es otra, el TC sugerido de Config para la fecha de pago."),
+    ("acum", "Envío acumulado", 9, True, "Sí = la figura queda en bodega y su envío se paga junto con otros (grupo de Envíos acumulados). No = se paga sola."),
     ("grupo", "Grupo envío", 8, True, "Solo si Envío acumulado = Sí: el grupo (G001, G002...) de la hoja Envíos acumulados."),
     ("estenv", "Estado envío", 10, False, "Calculado: Sin envío, Pendiente, Acumulado (en grupo aún no pagado) o Pagado. Independiente del estado del producto."),
     ("pagfig", "Pagado figura CLP", 12, False, "Calculado: suma de pagos tipo Figura de la hoja Pagos asociados a este ID."),
     ("pagenv", "Pagado envío CLP", 12, False, "Calculado: pagos tipo Envío hechos directo a este ID (envío no acumulado). Los envíos acumulados se pagan al grupo."),
-    ("falta", "Falta pagar figura", 12, False, "Calculado: total - pagado figura (mínimo 0). Si está Cerrado, 0."),
+    ("falta", "Falta pagar figura", 12, False, "Calculado: total - pagado figura (mínimo 0). Si está Cerrado o Cancelado, 0."),
     ("dif", "Diferencia figura", 12, False, "Calculado solo si está Pagado o Cerrado: pagado - total. Positivo = pagaste de más; negativo = pagaste de menos."),
     ("envpend", "Envío por pagar", 11, False, "Calculado: envío en CLP que aún falta pagar (individual o dentro de un grupo sin pagar)."),
+    ("envimp", "Envío para impuesto", 11, False, "Calculado: envío usado para estimar impuestos. Grupo sin pagar o envío individual: su envío CLP. Grupo pagado: su parte del pago conjunto, repartida según los envíos individuales."),
+    ("arancel", "Arancel est.", 10, False, "Estimación: arancel (6% en Config) x (total figura + envío para impuesto). Se paga al llegar a Chile. No cuenta para las reglas."),
+    ("iva", "IVA est.", 10, False, "Estimación: IVA (19% en Config) x (total figura + envío para impuesto + arancel). Se paga al llegar a Chile. No cuenta para las reglas."),
+    ("impuestos", "Impuestos est.", 11, False, "Estimación: arancel + IVA. Solo referencia para preparar el dinero."),
     ("avisos", "Avisos de datos", 24, False, "Calculado: datos faltantes o por revisar (no son reglas de compra)."),
-    ("mesef", "Mes efectivo", 10, False, "Calculado: mes que usan las reglas (mes asignado o, si está vacío, el de la fecha de compra)."),
+    ("mesef", "Mes efectivo", 10, False, "Calculado: mes de la fecha de salida original (vacío si está Cancelada)."),
     ("clave", "Clave mes", 8, False, "Auxiliar: año x 12 + mes. Sirve para comparar meses contiguos, también diciembre/enero."),
+    ("claveenv", "Clave mes pago envío", 9, False, "Auxiliar: mes (año x 12 + mes) en que se pagó el envío de esta figura (individual o su grupo)."),
     ("totmes", "Total figuras mes", 12, False, "Auxiliar: suma de 'Total figura CLP' de todos los productos del mismo mes."),
     ("prodmes", "Productos mes", 8, False, "Auxiliar: productos del mes (unidades o filas, según Config)."),
     ("limmes", "Límite mes", 11, False, "Auxiliar: límite que aplica al mes (normal o excepción)."),
@@ -84,24 +101,42 @@ COLS_PAGOS = [
     ("monto", "Monto CLP", 11, True, "Monto pagado, siempre en pesos chilenos."),
     ("tipo", "Tipo", 8, True, "Figura = pago del producto. Envío = pago de un envío (individual o de un grupo)."),
     ("asoc", "Asociado a", 24, True, "Elige de la lista el producto (C...) o el grupo de envío (G...). También puedes escribir solo el ID."),
-    ("nota", "Nota", 20, True, "Texto libre (medio de pago, cuota, etc.)."),
+    ("nota", "Nota", 20, True, "Texto libre (medio de pago, etc.)."),
     ("id", "ID", 6, False, "Calculado: los 4 primeros caracteres de 'Asociado a'."),
     ("clave", "Clave mes pago", 9, False, "Auxiliar: año x 12 + mes de la fecha de pago."),
     ("valid", "Validación", 30, False, "Calculado: OK o qué revisar en este pago."),
 ]
 COLS_GRUPOS = [
     ("id", "Grupo", 7, False, "Identificador fijo del grupo (G001...). Úsalo en Compras > Grupo envío y en Pagos."),
-    ("desc", "Descripción", 22, True, "Nombre del grupo, por ej. 'Caja casillero EE.UU. dic'. Al escribirlo, el grupo aparece en la lista de Pagos."),
-    ("nenv", "N envíos", 7, False, "Calculado: cuántos productos tienen Envío acumulado = Sí con este grupo."),
+    ("desc", "Descripción", 22, True, "Nombre del grupo, por ej. 'Bodega Nin Nin dic-feb'. Al escribirlo, el grupo aparece en la lista de Pagos."),
+    ("nenv", "N envíos", 7, False, "Calculado: cuántos productos (no cancelados) tienen Envío acumulado = Sí con este grupo."),
     ("suma", "Suma individual CLP", 12, False, "Calculado: suma de los envíos individuales (en CLP) de esos productos."),
     ("pagado", "Pagado conjunto CLP", 12, False, "Calculado: suma de pagos tipo Envío asociados a este grupo en la hoja Pagos."),
     ("fpago", "Fecha pago", 11, False, "Calculado: fecha del último pago registrado para el grupo. No hay plazo obligatorio."),
     ("estado", "Estado grupo", 10, False, "Calculado: Pendiente (sin pagos) o Pagado."),
     ("ahorro", "Ahorro CLP", 11, False, "Calculado si está Pagado: suma individual - pagado conjunto. Negativo = pagaste de más (sobrecosto)."),
+    ("imp", "Impuestos est. grupo", 12, False, "Estimación: suma de arancel + IVA estimados de las figuras del grupo. Lo que conviene preparar cuando el paquete llegue a Chile."),
     ("clave", "Clave mes pago", 9, False, "Auxiliar: año x 12 + mes de la fecha de pago."),
-    ("usado", "Usado", 6, False, "Auxiliar: 1 si el grupo tiene descripción o envíos."),
+    ("usado", "Usado", 6, False, "Auxiliar: 1 si el grupo tiene descripción, envíos o pagos."),
     ("nlista", "N lista", 6, False, "Auxiliar para la lista desplegable de Pagos."),
     ("etiq", "Etiqueta lista", 18, False, "Auxiliar: texto 'Grupo · Descripción' de la lista de Pagos."),
+]
+COLS_ABONOS = [
+    ("fecha", "Fecha abono", 11, True, "Fecha en que apartaste el dinero."),
+    ("monto", "Monto CLP", 11, True, "Monto apartado, en pesos. Se asigna solo al pago del 13 más cercano que no esté cubierto."),
+    ("nota", "Nota", 24, True, "Texto libre (de dónde salió, etc.)."),
+]
+# Columnas del plan de ahorro (bloque calculado de la hoja Ahorro)
+COLS_PLAN = [
+    ("mes", "Mes", 10, "Mes del pago (desde el mes actual)."),
+    ("fecha", "Primer pago", 11, "Fecha del primer pago de figuras de ese mes (13 o pago especial). Vacío si no hay pagos pendientes."),
+    ("necesita", "A pagar", 12, "Suma de 'Falta pagar figura' de las figuras de ese mes (no incluye envíos ni impuestos)."),
+    ("asignado", "Ahorrado", 12, "Parte del saldo ahorrado que cubre este mes. El saldo llena primero el mes más cercano y lo que sobra pasa al siguiente."),
+    ("falta", "Falta juntar", 12, "A pagar - ahorrado."),
+    ("meses", "Meses para juntar", 8, "Meses desde el mes siguiente al actual hasta el mes del pago, inclusive. 0 = el pago es este mes: apartar todo ya."),
+    ("cuota", "Cuota mensual", 12, "Falta juntar repartido en partes iguales entre los meses para juntar (redondeado hacia arriba)."),
+    ("apartar", "Apartar en este mes", 12, "Total a apartar durante este mes, sumando las cuotas de todos los pagos que vienen."),
+    ("clave", "Clave", 8, "Auxiliar: año x 12 + mes."),
 ]
 
 
@@ -113,6 +148,19 @@ def letras(cols):
 LC = letras(COLS_COMPRAS)
 LP = letras(COLS_PAGOS)
 LG = letras(COLS_GRUPOS)
+LA = letras(COLS_ABONOS)
+LPL = letras(COLS_PLAN)
+
+# Distribución de la hoja Ahorro
+AH_RES_INI = 5                          # filas de resumen
+AH_PLAN_ENC = 15                        # encabezado del plan
+AH_PLAN_INI = AH_PLAN_ENC + 1           # primer mes del plan
+AH_PLAN_FIN = AH_PLAN_INI + MESES_PLAN  # última fila = "Más adelante"
+AH_ABO_ENC = AH_PLAN_FIN + 4            # encabezado de la tabla de abonos
+AH_ABO_INI = AH_ABO_ENC + 1
+AH_ABO_FIN = AH_ABO_INI + FILAS_ABONOS - 1
+# Celdas del resumen de Ahorro (columna B)
+AH_CELDAS = {"hoy": 5, "abonado": 6, "usado": 7, "saldo": 8, "extra": 9, "atrasado": 10, "khoy": 11}
 
 
 def q(nombre_hoja):
@@ -120,9 +168,9 @@ def q(nombre_hoja):
     return "'" + nombre_hoja + "'"
 
 
-def rango(hoja, col, filas):
+def rango(hoja, col, filas, ini=FILA_INI):
     """Rango absoluto de una columna de datos, ej. 'Compras'!$D$5:$D$204."""
-    return f"{q(hoja)}!${col}${FILA_INI}:${col}${FILA_INI + filas - 1}"
+    return f"{q(hoja)}!${col}${ini}:${col}${ini + filas - 1}"
 
 
 def etiqueta_mes(expr_clave):
@@ -136,28 +184,38 @@ def pesos(expr):
     return f'"$"&FIXED({expr},0)'
 
 
+def fecha_dia_pago(expr_anio, expr_mes):
+    """Fórmula de la fecha de pago (día de Config, o el último día si el mes es más corto)."""
+    return (f"DATE({expr_anio},{expr_mes},MIN(cfgDiaPago,DAY(DATE({expr_anio},({expr_mes})+1,0))))")
+
+
 # ---------------------------------------------------------------- estilos
 def estilo_titulo(c, tam=14):
     c.font = Font(name=FUENTE, size=tam, bold=True, color="1F4E78")
 
 
-def encabezado(ws, fila, cols):
+def nota(celda, texto, ancho=260, alto=110):
+    """Agrega un comentario (nota) a una celda."""
+    com = Comment(texto, "Figuras")
+    com.width, com.height = ancho, alto
+    celda.comment = com
+
+
+def encabezado(ws, fila, cols, col_ini=1):
     """Escribe encabezados con color (azul = ingreso, gris = calculado), nota y ancho de columna."""
-    for i, (clave, texto, ancho, ingreso, nota) in enumerate(cols, start=1):
+    for i, (clave, texto, ancho, ingreso, txt_nota) in enumerate(cols, start=col_ini):
         c = ws.cell(row=fila, column=i, value=texto)
         c.font = Font(name=FUENTE, size=11, bold=True, color="FFFFFF")
         c.fill = AZUL_ENC if ingreso else GRIS_ENC
         c.alignment = Alignment(wrap_text=True, vertical="center", horizontal="center")
-        com = Comment(nota, "Figuras")
-        com.width, com.height = 260, 110
-        c.comment = com
+        nota(c, txt_nota)
         ws.column_dimensions[get_column_letter(i)].width = ancho
     ws.row_dimensions[fila].height = 32
 
 
-def formato_columna(ws, col, filas, fmt=None, ingreso=False, ajustar=False):
+def formato_columna(ws, col, filas, fmt=None, ingreso=False, ajustar=False, ini=FILA_INI):
     """Aplica fuente, formato numérico y relleno de ingreso a las filas de datos de una columna."""
-    for r in range(FILA_INI, FILA_INI + filas):
+    for r in range(ini, ini + filas):
         c = ws[f"{col}{r}"]
         c.font = Font(name=FUENTE, size=11)
         if fmt:
@@ -168,9 +226,15 @@ def formato_columna(ws, col, filas, fmt=None, ingreso=False, ajustar=False):
             c.alignment = Alignment(wrap_text=True, vertical="top")
 
 
-def agregar_tabla(ws, nombre, ultima_col, filas, estilo="TableStyleLight1"):
+def fuente_auxiliar(ws, col, filas, ini=FILA_INI):
+    """Fuente gris pequeña para columnas auxiliares."""
+    for r in range(ini, ini + filas):
+        ws[f"{col}{r}"].font = Font(name=FUENTE, size=9, color="808080")
+
+
+def agregar_tabla(ws, nombre, ultima_col, filas, estilo="TableStyleLight1", fila_enc=FILA_ENC, col_ini="A"):
     """Crea una tabla de Excel (con filtros) sobre encabezado + filas de datos."""
-    ref = f"A{FILA_ENC}:{ultima_col}{FILA_INI + filas - 1}"
+    ref = f"{col_ini}{fila_enc}:{ultima_col}{fila_enc + filas}"
     t = Table(displayName=nombre, ref=ref)
     t.tableStyleInfo = TableStyleInfo(name=estilo, showRowStripes=True)
     ws.add_table(t)
@@ -206,10 +270,10 @@ def fecha_dv(ws, celdas, titulo, msg):
     dv.add(celdas)
 
 
-def cf_texto(ws, rango_cf, formula, fill, color):
-    """Formato condicional por fórmula: relleno + color de texto en negrita."""
-    ws.conditional_formatting.add(rango_cf, FormulaRule(
-        formula=[formula], fill=fill, font=Font(color=color, bold=True)))
+def cf_texto(ws, rango_cf, formula, fill, color, tachado=False):
+    """Formato condicional por fórmula: relleno + color de texto en negrita (o tachado)."""
+    fuente = Font(color=color, strike=True) if tachado else Font(color=color, bold=True)
+    ws.conditional_formatting.add(rango_cf, FormulaRule(formula=[formula], fill=fill, font=fuente))
 
 
 def banner(ws, ultima_col, practica):
@@ -223,10 +287,10 @@ def banner(ws, ultima_col, practica):
     else:
         c.value = ('=IF(cfgModo="Sí","MODO PRÁCTICA ACTIVO: el Panel muestra datos simulados. '
                    'Lo que escribas aquí se guarda igual. Desactívalo en Config.","")')
-    c.font = Font(name=FUENTE, size=11, bold=True, color="833C0B")
+    c.font = Font(name=FUENTE, size=11, bold=True, color=NARANJA_TXT)
     c.alignment = Alignment(wrap_text=True, vertical="center")
     ws.row_dimensions[2].height = 30
-    cf_texto(ws, "A2", 'cfgModo="Sí"', NARANJA_FILL, "833C0B")
+    cf_texto(ws, "A2", 'cfgModo="Sí"', NARANJA_FILL, NARANJA_TXT)
 
 
 def ocultar_si_no_practica(ws, ultima_col, ultima_fila):
@@ -237,8 +301,25 @@ def ocultar_si_no_practica(ws, ultima_col, ultima_fila):
                     font=Font(color="FFFFFF"), stopIfTrue=True))
 
 
+def columna_explicacion(ws, col, ini, fin):
+    """Formato de la columna 'Explicación (práctica)'."""
+    ws.column_dimensions[col].width = 40
+    for r in range(ini, fin + 1):
+        ws[f"{col}{r}"].alignment = Alignment(wrap_text=True, vertical="top")
+        ws[f"{col}{r}"].font = Font(name=FUENTE, size=10, italic=True, color=NARANJA_TXT)
+
+
+def cargar_filas(ws, letras_cols, filas, extra_col=None, ini=FILA_INI):
+    """Escribe filas de ejemplo (dict clave→valor) desde la primera fila de datos; 'expl' va a extra_col."""
+    for i, fila in enumerate(filas):
+        r = ini + i
+        for k, v in fila.items():
+            col = extra_col if k == "expl" else letras_cols[k]
+            ws[f"{col}{r}"] = v
+
+
 # ---------------------------------------------------------------- hojas de datos
-def hoja_compras(wb, nombre, hoja_pagos, hoja_grupos, tabla, practica=False, demo=None, listas_col="A"):
+def hoja_compras(wb, nombre, hoja_pagos, tabla, practica=False, demo=None):
     """Crea una hoja de compras (real o de práctica) con sus fórmulas, validaciones y formatos."""
     ws = wb.create_sheet(nombre)
     cols = list(COLS_COMPRAS)
@@ -248,25 +329,33 @@ def hoja_compras(wb, nombre, hoja_pagos, hoja_grupos, tabla, practica=False, dem
     ws["A1"] = "Compras de figuras" + (" — PRÁCTICA" if practica else "")
     estilo_titulo(ws["A1"])
     banner(ws, ult, practica)
-    ws["A3"] = "Encabezado azul = lo escribes tú (celda amarilla) · gris = se calcula solo. Toca un encabezado para ver su nota."
+    ws["A3"] = ("Encabezado azul = lo escribes tú (celda amarilla) · gris = se calcula solo. "
+                "Toca un encabezado para ver su nota.")
     ws["A3"].font = Font(name=FUENTE, size=9, italic=True, color="595959")
     encabezado(ws, FILA_ENC, cols)
 
     n = FILAS_COMPRAS
     fin = FILA_INI + n - 1
     R = lambda k: f"${LC[k]}${FILA_INI}:${LC[k]}${fin}"          # rango propio absoluto
-    PB, PC, PF = (rango(hoja_pagos, LP[k], FILAS_PAGOS) for k in ("monto", "tipo", "id"))
+    PA, PB, PC, PF = (rango(hoja_pagos, LP[k], FILAS_PAGOS) for k in ("fecha", "monto", "tipo", "id"))
 
     for r in range(FILA_INI, fin + 1):
         c = {k: f"{LC[k]}{r}" for k in LC}
         cB = f"${LC['prod']}{r}"
+        man = f"${LC['manual']}{r}"
+        sal = f"${LC['salida']}{r}"
+        mon = f"${LC['moneda']}{r}"
+        grp = f"${LC['grupo']}{r}"
+        acu = f"${LC['acum']}{r}"
+        fp = c["fpago"]
         ws[c["id"]] = f"C{r - FILA_INI + 1:03d}"
-        ws[c["mesef"]] = (f'=IF({cB}="","",IF(${LC["mesasig"]}{r}<>"",DATE(YEAR(${LC["mesasig"]}{r}),MONTH(${LC["mesasig"]}{r}),1),'
-                          f'IF(${LC["fecha"]}{r}<>"",DATE(YEAR(${LC["fecha"]}{r}),MONTH(${LC["fecha"]}{r}),1),"")))')
+        ws[c["foto"]] = f'=IF(${LC["linkimg"]}{r}="","",_xlfn.IMAGE(${LC["linkimg"]}{r}))'
+        ws[c["mesef"]] = (f'=IF(OR({cB}="",{man}="Cancelada",{sal}=""),"",DATE(YEAR({sal}),MONTH({sal}),1))')
         ws[c["clave"]] = f'=IF({c["mesef"]}="","",YEAR({c["mesef"]})*12+MONTH({c["mesef"]}))'
-        mon, fec = f"${LC['moneda']}{r}", f"${LC['fecha']}{r}"
-        maxd = f'_xlfn.MAXIFS(cfgTCFecha,cfgTCMoneda,{mon},cfgTCFecha,"<="&{fec})'
-        ws[c["tcsug"]] = (f'=IF(OR({cB}="",{mon}="",{mon}="CLP",{fec}=""),"",'
+        ws[fp] = (f'=IF(OR({cB}="",{sal}=""),"",IF(${LC["pagoesp"]}{r}<>"",${LC["pagoesp"]}{r},'
+                  f'{fecha_dia_pago(f"YEAR({sal})", f"MONTH({sal})")}))')
+        maxd = f'_xlfn.MAXIFS(cfgTCFecha,cfgTCMoneda,{mon},cfgTCFecha,"<="&{fp})'
+        ws[c["tcsug"]] = (f'=IF(OR({cB}="",{mon}="",{mon}="CLP",{fp}=""),"",'
                           f'IF({maxd}=0,"",AVERAGEIFS(cfgTCValor,cfgTCMoneda,{mon},cfgTCFecha,{maxd})))')
         ws[c["tcapl"]] = (f'=IF(OR({cB}="",{mon}=""),"",IF({mon}="CLP",1,'
                           f'IF(${LC["tcusado"]}{r}<>"",${LC["tcusado"]}{r},{c["tcsug"]})))')
@@ -274,24 +363,38 @@ def hoja_compras(wb, nombre, hoja_pagos, hoja_grupos, tabla, practica=False, dem
         ws[c["total"]] = (f'=IF(OR({cB}="",{c["tcapl"]}="",${LC["precio"]}{r}=""),"",'
                           f'ROUND({cant}*${LC["precio"]}{r}*{c["tcapl"]},0))')
         me = f'IF(${LC["envmoneda"]}{r}="",{mon},${LC["envmoneda"]}{r})'
-        maxe = f'_xlfn.MAXIFS(cfgTCFecha,cfgTCMoneda,{me},cfgTCFecha,"<="&{fec})'
+        maxe = f'_xlfn.MAXIFS(cfgTCFecha,cfgTCMoneda,{me},cfgTCFecha,"<="&N({fp}))'
         tce = (f'IF({me}="CLP",1,IF({me}={mon},N({c["tcapl"]}),'
                f'IFERROR(AVERAGEIFS(cfgTCValor,cfgTCMoneda,{me},cfgTCFecha,{maxe}),0)))')
-        ws[c["envclp"]] = f'=IF(OR({cB}="",N(${LC["envmonto"]}{r})=0),0,ROUND(${LC["envmonto"]}{r}*{tce},0))'
+        ws[c["envclp"]] = (f'=IF(OR({cB}="",{man}="Cancelada",N(${LC["envmonto"]}{r})=0),0,'
+                           f'ROUND(${LC["envmonto"]}{r}*{tce},0))')
         ws[c["pagfig"]] = f'=IF({cB}="","",SUMIFS({PB},{PC},"Figura",{PF},${LC["id"]}{r}))'
         ws[c["pagenv"]] = f'=IF({cB}="","",SUMIFS({PB},{PC},"Envío",{PF},${LC["id"]}{r}))'
-        ws[c["estado"]] = (f'=IF({cB}="","",IF(${LC["cerrar"]}{r}="Sí","Cerrado",IF(N({c["pagfig"]})=0,"Pendiente",'
-                           f'IF({c["total"]}="","Parcial",IF({c["pagfig"]}>={c["total"]},"Pagado","Parcial")))))')
-        ws[c["falta"]] = f'=IF({cB}="","",IF({c["estado"]}="Cerrado",0,MAX(0,N({c["total"]})-{c["pagfig"]})))'
+        ws[c["estado"]] = (f'=IF({cB}="","",IF({man}="Cancelada","Cancelado",IF({man}="Cerrada","Cerrado",'
+                           f'IF(N({c["pagfig"]})=0,"Pendiente",IF({c["total"]}="","Parcial",'
+                           f'IF({c["pagfig"]}>={c["total"]},"Pagado","Parcial"))))))')
+        ws[c["falta"]] = (f'=IF({cB}="","",IF(OR({c["estado"]}="Cerrado",{c["estado"]}="Cancelado"),0,'
+                          f'MAX(0,N({c["total"]})-{c["pagfig"]})))')
         ws[c["dif"]] = (f'=IF({cB}="","",IF(OR({c["estado"]}="Cerrado",{c["estado"]}="Pagado"),'
                         f'{c["pagfig"]}-N({c["total"]}),0))')
-        grp = f"${LC['grupo']}{r}"
         pag_grupo = f'SUMIFS({PB},{PC},"Envío",{PF},{grp})'
-        ws[c["estenv"]] = (f'=IF({cB}="","",IF({c["envclp"]}=0,"Sin envío",IF(${LC["acum"]}{r}="Sí",'
+        ws[c["estenv"]] = (f'=IF({cB}="","",IF({c["envclp"]}=0,"Sin envío",IF({acu}="Sí",'
                            f'IF(AND({grp}<>"",{pag_grupo}>0),"Pagado","Acumulado"),'
                            f'IF({c["pagenv"]}>={c["envclp"]},"Pagado","Pendiente"))))')
         ws[c["envpend"]] = (f'=IF({cB}="","",IF(OR({c["estenv"]}="Pagado",{c["estenv"]}="Sin envío"),0,'
-                            f'IF(${LC["acum"]}{r}="Sí",{c["envclp"]},MAX(0,{c["envclp"]}-{c["pagenv"]}))))')
+                            f'IF({acu}="Sí",{c["envclp"]},MAX(0,{c["envclp"]}-{c["pagenv"]}))))')
+        suma_grupo = f'SUMIFS({R("envclp")},{R("grupo")},{grp},{R("acum")},"Sí",{R("manual")},"<>Cancelada")'
+        ws[c["envimp"]] = (f'=IF({cB}="","",IF({c["envclp"]}=0,0,IF(AND({acu}="Sí",{grp}<>"",{pag_grupo}>0,'
+                           f'{suma_grupo}>0),ROUND({c["envclp"]}*{pag_grupo}/{suma_grupo},0),{c["envclp"]})))')
+        base = f'N({c["total"]})+N({c["envimp"]})'
+        sin_imp = f'OR({cB}="",{c["estado"]}="Cancelado",{c["total"]}="")'
+        ws[c["arancel"]] = f'=IF({sin_imp},"",ROUND(({base})*cfgArancel,0))'
+        ws[c["iva"]] = f'=IF({sin_imp},"",ROUND(({base}+{c["arancel"]})*cfgIVA,0))'
+        ws[c["impuestos"]] = f'=IF({sin_imp},"",{c["arancel"]}+{c["iva"]})'
+        d_env = (f'IF({acu}="Sí",_xlfn.MAXIFS({PA},{PC},"Envío",{PF},{grp}),'
+                 f'_xlfn.MAXIFS({PA},{PC},"Envío",{PF},${LC["id"]}{r}))')
+        ws[c["claveenv"]] = (f'=IF(OR({cB}="",{c["estenv"]}<>"Pagado"),"",'
+                             f'IF({d_env}=0,"",YEAR({d_env})*12+MONTH({d_env})))')
         k = c["clave"]
         ws[c["totmes"]] = f'=IF({k}="","",SUMIFS({R("total")},{R("clave")},{k}))'
         ws[c["prodmes"]] = (f'=IF({k}="","",IF(cfgContar="Filas",COUNTIF({R("clave")},{k}),'
@@ -301,59 +404,65 @@ def hoja_compras(wb, nombre, hoja_pagos, hoja_grupos, tabla, practica=False, dem
         m_lim = (f'IF({c["totmes"]}>{c["limmes"]},"Límite superado en "&{pesos(c["totmes"] + "-" + c["limmes"])}&'
                  f'IF({c["prodmes"]}<=cfgMaxProd," (excepción hasta "&cfgMaxProd&" productos: tope "&{pesos("cfgLimExc")}&")",'
                  f'" (regla normal, "&{c["prodmes"]}&" productos: tope "&{pesos("cfgLimNormal")}&")"),"")')
-        ws[c["reglas"]] = (f'=IF(OR({cB}="",{k}=""),"",IF(_xlfn.TEXTJOIN(" | ",TRUE,{m_bloq},{m_lim})="","OK",'
-                           f'_xlfn.TEXTJOIN(" | ",TRUE,{m_bloq},{m_lim})))')
-        ws[c["avisos"]] = (f'=IF({cB}="","",_xlfn.TEXTJOIN(" | ",TRUE,'
-                           f'IF({fec}="","Falta fecha",""),'
+        cancel_aviso = (f'IF(OR(N({c["pagfig"]})>0,N({c["pagenv"]})>0,{grp}<>""),'
+                        f'"Cancelada con pagos o grupo asociado: revisa","")')
+        ws[c["reglas"]] = (f'=IF({cB}="","",IF({man}="Cancelada",{cancel_aviso},IF({k}="","",'
+                           f'IF(_xlfn.TEXTJOIN(" | ",TRUE,{m_bloq},{m_lim})="","OK",'
+                           f'_xlfn.TEXTJOIN(" | ",TRUE,{m_bloq},{m_lim})))))')
+        ws[c["avisos"]] = (f'=IF(OR({cB}="",{man}="Cancelada"),"",_xlfn.TEXTJOIN(" | ",TRUE,'
+                           f'IF({sal}="","Falta fecha salida original",""),'
                            f'IF({mon}="","Falta moneda",""),'
                            f'IF(${LC["precio"]}{r}="","Falta precio",""),'
                            f'IF(AND({mon}<>"",{mon}<>"CLP",${LC["tcusado"]}{r}="",{c["tcsug"]}<>""),"TC no fijado (usa sugerido)",""),'
                            f'IF(AND({mon}<>"",{mon}<>"CLP",${LC["tcusado"]}{r}="",{c["tcsug"]}=""),"Falta TC",""),'
-                           f'IF(AND(${LC["acum"]}{r}="Sí",{grp}=""),"Falta grupo de envío",""),'
-                           f'IF(AND(${LC["acum"]}{r}<>"Sí",{grp}<>""),"Grupo sin Envío acumulado = Sí",""),'
+                           f'IF(AND({acu}="Sí",{grp}=""),"Falta grupo de envío",""),'
+                           f'IF(AND({acu}<>"Sí",{grp}<>""),"Grupo sin Envío acumulado = Sí",""),'
                            f'IF(AND(N(${LC["envmonto"]}{r})>0,{me}<>"CLP",{me}<>{mon},{maxe}=0),"Falta TC del envío","")))')
         ws[c["nlista"]] = f'=IF({cB}="","",COUNTIF(${LC["prod"]}${FILA_INI}:{cB},"?*"))'
         ws[c["etiq"]] = f'=IF({cB}="","",${LC["id"]}{r}&" · "&{cB})'
+        ws.row_dimensions[r].height = 36   # alto para que la foto se vea
 
     # formatos
-    for k, _, _, ing, _ in cols:
-        if k == "expl":
-            continue
-        fmt = {"total": FMT_CLP, "envclp": FMT_CLP, "pagfig": FMT_CLP, "pagenv": FMT_CLP, "falta": FMT_CLP,
-               "dif": FMT_CLP, "envpend": FMT_CLP, "totmes": FMT_CLP, "limmes": FMT_CLP,
-               "fecha": FMT_FECHA, "mesasig": FMT_FECHA, "mesef": FMT_MES,
-               "precio": '#,##0.##', "envmonto": '#,##0.##', "tcusado": FMT_TC, "tcsug": FMT_TC, "tcapl": FMT_TC,
-               "cant": "0"}.get(k)
-        formato_columna(ws, LC[k], n, fmt, ingreso=ing, ajustar=k in ("reglas", "avisos"))
-    for k in ("clave", "totmes", "prodmes", "limmes", "nlista", "etiq"):
-        for r in range(FILA_INI, fin + 1):
-            ws[f"{LC[k]}{r}"].font = Font(name=FUENTE, size=9, color="808080")
+    fmts = {"total": FMT_CLP, "envclp": FMT_CLP, "pagfig": FMT_CLP, "pagenv": FMT_CLP, "falta": FMT_CLP,
+            "dif": FMT_CLP, "envpend": FMT_CLP, "envimp": FMT_CLP, "arancel": FMT_CLP, "iva": FMT_CLP,
+            "impuestos": FMT_CLP, "totmes": FMT_CLP, "limmes": FMT_CLP,
+            "salida": FMT_FECHA, "fpago": FMT_FECHA, "reserva": FMT_FECHA, "salact": FMT_FECHA,
+            "pagoesp": FMT_FECHA, "mesef": FMT_MES,
+            "precio": '#,##0.##', "envmonto": '#,##0.##', "tcusado": FMT_TC, "tcsug": FMT_TC, "tcapl": FMT_TC,
+            "cant": "0"}
+    for k, _, _, ing, _ in COLS_COMPRAS:
+        formato_columna(ws, LC[k], n, fmts.get(k), ingreso=ing, ajustar=k in ("reglas", "avisos", "prod"))
+    for k in ("clave", "claveenv", "totmes", "prodmes", "limmes", "nlista", "etiq"):
+        fuente_auxiliar(ws, LC[k], n)
 
     # validaciones
     rng = lambda k: f"{LC[k]}{FILA_INI}:{LC[k]}{fin}"
-    lista_dv(ws, "=lstSiNo", rng("cerrar"), "Cerrar", "Sí = cerrar el producto aunque haya diferencia con lo calculado.")
+    lista_dv(ws, "=lstManual", rng("manual"), "Estado manual",
+             "Activa = normal. Cerrada = terminar aunque haya diferencia. Cancelada = reserva cancelada (deja de contar).")
     lista_dv(ws, "=lstMonedas", rng("moneda"), "Moneda", "CLP, USD o JPY.")
     lista_dv(ws, "=lstMonedas", rng("envmoneda"), "Moneda del envío", "Vacío = misma moneda del producto.")
-    lista_dv(ws, "=lstSiNo", rng("acum"), "Envío acumulado", "Sí = se paga junto con otros envíos (elige un grupo).")
+    lista_dv(ws, "=lstSiNo", rng("acum"), "Envío acumulado", "Sí = queda en bodega y se paga junto con otros (elige un grupo).")
     lista_dv(ws, f"={'lstGruposP' if practica else 'lstGrupos'}", rng("grupo"), "Grupo de envío",
              "Grupo de la hoja Envíos acumulados. Solo si Envío acumulado = Sí.")
     num_dv(ws, rng("cant"), "Cantidad", "Unidades (entero, mínimo 1).", tipo="whole", minimo=1)
     num_dv(ws, rng("precio"), "Precio unitario", "Precio de una unidad en la moneda elegida.")
-    num_dv(ws, rng("tcusado"), "TC usado", "Pesos por 1 USD/JPY el día de la compra. Vacío en CLP.")
-    num_dv(ws, rng("envmonto"), "Envío monto", "Costo del envío en su moneda. 0 = sin envío.")
-    fecha_dv(ws, rng("fecha"), "Fecha compra", "Ej. 15-11-2026.")
-    fecha_dv(ws, rng("mesasig"), "Mes asignado", "Opcional: cualquier día del mes al que asignas la compra.")
+    num_dv(ws, rng("tcusado"), "TC usado", "Pesos por 1 USD/JPY del día de pago. Vacío en CLP.")
+    num_dv(ws, rng("envmonto"), "Envío monto", "Solo flete, sin aduana ni IVA. 0 = sin envío.")
+    fecha_dv(ws, rng("salida"), "Fecha salida original", "Lanzamiento original. Define el mes y el pago del 13. No la cambies si se atrasa.")
+    fecha_dv(ws, rng("reserva"), "Fecha reserva", "Informativo.")
+    fecha_dv(ws, rng("salact"), "Salida actual", "Opcional: nueva fecha si se atrasó. Solo informativo.")
+    fecha_dv(ws, rng("pagoesp"), "Pago especial", "Opcional: si se paga otro día del mismo mes.")
 
-    # formato condicional (rojo = advertencia, verde = OK)
-    E = LC["reglas"]
+    # formato condicional (rojo = advertencia, verde = OK, gris tachado = cancelado)
+    E, S = LC["reglas"], LC["estado"]
+    cf_texto(ws, f"A{FILA_INI}:{LC['total']}{fin}", f'${S}{FILA_INI}="Cancelado"', GRIS_FILL, "808080", tachado=True)
     cf_texto(ws, f"{E}{FILA_INI}:{E}{fin}", f'AND(${E}{FILA_INI}<>"",${E}{FILA_INI}<>"OK")', ROJO_FILL, ROJO_TXT)
     cf_texto(ws, f"{E}{FILA_INI}:{E}{fin}", f'${E}{FILA_INI}="OK"', VERDE_FILL, VERDE_TXT)
     cf_texto(ws, f"A{FILA_INI}:{LC['total']}{fin}", f'AND(${E}{FILA_INI}<>"",${E}{FILA_INI}<>"OK")', ROJO_FILL, ROJO_TXT)
     A = LC["avisos"]
-    cf_texto(ws, f"{A}{FILA_INI}:{A}{fin}", f'${A}{FILA_INI}<>""', NARANJA_FILL, "833C0B")
+    cf_texto(ws, f"{A}{FILA_INI}:{A}{fin}", f'${A}{FILA_INI}<>""', NARANJA_FILL, NARANJA_TXT)
     D = LC["dif"]
-    cf_texto(ws, f"{D}{FILA_INI}:{D}{fin}", f'AND(ISNUMBER(${D}{FILA_INI}),${D}{FILA_INI}<>0)', NARANJA_FILL, "833C0B")
-    S = LC["estado"]
+    cf_texto(ws, f"{D}{FILA_INI}:{D}{fin}", f'AND(ISNUMBER(${D}{FILA_INI}),${D}{FILA_INI}<>0)', NARANJA_FILL, NARANJA_TXT)
     cf_texto(ws, f"{S}{FILA_INI}:{S}{fin}", f'OR(${S}{FILA_INI}="Pagado",${S}{FILA_INI}="Cerrado")', VERDE_FILL, VERDE_TXT)
     V = LC["estenv"]
     cf_texto(ws, f"{V}{FILA_INI}:{V}{fin}", f'${V}{FILA_INI}="Pagado"', VERDE_FILL, VERDE_TXT)
@@ -363,10 +472,7 @@ def hoja_compras(wb, nombre, hoja_pagos, hoja_grupos, tabla, practica=False, dem
     agregar_tabla(ws, tabla, ult, n)
     ws.freeze_panes = f"C{FILA_INI}"
     if practica:
-        ws.column_dimensions[ult].width = 40
-        for r in range(FILA_INI, fin + 1):
-            ws[f"{ult}{r}"].alignment = Alignment(wrap_text=True, vertical="top")
-            ws[f"{ult}{r}"].font = Font(name=FUENTE, size=10, italic=True, color="833C0B")
+        columna_explicacion(ws, ult, FILA_INI, fin)
         ocultar_si_no_practica(ws, ult, fin)
     return ws
 
@@ -389,26 +495,26 @@ def hoja_pagos(wb, nombre, hoja_compras, hoja_grupos, tabla, practica=False, dem
     CA = rango(hoja_compras, LC["id"], FILAS_COMPRAS)
     CT = rango(hoja_compras, LC["acum"], FILAS_COMPRAS)
     CB = rango(hoja_compras, LC["prod"], FILAS_COMPRAS)
+    CM = rango(hoja_compras, LC["manual"], FILAS_COMPRAS)
     GA = rango(hoja_grupos, LG["id"], FILAS_GRUPOS)
     for r in range(FILA_INI, fin + 1):
         f, m, t, a, i = (f"${LP[k]}{r}" for k in ("fecha", "monto", "tipo", "asoc", "id"))
         ws[f"{LP['id']}{r}"] = f'=IF({a}="","",UPPER(LEFT(TRIM({a}),4)))'
         ws[f"{LP['clave']}{r}"] = f'=IF({f}="","",YEAR({f})*12+MONTH({f}))'
-        existe_c = f'ISNUMBER(MATCH({i},{CA},0))'
+        pos = f'MATCH({i},{CA},0)'
+        existe_c = f'ISNUMBER({pos})'
         existe_g = f'ISNUMBER(MATCH({i},{GA},0))'
         ws[f"{LP['valid']}{r}"] = (
             f'=IF(AND({f}="",{m}="",{a}=""),"",IF(OR({f}="",{m}="",{t}="",{a}=""),"Faltan datos",'
-            f'IF(AND(LEFT({i},1)="C",{existe_c}),IF(INDEX({CB},MATCH({i},{CA},0))="","Ese producto está vacío",'
-            f'IF(AND({t}="Envío",INDEX({CT},MATCH({i},{CA},0))="Sí"),"Ese envío es acumulado: paga al grupo","OK")),'
+            f'IF(AND(LEFT({i},1)="C",{existe_c}),IF(INDEX({CB},{pos})="","Ese producto está vacío",'
+            f'IF(INDEX({CM},{pos})="Cancelada","Ese producto está cancelado",'
+            f'IF(AND({t}="Envío",INDEX({CT},{pos})="Sí"),"Ese envío es acumulado: paga al grupo","OK"))),'
             f'IF(AND(LEFT({i},1)="G",{existe_g}),IF({t}="Figura","Un grupo solo recibe pagos de Envío","OK"),'
             f'"ID no existe"))))')
-    for k, _, _, ing, _ in cols:
-        if k == "expl":
-            continue
-        fmt = {"fecha": FMT_FECHA, "monto": FMT_CLP}.get(k)
-        formato_columna(ws, LP[k], n, fmt, ingreso=ing, ajustar=k == "valid")
+    for k, _, _, ing, _ in COLS_PAGOS:
+        formato_columna(ws, LP[k], n, {"fecha": FMT_FECHA, "monto": FMT_CLP}.get(k), ingreso=ing, ajustar=k == "valid")
     rng = lambda k: f"{LP[k]}{FILA_INI}:{LP[k]}{fin}"
-    fecha_dv(ws, rng("fecha"), "Fecha pago", "Ej. 15-11-2026.")
+    fecha_dv(ws, rng("fecha"), "Fecha pago", "Ej. 13-11-2026.")
     num_dv(ws, rng("monto"), "Monto CLP", "Monto en pesos, sin decimales.", tipo="whole", minimo=0)
     lista_dv(ws, "=lstTipoPago", rng("tipo"), "Tipo", "Figura o Envío.")
     lista_dv(ws, f"={'lstAsociadoP' if practica else 'lstAsociado'}", rng("asoc"), "Asociado a",
@@ -417,22 +523,19 @@ def hoja_pagos(wb, nombre, hoja_compras, hoja_grupos, tabla, practica=False, dem
     cf_texto(ws, f"{H}{FILA_INI}:{H}{fin}", f'AND(${H}{FILA_INI}<>"",${H}{FILA_INI}<>"OK")', ROJO_FILL, ROJO_TXT)
     cf_texto(ws, f"{H}{FILA_INI}:{H}{fin}", f'${H}{FILA_INI}="OK"', VERDE_FILL, VERDE_TXT)
     for k in ("id", "clave"):
-        for r in range(FILA_INI, fin + 1):
-            ws[f"{LP[k]}{r}"].font = Font(name=FUENTE, size=9, color="808080")
+        fuente_auxiliar(ws, LP[k], n)
     if demo:
         cargar_filas(ws, LP, demo, extra_col=ult if practica else None)
     agregar_tabla(ws, tabla, ult, n)
     ws.freeze_panes = f"B{FILA_INI}"
     if practica:
-        for r in range(FILA_INI, fin + 1):
-            ws[f"{ult}{r}"].alignment = Alignment(wrap_text=True, vertical="top")
-            ws[f"{ult}{r}"].font = Font(name=FUENTE, size=10, italic=True, color="833C0B")
+        columna_explicacion(ws, ult, FILA_INI, fin)
         ocultar_si_no_practica(ws, ult, fin)
     return ws
 
 
 def hoja_grupos(wb, nombre, hoja_compras, hoja_pagos, tabla, practica=False, demo=None):
-    """Crea la hoja de envíos acumulados (real o de práctica): un grupo por fila y su ahorro."""
+    """Crea la hoja de envíos acumulados (real o de práctica): un grupo por fila, su ahorro e impuestos."""
     ws = wb.create_sheet(nombre)
     cols = list(COLS_GRUPOS)
     if practica:
@@ -441,40 +544,36 @@ def hoja_grupos(wb, nombre, hoja_compras, hoja_pagos, tabla, practica=False, dem
     ws["A1"] = "Envíos acumulados" + (" — PRÁCTICA" if practica else "")
     estilo_titulo(ws["A1"])
     banner(ws, ult, practica)
-    ws["A3"] = "Pueden quedar pendientes sin plazo. Al pagar, registra el pago conjunto en Pagos (Tipo Envío, Asociado = grupo)."
+    ws["A3"] = "Pueden quedar en bodega sin plazo. Al pagar, registra el pago conjunto en Pagos (Tipo Envío, Asociado = grupo)."
     ws["A3"].font = Font(name=FUENTE, size=9, italic=True, color="595959")
     encabezado(ws, FILA_ENC, cols)
     n = FILAS_GRUPOS
     fin = FILA_INI + n - 1
-    CU = rango(hoja_compras, LC["grupo"], FILAS_COMPRAS)
-    CT = rango(hoja_compras, LC["acum"], FILAS_COMPRAS)
-    CS = rango(hoja_compras, LC["envclp"], FILAS_COMPRAS)
+    CU, CT, CS, CM, CI = (rango(hoja_compras, LC[k], FILAS_COMPRAS)
+                          for k in ("grupo", "acum", "envclp", "manual", "impuestos"))
     PA, PB, PC, PF = (rango(hoja_pagos, LP[k], FILAS_PAGOS) for k in ("fecha", "monto", "tipo", "id"))
     for r in range(FILA_INI, fin + 1):
         c = {k: f"{LG[k]}{r}" for k in LG}
         g = f"${LG['id']}{r}"
+        filtro = f'{CU},{g},{CT},"Sí",{CM},"<>Cancelada"'
         ws[c["id"]] = f"G{r - FILA_INI + 1:03d}"
-        ws[c["nenv"]] = f'=COUNTIFS({CU},{g},{CT},"Sí")'
-        ws[c["suma"]] = f'=SUMIFS({CS},{CU},{g},{CT},"Sí")'
+        ws[c["nenv"]] = f'=COUNTIFS({filtro})'
+        ws[c["suma"]] = f'=SUMIFS({CS},{filtro})'
         ws[c["pagado"]] = f'=SUMIFS({PB},{PC},"Envío",{PF},{g})'
         ws[c["fpago"]] = f'=IF({c["pagado"]}>0,_xlfn.MAXIFS({PA},{PC},"Envío",{PF},{g}),"")'
         ws[c["usado"]] = f'=IF(OR(${LG["desc"]}{r}<>"",{c["nenv"]}>0,{c["pagado"]}>0),1,0)'
         ws[c["estado"]] = f'=IF({c["usado"]}=0,"",IF({c["pagado"]}>0,"Pagado","Pendiente"))'
         ws[c["ahorro"]] = f'=IF({c["estado"]}="Pagado",{c["suma"]}-{c["pagado"]},"")'
+        ws[c["imp"]] = f'=SUMIFS({CI},{filtro})'
         ws[c["clave"]] = f'=IF({c["fpago"]}="","",YEAR({c["fpago"]})*12+MONTH({c["fpago"]}))'
         ws[c["nlista"]] = f'=IF({c["usado"]}=1,SUM(${LG["usado"]}${FILA_INI}:{c["usado"]}),"")'
         ws[c["etiq"]] = f'={g}&IF(${LG["desc"]}{r}<>""," · "&${LG["desc"]}{r},"")'
-    for k, _, _, ing, _ in cols:
-        if k == "expl":
-            continue
-        fmt = {"suma": FMT_CLP, "pagado": FMT_CLP, "ahorro": FMT_CLP, "fpago": FMT_FECHA, "nenv": '0;-0;""'}.get(k)
-        formato_columna(ws, LG[k], n, fmt, ingreso=ing)
+    fmts = {"suma": FMT_CLP_VACIO, "pagado": FMT_CLP_VACIO, "ahorro": FMT_CLP, "imp": FMT_CLP_VACIO,
+            "fpago": FMT_FECHA, "nenv": '0;-0;""'}
+    for k, _, _, ing, _ in COLS_GRUPOS:
+        formato_columna(ws, LG[k], n, fmts.get(k), ingreso=ing)
     for k in ("clave", "usado", "nlista", "etiq"):
-        for r in range(FILA_INI, fin + 1):
-            ws[f"{LG[k]}{r}"].font = Font(name=FUENTE, size=9, color="808080")
-    for k in ("suma", "pagado"):
-        for r in range(FILA_INI, fin + 1):
-            ws[f"{LG[k]}{r}"].number_format = '"$"#,##0;-"$"#,##0;""'
+        fuente_auxiliar(ws, LG[k], n)
     H = LG["ahorro"]
     cf_texto(ws, f"{H}{FILA_INI}:{H}{fin}", f'AND(ISNUMBER(${H}{FILA_INI}),${H}{FILA_INI}<0)', ROJO_FILL, ROJO_TXT)
     cf_texto(ws, f"{H}{FILA_INI}:{H}{fin}", f'AND(ISNUMBER(${H}{FILA_INI}),${H}{FILA_INI}>=0)', VERDE_FILL, VERDE_TXT)
@@ -485,104 +584,251 @@ def hoja_grupos(wb, nombre, hoja_compras, hoja_pagos, tabla, practica=False, dem
     agregar_tabla(ws, tabla, ult, n)
     ws.freeze_panes = f"B{FILA_INI}"
     if practica:
-        for r in range(FILA_INI, fin + 1):
-            ws[f"{ult}{r}"].alignment = Alignment(wrap_text=True, vertical="top")
-            ws[f"{ult}{r}"].font = Font(name=FUENTE, size=10, italic=True, color="833C0B")
+        columna_explicacion(ws, ult, FILA_INI, fin)
         ocultar_si_no_practica(ws, ult, fin)
     return ws
 
 
-def cargar_filas(ws, letras_cols, filas, extra_col=None):
-    """Escribe filas de ejemplo (dict clave→valor) desde la primera fila de datos; 'expl' va a extra_col."""
-    for i, fila in enumerate(filas):
-        r = FILA_INI + i
-        for k, v in fila.items():
-            col = extra_col if k == "expl" else letras_cols[k]
-            ws[f"{col}{r}"] = v
+def hoja_ahorro(wb, nombre, hoja_compras, hoja_pagos, tabla, practica=False, demo=None):
+    """Crea la hoja de ahorro (real o práctica): resumen, plan de pagos del 13 y tabla de abonos."""
+    ws = wb.create_sheet(nombre)
+    ult = "I"
+    ws["A1"] = "Ahorro para los pagos del 13" + (" — PRÁCTICA" if practica else "")
+    estilo_titulo(ws["A1"])
+    banner(ws, ult, practica)
+    ws["A3"] = ("Anota cada abono abajo (solo fecha y monto). El saldo llena primero el pago más cercano "
+                "y lo que sobra pasa al siguiente. Solo cubre figuras (no envíos ni impuestos).")
+    ws["A3"].font = Font(name=FUENTE, size=9, italic=True, color="595959")
+    ws["A3"].alignment = Alignment(wrap_text=True)
+    ws.merge_cells("A3:I3")
+    ws.row_dimensions[3].height = 28
+
+    CF, CC, CFP = (rango(hoja_compras, LC[k], FILAS_COMPRAS) for k in ("falta", "clave", "fpago"))
+    PA, PB, PC = (rango(hoja_pagos, LP[k], FILAS_PAGOS) for k in ("fecha", "monto", "tipo"))
+    AF = f"$A${AH_ABO_INI}:$A${AH_ABO_FIN}"
+    AM = f"$B${AH_ABO_INI}:$B${AH_ABO_FIN}"
+    cel = {k: f"$B${v}" for k, v in AH_CELDAS.items()}
+    hoy = "cfgHoyPractica" if practica else "cfgHoyReal"
+    p_ini, p_fin = AH_PLAN_INI, AH_PLAN_FIN
+    PL = lambda k: f"${LPL[k]}${p_ini}:${LPL[k]}${p_fin}"
+
+    resumen = [
+        ("hoy", "Hoy", f"={hoy}", FMT_FECHA,
+         "Fecha de hoy (en práctica es fija; en real puedes fijarla en Config para probar)."),
+        ("abonado", "Total abonado", f"=SUM({AM})", FMT_CLP, "Suma de todos los abonos anotados abajo."),
+        ("usado", "Pagos de figuras desde el primer abono", f'=IF(MIN({AF})=0,0,SUMIFS({PB},{PC},"Figura",{PA},">="&MIN({AF})))',
+         FMT_CLP, "Pagos tipo Figura con fecha igual o posterior a tu primer abono: se descuentan del ahorro."),
+        ("saldo", "Saldo ahorrado disponible", f"=MAX(0,{cel['abonado']}-{cel['usado']})", FMT_CLP,
+         "Total abonado - pagos de figuras desde el primer abono (mínimo 0)."),
+        ("extra", "Saldo extra (sin pago asignado)", f"=MAX(0,{cel['saldo']}-SUM({PL('necesita')}))", FMT_CLP,
+         "Lo que sobra después de cubrir todos los pagos que vienen."),
+        ("atrasado", "Atrasado (meses pasados sin pagar)", f'=SUMIFS({CF},{CC},"<"&{cel["khoy"]})', FMT_CLP,
+         "Falta pagar de figuras de meses ya pasados. No entra en el plan: revísalo en Compras."),
+        ("khoy", "Clave mes actual", f"=YEAR({cel['hoy']})*12+MONTH({cel['hoy']})", "0", "Auxiliar: año x 12 + mes de hoy."),
+    ]
+    ws.column_dimensions["A"].width = 30
+    for k, etiq, f, fmt, txt in resumen:
+        r = AH_CELDAS[k]
+        a = ws.cell(row=r, column=1, value=etiq)
+        a.font = Font(name=FUENTE, size=11, bold=k in ("saldo",))
+        a.alignment = Alignment(wrap_text=True)
+        nota(a, txt, alto=80)
+        b = ws.cell(row=r, column=2, value=f)
+        b.font = Font(name=FUENTE, size=12, bold=True)
+        b.number_format = fmt
+    ws.cell(row=AH_CELDAS["khoy"], column=1).font = Font(name=FUENTE, size=9, color="808080")
+    ws.cell(row=AH_CELDAS["khoy"], column=2).font = Font(name=FUENTE, size=9, color="808080")
+    cf_texto(ws, cel["atrasado"].replace("$", ""), f"{cel['atrasado']}>0", ROJO_FILL, ROJO_TXT)
+
+    # plan
+    ws.cell(row=AH_PLAN_ENC - 1, column=1, value="Plan de pagos del 13").font = Font(
+        name=FUENTE, size=12, bold=True, color="1F4E78")
+    for i, (k, t, ancho, txt) in enumerate(COLS_PLAN, start=1):
+        c = ws.cell(row=AH_PLAN_ENC, column=i, value=t)
+        c.font = Font(name=FUENTE, size=11, bold=True, color="FFFFFF")
+        c.fill = GRIS_ENC
+        c.alignment = Alignment(wrap_text=True, horizontal="center", vertical="center")
+        nota(c, txt, alto=90)
+        if i > 1:
+            ws.column_dimensions[get_column_letter(i)].width = ancho
+    ws.row_dimensions[AH_PLAN_ENC].height = 32
+    for j, r in enumerate(range(p_ini, p_fin + 1)):
+        L = {k: f"{LPL[k]}{r}" for k in LPL}
+        mas_adelante = r == p_fin
+        if mas_adelante:
+            ws[L["clave"]] = (f'=IF(COUNTIFS({CC},">"&({cel["khoy"]}+{MESES_PLAN - 1}),{CF},">0")=0,{cel["khoy"]}+{MESES_PLAN},'
+                              f'_xlfn.MINIFS({CC},{CC},">"&({cel["khoy"]}+{MESES_PLAN - 1}),{CF},">0"))')
+            ws[L["mes"]] = "Más adelante"
+            ws[L["necesita"]] = f'=SUMIFS({CF},{CC},">"&({cel["khoy"]}+{MESES_PLAN - 1}))'
+        else:
+            ws[L["clave"]] = f"={cel['khoy']}+{j}"
+            ws[L["mes"]] = "=" + etiqueta_mes(L["clave"])
+            ws[L["necesita"]] = f"=SUMIFS({CF},{CC},{L['clave']})"
+        ws[L["fecha"]] = (f'=IF({L["necesita"]}=0,"",_xlfn.MINIFS({CFP},{CC},{L["clave"]},{CF},">0"))')
+        ws[L["asignado"]] = (f"=MIN({L['necesita']},MAX(0,{cel['saldo']}-SUM(${LPL['necesita']}${AH_PLAN_ENC}:"
+                             f"{LPL['necesita']}{r - 1})))")
+        ws[L["falta"]] = f"={L['necesita']}-{L['asignado']}"
+        ws[L["meses"]] = f'=IF({L["falta"]}=0,"",{L["clave"]}-{cel["khoy"]})'
+        ws[L["cuota"]] = (f'=IF({L["falta"]}=0,0,IF({L["clave"]}-{cel["khoy"]}<=0,{L["falta"]},'
+                          f'ROUNDUP({L["falta"]}/({L["clave"]}-{cel["khoy"]}),0)))')
+        if j == 0:
+            ws[L["apartar"]] = f"={L['cuota']}"
+        elif mas_adelante:
+            ws[L["apartar"]] = ""
+        else:
+            ws[L["apartar"]] = f'=SUMIFS({PL("cuota")},{PL("clave")},">="&{L["clave"]})'
+        for k in LPL:
+            ws[L[k]].font = Font(name=FUENTE, size=11 if k != "clave" else 9, color="000000" if k != "clave" else "808080")
+        for k in ("necesita", "asignado", "falta", "cuota", "apartar"):
+            ws[L[k]].number_format = FMT_CLP_VACIO
+        ws[L["fecha"]].number_format = FMT_FECHA
+        ws[L["meses"]].number_format = "0"
+    rp = f"A{p_ini}:H{p_fin}"
+    cf_texto(ws, rp, f"$C{p_ini}=0", BLANCO_FILL, "BFBFBF")
+    cf_texto(ws, f"E{p_ini}:E{p_fin}", f"$E{p_ini}>0", ROJO_FILL, ROJO_TXT)
+    cf_texto(ws, f"D{p_ini}:D{p_fin}", f"AND($C{p_ini}>0,$E{p_ini}=0)", VERDE_FILL, VERDE_TXT)
+    cf_texto(ws, f"H{p_ini}:H{p_ini + 1}", f"H{p_ini}>0", NARANJA_FILL, NARANJA_TXT)
+
+    # abonos
+    ws.cell(row=AH_ABO_ENC - 1, column=1, value="Abonos (lo que vas apartando)").font = Font(
+        name=FUENTE, size=12, bold=True, color="1F4E78")
+    cols = list(COLS_ABONOS)
+    if practica:
+        cols.append(("expl", "Explicación (práctica)", 40, False, "Qué caso demuestra este abono."))
+    for i, (k, t, ancho, ing, txt) in enumerate(cols, start=1):
+        c = ws.cell(row=AH_ABO_ENC, column=i, value=t)
+        c.font = Font(name=FUENTE, size=11, bold=True, color="FFFFFF")
+        c.fill = AZUL_ENC if ing else GRIS_ENC
+        c.alignment = Alignment(wrap_text=True, horizontal="center", vertical="center")
+        nota(c, txt, alto=80)
+    ws.column_dimensions["C"].width = max(ws.column_dimensions["C"].width or 0, 12)
+    formato_columna(ws, "A", FILAS_ABONOS, FMT_FECHA, ingreso=True, ini=AH_ABO_INI)
+    formato_columna(ws, "B", FILAS_ABONOS, FMT_CLP, ingreso=True, ini=AH_ABO_INI)
+    formato_columna(ws, "C", FILAS_ABONOS, None, ingreso=True, ini=AH_ABO_INI)
+    fecha_dv(ws, f"A{AH_ABO_INI}:A{AH_ABO_FIN}", "Fecha abono", "Cuándo apartaste el dinero.")
+    num_dv(ws, f"B{AH_ABO_INI}:B{AH_ABO_FIN}", "Monto CLP", "Monto apartado en pesos.", tipo="whole", minimo=0)
+    expl_col = get_column_letter(len(cols)) if practica else None
+    if demo:
+        cargar_filas(ws, LA, demo, extra_col=expl_col, ini=AH_ABO_INI)
+    agregar_tabla(ws, tabla, get_column_letter(len(cols)), FILAS_ABONOS, fila_enc=AH_ABO_ENC)
+    ws.freeze_panes = "B4"
+    if practica:
+        columna_explicacion(ws, expl_col, AH_ABO_INI, AH_ABO_FIN)
+        ws.column_dimensions[expl_col].width = 12
+        ws.merge_cells("D5:I11")
+        ws["D5"] = ("Hoy de práctica: 01-02-2027 (fijo en Config). Abonos $150.000 desde el 20-dic; el pago de "
+                    "C013 ($20.000, 09-ene) sale del ahorro → saldo $130.000. Cubre marzo ($120.000) completo y "
+                    "el sobrante ($10.000) pasa a mayo. Mayo y julio se reparten en cuotas iguales. Febrero no "
+                    "tiene pagos, por eso 'apartar este mes' es $0.")
+        ws["D5"].font = Font(name=FUENTE, size=10, italic=True, color=NARANJA_TXT)
+        ws["D5"].alignment = Alignment(wrap_text=True, vertical="top")
+        ocultar_si_no_practica(ws, "J", AH_ABO_FIN)
+    return ws
 
 
 # ---------------------------------------------------------------- datos de práctica
 D = date
 DEMO_COMPRAS = [
-    dict(prod="Figura A (mar)", cant=1, fecha=D(2026, 3, 5), tienda="Tienda local", moneda="CLP", precio=90000,
-         envmonto=6000, envmoneda="CLP", acum="No",
+    dict(prod="Figura A (mar)", cant=1, salida=D(2026, 3, 20), reserva=D(2025, 9, 1), tienda="Nin Nin", moneda="CLP",
+         precio=90000, envmonto=6000, envmoneda="CLP", acum="No",
          expl="Marzo: 3 productos suman exactamente $200.000 → OK (no supera). Su envío individual se pagó el 10-abr, mes bloqueado: no da advertencia."),
-    dict(prod="Figura B USD (mar)", cant=1, fecha=D(2026, 3, 12), tienda="Tienda EE.UU.", moneda="USD", precio=60,
+    dict(prod="Figura B USD (mar)", cant=1, salida=D(2026, 3, 25), tienda="Tienda EE.UU.", moneda="USD", precio=60,
          tcusado=950, envmonto=12, envmoneda="USD", acum="Sí", grupo="G001",
          expl="USD 60 x TC fijado 950 = $57.000. Pago parcial de $30.000 → estado Parcial. Envío acumulado en G001."),
-    dict(prod="Figura C (mar)", cant=1, fecha=D(2026, 3, 20), tienda="Tienda local", moneda="CLP", precio=53000,
+    dict(prod="Figura C (mar)", cant=1, salida=D(2026, 3, 28), tienda="Nin Nin", moneda="CLP", precio=53000,
          envmonto=9000, envmoneda="CLP", acum="Sí", grupo="G001",
          expl="Con envíos, marzo sumaría $226.400 (> $200.000) pero los envíos no cuentan: sigue OK."),
-    dict(prod="Figura D JPY (may)", cant=1, fecha=D(2026, 5, 3), tienda="Tienda Japón", moneda="JPY", precio=20000,
-         tcusado=6.5, envmonto=2000, acum="Sí", grupo="G001",
-         expl="JPY 20.000 x 6,5 = $130.000. Cerrado pagando $128.000 → diferencia -$2.000 (pagaste de menos)."),
-    dict(prod="Figura E (may)", cant=1, fecha=D(2026, 5, 18), tienda="Tienda local", moneda="CLP", precio=170000,
+    dict(prod="Figura D JPY (may)", cant=1, salida=D(2026, 5, 22), salact=D(2026, 7, 30), tienda="Nin Nin",
+         moneda="JPY", precio=20000, tcusado=6.5, envmonto=2000, acum="Sí", grupo="G001", manual="Cerrada",
+         expl="JPY 20.000 x 6,5 = $130.000. Cerrada pagando $128.000 → diferencia -$2.000. Se atrasó a julio, pero sigue contando para mayo."),
+    dict(prod="Figura E (may)", cant=1, salida=D(2026, 5, 18), tienda="Nin Nin", moneda="CLP", precio=170000,
          expl="Mayo: 2 productos suman exactamente $300.000 → OK por la excepción (hasta 2 productos, tope $300.000)."),
-    dict(prod="Figura F (jul)", cant=1, fecha=D(2026, 7, 2), tienda="Tienda local", moneda="CLP", precio=100000,
+    dict(prod="Figura F (jul)", cant=1, salida=D(2026, 7, 20), tienda="Nin Nin", moneda="CLP", precio=100000,
          envmonto=5000, envmoneda="CLP", acum="Sí", grupo="G003",
          expl="Julio: 3 productos suman $250.000 → límite superado en $50.000 (regla normal, tope $200.000)."),
-    dict(prod="Figura G (jul)", cant=1, fecha=D(2026, 7, 9), tienda="Tienda local", moneda="CLP", precio=80000,
+    dict(prod="Figura G (jul)", cant=1, salida=D(2026, 7, 25), tienda="Nin Nin", moneda="CLP", precio=80000,
          envmonto=5000, envmoneda="CLP", acum="Sí", grupo="G003",
          expl="Mismo mes que la anterior: también muestra el exceso del mes."),
-    dict(prod="Figura H (jul)", cant=1, fecha=D(2026, 7, 21), tienda="Tienda local", moneda="CLP", precio=70000,
+    dict(prod="Figura H (jul)", cant=1, salida=D(2026, 7, 30), tienda="Nin Nin", moneda="CLP", precio=70000,
          expl="Tercer producto de julio: con 3 productos ya no aplica la excepción."),
-    dict(prod="Figura I (ago)", cant=1, fecha=D(2026, 8, 4), tienda="Tienda local", moneda="CLP", precio=45000,
+    dict(prod="Figura I (ago)", cant=1, salida=D(2026, 8, 20), tienda="Nin Nin", moneda="CLP", precio=45000,
          envmonto=4000, envmoneda="CLP", acum="No",
          expl="Agosto es contiguo a julio (ocupado) → Mes bloqueado. Su envío individual sigue pendiente."),
-    dict(prod="Figura J (oct)", cant=1, fecha=D(2026, 10, 6), tienda="Tienda local", moneda="CLP", precio=150000,
+    dict(prod="Figura J (oct)", cant=1, salida=D(2026, 10, 20), tienda="Nin Nin", moneda="CLP", precio=150000,
          expl="Octubre: 2 productos suman $309.800 → supera la excepción en $9.800."),
-    dict(prod="Figura K USD (oct)", cant=1, fecha=D(2026, 10, 14), tienda="Tienda EE.UU.", moneda="USD", precio=170,
+    dict(prod="Figura K USD (oct)", cant=1, salida=D(2026, 10, 24), tienda="Tienda EE.UU.", moneda="USD", precio=170,
          tcusado=940, expl="USD 170 x 940 = $159.800."),
-    dict(prod="Figura L USD (dic)", cant=1, fecha=D(2026, 12, 3), tienda="Tienda EE.UU.", moneda="USD", precio=80,
-         tcusado=1000, envmonto=8000, envmoneda="CLP", acum="Sí", grupo="G002",
-         expl="USD 80 x 1.000 = $80.000. Cerrado pagando $81.500 → diferencia +$1.500 (pagaste de más)."),
-    dict(prod="Figura M (ene)", cant=1, fecha=D(2027, 1, 8), tienda="Tienda local", moneda="CLP", precio=60000,
+    dict(prod="Figura L USD (dic)", cant=1, salida=D(2026, 12, 30), tienda="Tienda EE.UU.", moneda="USD", precio=80,
+         tcusado=1000, envmonto=8000, envmoneda="CLP", acum="Sí", grupo="G002", manual="Cerrada",
+         expl="Sale el 30-dic y se paga el 13-dic. USD 80 x 1.000 = $80.000. Cerrada pagando $81.500 → diferencia +$1.500."),
+    dict(prod="Figura M (ene)", cant=1, salida=D(2027, 1, 20), tienda="Nin Nin", moneda="CLP", precio=60000,
          envmonto=7000, envmoneda="CLP", acum="Sí", grupo="G002",
-         expl="Enero 2027 es contiguo a diciembre 2026 → Mes bloqueado (cambio de año). Pago parcial de $20.000."),
+         expl="Enero 2027 es contiguo a diciembre 2026 → Mes bloqueado (cambio de año). Pago parcial de $20.000 (sale del ahorro); los $40.000 restantes quedan como Atrasado."),
+    dict(prod="Figura N (mar 27)", cant=1, salida=D(2027, 3, 25), reserva=D(2026, 9, 10), tienda="Nin Nin",
+         moneda="CLP", precio=120000, linkimg="https://upload.wikimedia.org/wikipedia/commons/4/47/PNG_transparency_demonstration_1.png",
+         expl="Reserva para marzo 2027: el ahorro la cubre completa. Tiene 'Link imagen' de ejemplo para probar la Foto."),
+    dict(prod="Figura O JPY (may 27)", cant=1, salida=D(2027, 5, 28), pagoesp=D(2027, 5, 8), tienda="Nin Nin",
+         moneda="JPY", precio=15000, tcusado=6.4,
+         expl="JPY 15.000 x 6,4 = $96.000. Se paga antes del 13 (pago especial 08-may) y sigue contando para mayo. Recibe el sobrante del ahorro."),
+    dict(prod="Figura P (jul 27)", cant=1, salida=D(2027, 7, 22), tienda="Nin Nin", moneda="CLP", precio=50000,
+         expl="Reserva de julio 2027: se reparte en cuotas iguales de feb a jul."),
+    dict(prod="Figura Q cancelada (sep 27)", cant=1, salida=D(2027, 9, 20), tienda="Nin Nin", moneda="CLP",
+         precio=200000, manual="Cancelada",
+         expl="Reserva cancelada: no cuenta en reglas, ahorro, impuestos ni grupos. Queda gris y tachada."),
 ]
-for _f in DEMO_COMPRAS:
-    if _f["prod"].startswith(("Figura D", "Figura L")):
-        _f["cerrar"] = "Sí"
-
 DEMO_PAGOS = [
-    dict(fecha=D(2026, 3, 6), monto=90000, tipo="Figura", asoc="C001", nota="Pago completo", expl="Paga completo C001 → Pagado."),
+    dict(fecha=D(2026, 3, 13), monto=90000, tipo="Figura", asoc="C001", nota="Pago completo", expl="Paga completo C001 → Pagado."),
     dict(fecha=D(2026, 4, 10), monto=6000, tipo="Envío", asoc="C001", nota="Envío individual",
          expl="Envío pagado en abril (mes bloqueado por marzo): los pagos de envío no afectan las reglas."),
     dict(fecha=D(2026, 3, 13), monto=30000, tipo="Figura", asoc="C002", nota="Abono", expl="Pago parcial → C002 queda Parcial."),
-    dict(fecha=D(2026, 5, 4), monto=128000, tipo="Figura", asoc="C004", nota="Pago con tarjeta",
+    dict(fecha=D(2026, 5, 13), monto=128000, tipo="Figura", asoc="C004", nota="Pago con tarjeta",
          expl="Pagó $2.000 menos que lo calculado; C004 se cerró con diferencia."),
-    dict(fecha=D(2026, 5, 19), monto=170000, tipo="Figura", asoc="C005", nota="", expl="C005 Pagado exacto."),
-    dict(fecha=D(2026, 6, 15), monto=26000, tipo="Envío", asoc="G001", nota="Caja casillero",
-         expl="Pago conjunto de G001: individuales suman $33.400 → ahorro $7.400."),
-    dict(fecha=D(2026, 7, 3), monto=100000, tipo="Figura", asoc="C006", nota="", expl="C006 Pagado."),
+    dict(fecha=D(2026, 5, 13), monto=170000, tipo="Figura", asoc="C005", nota="", expl="C005 Pagado exacto."),
+    dict(fecha=D(2026, 6, 15), monto=26000, tipo="Envío", asoc="G001", nota="Bodega Nin Nin",
+         expl="Pago conjunto de G001: individuales suman $33.400 → ahorro $7.400. Impuestos estimados con su parte del pago."),
+    dict(fecha=D(2026, 7, 13), monto=100000, tipo="Figura", asoc="C006", nota="", expl="C006 Pagado."),
     dict(fecha=D(2026, 9, 1), monto=12500, tipo="Envío", asoc="G003", nota="Caja julio",
          expl="Pago conjunto de G003: individuales suman $10.000 → sobrecosto $2.500 (ahorro negativo)."),
-    dict(fecha=D(2026, 12, 4), monto=81500, tipo="Figura", asoc="C012", nota="Cobro final tarjeta",
+    dict(fecha=D(2026, 12, 13), monto=81500, tipo="Figura", asoc="C012", nota="Cobro final tarjeta",
          expl="Pagó $1.500 más; C012 cerrado con diferencia positiva."),
-    dict(fecha=D(2027, 1, 9), monto=20000, tipo="Figura", asoc="C013", nota="Abono", expl="Pago parcial de C013."),
+    dict(fecha=D(2026, 3, 13), monto=53000, tipo="Figura", asoc="C003", nota="", expl="C003 Pagado."),
+    dict(fecha=D(2026, 7, 13), monto=80000, tipo="Figura", asoc="C007", nota="", expl="C007 Pagado."),
+    dict(fecha=D(2026, 7, 13), monto=70000, tipo="Figura", asoc="C008", nota="", expl="C008 Pagado."),
+    dict(fecha=D(2026, 8, 13), monto=45000, tipo="Figura", asoc="C009", nota="", expl="C009 Pagado (aunque el mes estaba bloqueado)."),
+    dict(fecha=D(2026, 10, 13), monto=150000, tipo="Figura", asoc="C010", nota="", expl="C010 Pagado."),
+    dict(fecha=D(2026, 10, 13), monto=159800, tipo="Figura", asoc="C011", nota="", expl="C011 Pagado."),
+    dict(fecha=D(2027, 1, 9), monto=20000, tipo="Figura", asoc="C013", nota="Abono",
+         expl="Pago parcial de C013, posterior al primer abono: se descuenta del ahorro."),
 ]
 DEMO_GRUPOS = [
-    dict(desc="Casillero mar-may", expl="3 envíos acumulados pagados juntos con ahorro."),
-    dict(desc="Casillero dic-ene", expl="Pendiente sin fecha: puede esperar todo lo necesario."),
+    dict(desc="Bodega mar-may", expl="3 envíos acumulados pagados juntos con ahorro."),
+    dict(desc="Bodega dic-ene", expl="Pendiente sin fecha: puede esperar en bodega todo lo necesario."),
     dict(desc="Caja julio", expl="Pagado en conjunto más caro que por separado: sobrecosto."),
+]
+DEMO_ABONOS = [
+    dict(fecha=D(2026, 12, 20), monto=60000, nota="Sueldo", expl="Primer abono: desde aquí los pagos de figuras salen del ahorro."),
+    dict(fecha=D(2027, 1, 5), monto=40000, nota="", expl="Se asigna solo al pago más cercano no cubierto."),
+    dict(fecha=D(2027, 1, 25), monto=50000, nota="Extra", expl="Completa marzo; lo que sobra pasa a mayo."),
 ]
 
 CASOS_PRACTICA = [
+    "Hoy de práctica = 01-02-2027 (Config). Próximo pago: 13-mar-2027, cubierto por el ahorro. Atrasado $67.000: C002 y C013 quedaron con saldo.",
     "mar-2026: 3 productos = $200.000 exacto → OK. Con envíos sumaría $226.400 y sigue OK (envíos no cuentan).",
     "abr-2026: sin compras (bloqueado por marzo). Se pagó un envío ese mes → sin advertencia.",
-    "may-2026: 2 productos = $300.000 exacto → OK por excepción. C004 cerrado con -$2.000.",
+    "may-2026: 2 productos = $300.000 exacto → OK por excepción. C004 cerrado con -$2.000 (se atrasó, sigue en mayo).",
     "jun-2026: pago conjunto del grupo G001 → ahorro $7.400.",
     "jul-2026: 3 productos = $250.000 → límite superado en $50.000.",
     "ago-2026: Mes bloqueado (julio ya tiene compras).",
     "sep-2026: pago del grupo G003 → sobrecosto $2.500.",
     "oct-2026: 2 productos = $309.800 → supera la excepción en $9.800.",
-    "dic-2026: C012 cerrado con +$1.500. ene-2027: bloqueado por diciembre (cambio de año).",
+    "dic-2026: C012 sale el 30 y se paga el 13; cerrado con +$1.500. ene-2027: bloqueado por diciembre (cambio de año).",
+    "may-2027: pago especial el 08-may (antes del 13), cuenta para mayo. sep-2027: reserva cancelada, no cuenta.",
 ]
 
 
 # ---------------------------------------------------------------- Config, Listas, Panel, Ayuda
 def hoja_config(wb):
-    """Crea Config: modo práctica, límites, día de pago y tabla de tipos de cambio."""
+    """Crea Config: modo práctica, límites, día de pago, impuestos, fechas de hoy y tabla de tipos de cambio."""
     ws = wb.create_sheet("Config")
     ws["A1"] = "Configuración"
     estilo_titulo(ws["A1"])
@@ -593,28 +839,35 @@ def hoja_config(wb):
         (3, "Modo práctica", "Sí", "cfgModo", None,
          "Sí = el Panel usa los datos simulados de las hojas 'Práctica'. No = solo tus datos reales. Puedes cambiarlo cuando quieras: no se borra nada."),
         (4, "Límite mensual normal (CLP)", 200000, "cfgLimNormal", FMT_CLP,
-         "Tope de compras de figuras por mes (sin envíos). Superarlo marca advertencia. Exactamente igual al tope es OK."),
+         "Tope de compras de figuras por mes (sin envíos ni impuestos). Superarlo marca advertencia. Exactamente igual al tope es OK."),
         (5, "Límite con excepción (CLP)", 300000, "cfgLimExc", FMT_CLP,
          "Tope que aplica cuando el mes tiene pocos productos (ver fila siguiente)."),
         (6, "Máx. productos para excepción", 2, "cfgMaxProd", "0",
          "Si el mes tiene esta cantidad de productos o menos, el tope sube al límite con excepción."),
         (7, "Contar productos por", "Unidades", "cfgContar", None,
          "Unidades = suma la columna Cantidad (2 unidades de la misma figura cuentan 2). Filas = cada fila de Compras cuenta 1."),
-        (8, "Día de pago del mes", 5, "cfgDiaPago", "0",
-         "Día del mes en que pagas (1 a 31). Solo informativo en el Panel. Valor de ejemplo: cámbialo."),
+        (8, "Día de pago del mes", 13, "cfgDiaPago", "0",
+         "Día del mes en que se pagan las figuras (del mes de salida original). Si el mes es más corto, se usa el último día."),
+        (9, "Arancel estimado", 0.06, "cfgArancel", FMT_PCT,
+         "Porcentaje de arancel sobre figura + envío. Solo para estimar; las reglas de Aduanas pueden cambiar."),
+        (10, "IVA estimado", 0.19, "cfgIVA", FMT_PCT,
+         "IVA sobre figura + envío + arancel. Solo para estimar."),
+        (11, "Fecha de hoy (opcional)", None, "cfgHoy", FMT_FECHA,
+         "Vacío = se usa la fecha real del teléfono. Escribe una fecha solo para probar el plan de ahorro."),
+        (12, "Fecha de hoy en práctica", D(2027, 2, 1), "cfgHoyPractica", FMT_FECHA,
+         "Fecha fija que usan los datos de práctica para el plan de ahorro."),
     ]
-    for fila, etiq, val, nombre, fmt, nota in filas:
+    for fila, etiq, val, nombre, fmt, txt in filas:
         a = ws.cell(row=fila, column=1, value=etiq)
         a.font = Font(name=FUENTE, size=11, bold=True)
-        com = Comment(nota, "Figuras")
-        com.width, com.height = 260, 100
-        a.comment = com
+        nota(a, txt, alto=100)
         b = ws.cell(row=fila, column=2, value=val)
         b.font = Font(name=FUENTE, size=12, bold=True, color="0000FF")
         b.fill = AMARILLO
         if fmt:
             b.number_format = fmt
         wb.defined_names[nombre] = DefinedName(nombre, attr_text=f"Config!$B${fila}")
+    wb.defined_names["cfgHoyReal"] = DefinedName("cfgHoyReal", attr_text='IF(Config!$B$11="",TODAY(),Config!$B$11)')
     lista_dv(ws, "=lstSiNo", "B3", "Modo práctica", "Sí = ver datos simulados. No = ver solo tus datos.", permitir_vacio=False)
     num_dv(ws, "B4:B5", "Límite", "Monto en pesos.", tipo="whole", minimo=0)
     num_dv(ws, "B6", "Máx. productos", "Entero, por ej. 2.", tipo="whole", minimo=0)
@@ -623,25 +876,26 @@ def hoja_config(wb):
                         showErrorMessage=True, promptTitle="Día de pago", prompt="Número entre 1 y 31.")
     ws.add_data_validation(dv)
     dv.add("B8")
-    cf_texto(ws, "B3", 'B3="Sí"', NARANJA_FILL, "833C0B")
+    num_dv(ws, "B9:B10", "Porcentaje", "Escribe por ej. 6% o 0,06.")
+    fecha_dv(ws, "B11:B12", "Fecha", "Fecha para el plan de ahorro.")
+    cf_texto(ws, "B3", 'B3="Sí"', NARANJA_FILL, NARANJA_TXT)
+    cf_texto(ws, "B11", 'B11<>""', NARANJA_FILL, NARANJA_TXT)
 
-    ws["A10"] = "Tipos de cambio (se ingresan a mano)"
-    estilo_titulo(ws["A10"], 12)
-    ws["A11"] = "Pesos por 1 unidad de moneda. Compras usa el último valor con fecha igual o anterior a la compra como sugerencia."
-    ws["A11"].font = Font(name=FUENTE, size=9, italic=True, color="595959")
-    ws["A11"].alignment = Alignment(wrap_text=True)
-    ws.merge_cells("A11:C11")
-    ws.row_dimensions[11].height = 28
+    ws["A14"] = "Tipos de cambio (se ingresan a mano)"
+    estilo_titulo(ws["A14"], 12)
+    ws["A15"] = "Pesos por 1 unidad de moneda. Compras usa el último valor con fecha igual o anterior a la fecha de pago como sugerencia."
+    ws["A15"].font = Font(name=FUENTE, size=9, italic=True, color="595959")
+    ws["A15"].alignment = Alignment(wrap_text=True)
+    ws.merge_cells("A15:C15")
+    ws.row_dimensions[15].height = 28
     enc = [("Fecha", "Fecha desde la que rige el valor."), ("Moneda", "USD o JPY."),
            ("CLP por unidad", "Pesos chilenos por 1 USD o 1 JPY (ej. 950 o 6,4).")]
-    fila_enc_tc, n_tc = 12, 200
-    for i, (t, nota) in enumerate(enc, start=1):
+    fila_enc_tc, n_tc = 16, 200
+    for i, (t, txt) in enumerate(enc, start=1):
         c = ws.cell(row=fila_enc_tc, column=i, value=t)
         c.font = Font(name=FUENTE, bold=True, color="FFFFFF")
         c.fill = AZUL_ENC
-        com = Comment(nota, "Figuras")
-        com.width, com.height = 220, 70
-        c.comment = com
+        nota(c, txt, 220, 70)
     ini, fin = fila_enc_tc + 1, fila_enc_tc + n_tc
     ejemplos = [(D(2026, 11, 1), "USD", 950), (D(2026, 11, 1), "JPY", 6.2)]
     for i, (f, m, v) in enumerate(ejemplos):
@@ -654,8 +908,8 @@ def hoja_config(wb):
         for col in (1, 2, 3):
             ws.cell(row=r, column=col).font = Font(name=FUENTE, size=11)
             ws.cell(row=r, column=col).fill = AMARILLO
-    ws["D13"] = "← valores de ejemplo: reemplázalos por los reales"
-    ws["D13"].font = Font(name=FUENTE, size=9, italic=True, color="833C0B")
+    ws[f"D{ini}"] = "← valores de ejemplo: reemplázalos por los reales"
+    ws[f"D{ini}"].font = Font(name=FUENTE, size=9, italic=True, color=NARANJA_TXT)
     t = Table(displayName="tblTC", ref=f"A{fila_enc_tc}:C{fin}")
     t.tableStyleInfo = TableStyleInfo(name="TableStyleLight1", showRowStripes=True)
     ws.add_table(t)
@@ -674,7 +928,8 @@ def hoja_listas(wb):
     ws = wb.create_sheet("Listas")
     fijas = {"E": ("Sí/No", ["Sí", "No"], "lstSiNo"), "F": ("Monedas", ["CLP", "USD", "JPY"], "lstMonedas"),
              "G": ("Tipo pago", ["Figura", "Envío"], "lstTipoPago"), "H": ("Meses", MESES, "lstMeses"),
-             "I": ("Años", list(range(2024, 2041)), "lstAnios")}
+             "I": ("Años", list(range(2024, 2041)), "lstAnios"),
+             "J": ("Estado manual", ["Activa", "Cerrada", "Cancelada"], "lstManual")}
     for col, (tit, vals, nombre) in fijas.items():
         ws[f"{col}1"] = tit
         for i, v in enumerate(vals, start=2):
@@ -700,7 +955,7 @@ def hoja_listas(wb):
 
 
 def hoja_panel(wb):
-    """Crea el Panel: selector de mes/año, totales del mes, reglas, envíos y ahorro."""
+    """Crea el Panel: primero ahorro y próximo pago (hoy); luego reglas, figuras, envíos e impuestos del mes elegido."""
     ws = wb["Panel"]
     ws.column_dimensions["A"].width = 30
     ws.column_dimensions["B"].width = 20
@@ -713,17 +968,17 @@ def hoja_panel(wb):
     ws["A2"].font = Font(name=FUENTE, size=11, bold=True, color="595959")
     ws["A2"].alignment = Alignment(wrap_text=True)
     ws.row_dimensions[2].height = 30
-    cf_texto(ws, "A2", 'cfgModo="Sí"', NARANJA_FILL, "833C0B")
+    cf_texto(ws, "A2", 'cfgModo="Sí"', NARANJA_FILL, NARANJA_TXT)
 
-    def comp(k):
-        """Rango de una columna de Compras según el modo (fórmula IF real/práctica se arma en fuente())."""
-        return rango("Compras", LC[k], FILAS_COMPRAS), rango("Práctica Compras", LC[k], FILAS_COMPRAS)
+    def doble(hoja_real, hoja_prac, col, filas):
+        return rango(hoja_real, col, filas), rango(hoja_prac, col, filas)
 
-    def pag(k):
-        return rango("Pagos", LP[k], FILAS_PAGOS), rango("Práctica Pagos", LP[k], FILAS_PAGOS)
-
-    def grp(k):
-        return rango("Envíos acumulados", LG[k], FILAS_GRUPOS), rango("Práctica Envíos", LG[k], FILAS_GRUPOS)
+    comp = lambda k: doble("Compras", "Práctica Compras", LC[k], FILAS_COMPRAS)
+    pag = lambda k: doble("Pagos", "Práctica Pagos", LP[k], FILAS_PAGOS)
+    grp = lambda k: doble("Envíos acumulados", "Práctica Envíos", LG[k], FILAS_GRUPOS)
+    plan = lambda k: (rango("Ahorro", LPL[k], MESES_PLAN + 1, AH_PLAN_INI),
+                      rango("Práctica Ahorro", LPL[k], MESES_PLAN + 1, AH_PLAN_INI))
+    ah = lambda k: (f"'Ahorro'!$B${AH_CELDAS[k]}", f"'Práctica Ahorro'!$B${AH_CELDAS[k]}")
 
     def fuente(plantilla, **rangos):
         """Arma IF(cfgModo="Sí", fórmula con hojas de práctica, fórmula con hojas reales)."""
@@ -733,26 +988,22 @@ def hoja_panel(wb):
 
     fila = [4]
 
-    def etiqueta(texto, nota=None, negrita=False):
+    def valor(texto, formula, fmt=None, txt=None, ingreso=False, destacado=False):
         r = fila[0]
         a = ws.cell(row=r, column=1, value=texto)
-        a.font = Font(name=FUENTE, size=11, bold=negrita)
+        a.font = Font(name=FUENTE, size=12 if destacado else 11, bold=destacado)
         a.alignment = Alignment(wrap_text=True, vertical="center")
-        if nota:
-            com = Comment(nota, "Figuras")
-            com.width, com.height = 260, 100
-            a.comment = com
-        return r
-
-    def valor(texto, formula, fmt=None, nota=None, ingreso=False):
-        r = etiqueta(texto, nota)
+        if txt:
+            nota(a, txt, alto=100)
         b = ws.cell(row=r, column=2, value=formula)
-        b.font = Font(name=FUENTE, size=12, bold=True, color="0000FF" if ingreso else "000000")
+        b.font = Font(name=FUENTE, size=14 if destacado else 12, bold=True, color="0000FF" if ingreso else "000000")
         b.alignment = Alignment(horizontal="right", vertical="center", wrap_text=True)
         if ingreso:
             b.fill = AMARILLO
         if fmt:
             b.number_format = fmt
+        if destacado:
+            ws.row_dimensions[r].height = 22
         fila[0] += 1
         return f"B{r}"
 
@@ -769,139 +1020,189 @@ def hoja_panel(wb):
         r = fila[0]
         ws.merge_cells(f"A{r}:B{r}")
         c = ws.cell(row=r, column=1, value=f'=IF(cfgModo="Sí","{texto}","")')
-        c.font = Font(name=FUENTE, size=10, italic=True, color="833C0B")
+        c.font = Font(name=FUENTE, size=10, italic=True, color=NARANJA_TXT)
         c.alignment = Alignment(wrap_text=True, vertical="top")
         ws.row_dimensions[r].height = 15 * (1 + len(texto) // 45)
-        cf_texto(ws, f"A{r}", 'cfgModo="Sí"', NARANJA_FILL, "833C0B")
+        cf_texto(ws, f"A{r}", 'cfgModo="Sí"', NARANJA_FILL, NARANJA_TXT)
         fila[0] += 1
 
-    # selector
-    sel_mes = valor("Mes", "jul", nota="Elige el mes a revisar.", ingreso=True)
-    sel_anio = valor("Año", 2026, fmt="0", nota="Elige el año.", ingreso=True)
+    # --- 1. Lo urgente: próximo pago y ahorro (según la fecha de hoy)
+    seccion("Próximo pago del 13 y ahorro")
+    hoy = valor("Hoy", "=" + fuente("{h}", h=ah("hoy")), FMT_FECHA, "Fecha real del teléfono (o la de Config si la fijaste).")
+    r_kn = fila[0]
+    ws[f"C{r_kn}"] = "=" + fuente('IF(COUNTIF({n},">0")=0,0,_xlfn.MINIFS({k},{n},">0"))', k=plan("clave"), n=plan("necesita"))
+    kn = f"$C${r_kn}"
+    valor("Próximo pago", "=" + fuente(f'IF({kn}=0,"Sin pagos pendientes",_xlfn.MINIFS({{f}},{{k}},{kn}))',
+                                       f=plan("fecha"), k=plan("clave")), FMT_FECHA,
+          "Fecha del próximo pago de figuras (13 del mes o pago especial).", destacado=True)
+    a_pagar = valor("A pagar", "=" + fuente(f"SUMIFS({{n}},{{k}},{kn})", n=plan("necesita"), k=plan("clave")), FMT_CLP,
+                    "Lo que falta pagar de las figuras de ese mes.", destacado=True)
+    valor("Ahorrado para ese pago", "=" + fuente(f"SUMIFS({{a}},{{k}},{kn})", a=plan("asignado"), k=plan("clave")), FMT_CLP,
+          "Parte del saldo ahorrado que cubre ese pago.")
+    falta_p = valor("Falta juntar", "=" + fuente(f"SUMIFS({{f}},{{k}},{kn})", f=plan("falta"), k=plan("clave")), FMT_CLP,
+                    "A pagar - ahorrado.", destacado=True)
+    apartar = valor("Apartar este mes", "=" + fuente("INDEX({a},1)", a=plan("apartar")), FMT_CLP,
+                    "Solo si hay un pago este mismo mes (todo lo que falta, ya). Los pagos de meses siguientes se juntan desde el mes que viene.",
+                    destacado=True)
+    valor("Apartar el próximo mes", "=" + fuente("INDEX({a},2)", a=plan("apartar")), FMT_CLP,
+          "Suma de las cuotas iguales de todos los pagos que vienen. Detalle en la hoja Ahorro.")
+    valor("Saldo ahorrado", "=" + fuente("{s}", s=ah("saldo")), FMT_CLP, "Total abonado - pagos de figuras desde el primer abono.")
+    valor("Saldo extra", "=" + fuente("{s}", s=ah("extra")), FMT_CLP, "Lo que sobra después de cubrir todos los pagos que vienen.")
+    atr = valor("Atrasado", "=" + fuente("{s}", s=ah("atrasado")), FMT_CLP, "Figuras de meses pasados con saldo por pagar.")
+    cf_texto(ws, falta_p, f"{falta_p}>0", ROJO_FILL, ROJO_TXT)
+    cf_texto(ws, falta_p, f"AND({falta_p}=0,{a_pagar}>0)", VERDE_FILL, VERDE_TXT)
+    cf_texto(ws, apartar, f"{apartar}>0", NARANJA_FILL, NARANJA_TXT)
+    cf_texto(ws, atr, f"{atr}>0", ROJO_FILL, ROJO_TXT)
+    explicacion("El ahorro solo cubre figuras. Abonos en la hoja (Práctica) Ahorro.")
+
+    # --- 2. Mes elegido: reglas primero
+    seccion("Mes a revisar")
+    sel_mes = valor("Mes", "jul", txt="Elige el mes a revisar.", ingreso=True)
+    sel_anio = valor("Año", 2026, fmt="0", txt="Elige el año.", ingreso=True)
     lista_dv(ws, "=lstMeses", sel_mes, "Mes", "Elige el mes.", permitir_vacio=False)
     lista_dv(ws, "=lstAnios", sel_anio, "Año", "Elige el año.", permitir_vacio=False)
     r_clave = fila[0]
     ws[f"C{r_clave}"] = f"={sel_anio}*12+MATCH({sel_mes},lstMeses,0)"
     wb.defined_names["pnlClave"] = DefinedName("pnlClave", attr_text=f"Panel!$C${r_clave}")
     valor("Mes seleccionado", "=" + etiqueta_mes("pnlClave"))
-    explicacion("Prueba los meses de la lista 'Casos de práctica' al final del Panel.")
 
-    seccion("Figuras del mes (sin envíos)")
-    tot = valor("Total figuras", "=" + fuente("SUMIFS({t},{k},pnlClave)", t=comp("total"), k=comp("clave")), FMT_CLP,
-                "Suma de 'Total figura CLP' de los productos asignados a este mes.")
-    valor("Pagado", "=" + fuente("SUMIFS({t},{k},pnlClave)", t=comp("pagfig"), k=comp("clave")), FMT_CLP,
-          "Pagos tipo Figura de los productos de este mes (sin importar la fecha del pago).")
-    valor("Falta pagar", "=" + fuente("SUMIFS({t},{k},pnlClave)", t=comp("falta"), k=comp("clave")), FMT_CLP,
-          "Lo que queda por pagar de las figuras de este mes. Los productos Cerrados no suman.")
-    valor("Diferencia por tipo de cambio", "=" + fuente("SUMIFS({t},{k},pnlClave)", t=comp("dif"), k=comp("clave")), FMT_CLP,
-          "Suma de 'Diferencia figura' de productos Pagados o Cerrados. Positivo = pagaste de más.")
-    n_prod = valor("Productos en el mes",
-                   "=IF(cfgContar=\"Filas\"," + fuente("COUNTIF({k},pnlClave)", k=comp("clave")) + "," +
-                   fuente('SUMIFS({c},{k},pnlClave)+COUNTIFS({k},pnlClave,{c},"")', c=comp("cant"), k=comp("clave")) + ")",
-                   "0", "Unidades o filas, según Config > Contar productos por.")
-    lim = valor("Límite que aplica", f"=IF({n_prod}<=cfgMaxProd,cfgLimExc,cfgLimNormal)", FMT_CLP,
-                "Límite normal, o el de excepción si hay pocos productos.")
-    valor("Margen disponible", f"={lim}-{tot}", FMT_CLP, "Límite - total. Negativo = excedido.")
-    explicacion("El total solo suma figuras. Los envíos nunca cuentan para el límite.")
-
-    seccion("Reglas del mes")
+    tot_f = fuente("SUMIFS({t},{k},pnlClave)", t=comp("total"), k=comp("clave"))
+    n_prod_f = ("IF(cfgContar=\"Filas\"," + fuente("COUNTIF({k},pnlClave)", k=comp("clave")) + "," +
+                fuente('SUMIFS({c},{k},pnlClave)+COUNTIFS({k},pnlClave,{c},"")', c=comp("cant"), k=comp("clave")) + ")")
     occ = lambda d: fuente("COUNTIF({k},pnlClave" + d + ")", k=comp("clave"))
+    seccion("Reglas del mes")
+    gen_r = fila[0]
+    fila[0] += 1
     alt = valor("Meses alternos",
                 f'=IF({occ("")}=0,IF({occ("-1")}>0,"Sin compras. No disponible: "&{etiqueta_mes("pnlClave-1")}&" tiene compras",'
                 f'IF({occ("+1")}>0,"Sin compras. No disponible: "&{etiqueta_mes("pnlClave+1")}&" tiene compras",'
                 f'"Sin compras. Mes disponible")),'
                 f'IF({occ("-1")}>0,"Mes bloqueado: el mes "&{etiqueta_mes("pnlClave-1")}&" ya tiene compras","OK"))',
-                nota="El mes anterior y el siguiente a un mes con compras deben quedar sin compras de figuras. "
-                     "La advertencia se muestra en el mes posterior.")
-    limr = valor("Límite mensual",
-                 f'=IF({tot}>{lim},"Límite superado en "&{pesos(tot + "-" + lim)}&IF({n_prod}<=cfgMaxProd,'
-                 f'" (excepción hasta "&cfgMaxProd&" productos: tope "&{pesos("cfgLimExc")}&")",'
-                 f'" (regla normal, "&{n_prod}&" productos: tope "&{pesos("cfgLimNormal")}&")"),"OK")',
-                 nota="Compara el total de figuras con el límite que aplica. Igual al tope = OK.")
-    gen = valor("Estado general",
-                f'=IF(AND(LEFT({alt},13)<>"Mes bloqueado",{limr}="OK"),"OK","ADVERTENCIA")',
-                nota="OK si se cumplen ambas reglas; si no, ADVERTENCIA (ver motivo arriba).")
+                txt="El mes anterior y el siguiente a un mes con compras deben quedar sin compras de figuras. "
+                    "La advertencia se muestra en el mes posterior.")
+    limr_r = fila[0]
+    fila[0] += 1
+    # (Límite mensual y Estado general se escriben después, cuando existen las celdas de total y límite)
+    explicacion("Rojo = regla rota con su motivo. Verde = OK. Envíos e impuestos nunca cuentan para las reglas.")
+
+    seccion("Figuras del mes (sin envíos)")
+    tot = valor("Total figuras", "=" + tot_f, FMT_CLP, "Suma de 'Total figura CLP' de los productos de este mes (sin cancelados).")
+    valor("Pagado", "=" + fuente("SUMIFS({t},{k},pnlClave)", t=comp("pagfig"), k=comp("clave")), FMT_CLP,
+          "Pagos tipo Figura de los productos de este mes.")
+    valor("Falta pagar", "=" + fuente("SUMIFS({t},{k},pnlClave)", t=comp("falta"), k=comp("clave")), FMT_CLP,
+          "Lo que queda por pagar de las figuras de este mes. Cerrados y cancelados no suman.")
+    valor("Diferencia por tipo de cambio", "=" + fuente("SUMIFS({t},{k},pnlClave)", t=comp("dif"), k=comp("clave")), FMT_CLP,
+          "Suma de 'Diferencia figura' de productos Pagados o Cerrados. Positivo = pagaste de más.")
+    n_prod = valor("Productos en el mes", "=" + n_prod_f, "0", "Unidades o filas, según Config > Contar productos por.")
+    lim = valor("Límite que aplica", f"=IF({n_prod}<=cfgMaxProd,cfgLimExc,cfgLimNormal)", FMT_CLP,
+                "Límite normal, o el de excepción si hay pocos productos.")
+    valor("Margen disponible", f"={lim}-{tot}", FMT_CLP, "Límite - total. Negativo = excedido.")
+
+    # ahora sí: Límite mensual y Estado general (arriba, en el bloque de reglas)
+    ws.cell(row=limr_r, column=1, value="Límite mensual").font = Font(name=FUENTE, size=11)
+    nota(ws.cell(row=limr_r, column=1), "Compara el total de figuras con el límite que aplica. Igual al tope = OK.")
+    limr = f"B{limr_r}"
+    ws[limr] = (f'=IF({tot}>{lim},"Límite superado en "&{pesos(tot + "-" + lim)}&IF({n_prod}<=cfgMaxProd,'
+                f'" (excepción hasta "&cfgMaxProd&" productos: tope "&{pesos("cfgLimExc")}&")",'
+                f'" (regla normal, "&{n_prod}&" productos: tope "&{pesos("cfgLimNormal")}&")"),"OK")')
+    ws.cell(row=gen_r, column=1, value="Estado general").font = Font(name=FUENTE, size=12, bold=True)
+    nota(ws.cell(row=gen_r, column=1), "OK si se cumplen ambas reglas; si no, ADVERTENCIA (ver motivo abajo).")
+    gen = f"B{gen_r}"
+    ws[gen] = f'=IF(AND(LEFT({alt},13)<>"Mes bloqueado",{limr}="OK"),"OK","ADVERTENCIA")'
     for celda in (alt, limr, gen):
         ws[celda].font = Font(name=FUENTE, size=11, bold=True)
+        ws[celda].alignment = Alignment(horizontal="right", vertical="center", wrap_text=True)
         ws.row_dimensions[int(celda[1:])].height = 45
-    explicacion("Rojo = regla rota con su motivo. Verde = OK. Los pagos de envío hechos en un mes bloqueado no cuentan.")
+        ws.cell(row=int(celda[1:]), column=1).alignment = Alignment(wrap_text=True, vertical="center")
+    ws.row_dimensions[gen_r].height = 24
+    ws[gen].font = Font(name=FUENTE, size=14, bold=True)
 
     seccion("Envíos (no cuentan para las reglas)")
     valor("Pendientes de productos del mes", "=" + fuente("SUMIFS({e},{k},pnlClave)", e=comp("envpend"), k=comp("clave")),
-          FMT_CLP, "Envíos aún sin pagar de los productos asignados a este mes (individuales y acumulados).")
+          FMT_CLP, "Envíos aún sin pagar de los productos de este mes (individuales y acumulados).")
     valor("Pagados en el mes", "=" + fuente('SUMIFS({m},{t},"Envío",{k},pnlClave)', m=pag("monto"), t=pag("tipo"), k=pag("clave")),
           FMT_CLP, "Pagos tipo Envío con fecha dentro de este mes (individuales y conjuntos).")
     valor("Total sin pagar (todos los meses)", "=" + fuente("SUM({e})", e=comp("envpend")), FMT_CLP,
           "Todos los envíos pendientes o acumulados sin pagar, de cualquier mes.")
-    explicacion("Un envío puede quedar pendiente o acumulado aunque el producto esté Cerrado.")
-
-    seccion("Envíos pagados en conjunto")
     ah_mes = valor("Ahorro de grupos pagados en el mes",
                    "=" + fuente("SUMIFS({a},{k},pnlClave)", a=grp("ahorro"), k=grp("clave")), FMT_CLP,
                    "Suma individual - pagado conjunto, de los grupos pagados este mes. Negativo = sobrecosto.")
-    ah_tot = valor("Ahorro total histórico", "=" + fuente("SUM({a})", a=grp("ahorro")), FMT_CLP,
+    ah_tot = valor("Ahorro total de envíos conjuntos", "=" + fuente("SUM({a})", a=grp("ahorro")), FMT_CLP,
                    "Ahorro (o sobrecosto si es negativo) de todos los grupos pagados.")
-    valor("Grupos pendientes", "=" + fuente('COUNTIF({e},"Pendiente")', e=grp("estado")), "0",
+    valor("Grupos en bodega sin pagar", "=" + fuente('COUNTIF({e},"Pendiente")', e=grp("estado")), "0",
           "Grupos de envío acumulado aún sin pago.")
-    valor("Monto de grupos pendientes", "=" + fuente('SUMIFS({s},{e},"Pendiente")', s=grp("suma"), e=grp("estado")), FMT_CLP,
-          "Suma de envíos individuales de los grupos sin pagar.")
     for celda in (ah_mes, ah_tot):
         cf_texto(ws, celda, f"{celda}<0", ROJO_FILL, ROJO_TXT)
         cf_texto(ws, celda, f"{celda}>0", VERDE_FILL, VERDE_TXT)
-    explicacion("Ahorro positivo = pagar juntos salió más barato. Negativo (rojo) = pagaste de más.")
+    explicacion("Un envío puede quedar en bodega aunque el producto esté pagado. Ahorro negativo (rojo) = pagaste de más.")
 
-    seccion("Pago del mes")
-    valor("Fecha de pago", f"=DATE({sel_anio},MATCH({sel_mes},lstMeses,0),MIN(cfgDiaPago,"
-                           f"DAY(DATE({sel_anio},MATCH({sel_mes},lstMeses,0)+1,0))))", FMT_FECHA,
-          "Día de pago de Config dentro del mes elegido (si el mes es más corto, el último día).")
+    seccion("Impuestos estimados (al llegar a Chile)")
+    valor("De las figuras del mes", "=" + fuente("SUMIFS({i},{k},pnlClave)", i=comp("impuestos"), k=comp("clave")), FMT_CLP,
+          "Arancel + IVA estimados de las figuras de este mes.")
+    valor("A preparar por envíos pagados en el mes", "=" + fuente("SUMIFS({i},{k},pnlClave)", i=comp("impuestos"), k=comp("claveenv")),
+          FMT_CLP, "Impuestos estimados de las figuras cuyo envío (o grupo) se pagó este mes: llegarán pronto a Chile.")
+    valor("Arancel estimado (6%)", "=" + fuente("SUMIFS({i},{k},pnlClave)", i=comp("arancel"), k=comp("claveenv")),
+          FMT_CLP, "Parte de arancel de la fila anterior.")
+    valor("IVA estimado (19%)", "=" + fuente("SUMIFS({i},{k},pnlClave)", i=comp("iva"), k=comp("claveenv")),
+          FMT_CLP, "Parte de IVA de la fila anterior.")
+    explicacion("Estimación: arancel sobre figura + envío; IVA sobre figura + envío + arancel. No cuentan para las reglas.")
 
     # casos de práctica
     fila[0] += 1
     r = fila[0]
     ws.merge_cells(f"A{r}:B{r}")
-    ws.cell(row=r, column=1, value='=IF(cfgModo="Sí","Casos de práctica (con los límites por defecto de Config)","")').font = Font(
-        name=FUENTE, size=12, bold=True, color="833C0B")
+    ws.cell(row=r, column=1, value='=IF(cfgModo="Sí","Casos de práctica (con los valores por defecto de Config)","")').font = Font(
+        name=FUENTE, size=12, bold=True, color=NARANJA_TXT)
     fila[0] += 1
     for caso in CASOS_PRACTICA:
         explicacion(caso)
 
-    # formato condicional de reglas (rojo = advertencia)
+    # formato condicional de reglas (rojo = advertencia, verde = OK)
     for celda in (alt, limr, gen):
         cf_texto(ws, celda, f'OR(LEFT({celda},13)="Mes bloqueado",LEFT({celda},7)="Límite ",{celda}="ADVERTENCIA")',
                  ROJO_FILL, ROJO_TXT)
         cf_texto(ws, celda, f'OR({celda}="OK",{celda}="Sin compras. Mes disponible")', VERDE_FILL, VERDE_TXT)
-    ws.freeze_panes = "A4"
+    ws.freeze_panes = "A3"
     return ws
 
 
 AYUDA = [
     ("Cómo usar el libro", None),
-    ("Registrar una compra", "Compras → primera fila vacía: Producto, Cantidad, Fecha compra, Moneda, Precio unitario y (si es USD/JPY) TC usado. Si tiene envío: monto, moneda y si va acumulado (con su grupo)."),
+    ("Registrar una reserva", "Compras → primera fila vacía: Producto, Fecha salida original, Moneda, Precio unitario y (si es USD/JPY) TC usado. Opcional: Fecha reserva, Link, Link imagen. Si tiene envío: monto, moneda y si queda en bodega (acumulado, con su grupo)."),
     ("Registrar un pago", "Pagos → Fecha, Monto CLP, Tipo (Figura/Envío) y Asociado a (elige el producto o grupo). La columna Validación debe decir OK."),
-    ("Colores", "Encabezado azul + celda amarilla = lo escribes tú. Encabezado gris = calculado, no lo edites. Rojo = advertencia. Verde = OK. Naranjo = aviso o diferencia."),
+    ("Apartar dinero", "Ahorro → tabla Abonos: solo fecha y monto. El libro lo asigna al pago del 13 más cercano y te dice cuánto apartar cada mes."),
+    ("Si se atrasa la salida", "No cambies la 'Fecha salida original'. Si quieres, anota la nueva en 'Salida actual' (solo informativa)."),
+    ("Si cancelas una reserva", "Estado manual = Cancelada. Deja de contar en todo. Si quieres borrarla del todo, mantén presionada la fila y elige Eliminar: los IDs son fijos y nada se rompe."),
+    ("Colores", "Encabezado azul + celda amarilla = lo escribes tú. Encabezado gris = calculado, no lo edites. Rojo = advertencia. Verde = OK. Naranja = aviso o diferencia. Gris tachado = cancelado."),
     ("Hojas", None),
-    ("Panel", "Elige mes y año. Muestra total de figuras, pagado, falta, diferencia por tipo de cambio, estado de las reglas, envíos del mes, envíos sin pagar de todos los meses y ahorro de envíos conjuntos."),
-    ("Compras", "Una fila por producto. Las columnas de la izquierda son las importantes; las de la derecha (gris claro) son auxiliares."),
+    ("Panel", "Arriba: próximo pago del 13, cuánto tienes ahorrado, cuánto falta y cuánto apartar. Abajo: eliges mes y año y ves reglas, figuras, envíos e impuestos estimados de ese mes."),
+    ("Compras", "Una fila por figura. Las columnas de la izquierda son las importantes; las de la derecha (gris claro) son auxiliares."),
     ("Pagos", "Un pago por fila, siempre en CLP. Los pagos de figura van al producto; los de envío al producto (si no es acumulado) o al grupo."),
-    ("Envíos acumulados", "Un grupo por fila (G001...). Escribe una descripción; en Compras marca Envío acumulado = Sí y elige el grupo. Al pagar, registra el pago en Pagos con Asociado = grupo. El ahorro = suma de envíos individuales - pago conjunto."),
-    ("Config", "Modo práctica, límites, máximo de productos para la excepción, forma de contar productos, día de pago y tabla de tipos de cambio."),
-    ("Práctica Compras / Pagos / Envíos", "Datos simulados, separados de los reales. Solo se ven y solo los usa el Panel cuando Modo práctica = Sí."),
+    ("Envíos acumulados", "Un grupo por fila (G001...): figuras que esperan en bodega para enviarse juntas. Al pagar, registra el pago en Pagos con Asociado = grupo. Ahorro = suma de envíos individuales - pago conjunto. También estima los impuestos del paquete."),
+    ("Ahorro", "Resumen del saldo, plan de pagos del 13 de los próximos 24 meses (y 'Más adelante') y la tabla de abonos."),
+    ("Config", "Modo práctica, límites, excepción, forma de contar productos, día de pago (13), arancel e IVA estimados, fecha de hoy opcional y tipos de cambio."),
+    ("Hojas Práctica", "Datos simulados, separados de los reales. Solo se ven y solo los usa el Panel cuando Modo práctica = Sí."),
     ("Reglas", None),
-    ("Solo figuras", "Las reglas solo miran el 'Total figura CLP'. Los envíos y sus pagos nunca cuentan para límites ni ocupan un mes."),
+    ("Mes de la figura", "Es el mes de la Fecha salida original. Se paga el día 13 de ese mes (o en 'Pago especial'), aunque salga después del 13 o se atrase."),
+    ("Solo figuras", "Las reglas solo miran el 'Total figura CLP'. Envíos, impuestos y sus pagos nunca cuentan para límites ni ocupan un mes."),
     ("Meses alternos", "Un mes con compras de figuras queda ocupado. El mes anterior y el siguiente deben quedar sin compras. Si hay compras en dos meses seguidos, el posterior muestra 'Mes bloqueado: el mes X ya tiene compras' (también entre diciembre y enero)."),
-    ("Límite mensual", "Total de figuras del mes ≤ límite normal (200.000 por defecto). Si el mes tiene 2 productos o menos (por defecto), el tope es el de excepción (300.000 por defecto). Todo se edita en Config. Igual al tope = OK; más = rojo con el monto excedido y la regla aplicada."),
-    ("Cerrar con diferencia", "Marca Cerrar = Sí: el producto queda Cerrado aunque lo pagado no calce. La diferencia se ve en el producto y se suma en el Panel."),
+    ("Límite mensual", "Total de figuras del mes ≤ límite normal (200.000 por defecto). Si el mes tiene 2 productos o menos (por defecto), el tope es el de excepción (300.000 por defecto). Igual al tope = OK; más = rojo con el monto excedido."),
+    ("Cerrar con diferencia", "Estado manual = Cerrada: el producto queda Cerrado aunque lo pagado no calce. La diferencia se ve en el producto y se suma en el Panel."),
     ("Envíos independientes", "El envío tiene su propio estado (Sin envío / Pendiente / Acumulado / Pagado) y sus propios pagos."),
-    ("Tipo de cambio fijo", "Escribe el TC del día en 'TC usado': queda guardado en la compra y no cambia si editas la tabla de Config. Si lo dejas vacío se usa el sugerido y aparece el aviso 'TC no fijado'."),
+    ("Tipo de cambio fijo", "Escribe el TC del día en 'TC usado': queda guardado y no cambia si editas la tabla de Config. Si lo dejas vacío se usa el sugerido y aparece 'TC no fijado'."),
+    ("Impuestos estimados", "Arancel = 6% x (figura + envío). IVA = 19% x (figura + envío + arancel). Envío: el individual, o la parte del pago conjunto si el grupo ya se pagó. Es una referencia: las reglas de Aduanas pueden cambiar."),
+    ("Ahorro", "Saldo = abonos - pagos de figuras desde el primer abono. Llena primero el pago más cercano y lo que sobra pasa al siguiente. Lo que falta se reparte en partes iguales desde el mes siguiente al actual hasta el mes del pago; si el pago es este mes, se aparta todo ya."),
     ("Campos de Compras", None),
 ] + [(t, n) for _, t, _, _, n in COLS_COMPRAS] + [("Campos de Pagos", None)] + [
     (t, n) for _, t, _, _, n in COLS_PAGOS] + [("Campos de Envíos acumulados", None)] + [
-    (t, n) for _, t, _, _, n in COLS_GRUPOS] + [
+    (t, n) for _, t, _, _, n in COLS_GRUPOS] + [("Campos de Ahorro", None)] + [
+    (t, n) for _, t, _, _, n in COLS_ABONOS] + [(t, n) for _, t, _, n in COLS_PLAN] + [
     ("Supuestos", None),
     ("Productos para la excepción", "Por defecto se cuentan unidades (columna Cantidad). Cámbialo a Filas en Config si prefieres contar cada producto distinto como 1."),
     ("Mes bloqueado", "Como no se registra el orden en que anotaste las compras, se marca siempre el mes posterior de cada par contiguo."),
-    ("Pagos de figura", "Cuentan para el mes asignado del producto, no para el mes en que pagaste."),
-    ("Filas preparadas", f"Compras tiene {FILAS_COMPRAS} filas, Pagos {FILAS_PAGOS} y Envíos {FILAS_GRUPOS}, con fórmulas listas. Escribe en la primera fila vacía; no insertes filas en medio."),
+    ("Atrasados", "Figuras de meses pasados que no están pagadas aparecen como 'Atrasado' y no entran en el plan de ahorro."),
+    ("Foto", "Usa la función IMAGEN de Microsoft 365, que descarga la foto desde internet. Si tu Excel no la tiene, deja vacío 'Link imagen'."),
+    ("Filas preparadas", f"Compras tiene {FILAS_COMPRAS} filas, Pagos {FILAS_PAGOS}, Envíos {FILAS_GRUPOS} y Abonos {FILAS_ABONOS}, con fórmulas listas. Escribe en la primera fila vacía; no insertes filas en medio."),
 ]
 
 
@@ -936,22 +1237,24 @@ def construir(ruta):
     """Arma el libro completo y lo guarda en 'ruta'."""
     wb = Workbook()
     wb.active.title = "Panel"
-    hoja_compras(wb, "Compras", "Pagos", "Envíos acumulados", "tblCompras")
+    hoja_compras(wb, "Compras", "Pagos", "tblCompras")
     hoja_pagos(wb, "Pagos", "Compras", "Envíos acumulados", "tblPagos")
     hoja_grupos(wb, "Envíos acumulados", "Compras", "Pagos", "tblEnvios")
+    hoja_ahorro(wb, "Ahorro", "Compras", "Pagos", "tblAbonos")
     hoja_config(wb)
     hoja_ayuda(wb)
-    hoja_compras(wb, "Práctica Compras", "Práctica Pagos", "Práctica Envíos", "tblPracticaCompras",
-                 practica=True, demo=DEMO_COMPRAS)
+    hoja_compras(wb, "Práctica Compras", "Práctica Pagos", "tblPracticaCompras", practica=True, demo=DEMO_COMPRAS)
     hoja_pagos(wb, "Práctica Pagos", "Práctica Compras", "Práctica Envíos", "tblPracticaPagos",
                practica=True, demo=DEMO_PAGOS)
     hoja_grupos(wb, "Práctica Envíos", "Práctica Compras", "Práctica Pagos", "tblPracticaEnvios",
                 practica=True, demo=DEMO_GRUPOS)
+    hoja_ahorro(wb, "Práctica Ahorro", "Práctica Compras", "Práctica Pagos", "tblPracticaAbonos",
+                practica=True, demo=DEMO_ABONOS)
     hoja_listas(wb)
     hoja_panel(wb)
     colores = {"Panel": "1F4E78", "Compras": "2E75B6", "Pagos": "2E75B6", "Envíos acumulados": "2E75B6",
-               "Config": "7F7F7F", "Ayuda": "7F7F7F", "Práctica Compras": "C55A11",
-               "Práctica Pagos": "C55A11", "Práctica Envíos": "C55A11"}
+               "Ahorro": "2E75B6", "Config": "7F7F7F", "Ayuda": "7F7F7F", "Práctica Compras": "C55A11",
+               "Práctica Pagos": "C55A11", "Práctica Envíos": "C55A11", "Práctica Ahorro": "C55A11"}
     for n, col in colores.items():
         wb[n].sheet_properties.tabColor = col
     wb.active = 0
