@@ -859,7 +859,7 @@ def hoja_panel(wb):
     fila[0] += 1
     r = fila[0]
     ws.merge_cells(f"A{r}:B{r}")
-    ws.cell(row=r, column=1, value='=IF(cfgModo="Sí","Casos de práctica","")').font = Font(
+    ws.cell(row=r, column=1, value='=IF(cfgModo="Sí","Casos de práctica (con los límites por defecto de Config)","")').font = Font(
         name=FUENTE, size=12, bold=True, color="833C0B")
     fila[0] += 1
     for caso in CASOS_PRACTICA:
@@ -889,7 +889,7 @@ AYUDA = [
     ("Reglas", None),
     ("Solo figuras", "Las reglas solo miran el 'Total figura CLP'. Los envíos y sus pagos nunca cuentan para límites ni ocupan un mes."),
     ("Meses alternos", "Un mes con compras de figuras queda ocupado. El mes anterior y el siguiente deben quedar sin compras. Si hay compras en dos meses seguidos, el posterior muestra 'Mes bloqueado: el mes X ya tiene compras' (también entre diciembre y enero)."),
-    ("Límite mensual", "Total de figuras del mes ≤ límite normal (200.000). Si el mes tiene 2 productos o menos, el tope es 300.000. Igual al tope = OK; más = rojo con el monto excedido y la regla aplicada."),
+    ("Límite mensual", "Total de figuras del mes ≤ límite normal (200.000 por defecto). Si el mes tiene 2 productos o menos (por defecto), el tope es el de excepción (300.000 por defecto). Todo se edita en Config. Igual al tope = OK; más = rojo con el monto excedido y la regla aplicada."),
     ("Cerrar con diferencia", "Marca Cerrar = Sí: el producto queda Cerrado aunque lo pagado no calce. La diferencia se ve en el producto y se suma en el Panel."),
     ("Envíos independientes", "El envío tiene su propio estado (Sin envío / Pendiente / Acumulado / Pagado) y sus propios pagos."),
     ("Tipo de cambio fijo", "Escribe el TC del día en 'TC usado': queda guardado en la compra y no cambia si editas la tabla de Config. Si lo dejas vacío se usa el sugerido y aparece el aviso 'TC no fijado'."),
