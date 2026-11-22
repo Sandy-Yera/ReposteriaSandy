@@ -95,6 +95,7 @@ COLS_COMPRAS = [
     ("limmes", "Límite mes", 11, False, "Auxiliar: límite que aplica al mes (normal o excepción)."),
     ("nlista", "N lista", 6, False, "Auxiliar para la lista desplegable de Pagos."),
     ("etiq", "Etiqueta lista", 18, False, "Auxiliar: texto 'ID · Producto' que aparece en la lista de Pagos."),
+    ("integ", "Integridad", 16, False, "Auxiliar: OK si las fórmulas de la fila están intactas. Si alguien escribió encima de una celda gris, avisa para copiar la fila de arriba."),
 ]
 COLS_PAGOS = [
     ("fecha", "Fecha pago", 11, True, "Fecha en que hiciste el pago."),
@@ -104,7 +105,8 @@ COLS_PAGOS = [
     ("nota", "Nota", 20, True, "Texto libre (medio de pago, etc.)."),
     ("id", "ID", 6, False, "Calculado: los 4 primeros caracteres de 'Asociado a'."),
     ("clave", "Clave mes pago", 9, False, "Auxiliar: año x 12 + mes de la fecha de pago."),
-    ("valid", "Validación", 30, False, "Calculado: OK o qué revisar en este pago."),
+    ("valid", "Validación", 30, False, "Calculado: OK o qué revisar en este pago. Solo los pagos con OK cuentan en los totales."),
+    ("integ", "Integridad", 16, False, "Auxiliar: OK si las fórmulas de la fila están intactas."),
 ]
 COLS_GRUPOS = [
     ("id", "Grupo", 7, False, "Identificador fijo del grupo (G001...). Úsalo en Compras > Grupo envío y en Pagos."),
@@ -120,11 +122,13 @@ COLS_GRUPOS = [
     ("usado", "Usado", 6, False, "Auxiliar: 1 si el grupo tiene descripción, envíos o pagos."),
     ("nlista", "N lista", 6, False, "Auxiliar para la lista desplegable de Pagos."),
     ("etiq", "Etiqueta lista", 18, False, "Auxiliar: texto 'Grupo · Descripción' de la lista de Pagos."),
+    ("integ", "Integridad", 16, False, "Auxiliar: OK si las fórmulas de la fila están intactas."),
 ]
 COLS_ABONOS = [
     ("fecha", "Fecha abono", 11, True, "Fecha en que apartaste el dinero."),
     ("monto", "Monto CLP", 11, True, "Monto apartado, en pesos. Se asigna solo al pago del 13 más cercano que no esté cubierto."),
     ("nota", "Nota", 24, True, "Texto libre (de dónde salió, etc.)."),
+    ("revisar", "Revisar", 18, False, "Calculado: OK si fecha y monto son válidos. Solo los abonos con OK cuentan."),
 ]
 # Columnas del plan de ahorro (bloque calculado de la hoja Ahorro)
 COLS_PLAN = [
@@ -186,7 +190,7 @@ def pesos(expr):
 
 def fecha_dia_pago(expr_anio, expr_mes):
     """Fórmula de la fecha de pago (día de Config, o el último día si el mes es más corto)."""
-    return (f"DATE({expr_anio},{expr_mes},MIN(cfgDiaPago,DAY(DATE({expr_anio},({expr_mes})+1,0))))")
+    return (f"DATE({expr_anio},{expr_mes},MIN(cfgDiaPagoV,DAY(DATE({expr_anio},({expr_mes})+1,0))))")
 
 
 # ---------------------------------------------------------------- estilos
@@ -281,23 +285,23 @@ def banner(ws, ultima_col, practica):
     ws.merge_cells(f"A2:{ultima_col}2")
     c = ws["A2"]
     if practica:
-        c.value = ('=IF(cfgModo="Sí","DATOS DE PRÁCTICA (simulados). El Panel los está mostrando. '
+        c.value = ('=IF(cfgPractica,"DATOS DE PRÁCTICA (simulados). El Panel los está mostrando. '
                    'Tus datos reales siguen intactos en sus hojas.",'
                    '"Modo práctica desactivado: estos datos simulados están ocultos. Actívalo en Config.")')
     else:
-        c.value = ('=IF(cfgModo="Sí","MODO PRÁCTICA ACTIVO: el Panel muestra datos simulados. '
+        c.value = ('=IF(cfgPractica,"MODO PRÁCTICA ACTIVO: el Panel muestra datos simulados. '
                    'Lo que escribas aquí se guarda igual. Desactívalo en Config.","")')
     c.font = Font(name=FUENTE, size=11, bold=True, color=NARANJA_TXT)
     c.alignment = Alignment(wrap_text=True, vertical="center")
     ws.row_dimensions[2].height = 30
-    cf_texto(ws, "A2", 'cfgModo="Sí"', NARANJA_FILL, NARANJA_TXT)
+    cf_texto(ws, "A2", 'cfgPractica', NARANJA_FILL, NARANJA_TXT)
 
 
 def ocultar_si_no_practica(ws, ultima_col, ultima_fila):
     """En hojas de práctica: con Modo práctica = No, texto y relleno blancos (desaparecen)."""
     ws.conditional_formatting.add(
         f"A3:{ultima_col}{ultima_fila}",
-        FormulaRule(formula=['cfgModo<>"Sí"'], fill=BLANCO_FILL,
+        FormulaRule(formula=['NOT(cfgPractica)'], fill=BLANCO_FILL,
                     font=Font(color="FFFFFF"), stopIfTrue=True))
 
 
@@ -319,7 +323,7 @@ def cargar_filas(ws, letras_cols, filas, extra_col=None, ini=FILA_INI):
 
 
 # ---------------------------------------------------------------- hojas de datos
-def hoja_compras(wb, nombre, hoja_pagos, tabla, practica=False, demo=None):
+def hoja_compras(wb, nombre, hoja_pagos, hoja_grupos, tabla, practica=False, demo=None):
     """Crea una hoja de compras (real o de práctica) con sus fórmulas, validaciones y formatos."""
     ws = wb.create_sheet(nombre)
     cols = list(COLS_COMPRAS)
@@ -337,89 +341,106 @@ def hoja_compras(wb, nombre, hoja_pagos, tabla, practica=False, demo=None):
     n = FILAS_COMPRAS
     fin = FILA_INI + n - 1
     R = lambda k: f"${LC[k]}${FILA_INI}:${LC[k]}${fin}"          # rango propio absoluto
-    PA, PB, PC, PF = (rango(hoja_pagos, LP[k], FILAS_PAGOS) for k in ("fecha", "monto", "tipo", "id"))
+    PA, PB, PC, PF, PV = (rango(hoja_pagos, LP[k], FILAS_PAGOS) for k in ("fecha", "monto", "tipo", "id", "valid"))
+    GA = rango(hoja_grupos, LG["id"], FILAS_GRUPOS)
 
     for r in range(FILA_INI, fin + 1):
         c = {k: f"{LC[k]}{r}" for k in LC}
-        cB = f"${LC['prod']}{r}"
-        man = f"${LC['manual']}{r}"
-        sal = f"${LC['salida']}{r}"
-        mon = f"${LC['moneda']}{r}"
-        grp = f"${LC['grupo']}{r}"
-        acu = f"${LC['acum']}{r}"
-        fp = c["fpago"]
+        x = {k: f"${LC[k]}{r}" for k in LC}       # celdas de ingreso de la fila
+        cB, man, sal, mon, grp, acu, fp = x["prod"], x["manual"], x["salida"], x["moneda"], x["grupo"], x["acum"], c["fpago"]
+        es_cancel = f'LEFT(TRIM({man}),3)="Can"'
+        es_cerr = f'LEFT(TRIM({man}),3)="Cer"'
+        es_acum = f'LEFT(TRIM({acu}),1)="S"'
+        cant_ok = f'OR({x["cant"]}="",AND(ISNUMBER({x["cant"]}),N({x["cant"]})>0))'
+        cant = f'IF({x["cant"]}="",1,{x["cant"]})'
+        precio_ok = f'AND(ISNUMBER({x["precio"]}),N({x["precio"]})>=0)'
+        tcu_ok = f'AND(ISNUMBER({x["tcusado"]}),N({x["tcusado"]})>0)'
         ws[c["id"]] = f"C{r - FILA_INI + 1:03d}"
-        ws[c["foto"]] = f'=IF(${LC["linkimg"]}{r}="","",_xlfn.IMAGE(${LC["linkimg"]}{r}))'
-        ws[c["mesef"]] = (f'=IF(OR({cB}="",{man}="Cancelada",{sal}=""),"",DATE(YEAR({sal}),MONTH({sal}),1))')
+        ws[c["foto"]] = f'=IF({x["linkimg"]}="","",_xlfn.IMAGE({x["linkimg"]}))'
+        ws[c["mesef"]] = f'=IF(OR({cB}="",{es_cancel},NOT(ISNUMBER({sal}))),"",DATE(YEAR({sal}),MONTH({sal}),1))'
         ws[c["clave"]] = f'=IF({c["mesef"]}="","",YEAR({c["mesef"]})*12+MONTH({c["mesef"]}))'
-        ws[fp] = (f'=IF(OR({cB}="",{sal}=""),"",IF(${LC["pagoesp"]}{r}<>"",${LC["pagoesp"]}{r},'
+        ws[fp] = (f'=IF(OR({cB}="",NOT(ISNUMBER({sal}))),"",IF(ISNUMBER({x["pagoesp"]}),{x["pagoesp"]},'
                   f'{fecha_dia_pago(f"YEAR({sal})", f"MONTH({sal})")}))')
         maxd = f'_xlfn.MAXIFS(cfgTCFecha,cfgTCMoneda,{mon},cfgTCFecha,"<="&{fp})'
         ws[c["tcsug"]] = (f'=IF(OR({cB}="",{mon}="",{mon}="CLP",{fp}=""),"",'
                           f'IF({maxd}=0,"",AVERAGEIFS(cfgTCValor,cfgTCMoneda,{mon},cfgTCFecha,{maxd})))')
-        ws[c["tcapl"]] = (f'=IF(OR({cB}="",{mon}=""),"",IF({mon}="CLP",1,'
-                          f'IF(${LC["tcusado"]}{r}<>"",${LC["tcusado"]}{r},{c["tcsug"]})))')
-        cant = f'IF(${LC["cant"]}{r}="",1,${LC["cant"]}{r})'
-        ws[c["total"]] = (f'=IF(OR({cB}="",{c["tcapl"]}="",${LC["precio"]}{r}=""),"",'
-                          f'ROUND({cant}*${LC["precio"]}{r}*{c["tcapl"]},0))')
-        me = f'IF(${LC["envmoneda"]}{r}="",{mon},${LC["envmoneda"]}{r})'
+        ws[c["tcapl"]] = (f'=IF(OR({cB}="",{mon}=""),"",IF({mon}="CLP",1,IF(OR({mon}="USD",{mon}="JPY"),'
+                          f'IF({tcu_ok},{x["tcusado"]},{c["tcsug"]}),"")))')
+        ws[c["total"]] = (f'=IF(OR({cB}="",NOT(ISNUMBER({c["tcapl"]})),NOT({precio_ok}),NOT({cant_ok})),"",'
+                          f'ROUND({cant}*{x["precio"]}*{c["tcapl"]},0))')
+        me = f'IF({x["envmoneda"]}="",{mon},{x["envmoneda"]})'
         maxe = f'_xlfn.MAXIFS(cfgTCFecha,cfgTCMoneda,{me},cfgTCFecha,"<="&N({fp}))'
         tce = (f'IF({me}="CLP",1,IF({me}={mon},N({c["tcapl"]}),'
                f'IFERROR(AVERAGEIFS(cfgTCValor,cfgTCMoneda,{me},cfgTCFecha,{maxe}),0)))')
-        ws[c["envclp"]] = (f'=IF(OR({cB}="",{man}="Cancelada",N(${LC["envmonto"]}{r})=0),0,'
-                           f'ROUND(${LC["envmonto"]}{r}*{tce},0))')
-        ws[c["pagfig"]] = f'=IF({cB}="","",SUMIFS({PB},{PC},"Figura",{PF},${LC["id"]}{r}))'
-        ws[c["pagenv"]] = f'=IF({cB}="","",SUMIFS({PB},{PC},"Envío",{PF},${LC["id"]}{r}))'
-        ws[c["estado"]] = (f'=IF({cB}="","",IF({man}="Cancelada","Cancelado",IF({man}="Cerrada","Cerrado",'
+        ws[c["envclp"]] = (f'=IF(OR({cB}="",{es_cancel},NOT(ISNUMBER({x["envmonto"]})),N({x["envmonto"]})<=0),0,'
+                           f'ROUND({x["envmonto"]}*{tce},0))')
+        ws[c["pagfig"]] = f'=IF({cB}="","",SUMIFS({PB},{PC},"Fig*",{PF},{x["id"]},{PV},"OK"))'
+        ws[c["pagenv"]] = f'=IF({cB}="","",SUMIFS({PB},{PC},"Env*",{PF},{x["id"]},{PV},"OK"))'
+        ws[c["estado"]] = (f'=IF({cB}="","",IF({es_cancel},"Cancelado",IF({es_cerr},"Cerrado",'
                            f'IF(N({c["pagfig"]})=0,"Pendiente",IF({c["total"]}="","Parcial",'
                            f'IF({c["pagfig"]}>={c["total"]},"Pagado","Parcial"))))))')
         ws[c["falta"]] = (f'=IF({cB}="","",IF(OR({c["estado"]}="Cerrado",{c["estado"]}="Cancelado"),0,'
                           f'MAX(0,N({c["total"]})-{c["pagfig"]})))')
         ws[c["dif"]] = (f'=IF({cB}="","",IF(OR({c["estado"]}="Cerrado",{c["estado"]}="Pagado"),'
                         f'{c["pagfig"]}-N({c["total"]}),0))')
-        pag_grupo = f'SUMIFS({PB},{PC},"Envío",{PF},{grp})'
-        ws[c["estenv"]] = (f'=IF({cB}="","",IF({c["envclp"]}=0,"Sin envío",IF({acu}="Sí",'
+        pag_grupo = f'SUMIFS({PB},{PC},"Env*",{PF},{grp},{PV},"OK")'
+        ws[c["estenv"]] = (f'=IF({cB}="","",IF({c["envclp"]}=0,"Sin envío",IF({es_acum},'
                            f'IF(AND({grp}<>"",{pag_grupo}>0),"Pagado","Acumulado"),'
                            f'IF({c["pagenv"]}>={c["envclp"]},"Pagado","Pendiente"))))')
         ws[c["envpend"]] = (f'=IF({cB}="","",IF(OR({c["estenv"]}="Pagado",{c["estenv"]}="Sin envío"),0,'
-                            f'IF({acu}="Sí",{c["envclp"]},MAX(0,{c["envclp"]}-{c["pagenv"]}))))')
-        suma_grupo = f'SUMIFS({R("envclp")},{R("grupo")},{grp},{R("acum")},"Sí",{R("manual")},"<>Cancelada")'
-        ws[c["envimp"]] = (f'=IF({cB}="","",IF({c["envclp"]}=0,0,IF(AND({acu}="Sí",{grp}<>"",{pag_grupo}>0,'
+                            f'IF({es_acum},{c["envclp"]},MAX(0,{c["envclp"]}-{c["pagenv"]}))))')
+        suma_grupo = f'SUMIFS({R("envclp")},{R("grupo")},{grp},{R("acum")},"S*",{R("manual")},"<>Can*")'
+        ws[c["envimp"]] = (f'=IF({cB}="","",IF({c["envclp"]}=0,0,IF(AND({es_acum},{grp}<>"",{pag_grupo}>0,'
                            f'{suma_grupo}>0),ROUND({c["envclp"]}*{pag_grupo}/{suma_grupo},0),{c["envclp"]})))')
         base = f'N({c["total"]})+N({c["envimp"]})'
         sin_imp = f'OR({cB}="",{c["estado"]}="Cancelado",{c["total"]}="")'
-        ws[c["arancel"]] = f'=IF({sin_imp},"",ROUND(({base})*cfgArancel,0))'
-        ws[c["iva"]] = f'=IF({sin_imp},"",ROUND(({base}+{c["arancel"]})*cfgIVA,0))'
+        ws[c["arancel"]] = f'=IF({sin_imp},"",ROUND(({base})*cfgArancelV,0))'
+        ws[c["iva"]] = f'=IF({sin_imp},"",ROUND(({base}+{c["arancel"]})*cfgIVAV,0))'
         ws[c["impuestos"]] = f'=IF({sin_imp},"",{c["arancel"]}+{c["iva"]})'
-        d_env = (f'IF({acu}="Sí",_xlfn.MAXIFS({PA},{PC},"Envío",{PF},{grp}),'
-                 f'_xlfn.MAXIFS({PA},{PC},"Envío",{PF},${LC["id"]}{r}))')
+        d_env = (f'IF({es_acum},_xlfn.MAXIFS({PA},{PC},"Env*",{PF},{grp},{PV},"OK"),'
+                 f'_xlfn.MAXIFS({PA},{PC},"Env*",{PF},{x["id"]},{PV},"OK"))')
         ws[c["claveenv"]] = (f'=IF(OR({cB}="",{c["estenv"]}<>"Pagado"),"",'
                              f'IF({d_env}=0,"",YEAR({d_env})*12+MONTH({d_env})))')
         k = c["clave"]
         ws[c["totmes"]] = f'=IF({k}="","",SUMIFS({R("total")},{R("clave")},{k}))'
         ws[c["prodmes"]] = (f'=IF({k}="","",IF(cfgContar="Filas",COUNTIF({R("clave")},{k}),'
                             f'SUMIFS({R("cant")},{R("clave")},{k})+COUNTIFS({R("clave")},{k},{R("cant")},"")))')
-        ws[c["limmes"]] = f'=IF({k}="","",IF({c["prodmes"]}<=cfgMaxProd,cfgLimExc,cfgLimNormal))'
+        ws[c["limmes"]] = f'=IF({k}="","",IF({c["prodmes"]}<=cfgMaxProdV,cfgLimExcV,cfgLimNormalV))'
         m_bloq = f'IF(COUNTIF({R("clave")},{k}-1)>0,"Mes bloqueado: el mes "&{etiqueta_mes(k + "-1")}&" ya tiene compras","")'
         m_lim = (f'IF({c["totmes"]}>{c["limmes"]},"Límite superado en "&{pesos(c["totmes"] + "-" + c["limmes"])}&'
-                 f'IF({c["prodmes"]}<=cfgMaxProd," (excepción hasta "&cfgMaxProd&" productos: tope "&{pesos("cfgLimExc")}&")",'
-                 f'" (regla normal, "&{c["prodmes"]}&" productos: tope "&{pesos("cfgLimNormal")}&")"),"")')
-        cancel_aviso = (f'IF(OR(N({c["pagfig"]})>0,N({c["pagenv"]})>0,{grp}<>""),'
-                        f'"Cancelada con pagos o grupo asociado: revisa","")')
-        ws[c["reglas"]] = (f'=IF({cB}="","",IF({man}="Cancelada",{cancel_aviso},IF({k}="","",'
+                 f'IF({c["prodmes"]}<=cfgMaxProdV," (excepción hasta "&cfgMaxProdV&" productos: tope "&{pesos("cfgLimExcV")}&")",'
+                 f'" (regla normal, "&{c["prodmes"]}&" productos: tope "&{pesos("cfgLimNormalV")}&")"),"")')
+        cancel_aviso = (f'IF(OR(COUNTIF({PF},{x["id"]})>0,{grp}<>""),'
+                        f'"Cancelada con pagos o grupo asociado: revisa (esos pagos no cuentan)","")')
+        ws[c["reglas"]] = (f'=IF({cB}="","",IF({es_cancel},{cancel_aviso},IF({k}="","",'
                            f'IF(_xlfn.TEXTJOIN(" | ",TRUE,{m_bloq},{m_lim})="","OK",'
                            f'_xlfn.TEXTJOIN(" | ",TRUE,{m_bloq},{m_lim})))))')
-        ws[c["avisos"]] = (f'=IF(OR({cB}="",{man}="Cancelada"),"",_xlfn.TEXTJOIN(" | ",TRUE,'
-                           f'IF({sal}="","Falta fecha salida original",""),'
-                           f'IF({mon}="","Falta moneda",""),'
-                           f'IF(${LC["precio"]}{r}="","Falta precio",""),'
-                           f'IF(AND({mon}<>"",{mon}<>"CLP",${LC["tcusado"]}{r}="",{c["tcsug"]}<>""),"TC no fijado (usa sugerido)",""),'
-                           f'IF(AND({mon}<>"",{mon}<>"CLP",${LC["tcusado"]}{r}="",{c["tcsug"]}=""),"Falta TC",""),'
-                           f'IF(AND({acu}="Sí",{grp}=""),"Falta grupo de envío",""),'
-                           f'IF(AND({acu}<>"Sí",{grp}<>""),"Grupo sin Envío acumulado = Sí",""),'
-                           f'IF(AND(N(${LC["envmonto"]}{r})>0,{me}<>"CLP",{me}<>{mon},{maxe}=0),"Falta TC del envío","")))')
+        ws[c["avisos"]] = (f'=IF(OR({cB}="",{es_cancel}),"",_xlfn.TEXTJOIN(" | ",TRUE,'
+                           f'IF({x["id"]}="","Falta ID",IF(COUNTIF({R("id")},{x["id"]})>1,"ID repetido: corrígelo","")),'
+                           f'IF({sal}="","Falta fecha salida original",IF(ISNUMBER({sal}),"","Fecha salida no es fecha")),'
+                           f'IF({cant_ok},"","Cantidad no válida"),'
+                           f'IF({mon}="","Falta moneda",IF(OR({mon}="CLP",{mon}="USD",{mon}="JPY"),"","Moneda no válida")),'
+                           f'IF({x["precio"]}="","Falta precio",IF({precio_ok},"","Precio no válido")),'
+                           f'IF(AND({x["tcusado"]}<>"",NOT({tcu_ok})),"TC usado no válido",""),'
+                           f'IF(AND({mon}="CLP",{x["tcusado"]}<>""),"TC usado se ignora en CLP",""),'
+                           f'IF(AND(OR({mon}="USD",{mon}="JPY"),NOT({tcu_ok}),{c["tcsug"]}<>""),"TC no fijado (usa sugerido)",""),'
+                           f'IF(AND(OR({mon}="USD",{mon}="JPY"),NOT({tcu_ok}),{c["tcsug"]}=""),"Falta TC",""),'
+                           f'IF(AND({mon}="USD",ISNUMBER({c["tcapl"]}),OR(N({c["tcapl"]})<300,N({c["tcapl"]})>3000)),"TC USD raro (fuera de 300-3.000)",""),'
+                           f'IF(AND({mon}="JPY",ISNUMBER({c["tcapl"]}),OR(N({c["tcapl"]})<1,N({c["tcapl"]})>30)),"TC JPY raro (fuera de 1-30)",""),'
+                           f'IF({x["pagoesp"]}="","",IF(NOT(ISNUMBER({x["pagoesp"]})),"Pago especial no es fecha",'
+                           f'IF(AND(ISNUMBER({sal}),OR(YEAR({x["pagoesp"]})<>YEAR(N({sal})),MONTH({x["pagoesp"]})<>MONTH(N({sal})))),"Pago especial fuera del mes de salida",""))),'
+                           f'IF(AND({x["envmonto"]}<>"",OR(NOT(ISNUMBER({x["envmonto"]})),N({x["envmonto"]})<0)),"Envío monto no válido",""),'
+                           f'IF(AND({es_acum},{grp}=""),"Falta grupo de envío",""),'
+                           f'IF(AND({es_acum},{grp}<>"",COUNTIF({GA},{grp})=0),"Grupo no existe",""),'
+                           f'IF(AND(NOT({es_acum}),{grp}<>""),"Grupo sin Envío acumulado = Sí",""),'
+                           f'IF(AND(N({x["envmonto"]})>0,{me}<>"CLP",{me}<>{mon},{maxe}=0),"Falta TC del envío",""),'
+                           f'IF(AND({es_cerr},N({c["pagfig"]})=0),"Cerrada sin pagos: ¿querías Cancelada?","")))')
         ws[c["nlista"]] = f'=IF({cB}="","",COUNTIF(${LC["prod"]}${FILA_INI}:{cB},"?*"))'
-        ws[c["etiq"]] = f'=IF({cB}="","",${LC["id"]}{r}&" · "&{cB})'
+        ws[c["etiq"]] = f'=IF({cB}="","",{x["id"]}&" · "&{cB})'
+        claves_formula = ("total", "reglas", "estado", "fpago", "clave", "falta", "envclp", "pagfig", "envpend",
+                          "impuestos", "avisos", "tcapl", "estenv")
+        ws[c["integ"]] = (f'=IF(AND({",".join("_xlfn.ISFORMULA(" + c[k] + ")" for k in claves_formula)}),'
+                          f'IF({cB}="","","OK"),"Fórmulas borradas: copia la fila de arriba")')
         ws.row_dimensions[r].height = 36   # alto para que la foto se vea
 
     # formatos
@@ -432,7 +453,7 @@ def hoja_compras(wb, nombre, hoja_pagos, tabla, practica=False, demo=None):
             "cant": "0"}
     for k, _, _, ing, _ in COLS_COMPRAS:
         formato_columna(ws, LC[k], n, fmts.get(k), ingreso=ing, ajustar=k in ("reglas", "avisos", "prod"))
-    for k in ("clave", "claveenv", "totmes", "prodmes", "limmes", "nlista", "etiq"):
+    for k in ("clave", "claveenv", "totmes", "prodmes", "limmes", "nlista", "etiq", "integ"):
         fuente_auxiliar(ws, LC[k], n)
 
     # validaciones
@@ -467,6 +488,8 @@ def hoja_compras(wb, nombre, hoja_pagos, tabla, practica=False, demo=None):
     V = LC["estenv"]
     cf_texto(ws, f"{V}{FILA_INI}:{V}{fin}", f'${V}{FILA_INI}="Pagado"', VERDE_FILL, VERDE_TXT)
 
+    I = LC["integ"]
+    cf_texto(ws, f"{I}{FILA_INI}:{I}{fin}", f'LEFT(${I}{FILA_INI},4)="Fórm"', ROJO_FILL, ROJO_TXT)
     if demo:
         cargar_filas(ws, LC, demo, extra_col=ult if practica else None)
     agregar_tabla(ws, tabla, ult, n)
@@ -499,18 +522,26 @@ def hoja_pagos(wb, nombre, hoja_compras, hoja_grupos, tabla, practica=False, dem
     GA = rango(hoja_grupos, LG["id"], FILAS_GRUPOS)
     for r in range(FILA_INI, fin + 1):
         f, m, t, a, i = (f"${LP[k]}{r}" for k in ("fecha", "monto", "tipo", "asoc", "id"))
-        ws[f"{LP['id']}{r}"] = f'=IF({a}="","",UPPER(LEFT(TRIM({a}),4)))'
-        ws[f"{LP['clave']}{r}"] = f'=IF({f}="","",YEAR({f})*12+MONTH({f}))'
+        # ID tolerante: "C003 · nombre", "c3", "C 3", "3" (= C003) o "g1"
+        parte = f'SUBSTITUTE(IFERROR(LEFT({a},FIND("·",{a})-1),{a})," ","")'
+        ws[f"{LP['id']}{r}"] = (f'=IF({a}="","",IF(ISNUMBER({a}),"C"&TEXT({a},"000"),'
+                                f'IFERROR(UPPER(LEFT({parte},1))&TEXT(VALUE(MID({parte},2,9)),"000"),UPPER({parte}))))')
+        ws[f"{LP['clave']}{r}"] = f'=IF(ISNUMBER({f}),YEAR({f})*12+MONTH({f}),"")'
         pos = f'MATCH({i},{CA},0)'
-        existe_c = f'ISNUMBER({pos})'
-        existe_g = f'ISNUMBER(MATCH({i},{GA},0))'
+        es_env = f'LEFT(TRIM({t}),3)="Env"'
+        es_fig = f'LEFT(TRIM({t}),3)="Fig"'
         ws[f"{LP['valid']}{r}"] = (
-            f'=IF(AND({f}="",{m}="",{a}=""),"",IF(OR({f}="",{m}="",{t}="",{a}=""),"Faltan datos",'
-            f'IF(AND(LEFT({i},1)="C",{existe_c}),IF(INDEX({CB},{pos})="","Ese producto está vacío",'
-            f'IF(INDEX({CM},{pos})="Cancelada","Ese producto está cancelado",'
-            f'IF(AND({t}="Envío",INDEX({CT},{pos})="Sí"),"Ese envío es acumulado: paga al grupo","OK"))),'
-            f'IF(AND(LEFT({i},1)="G",{existe_g}),IF({t}="Figura","Un grupo solo recibe pagos de Envío","OK"),'
-            f'"ID no existe"))))')
+            f'=IF(AND({f}="",{m}="",{a}="",{t}=""),"",IF(OR({f}="",{m}="",{t}="",{a}=""),"Faltan datos",'
+            f'IF(NOT(ISNUMBER({f})),"Fecha no es fecha",IF(OR(NOT(ISNUMBER({m})),N({m})<=0),"Monto no válido (número mayor a 0)",'
+            f'IF(NOT(OR({es_env},{es_fig})),"Tipo debe ser Figura o Envío",'
+            f'IF(AND(LEFT({i},1)="C",ISNUMBER({pos})),IF(COUNTIF({CA},{i})>1,"ID repetido en Compras: corrígelo",'
+            f'IF(INDEX({CB},{pos})="","Ese producto está vacío",'
+            f'IF(LEFT(TRIM(INDEX({CM},{pos})),3)="Can","Ese producto está cancelado: no cuenta",'
+            f'IF(AND({es_env},LEFT(TRIM(INDEX({CT},{pos})),1)="S"),"Ese envío es acumulado: paga al grupo","OK")))),'
+            f'IF(AND(LEFT({i},1)="G",ISNUMBER(MATCH({i},{GA},0))),IF({es_fig},"Un grupo solo recibe pagos de Envío","OK"),'
+            f'"ID no existe")))))))')
+        ws[f"{LP['integ']}{r}"] = (f'=IF(AND(_xlfn.ISFORMULA({i}),_xlfn.ISFORMULA(${LP["clave"]}{r}),'
+                                   f'_xlfn.ISFORMULA(${LP["valid"]}{r})),IF({a}="","","OK"),"Fórmulas borradas: copia la fila de arriba")')
     for k, _, _, ing, _ in COLS_PAGOS:
         formato_columna(ws, LP[k], n, {"fecha": FMT_FECHA, "monto": FMT_CLP}.get(k), ingreso=ing, ajustar=k == "valid")
     rng = lambda k: f"{LP[k]}{FILA_INI}:{LP[k]}{fin}"
@@ -522,8 +553,10 @@ def hoja_pagos(wb, nombre, hoja_compras, hoja_grupos, tabla, practica=False, dem
     H = LP["valid"]
     cf_texto(ws, f"{H}{FILA_INI}:{H}{fin}", f'AND(${H}{FILA_INI}<>"",${H}{FILA_INI}<>"OK")', ROJO_FILL, ROJO_TXT)
     cf_texto(ws, f"{H}{FILA_INI}:{H}{fin}", f'${H}{FILA_INI}="OK"', VERDE_FILL, VERDE_TXT)
-    for k in ("id", "clave"):
+    for k in ("id", "clave", "integ"):
         fuente_auxiliar(ws, LP[k], n)
+    I = LP["integ"]
+    cf_texto(ws, f"{I}{FILA_INI}:{I}{fin}", f'LEFT(${I}{FILA_INI},4)="Fórm"', ROJO_FILL, ROJO_TXT)
     if demo:
         cargar_filas(ws, LP, demo, extra_col=ult if practica else None)
     agregar_tabla(ws, tabla, ult, n)
@@ -551,16 +584,16 @@ def hoja_grupos(wb, nombre, hoja_compras, hoja_pagos, tabla, practica=False, dem
     fin = FILA_INI + n - 1
     CU, CT, CS, CM, CI = (rango(hoja_compras, LC[k], FILAS_COMPRAS)
                           for k in ("grupo", "acum", "envclp", "manual", "impuestos"))
-    PA, PB, PC, PF = (rango(hoja_pagos, LP[k], FILAS_PAGOS) for k in ("fecha", "monto", "tipo", "id"))
+    PA, PB, PC, PF, PV = (rango(hoja_pagos, LP[k], FILAS_PAGOS) for k in ("fecha", "monto", "tipo", "id", "valid"))
     for r in range(FILA_INI, fin + 1):
         c = {k: f"{LG[k]}{r}" for k in LG}
         g = f"${LG['id']}{r}"
-        filtro = f'{CU},{g},{CT},"Sí",{CM},"<>Cancelada"'
+        filtro = f'{CU},{g},{CT},"S*",{CM},"<>Can*"'
         ws[c["id"]] = f"G{r - FILA_INI + 1:03d}"
         ws[c["nenv"]] = f'=COUNTIFS({filtro})'
         ws[c["suma"]] = f'=SUMIFS({CS},{filtro})'
-        ws[c["pagado"]] = f'=SUMIFS({PB},{PC},"Envío",{PF},{g})'
-        ws[c["fpago"]] = f'=IF({c["pagado"]}>0,_xlfn.MAXIFS({PA},{PC},"Envío",{PF},{g}),"")'
+        ws[c["pagado"]] = f'=SUMIFS({PB},{PC},"Env*",{PF},{g},{PV},"OK")'
+        ws[c["fpago"]] = f'=IF({c["pagado"]}>0,_xlfn.MAXIFS({PA},{PC},"Env*",{PF},{g},{PV},"OK"),"")'
         ws[c["usado"]] = f'=IF(OR(${LG["desc"]}{r}<>"",{c["nenv"]}>0,{c["pagado"]}>0),1,0)'
         ws[c["estado"]] = f'=IF({c["usado"]}=0,"",IF({c["pagado"]}>0,"Pagado","Pendiente"))'
         ws[c["ahorro"]] = f'=IF({c["estado"]}="Pagado",{c["suma"]}-{c["pagado"]},"")'
@@ -568,17 +601,21 @@ def hoja_grupos(wb, nombre, hoja_compras, hoja_pagos, tabla, practica=False, dem
         ws[c["clave"]] = f'=IF({c["fpago"]}="","",YEAR({c["fpago"]})*12+MONTH({c["fpago"]}))'
         ws[c["nlista"]] = f'=IF({c["usado"]}=1,SUM(${LG["usado"]}${FILA_INI}:{c["usado"]}),"")'
         ws[c["etiq"]] = f'={g}&IF(${LG["desc"]}{r}<>""," · "&${LG["desc"]}{r},"")'
+        ws[c["integ"]] = (f'=IF(AND({",".join("_xlfn.ISFORMULA(" + c[k] + ")" for k in ("nenv", "suma", "pagado", "estado", "ahorro", "imp", "usado"))}),'
+                          f'IF({c["usado"]}=1,"OK",""),"Fórmulas borradas: copia la fila de arriba")')
     fmts = {"suma": FMT_CLP_VACIO, "pagado": FMT_CLP_VACIO, "ahorro": FMT_CLP, "imp": FMT_CLP_VACIO,
             "fpago": FMT_FECHA, "nenv": '0;-0;""'}
     for k, _, _, ing, _ in COLS_GRUPOS:
         formato_columna(ws, LG[k], n, fmts.get(k), ingreso=ing)
-    for k in ("clave", "usado", "nlista", "etiq"):
+    for k in ("clave", "usado", "nlista", "etiq", "integ"):
         fuente_auxiliar(ws, LG[k], n)
     H = LG["ahorro"]
     cf_texto(ws, f"{H}{FILA_INI}:{H}{fin}", f'AND(ISNUMBER(${H}{FILA_INI}),${H}{FILA_INI}<0)', ROJO_FILL, ROJO_TXT)
     cf_texto(ws, f"{H}{FILA_INI}:{H}{fin}", f'AND(ISNUMBER(${H}{FILA_INI}),${H}{FILA_INI}>=0)', VERDE_FILL, VERDE_TXT)
     S = LG["estado"]
     cf_texto(ws, f"{S}{FILA_INI}:{S}{fin}", f'${S}{FILA_INI}="Pagado"', VERDE_FILL, VERDE_TXT)
+    I = LG["integ"]
+    cf_texto(ws, f"{I}{FILA_INI}:{I}{fin}", f'LEFT(${I}{FILA_INI},4)="Fórm"', ROJO_FILL, ROJO_TXT)
     if demo:
         cargar_filas(ws, LG, demo, extra_col=ult if practica else None)
     agregar_tabla(ws, tabla, ult, n)
@@ -604,9 +641,11 @@ def hoja_ahorro(wb, nombre, hoja_compras, hoja_pagos, tabla, practica=False, dem
     ws.row_dimensions[3].height = 28
 
     CF, CC, CFP = (rango(hoja_compras, LC[k], FILAS_COMPRAS) for k in ("falta", "clave", "fpago"))
-    PA, PB, PC = (rango(hoja_pagos, LP[k], FILAS_PAGOS) for k in ("fecha", "monto", "tipo"))
+    PA, PB, PC, PV = (rango(hoja_pagos, LP[k], FILAS_PAGOS) for k in ("fecha", "monto", "tipo", "valid"))
     AF = f"$A${AH_ABO_INI}:$A${AH_ABO_FIN}"
     AM = f"$B${AH_ABO_INI}:$B${AH_ABO_FIN}"
+    AR = f"$D${AH_ABO_INI}:$D${AH_ABO_FIN}"
+    primer = f'_xlfn.MINIFS({AF},{AR},"OK")'
     cel = {k: f"$B${v}" for k, v in AH_CELDAS.items()}
     hoy = "cfgHoyPractica" if practica else "cfgHoyReal"
     p_ini, p_fin = AH_PLAN_INI, AH_PLAN_FIN
@@ -615,8 +654,8 @@ def hoja_ahorro(wb, nombre, hoja_compras, hoja_pagos, tabla, practica=False, dem
     resumen = [
         ("hoy", "Hoy", f"={hoy}", FMT_FECHA,
          "Fecha de hoy (en práctica es fija; en real puedes fijarla en Config para probar)."),
-        ("abonado", "Total abonado", f"=SUM({AM})", FMT_CLP, "Suma de todos los abonos anotados abajo."),
-        ("usado", "Pagos de figuras desde el primer abono", f'=IF(MIN({AF})=0,0,SUMIFS({PB},{PC},"Figura",{PA},">="&MIN({AF})))',
+        ("abonado", "Total abonado", f'=SUMIFS({AM},{AR},"OK")', FMT_CLP, "Suma de los abonos válidos anotados abajo."),
+        ("usado", "Pagos de figuras desde el primer abono", f'=IF({primer}=0,0,SUMIFS({PB},{PC},"Fig*",{PA},">="&{primer},{PV},"OK"))',
          FMT_CLP, "Pagos tipo Figura con fecha igual o posterior a tu primer abono: se descuentan del ahorro."),
         ("saldo", "Saldo ahorrado disponible", f"=MAX(0,{cel['abonado']}-{cel['usado']})", FMT_CLP,
          "Total abonado - pagos de figuras desde el primer abono (mínimo 0)."),
@@ -705,6 +744,11 @@ def hoja_ahorro(wb, nombre, hoja_compras, hoja_pagos, tabla, practica=False, dem
     formato_columna(ws, "A", FILAS_ABONOS, FMT_FECHA, ingreso=True, ini=AH_ABO_INI)
     formato_columna(ws, "B", FILAS_ABONOS, FMT_CLP, ingreso=True, ini=AH_ABO_INI)
     formato_columna(ws, "C", FILAS_ABONOS, None, ingreso=True, ini=AH_ABO_INI)
+    for r in range(AH_ABO_INI, AH_ABO_FIN + 1):
+        ws[f"D{r}"] = (f'=IF(AND(A{r}="",B{r}=""),"",IF(NOT(ISNUMBER(A{r})),"Fecha no válida",'
+                       f'IF(OR(NOT(ISNUMBER(B{r})),N(B{r})<=0),"Monto no válido","OK")))')
+        ws[f"D{r}"].font = Font(name=FUENTE, size=10)
+    cf_texto(ws, f"D{AH_ABO_INI}:D{AH_ABO_FIN}", f'AND(D{AH_ABO_INI}<>"",D{AH_ABO_INI}<>"OK")', ROJO_FILL, ROJO_TXT)
     fecha_dv(ws, f"A{AH_ABO_INI}:A{AH_ABO_FIN}", "Fecha abono", "Cuándo apartaste el dinero.")
     num_dv(ws, f"B{AH_ABO_INI}:B{AH_ABO_FIN}", "Monto CLP", "Monto apartado en pesos.", tipo="whole", minimo=0)
     expl_col = get_column_letter(len(cols)) if practica else None
@@ -867,7 +911,41 @@ def hoja_config(wb):
         if fmt:
             b.number_format = fmt
         wb.defined_names[nombre] = DefinedName(nombre, attr_text=f"Config!$B${fila}")
-    wb.defined_names["cfgHoyReal"] = DefinedName("cfgHoyReal", attr_text='IF(Config!$B$11="",TODAY(),Config!$B$11)')
+    # Valores "seguros": si la celda está vacía o mal escrita se usa el valor por defecto (y Revisar lo avisa)
+    seguros = {
+        "cfgPractica": 'LEFT(TRIM(Config!$B$3),1)="S"',
+        "cfgLimNormalV": 'IF(AND(ISNUMBER(Config!$B$4),Config!$B$4>0),Config!$B$4,200000)',
+        "cfgLimExcV": 'IF(AND(ISNUMBER(Config!$B$5),Config!$B$5>0),Config!$B$5,300000)',
+        "cfgMaxProdV": 'IF(AND(ISNUMBER(Config!$B$6),Config!$B$6>=0),INT(Config!$B$6),2)',
+        "cfgDiaPagoV": 'IF(AND(ISNUMBER(Config!$B$8),Config!$B$8>=1,Config!$B$8<=31),INT(Config!$B$8),13)',
+        "cfgArancelV": 'IF(ISNUMBER(Config!$B$9),IF(Config!$B$9>1,Config!$B$9/100,MAX(0,Config!$B$9)),0.06)',
+        "cfgIVAV": 'IF(ISNUMBER(Config!$B$10),IF(Config!$B$10>1,Config!$B$10/100,MAX(0,Config!$B$10)),0.19)',
+        "cfgHoyReal": 'IF(ISNUMBER(Config!$B$11),Config!$B$11,TODAY())',
+    }
+    for nombre, f in seguros.items():
+        wb.defined_names[nombre] = DefinedName(nombre, attr_text=f)
+    # Columna Revisar: avisa si un parámetro está vacío o mal escrito
+    ws["C2"] = "Revisar"
+    ws["C2"].font = Font(name=FUENTE, size=11, bold=True, color="595959")
+    ws.column_dimensions["C"].width = 30
+    revisar = {
+        3: 'IF(OR(LEFT(TRIM(B3),1)="S",LEFT(TRIM(B3),1)="N"),"OK","Escribe Sí o No (se usa No)")',
+        4: 'IF(AND(ISNUMBER(B4),B4>0),"OK","Valor no válido: se usa 200.000")',
+        5: 'IF(AND(ISNUMBER(B5),B5>0),IF(B5<cfgLimNormalV,"Ojo: es menor que el límite normal","OK"),"Valor no válido: se usa 300.000")',
+        6: 'IF(AND(ISNUMBER(B6),B6>=0),"OK","Valor no válido: se usa 2")',
+        7: 'IF(OR(B7="Unidades",B7="Filas"),"OK","Escribe Unidades o Filas (se usa Unidades)")',
+        8: 'IF(AND(ISNUMBER(B8),B8>=1,B8<=31),"OK","Valor no válido: se usa 13")',
+        9: 'IF(ISNUMBER(B9),IF(B9>1,"Se interpreta como "&B9&"%","OK"),"Valor no válido: se usa 6%")',
+        10: 'IF(ISNUMBER(B10),IF(B10>1,"Se interpreta como "&B10&"%","OK"),"Valor no válido: se usa 19%")',
+        11: 'IF(B11="","OK (usa la fecha real)",IF(ISNUMBER(B11),"Fecha fija para pruebas: bórrala para uso normal","No es fecha: se usa la fecha real"))',
+        12: 'IF(ISNUMBER(B12),"OK","No es fecha")',
+    }
+    for fila, f in revisar.items():
+        c = ws.cell(row=fila, column=3, value="=" + f)
+        c.font = Font(name=FUENTE, size=10, italic=True)
+        c.alignment = Alignment(wrap_text=True, vertical="center")
+    cf_texto(ws, "C3:C12", 'LEFT(C3,2)="OK"', VERDE_FILL, VERDE_TXT)
+    cf_texto(ws, "C3:C12", 'AND(C3<>"",LEFT(C3,2)<>"OK")', NARANJA_FILL, NARANJA_TXT)
     lista_dv(ws, "=lstSiNo", "B3", "Modo práctica", "Sí = ver datos simulados. No = ver solo tus datos.", permitir_vacio=False)
     num_dv(ws, "B4:B5", "Límite", "Monto en pesos.", tipo="whole", minimo=0)
     num_dv(ws, "B6", "Máx. productos", "Entero, por ej. 2.", tipo="whole", minimo=0)
@@ -964,11 +1042,11 @@ def hoja_panel(wb):
     ws["A1"] = "Panel de figuras"
     estilo_titulo(ws["A1"], 16)
     ws.merge_cells("A2:B2")
-    ws["A2"] = '=IF(cfgModo="Sí","MODO PRÁCTICA: estás viendo datos simulados. Desactívalo en Config.","Datos reales")'
+    ws["A2"] = '=IF(cfgPractica,"MODO PRÁCTICA: estás viendo datos simulados. Desactívalo en Config.","Datos reales")'
     ws["A2"].font = Font(name=FUENTE, size=11, bold=True, color="595959")
     ws["A2"].alignment = Alignment(wrap_text=True)
     ws.row_dimensions[2].height = 30
-    cf_texto(ws, "A2", 'cfgModo="Sí"', NARANJA_FILL, NARANJA_TXT)
+    cf_texto(ws, "A2", 'cfgPractica', NARANJA_FILL, NARANJA_TXT)
 
     def doble(hoja_real, hoja_prac, col, filas):
         return rango(hoja_real, col, filas), rango(hoja_prac, col, filas)
@@ -981,10 +1059,10 @@ def hoja_panel(wb):
     ah = lambda k: (f"'Ahorro'!$B${AH_CELDAS[k]}", f"'Práctica Ahorro'!$B${AH_CELDAS[k]}")
 
     def fuente(plantilla, **rangos):
-        """Arma IF(cfgModo="Sí", fórmula con hojas de práctica, fórmula con hojas reales)."""
+        """Arma IF(cfgPractica, fórmula con hojas de práctica, fórmula con hojas reales)."""
         real = plantilla.format(**{k: v[0] for k, v in rangos.items()})
         prac = plantilla.format(**{k: v[1] for k, v in rangos.items()})
-        return f'IF(cfgModo="Sí",{prac},{real})'
+        return f'IF(cfgPractica,{prac},{real})'
 
     fila = [4]
 
@@ -1019,12 +1097,17 @@ def hoja_panel(wb):
     def explicacion(texto):
         r = fila[0]
         ws.merge_cells(f"A{r}:B{r}")
-        c = ws.cell(row=r, column=1, value=f'=IF(cfgModo="Sí","{texto}","")')
+        c = ws.cell(row=r, column=1, value=f'=IF(cfgPractica,"{texto}","")')
         c.font = Font(name=FUENTE, size=10, italic=True, color=NARANJA_TXT)
         c.alignment = Alignment(wrap_text=True, vertical="top")
         ws.row_dimensions[r].height = 15 * (1 + len(texto) // 45)
-        cf_texto(ws, f"A{r}", 'cfgModo="Sí"', NARANJA_FILL, NARANJA_TXT)
+        cf_texto(ws, f"A{r}", 'cfgPractica', NARANJA_FILL, NARANJA_TXT)
         fila[0] += 1
+
+    ws.merge_cells("A3:B3")
+    ws.row_dimensions[3].height = 60
+    r_estado = 3   # se llena al final, cuando existe el bloque de revisión
+    fila[0] = 4
 
     # --- 1. Lo urgente: próximo pago y ahorro (según la fecha de hoy)
     seccion("Próximo pago del 13 y ahorro")
@@ -1057,12 +1140,16 @@ def hoja_panel(wb):
 
     # --- 2. Mes elegido: reglas primero
     seccion("Mes a revisar")
-    sel_mes = valor("Mes", "jul", txt="Elige el mes a revisar.", ingreso=True)
-    sel_anio = valor("Año", 2026, fmt="0", txt="Elige el año.", ingreso=True)
-    lista_dv(ws, "=lstMeses", sel_mes, "Mes", "Elige el mes.", permitir_vacio=False)
-    lista_dv(ws, "=lstAnios", sel_anio, "Año", "Elige el año.", permitir_vacio=False)
+    sel_mes = valor("Mes", None, txt="Elige el mes a revisar. Vacío = mes actual.", ingreso=True)
+    sel_anio = valor("Año", None, fmt="0", txt="Elige el año. Vacío = año actual.", ingreso=True)
+    lista_dv(ws, "=lstMeses", sel_mes, "Mes", "Elige el mes. Vacío = mes actual.")
+    lista_dv(ws, "=lstAnios", sel_anio, "Año", "Elige el año. Vacío = año actual.")
     r_clave = fila[0]
-    ws[f"C{r_clave}"] = f"={sel_anio}*12+MATCH({sel_mes},lstMeses,0)"
+    h = "IF(cfgPractica,cfgHoyPractica,cfgHoyReal)"
+    mes_num = (f'IF(ISNUMBER({sel_mes}),IF(AND({sel_mes}>=1,{sel_mes}<=12),INT({sel_mes}),MONTH({h})),'
+               f'IFERROR(MATCH(LEFT(LOWER(TRIM({sel_mes})),3),lstMeses,0),MONTH({h})))')
+    anio = f'IF(AND(ISNUMBER({sel_anio}),{sel_anio}>=2000,{sel_anio}<=2100),INT({sel_anio}),YEAR({h}))'
+    ws[f"C{r_clave}"] = f"={anio}*12+{mes_num}"
     wb.defined_names["pnlClave"] = DefinedName("pnlClave", attr_text=f"Panel!$C${r_clave}")
     valor("Mes seleccionado", "=" + etiqueta_mes("pnlClave"))
 
@@ -1094,7 +1181,7 @@ def hoja_panel(wb):
     valor("Diferencia por tipo de cambio", "=" + fuente("SUMIFS({t},{k},pnlClave)", t=comp("dif"), k=comp("clave")), FMT_CLP,
           "Suma de 'Diferencia figura' de productos Pagados o Cerrados. Positivo = pagaste de más.")
     n_prod = valor("Productos en el mes", "=" + n_prod_f, "0", "Unidades o filas, según Config > Contar productos por.")
-    lim = valor("Límite que aplica", f"=IF({n_prod}<=cfgMaxProd,cfgLimExc,cfgLimNormal)", FMT_CLP,
+    lim = valor("Límite que aplica", f"=IF({n_prod}<=cfgMaxProdV,cfgLimExcV,cfgLimNormalV)", FMT_CLP,
                 "Límite normal, o el de excepción si hay pocos productos.")
     valor("Margen disponible", f"={lim}-{tot}", FMT_CLP, "Límite - total. Negativo = excedido.")
 
@@ -1102,9 +1189,9 @@ def hoja_panel(wb):
     ws.cell(row=limr_r, column=1, value="Límite mensual").font = Font(name=FUENTE, size=11)
     nota(ws.cell(row=limr_r, column=1), "Compara el total de figuras con el límite que aplica. Igual al tope = OK.")
     limr = f"B{limr_r}"
-    ws[limr] = (f'=IF({tot}>{lim},"Límite superado en "&{pesos(tot + "-" + lim)}&IF({n_prod}<=cfgMaxProd,'
-                f'" (excepción hasta "&cfgMaxProd&" productos: tope "&{pesos("cfgLimExc")}&")",'
-                f'" (regla normal, "&{n_prod}&" productos: tope "&{pesos("cfgLimNormal")}&")"),"OK")')
+    ws[limr] = (f'=IF({tot}>{lim},"Límite superado en "&{pesos(tot + "-" + lim)}&IF({n_prod}<=cfgMaxProdV,'
+                f'" (excepción hasta "&cfgMaxProdV&" productos: tope "&{pesos("cfgLimExcV")}&")",'
+                f'" (regla normal, "&{n_prod}&" productos: tope "&{pesos("cfgLimNormalV")}&")"),"OK")')
     ws.cell(row=gen_r, column=1, value="Estado general").font = Font(name=FUENTE, size=12, bold=True)
     nota(ws.cell(row=gen_r, column=1), "OK si se cumplen ambas reglas; si no, ADVERTENCIA (ver motivo abajo).")
     gen = f"B{gen_r}"
@@ -1120,8 +1207,8 @@ def hoja_panel(wb):
     seccion("Envíos (no cuentan para las reglas)")
     valor("Pendientes de productos del mes", "=" + fuente("SUMIFS({e},{k},pnlClave)", e=comp("envpend"), k=comp("clave")),
           FMT_CLP, "Envíos aún sin pagar de los productos de este mes (individuales y acumulados).")
-    valor("Pagados en el mes", "=" + fuente('SUMIFS({m},{t},"Envío",{k},pnlClave)', m=pag("monto"), t=pag("tipo"), k=pag("clave")),
-          FMT_CLP, "Pagos tipo Envío con fecha dentro de este mes (individuales y conjuntos).")
+    valor("Pagados en el mes", "=" + fuente('SUMIFS({m},{t},"Env*",{k},pnlClave,{v},"OK")', m=pag("monto"), t=pag("tipo"), k=pag("clave"), v=pag("valid")),
+          FMT_CLP, "Pagos tipo Envío válidos (Validación OK) con fecha dentro de este mes (individuales y conjuntos).")
     valor("Total sin pagar (todos los meses)", "=" + fuente("SUM({e})", e=comp("envpend")), FMT_CLP,
           "Todos los envíos pendientes o acumulados sin pagar, de cualquier mes.")
     ah_mes = valor("Ahorro de grupos pagados en el mes",
@@ -1147,11 +1234,52 @@ def hoja_panel(wb):
           FMT_CLP, "Parte de IVA de la fila anterior.")
     explicacion("Estimación: arancel sobre figura + envío; IVA sobre figura + envío + arancel. No cuentan para las reglas.")
 
+    # revisión del libro (salud de los datos)
+    seccion("Revisión del libro")
+    fin_c, fin_p, fin_g = FILA_INI + FILAS_COMPRAS - 1, FILA_INI + FILAS_PAGOS - 1, FILA_INI + FILAS_GRUPOS - 1
+    abo = lambda col: (f"'Ahorro'!${col}${AH_ABO_INI}:${col}${AH_ABO_FIN}", f"'Práctica Ahorro'!${col}${AH_ABO_INI}:${col}${AH_ABO_FIN}")
+    chequeos = [
+        ("Config", '=SUMPRODUCT(--(LEFT(Config!$C$3:$C$12,2)<>"OK"))', "Parámetros vacíos o mal escritos (ver columna Revisar en Config)."),
+        ("Compras con avisos de datos", "=" + fuente('COUNTIF({a},"?*")', a=comp("avisos")), "Filas con algo por revisar en 'Avisos de datos'."),
+        ("Canceladas con pagos o grupo", "=" + fuente('COUNTIF({a},"Cancelada*")', a=comp("reglas")), "Reservas canceladas que aún tienen pagos o grupo (esos pagos no cuentan)."),
+        ("Pagos por revisar", "=" + fuente('COUNTIF({v},"?*")-COUNTIF({v},"OK")', v=pag("valid")), "Pagos cuya Validación no es OK: no cuentan en ningún total."),
+        ("Abonos por revisar", "=" + fuente('COUNTIF({v},"?*")-COUNTIF({v},"OK")', v=abo("D")), "Abonos con fecha o monto no válido: no cuentan."),
+        ("Fórmulas borradas", "=" + fuente('COUNTIF({a},"Fórm*")+COUNTIF({b},"Fórm*")+COUNTIF({c},"Fórm*")',
+                                         a=comp("integ"), b=pag("integ"), c=grp("integ")),
+         "Filas donde alguien escribió encima de una celda gris (calculada). Copia la fila de arriba para repararla."),
+        ("Datos fuera de las filas preparadas", "=" + fuente(
+            "COUNTA({c})+COUNTA({p})+COUNTA({a})",
+            c=(f"'Compras'!$B${fin_c + 1}:$B${fin_c + 800}", f"'Práctica Compras'!$B${fin_c + 1}:$B${fin_c + 800}"),
+            p=(f"'Pagos'!$A${fin_p + 1}:$A${fin_p + 800}", f"'Práctica Pagos'!$A${fin_p + 1}:$A${fin_p + 800}"),
+            a=(f"'Ahorro'!$A${AH_ABO_FIN + 1}:$A${AH_ABO_FIN + 800}", f"'Práctica Ahorro'!$A${AH_ABO_FIN + 1}:$A${AH_ABO_FIN + 800}")),
+         "Celdas escritas debajo de las filas preparadas: el libro no las cuenta."),
+    ]
+    celdas_rev = []
+    for etiq, f, txt in chequeos:
+        cel = valor(etiq, f, "0", txt)
+        celdas_rev.append(cel)
+        cf_texto(ws, cel, f"{cel}>0", ROJO_FILL, ROJO_TXT)
+        cf_texto(ws, cel, f"{cel}=0", VERDE_FILL, VERDE_TXT)
+    valor("Filas de Compras usadas", "=" + fuente('COUNTIF({p},"?*")', p=comp("prod")) + f'&" de {FILAS_COMPRAS}"',
+          txt="Cuántas figuras llevas anotadas de las filas preparadas.")
+    total_rev = "+".join(celdas_rev)
+    guia = ('"EMPIEZA AQUÍ: 1) En Config pon Modo práctica = No. 2) En Compras escribe tu primera figura '
+            '(Producto, Fecha salida original, Moneda, Precio). 3) Pagos van en Pagos y abonos en Ahorro. '
+            'Toca un encabezado para ver qué va."')
+    ws[f"A{r_estado}"] = (f'=IF(AND(NOT(cfgPractica),COUNTIF({rango("Compras", LC["prod"], FILAS_COMPRAS)},"?*")=0),{guia},'
+                          f'IF(({total_rev})=0,"Revisión del libro: todo OK",'
+                          f'"Revisión del libro: "&({total_rev})&" cosa(s) por revisar (ver final del Panel)"))')
+    ws[f"A{r_estado}"].font = Font(name=FUENTE, size=11, bold=True)
+    ws[f"A{r_estado}"].alignment = Alignment(wrap_text=True, vertical="center")
+    cf_texto(ws, f"A{r_estado}", f'RIGHT(A{r_estado},7)="todo OK"', VERDE_FILL, VERDE_TXT)
+    cf_texto(ws, f"A{r_estado}", f'LEFT(A{r_estado},7)="EMPIEZA"', AMARILLO, "1F4E78")
+    cf_texto(ws, f"A{r_estado}", f'AND(RIGHT(A{r_estado},7)<>"todo OK",LEFT(A{r_estado},7)<>"EMPIEZA")', ROJO_FILL, ROJO_TXT)
+
     # casos de práctica
     fila[0] += 1
     r = fila[0]
     ws.merge_cells(f"A{r}:B{r}")
-    ws.cell(row=r, column=1, value='=IF(cfgModo="Sí","Casos de práctica (con los valores por defecto de Config)","")').font = Font(
+    ws.cell(row=r, column=1, value='=IF(cfgPractica,"Casos de práctica (con los valores por defecto de Config)","")').font = Font(
         name=FUENTE, size=12, bold=True, color=NARANJA_TXT)
     fila[0] += 1
     for caso in CASOS_PRACTICA:
@@ -1162,7 +1290,7 @@ def hoja_panel(wb):
         cf_texto(ws, celda, f'OR(LEFT({celda},13)="Mes bloqueado",LEFT({celda},7)="Límite ",{celda}="ADVERTENCIA")',
                  ROJO_FILL, ROJO_TXT)
         cf_texto(ws, celda, f'OR({celda}="OK",{celda}="Sin compras. Mes disponible")', VERDE_FILL, VERDE_TXT)
-    ws.freeze_panes = "A3"
+    ws.freeze_panes = "A4"
     return ws
 
 
@@ -1173,6 +1301,9 @@ AYUDA = [
     ("Apartar dinero", "Ahorro → tabla Abonos: solo fecha y monto. El libro lo asigna al pago del 13 más cercano y te dice cuánto apartar cada mes."),
     ("Si se atrasa la salida", "No cambies la 'Fecha salida original'. Si quieres, anota la nueva en 'Salida actual' (solo informativa)."),
     ("Si cancelas una reserva", "Estado manual = Cancelada. Deja de contar en todo. Si quieres borrarla del todo, mantén presionada la fila y elige Eliminar: los IDs son fijos y nada se rompe."),
+    ("Si algo sale en rojo", "Lee el mensaje: dice qué revisar. Arriba del Panel, 'Revisión del libro' cuenta todo lo pendiente y al final del Panel está el detalle."),
+    ("Solo cuenta lo válido", "Un pago o abono cuenta solo si su columna Validación/Revisar dice OK. Un pago a una figura Cancelada, a un ID que no existe o con monto mal escrito queda en rojo y NO se suma en ningún total (ni en el ahorro)."),
+    ("Si escribiste encima de una celda gris", "La columna Integridad dice 'Fórmulas borradas'. Copia la fila de arriba (o de abajo) y pégala sobre esa fila; después vuelve a escribir tus datos amarillos."),
     ("Colores", "Encabezado azul + celda amarilla = lo escribes tú. Encabezado gris = calculado, no lo edites. Rojo = advertencia. Verde = OK. Naranja = aviso o diferencia. Gris tachado = cancelado."),
     ("Hojas", None),
     ("Panel", "Arriba: próximo pago del 13, cuánto tienes ahorrado, cuánto falta y cuánto apartar. Abajo: eliges mes y año y ves reglas, figuras, envíos e impuestos estimados de ese mes."),
@@ -1201,6 +1332,8 @@ AYUDA = [
     ("Productos para la excepción", "Por defecto se cuentan unidades (columna Cantidad). Cámbialo a Filas en Config si prefieres contar cada producto distinto como 1."),
     ("Mes bloqueado", "Como no se registra el orden en que anotaste las compras, se marca siempre el mes posterior de cada par contiguo."),
     ("Atrasados", "Figuras de meses pasados que no están pagadas aparecen como 'Atrasado' y no entran en el plan de ahorro."),
+    ("Escritura tolerante", "Se aceptan 'si'/'Sí', 'envio'/'Envío', 'cancelado'/'Cancelada', 'c3' o '3' como C003, y el mes del Panel como 'jul', 'Julio' o 7. Arancel/IVA escritos como 6 o 19 se interpretan como porcentaje."),
+    ("Config vacía", "Si un parámetro queda vacío o mal escrito se usa su valor por defecto (200.000, 300.000, 2, día 13, 6%, 19%) y la columna Revisar de Config lo avisa."),
     ("Foto", "Usa la función IMAGEN de Microsoft 365, que descarga la foto desde internet. Si tu Excel no la tiene, deja vacío 'Link imagen'."),
     ("Filas preparadas", f"Compras tiene {FILAS_COMPRAS} filas, Pagos {FILAS_PAGOS}, Envíos {FILAS_GRUPOS} y Abonos {FILAS_ABONOS}, con fórmulas listas. Escribe en la primera fila vacía; no insertes filas en medio."),
 ]
@@ -1237,13 +1370,13 @@ def construir(ruta):
     """Arma el libro completo y lo guarda en 'ruta'."""
     wb = Workbook()
     wb.active.title = "Panel"
-    hoja_compras(wb, "Compras", "Pagos", "tblCompras")
+    hoja_compras(wb, "Compras", "Pagos", "Envíos acumulados", "tblCompras")
     hoja_pagos(wb, "Pagos", "Compras", "Envíos acumulados", "tblPagos")
     hoja_grupos(wb, "Envíos acumulados", "Compras", "Pagos", "tblEnvios")
     hoja_ahorro(wb, "Ahorro", "Compras", "Pagos", "tblAbonos")
     hoja_config(wb)
     hoja_ayuda(wb)
-    hoja_compras(wb, "Práctica Compras", "Práctica Pagos", "tblPracticaCompras", practica=True, demo=DEMO_COMPRAS)
+    hoja_compras(wb, "Práctica Compras", "Práctica Pagos", "Práctica Envíos", "tblPracticaCompras", practica=True, demo=DEMO_COMPRAS)
     hoja_pagos(wb, "Práctica Pagos", "Práctica Compras", "Práctica Envíos", "tblPracticaPagos",
                practica=True, demo=DEMO_PAGOS)
     hoja_grupos(wb, "Práctica Envíos", "Práctica Compras", "Práctica Pagos", "tblPracticaEnvios",
