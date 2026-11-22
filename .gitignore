@@ -33,3 +33,4 @@ google-services.json
 # ---- Kotlin / logs varios ----
 *.hprof
 *.log
+__pycache__/
