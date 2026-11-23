@@ -1,4 +1,5 @@
-import sys, os, datetime as dt
+import sys, os, json, datetime as dt
+import ajuste
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side, Protection
 from openpyxl.worksheet.protection import SheetProtection
@@ -223,7 +224,7 @@ ini.row_dimensions[2].height = 40
 merge(ini, "B2:E2", "Registro de rendimiento · Auto y Delivery", f=font(22, True, PRI), al=Alignment(vertical="center"))
 merge(ini, "B3:E3", "Control diario por turno (AM / PM) para el concurso de rendimiento del local.", f=font(11, c=MUTED), al=Alignment(vertical="center"))
 ini.row_dimensions[3].height = 22
-merge(ini, "B4:E4", CREDITO, f=Font(name="Calibri", size=9, italic=True, color=MUTED), al=Alignment(vertical="top"))
+merge(ini, "B4:E4", CREDITO, f=font(9, c=MUTED, i=True), al=Alignment(vertical="top"))
 put(ini, "B5", "MODO APRENDIZAJE", f=font(9, True, MUTED))
 ini.row_dimensions[6].height = 58
 put(ini, "C6", "No" if EMPTY else "Sí", f=font(16, True, PRI), fl=fill(INPUT), al=CENTER, bd=BOX)
@@ -292,10 +293,10 @@ pan = sheet("Panel")
 # =====================================================================
 au = sheet("Registro Auto")
 cols = [  # (letra, encabezado, ancho, tipo)
-    ("B", "Fecha", 13, "in"), ("C", "Turno", 9, "in"), ("D", "Cajero", 16, "in"), ("E", "Board", 16, "in"),
-    ("F", "Corredor", 16, "in"), ("G", "Autos (sistema)", 11, "in"), ("H", "Min (sistema)", 9, "in"),
+    ("B", "Fecha", 13, "in"), ("C", "Turno", 9, "in"), ("D", "Cajero", 20, "in"), ("E", "Board", 20, "in"),
+    ("F", "Corredor", 20, "in"), ("G", "Autos (sistema)", 11, "in"), ("H", "Min (sistema)", 9, "in"),
     ("I", "Seg (sistema)", 9, "in"), ("J", "Tiempo sistema", 11, "calc"), ("K", "Autos del turno", 11, "calc"),
-    ("L", "Tiempo real del turno", 12, "calc"), ("M", "Nivel", 34, "calc"), ("N", "¿Cumple meta?", 10, "calc"),
+    ("L", "Tiempo real del turno", 12, "calc"), ("M", "Nivel", 44, "calc"), ("N", "¿Cumple meta?", 10, "calc"),
     ("O", "Tiempo del día", 11, "calc"), ("P", "Resultado del día", 19, "calc"), ("Q", "Observaciones", 40, "in"),
     ("R", "aux_prodSistema", 6, "aux"), ("S", "aux_trio", 6, "aux"), ("T", "aux_persona", 6, "aux"),
     ("U", "aux_enRango", 6, "aux"), ("V", "aux_valido", 6, "aux"), ("W", "aux_validoTurno", 6, "aux"),
@@ -1217,7 +1218,7 @@ for num, head, items in bloques:
     ins.row_dimensions[r].height = 12
     r += 1
 
-put(ins, f"C{r}", CREDITO, f=Font(name="Calibri", size=9, italic=True, color=MUTED), al=Alignment(vertical="center", indent=1))
+put(ins, f"C{r}", CREDITO, f=font(9, c=MUTED, i=True), al=Alignment(vertical="center", indent=1))
 protect(ini); protect(ins)
 wb.security = WorkbookProtection(lockStructure=True)
 if CLAVE: wb.security.workbookPassword = CLAVE
@@ -1301,6 +1302,22 @@ for ws, cols_in, filas, flag in ((au, "BCDEFGHIQ", EJ_AUTO, "CD"), (de, "BCDFH",
     for i, fila in enumerate(filas):
         for c_, v in zip(cols_in, fila): ws[f"{c_}{R_EJ0 + i}"] = f_ej(v)
 
+# ---------- visibilidad con cualquier zoom (50 %–200 %) y 8 % de espacio de seguridad ----------
+for r in range(R0, R1_REAL + 1):              # nombres escritos a mano: si alguno es muy largo, la letra se achica en vez de cortarse
+    for c_ in "DEF": ajuste.con_alineacion(au[f"{c_}{r}"], shrink_to_fit=True)
+for r in range(8, 108): ajuste.con_alineacion(pe[f"B{r}"], shrink_to_fit=True)
+MUESTRAS = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "muestras_zoom.json")))
+# peores casos que los escenarios de prueba podrían no mostrar: el nombre más largo razonable (2 palabras de 11 letras)
+# y la combinación más larga de Nivel
+NOMBRE_LARGO = "Maximiliano Covarrubias"
+NIVEL_LARGO = max(("No cumple (alerta) · dudoso (PM con pocos autos)", "Excelencia máxima · dudoso (PM con pocos autos)"),
+                  key=lambda t: ajuste.ancho_px(t, au["M8"].font, 1))
+MUESTRAS["Registro Auto!col:M"] = NIVEL_LARGO
+for r0_ in (35, 43, 51):
+    for k_ in range(5): MUESTRAS[f"Panel!C{r0_ + k_}"] = NOMBRE_LARGO
+for k_ in range(5):
+    for c_ in "CDE": MUESTRAS[f"Panel!{c_}{60 + k_}"] = NOMBRE_LARGO
+print("ajuste de visibilidad:", ajuste.ajustar(wb, muestras=MUESTRAS))
 for ws_ in wb.worksheets:                      # pie de página al imprimir, en todas las hojas
     ws_.oddFooter.right.text = CREDITO; ws_.oddFooter.right.size = 8; ws_.oddFooter.right.color = MUTED
 wb.properties.creator = "Gabriel Sandoval"; wb.properties.lastModifiedBy = "Gabriel Sandoval"

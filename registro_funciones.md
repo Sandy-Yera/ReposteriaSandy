@@ -620,3 +620,33 @@ Generador del archivo `entregables/Registro_Rendimiento_Auto_Delivery.xlsx` y su
 - Ubicación: entregables/pruebas_excel/test_clave.py
 - Qué hace: intenta quitar la protección de una hoja con una clave y dice si lo logró.
 - Cómo funciona: llama a unprotect(clave) por UNO, ignora el error y retorna True si la hoja quedó desprotegida. La prueba comprueba que sin clave o con una equivocada no se puede, que con la correcta sí, que el crédito está bloqueado y que el libro guarda el hash de la misma clave.
+
+### ZOOMS, MARGEN, PAD, ESCALA_MIN, ALTO_LINEA
+- Ubicación: entregables/pruebas_excel/ajuste.py
+- Qué hace: reglas de visibilidad: zooms del 50 % al 200 %, el texto usa como máximo el 92 % del espacio (8 % de seguridad), 6 px de relleno, achicar la letra solo hasta el 80 % y alto de línea de Arial (1,275 × tamaño).
+- Cómo funciona: los usan `necesidad` y `ajustar` (al generar) y test_zoom.py (al comprobar), así ambos miden igual.
+
+### ancho_px, ancho_col_px, alto_fila_pt, lineas, necesidad
+- Ubicación: entregables/pruebas_excel/ajuste.py
+- Qué hace: miden cuánto ocupa un texto y cuánto espacio tiene su celda.
+- Cómo funciona: ancho_px usa la fuente real (Liberation Sans = medidas de Arial, Carlito = Calibri) con el tamaño de letra redondeado hacia arriba (peor caso al alejar). ancho_col_px usa la fórmula de Excel (7 px por unidad + 5). lineas simula el ajuste por palabras. necesidad revisa todos los zooms y retorna si cabe, a qué escala cabría en una línea, cuántas líneas y qué alto necesita, y si la palabra más larga cabe sola (resultado memorizado).
+
+### mostrar, texto_fijo, con_alineacion
+- Ubicación: entregables/pruebas_excel/ajuste.py
+- Qué hace: texto que Excel mostraría para un valor y su formato; texto conocido de una celda (valor o ejemplo IF(fAprende=1,"…","")); cambiar una opción de alineación sin perder las demás.
+- Cómo funciona: mostrar convierte tiempos [m]:ss, fechas, %, "+0.0 s" y "±0.0 s". texto_fijo retorna None si la fórmula da un texto que depende de los datos.
+
+### ajustar
+- Ubicación: entregables/pruebas_excel/ajuste.py
+- Qué hace: pasada final del generador que deja cada texto visible en cualquier zoom con espacio de seguridad.
+- Cómo funciona: recibe el libro y las muestras de peor caso. Si el texto cabe no toca nada; si cabe achicándolo hasta el 80 %, activa "reducir hasta ajustar"; si no, lo pasa a varias líneas y agranda la fila; ensancha la columna si una palabra no cabe sola. A las fórmulas les pone "reducir hasta ajustar" para que un dato más largo se achique en vez de cortarse. Retorna cuántos cambios hizo de cada tipo.
+
+### muestras_zoom.json, MUESTRAS, NOMBRE_LARGO, NIVEL_LARGO
+- Ubicación: entregables/pruebas_excel/muestras_zoom.json y build.py
+- Qué hace: texto más ancho que mostró cada celda con fórmula en los escenarios de prueba (en los registros, el peor por columna), más dos peores casos fijos: un nombre de dos palabras de 11 letras y la combinación más larga de Nivel.
+- Cómo funciona: lo genera muestras.py desde archivos recalculados; build.py lo carga y se lo pasa a ajuste.ajustar.
+
+### muestras.py, zoom_casos.py, zoom_extra.py, test_zoom.py
+- Ubicación: entregables/pruebas_excel/
+- Qué hace: recolectar las muestras; armar 3 escenarios (Modo aprendizaje, vacío, lleno con nombres largos y avisos) y uno de control con datos que el ajuste no usó; comprobar la visibilidad.
+- Cómo funciona: test_zoom lee los valores ya calculados y, para cada celda visible, revisa ancho, alto, desborde a celdas vacías y achique (mínimo 75 %) en los 31 zooms. Ignora los enlaces pegados (se abren con "Abrir foto ↗").
