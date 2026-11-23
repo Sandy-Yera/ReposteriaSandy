@@ -4,7 +4,10 @@ Uso:  python3 excel/generar_figuras.py [ruta_salida.xlsx]
 Sin macros, sin Power Query. Solo tablas, validación de datos, formato condicional y fórmulas
 estándar (más TEXTJOIN, MAXIFS y MINIFS, disponibles en Excel móvil). Única excepción opcional:
 la columna Foto usa IMAGE (IMAGEN), que descarga la foto desde el link que escribas.
+Requiere Pillow y las fuentes Liberation Sans (para medir el espacio de cada texto con cualquier zoom).
 """
+import math
+import re
 import sys
 from datetime import date
 
@@ -1105,6 +1108,7 @@ def hoja_config(wb):
             ws.cell(row=r, column=col).font = Font(name=FUENTE, size=11)
             ws.cell(row=r, column=col).fill = AMARILLO
     ws[f"D{ini}"] = "← valores de ejemplo: reemplázalos por los reales"
+    ws.merge_cells(f"D{ini}:H{ini}")
     ws[f"D{ini}"].font = Font(name=FUENTE, size=9, italic=True, color=NARANJA_TXT)
     t = Table(displayName="tblTC", ref=f"A{fila_enc_tc}:C{fin}")
     t.tableStyleInfo = TableStyleInfo(name="TableStyleLight1", showRowStripes=True)
@@ -1393,9 +1397,8 @@ def hoja_panel(wb):
     valor("Filas de Compras usadas", "=" + fuente('COUNTA({p})', p=comp("prod")) + f'&" de {FILAS_COMPRAS}"',
           txt="Cuántas figuras llevas anotadas de las filas preparadas.")
     total_rev = "+".join(celdas_rev)
-    guia = ('"EMPIEZA AQUÍ: 1) En Config pon Modo práctica = No. 2) En Compras escribe tu primera figura '
-            '(Producto, Fecha salida original, Moneda, Precio). 3) Pagos van en Pagos; para ahorrar usa Agregar/Quitar en Ahorro. '
-            'Toca un encabezado para ver qué va."')
+    guia = ('"EMPIEZA AQUÍ: pon Modo práctica = No en Config y anota tu primera figura en Compras. '
+            'Más ayuda en la hoja Ayuda."')
     ws[f"A{r_estado}"] = (f'=IF(AND(NOT(cfgPractica),COUNTA({rango("Compras", LC["prod"], FILAS_COMPRAS)})=0),{guia},'
                           f'IF(({total_rev})=0,"Revisión del libro: todo OK",'
                           f'"Revisión del libro: "&({total_rev})&" cosa(s) por revisar (ver final del Panel)"))')
@@ -1479,7 +1482,7 @@ def hoja_ayuda(wb):
     """Crea la hoja Ayuda con la explicación de cada hoja, regla y campo."""
     ws = wb.create_sheet("Ayuda")
     ws.column_dimensions["A"].width = 22
-    ws.column_dimensions["B"].width = 48
+    ws.column_dimensions["B"].width = 60
     ws["A1"] = "Ayuda"
     estilo_titulo(ws["A1"], 16)
     r = 3
@@ -1502,9 +1505,248 @@ def hoja_ayuda(wb):
     return ws
 
 
+# ---------------------------------------------------------------- legibilidad (zoom de 50% a 400%)
+RUTA_FUENTES = "/usr/share/fonts/truetype/liberation/"   # Liberation Sans = mismas medidas que Arial
+ZOOMS_DISENO = (0.5, 0.6, 0.75, 0.85, 0.9, 1.0, 1.1, 1.15, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0)
+MARGEN_SEGURIDAD = 1.2      # 20% de espacio extra sobre lo que el texto necesita en el peor zoom
+MARGEN_ANCHO_TEXTO = 1.15   # las líneas se calculan con 15% menos de ancho (por si el texto crece)
+MAX_LINEAS_TABLA = 3        # una fila de tabla no debe pasar de 3 líneas de texto (se ensancha la columna)
+_fuentes_cache = {}
+
+# Texto más largo esperado en celdas calculadas (por encabezado de columna), para reservar su espacio.
+MUESTRA_TEXTO = {
+    "Reglas": "Mes bloqueado: el mes sep-2027 ya tiene compras | Límite superado en $999.999.999 (regla normal, 99 productos: tope $999.999.999)",
+    "Avisos de datos": "TC no fijado (usa sugerido) | Envío pagado de más (¿dos veces?) | Reserva después de la salida",
+    "Aviso bloqueo": "Mes bloqueado: el mes sep-2027 ya tiene compras",
+    "Aviso límite": "Límite superado en $999.999.999 (regla normal, 99 productos: tope $999.999.999)",
+    "Estado producto": "Cancelado", "Estado envío": "Acumulado", "Estado grupo": "Pendiente",
+    "Etiqueta lista": "C200 · Figura Nendoroid Hatsune Miku 2.0",
+    "Integridad": "Fórmulas borradas: copia la fila de arriba",
+    "Validación": "El envío no puede ser antes de la salida de sus figuras",
+    "Validación base": "Monto no válido (número mayor a 0)",
+    "Avisos": "Con este pago se pasa del total de la figura | Posible pago duplicado",
+    "Revisar": "Monto no válido (escribe un número positivo)",
+    "Mes": "Más adelante", "ID": "C200", "Grupo": "G050",
+    # entradas de texto: espacio para un valor típico largo
+    "Producto": "Figura Nendoroid Hatsune Miku Ver. 2.0", "Tienda": "Tienda EE.UU. Online",
+    "Link": "https://www.nin-nin-game.com/es/figuras/12345", "Link imagen": "https://imagen.tienda.com/12345.jpg",
+    "Nota": "Pago con tarjeta en cuotas", "Descripción": "Bodega Nin Nin dic-feb",
+    "Asociado a": "C200 · Figura Nendoroid Hatsune Miku", "Agregar o Quitar": "Agregar", "Moneda": "JPY",
+    "Envío moneda": "JPY", "Envío acumulado": "No", "Estado manual": "Cancelada", "Tipo": "Figura", "Cerrar": "Sí",
+}
+# Texto más largo esperado en el Panel (columna B), por etiqueta de la columna A.
+MUESTRA_PANEL = {
+    "Mes seleccionado": "sep-2027", "Próximo pago": "Sin pagos pendientes",
+    "Meses alternos": "Sin compras. No disponible: sep-2027 tiene compras",
+    "Límite mensual": "Límite superado en $999.999.999 (excepción hasta 99 productos: tope $999.999.999)",
+    "Estado general": "ADVERTENCIA", "Filas de Compras usadas": "200 de 200",
+}
+# Valor numérico más ancho esperado según el formato de la celda.
+MUESTRA_NUMERO = [('"$"', "-$999.999.999"), ("%", "100,0%"), ("dd-mm", "00-00-0000"), ("mmm", "sep-2027"),
+                  ("#,##0.00", "9.999,99"), ("#,##0.##", "99.999,99")]
+
+
+def _fuente_px(px, negrita, cursiva):
+    from PIL import ImageFont
+    nombre = {(False, False): "Regular", (True, False): "Bold", (False, True): "Italic", (True, True): "BoldItalic"}[(negrita, cursiva)]
+    k = (px, negrita, cursiva)
+    if k not in _fuentes_cache:
+        _fuentes_cache[k] = ImageFont.truetype(f"{RUTA_FUENTES}LiberationSans-{nombre}.ttf", px)
+    return _fuentes_cache[k]
+
+
+def medir_px(texto, tam=11, negrita=False, cursiva=False):
+    """Ancho que necesita el texto a zoom 100% considerando el peor redondeo de todos los zooms (+ margen interno)."""
+    peor = 0
+    for z in ZOOMS_DISENO:
+        px = max(1, round(tam * 96 / 72 * z))
+        w = _fuente_px(px, negrita, cursiva).getlength(texto) + math.ceil(6 * z) + 1
+        peor = max(peor, w / z)
+    return peor
+
+
+def alto_linea_pt(tam=11):
+    """Alto de una línea de texto en puntos, en el peor zoom."""
+    peor = 0
+    for z in ZOOMS_DISENO:
+        px = max(1, round(tam * 96 / 72 * z))
+        peor = max(peor, (math.ceil(px * 1.17) + math.ceil(2 * z) + 1) / z)
+    return peor * 72 / 96
+
+
+def lineas_necesarias(texto, ancho_px, tam=11, negrita=False, cursiva=False):
+    """Líneas que ocupa el texto ajustado al ancho (en el peor zoom)."""
+    peor = 1
+    for z in ZOOMS_DISENO:
+        px = max(1, round(tam * 96 / 72 * z))
+        f = _fuente_px(px, negrita, cursiva)
+        disponible = math.floor(ancho_px * z) - math.ceil(6 * z)
+        n = 0
+        for parrafo in str(texto).split("\n"):
+            n += 1; actual = ""
+            for p in parrafo.split(" "):
+                prueba = (actual + " " + p) if actual else p
+                if f.getlength(prueba) <= disponible:
+                    actual = prueba; continue
+                if actual: n += 1
+                while f.getlength(p) > disponible and len(p) > 1:
+                    k = len(p)
+                    while k > 1 and f.getlength(p[:k]) > disponible: k -= 1
+                    p = p[k:]; n += 1
+                actual = p
+        peor = max(peor, n)
+    return peor
+
+
+def _px_de_ancho(w): return math.trunc(w * 7 + 5)
+def _ancho_de_px(px): return (px - 5) / 7
+
+
+def _muestra(ws, celda, encabezados, etiquetas_panel):
+    """Texto más largo que puede mostrar una celda (literal, o muestra si es fórmula)."""
+    v = celda.value
+    if v is None:   # celda de ingreso aún vacía: reservar espacio según su formato o su columna
+        fmt = celda.number_format or ""
+        for clave, ejemplo in MUESTRA_NUMERO:
+            if clave in fmt: return ejemplo, True
+        enc = encabezados.get(celda.column)
+        if enc in MUESTRA_TEXTO: return MUESTRA_TEXTO[enc], False
+        if fmt not in ("General", ""): return "-999.999.999", True
+        return None, False
+    if isinstance(v, (int, float)) or hasattr(v, "year"):
+        for clave, ejemplo in MUESTRA_NUMERO:
+            if clave in (celda.number_format or ""): return ejemplo, True
+        return "-999.999.999", True
+    v = str(v)
+    if not v.startswith("="): return v, False
+    enc = encabezados.get(celda.column)
+    if ws.title.endswith("Panel") and celda.column == 2:
+        etiqueta = ws.cell(row=celda.row, column=1).value
+        if etiqueta in MUESTRA_PANEL: return MUESTRA_PANEL[etiqueta], False
+    if enc in MUESTRA_TEXTO: return MUESTRA_TEXTO[enc], False
+    fmt = celda.number_format or ""
+    for clave, ejemplo in MUESTRA_NUMERO:
+        if clave in fmt: return ejemplo, True
+    literales = [m.group(1).replace('""', '"') for m in re.finditer(r'"((?:[^"]|"")*)"', v)]
+    literales = [x for x in literales if len(x) >= 3 and not x.startswith(("<", ">", "Fig*", "Env*", "S*", "?*"))]
+    if literales: return max(literales, key=len), False
+    return "-999.999.999", True
+
+
+def ensanchar_titulos(ws, filas=(1, 3), hasta_col=8):
+    """Combina títulos y notas sueltas de la columna A con las columnas vecinas vacías, para que tengan espacio."""
+    ocupadas = {(mr.min_row, mr.min_col) for mr in ws.merged_cells.ranges} | \
+               {(r, c) for mr in ws.merged_cells.ranges for r in range(mr.min_row, mr.max_row + 1) for c in range(mr.min_col, mr.max_col + 1)}
+    for r in filas:
+        c = ws.cell(row=r, column=1)
+        if c.value is None or (r, 1) in ocupadas: continue
+        fin = 1
+        while fin < hasta_col and ws.cell(row=r, column=fin + 1).value is None and (r, fin + 1) not in ocupadas:
+            fin += 1
+        if fin > 1:
+            ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=fin)
+
+
+def asegurar_legibilidad(wb):
+    """Da a cada celda espacio fijo con 20% de margen para que se lea bien con cualquier zoom (50% a 400%)."""
+    for ws in wb.worksheets:
+        if ws.sheet_state != "visible":
+            continue
+        ensanchar_titulos(ws)
+        fusion = {}
+        dentro = set()
+        for mr in ws.merged_cells.ranges:
+            fusion[(mr.min_row, mr.min_col)] = mr
+            for r in range(mr.min_row, mr.max_row + 1):
+                for c in range(mr.min_col, mr.max_col + 1):
+                    if (r, c) != (mr.min_row, mr.min_col): dentro.add((r, c))
+        # encabezados de tablas (fila de cabecera de cada tabla)
+        encabezados = {}
+        for t in ws.tables.values():
+            ini = t.ref.split(":")[0]
+            fila = int(re.sub(r"[A-Z]", "", ini))
+            for c in ws[fila]:
+                if isinstance(c.value, str) and c.value: encabezados.setdefault(c.column, c.value)
+        for c in ws[g_fila_plan(ws)] if g_fila_plan(ws) else []:
+            if isinstance(c.value, str) and c.value: encabezados.setdefault(c.column, c.value)
+        filas_enc = {int(re.sub(r"[A-Z]", "", t.ref.split(":")[0])) for t in ws.tables.values()}
+        if g_fila_plan(ws): filas_enc.add(g_fila_plan(ws))
+        en_tabla = set()
+        for t in ws.tables.values():
+            a, b = t.ref.split(":")
+            for fila in ws[a:b][1:]:
+                for c in fila: en_tabla.add(c.coordinate)
+        celdas = [c for fila in ws.iter_rows() for c in fila
+                  if (c.value is not None or c.coordinate in en_tabla) and (c.row, c.column) not in dentro]
+        # 1) anchos: números y palabras largas deben caber en una línea; encabezados en máximo 3 líneas
+        necesidad = {}
+        for c in celdas:
+            if (c.row, c.column) in fusion: continue
+            texto, es_num = _muestra(ws, c, encabezados, None)
+            if texto is None: continue
+            f = c.font; tam = f.sz or 11
+            if es_num:
+                px = medir_px(texto, tam, bool(f.b), bool(f.i))
+            else:
+                palabra = max(str(texto).split(" "), key=len) if str(texto).strip() else ""
+                if palabra.startswith("http") or len(palabra) > 30: palabra = palabra[:18]
+                px = medir_px(palabra, tam, bool(f.b), bool(f.i))
+                if c.row in filas_enc:   # encabezado: que quepa en 3 líneas como máximo
+                    px = max(px, medir_px(str(texto), tam, bool(f.b), bool(f.i)) / 3)
+            necesidad[c.column_letter] = max(necesidad.get(c.column_letter, 0), px * MARGEN_SEGURIDAD)
+        for col, px in necesidad.items():
+            d = ws.column_dimensions[col]
+            if d.hidden: continue
+            actual = d.width or 8.43
+            d.width = round(max(actual, _ancho_de_px(px)), 1)
+        # textos de tablas: ancho suficiente para quedar en MAX_LINEAS_TABLA líneas
+        for c in celdas:
+            if c.coordinate not in en_tabla or (c.row, c.column) in fusion: continue
+            texto, es_num = _muestra(ws, c, encabezados, None)
+            if texto is None or es_num: continue
+            d = ws.column_dimensions[c.column_letter]
+            if d.hidden: continue
+            f = c.font; tam = f.sz or 11
+            while lineas_necesarias(texto, _px_de_ancho(d.width or 8.43) / MARGEN_ANCHO_TEXTO, tam, bool(f.b), bool(f.i)) > MAX_LINEAS_TABLA:
+                d.width = round((d.width or 8.43) + 2, 1)
+        # 2) alto de cada fila según la celda que más líneas necesita (texto siempre ajustado)
+        alto = {}
+        ocultas = {k for k, d in ws.column_dimensions.items() if d.hidden}
+        for c in celdas:
+            if c.column_letter in ocultas: continue
+            texto, es_num = _muestra(ws, c, encabezados, None)
+            if texto is None: continue
+            f = c.font; tam = f.sz or 11
+            mr = fusion.get((c.row, c.column))
+            cols = range(mr.min_col, mr.max_col + 1) if mr else [c.column]
+            filas = list(range(mr.min_row, mr.max_row + 1)) if mr else [c.row]
+            ancho = sum(_px_de_ancho(ws.column_dimensions[get_column_letter(k)].width or 8.43) for k in cols)
+            if not es_num:
+                al = c.alignment
+                c.alignment = Alignment(horizontal=al.horizontal, vertical=al.vertical or "center", wrap_text=True,
+                                        indent=al.indent)
+                n = lineas_necesarias(texto, ancho / MARGEN_ANCHO_TEXTO, tam, bool(f.b), bool(f.i))
+            else:
+                n = 1
+            pt = n * alto_linea_pt(tam) * MARGEN_SEGURIDAD / len(filas)
+            for r in filas:
+                alto[r] = max(alto.get(r, 0), pt)
+        for r, pt in alto.items():
+            d = ws.row_dimensions[r]
+            d.height = round(max(d.height or 0, pt, 18), 1)
+
+
+def g_fila_plan(ws):
+    """Fila del encabezado del plan de ahorro (si la hoja es de Ahorro)."""
+    return AH_PLAN_ENC if ws.title.endswith("Ahorro") else None
+
+
 def construir(ruta):
     """Arma el libro completo y lo guarda en 'ruta'."""
     wb = Workbook()
+    # fuente base del libro = la misma de las celdas (Arial 11): los anchos de columna se miden con ella
+    from openpyxl.utils.indexed_list import IndexedList
+    wb._fonts = IndexedList([Font(name=FUENTE, sz=11, family=2)])
     wb.active.title = "Panel"
     hoja_compras(wb, "Compras", "Pagos", "Envíos acumulados", "tblCompras")
     hoja_pagos(wb, "Pagos", "Compras", "Envíos acumulados", "tblPagos")
@@ -1526,6 +1768,7 @@ def construir(ruta):
                "Práctica Pagos": "C55A11", "Práctica Envíos": "C55A11", "Práctica Ahorro": "C55A11"}
     for n, col in colores.items():
         wb[n].sheet_properties.tabColor = col
+    asegurar_legibilidad(wb)
     wb.active = 0
     wb.save(ruta)
 

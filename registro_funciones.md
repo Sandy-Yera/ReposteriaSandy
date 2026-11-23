@@ -508,7 +508,52 @@ No mezcla ni modifica las entradas de arriba.
 ### construir
 - Ubicación: excel/generar_figuras.py
 - Qué hace: Arma y guarda el libro completo.
-- Cómo funciona: Crea todas las hojas, colores de pestaña y guarda en la ruta dada.
+- Cómo funciona: Fija la fuente base Arial 11, crea todas las hojas, colores de pestaña, aplica asegurar_legibilidad y guarda en la ruta dada.
+
+### _fuente_px
+- Ubicación: excel/generar_figuras.py
+- Qué hace: Carga (con caché) la fuente Liberation Sans (mismas medidas que Arial) en un tamaño en píxeles.
+- Cómo funciona: Recibe px, negrita, cursiva; retorna un ImageFont de PIL. Requiere las fuentes en RUTA_FUENTES.
+
+### medir_px
+- Ubicación: excel/generar_figuras.py
+- Qué hace: Ancho que necesita un texto a zoom 100%, en el peor caso de todos los zooms.
+- Cómo funciona: Para cada zoom de ZOOMS_DISENO redondea la letra a píxeles enteros (como Excel), mide el texto + margen interno y retorna el máximo normalizado a 100%.
+
+### alto_linea_pt
+- Ubicación: excel/generar_figuras.py
+- Qué hace: Alto de una línea de texto en puntos, en el peor zoom.
+- Cómo funciona: Recibe el tamaño de letra; considera el redondeo a píxeles de cada zoom.
+
+### lineas_necesarias
+- Ubicación: excel/generar_figuras.py
+- Qué hace: Cuántas líneas ocupa un texto ajustado a un ancho, en el peor zoom.
+- Cómo funciona: Ajuste por palabras; si una palabra no cabe, la corta por caracteres (como Excel). Retorna el máximo de líneas entre zooms.
+
+### _px_de_ancho / _ancho_de_px
+- Ubicación: excel/generar_figuras.py
+- Qué hace: Convierten ancho de columna de Excel (caracteres) a píxeles y viceversa.
+- Cómo funciona: px = trunc(ancho x 7 + 5) con la fuente base Arial 11.
+
+### _muestra
+- Ubicación: excel/generar_figuras.py
+- Qué hace: Texto más largo que puede mostrar una celda.
+- Cómo funciona: Literal si es texto; para fórmulas usa MUESTRA_PANEL / MUESTRA_TEXTO por encabezado, o el texto entre comillas más largo de la fórmula; para números y celdas de ingreso vacías usa MUESTRA_NUMERO según el formato.
+
+### ensanchar_titulos
+- Ubicación: excel/generar_figuras.py
+- Qué hace: Da espacio a títulos y notas sueltas de la columna A.
+- Cómo funciona: Combina la celda con las columnas vecinas vacías (hasta la H) en las filas 1 y 3.
+
+### asegurar_legibilidad
+- Ubicación: excel/generar_figuras.py
+- Qué hace: Fija el espacio de cada celda con margen de seguridad para que se lea con cualquier zoom (50% a 400%).
+- Cómo funciona: Por hoja visible: ensancha columnas para números y palabras largas (+20%), ensancha columnas de texto de tablas para no pasar de 3 líneas, ajusta todo texto en líneas y calcula el alto de cada fila (líneas con 15% menos de ancho y +20% de alto). Ignora columnas ocultas. Se ejecuta al final de construir().
+
+### g_fila_plan
+- Ubicación: excel/generar_figuras.py
+- Qué hace: Fila del encabezado del plan de ahorro si la hoja es de Ahorro.
+- Cómo funciona: Retorna AH_PLAN_ENC o None.
 
 ## Variables del generador (excel/generar_figuras.py)
 
@@ -576,3 +621,24 @@ No mezcla ni modifica las entradas de arriba.
 - Ubicación: excel/generar_figuras.py
 - Qué hace: Constante del generador.
 - Cómo funciona: Contenido de la hoja Ayuda.
+
+### RUTA_FUENTES / ZOOMS_DISENO
+- Ubicación: excel/generar_figuras.py
+- Qué hace: Constante del generador.
+- Cómo funciona: Carpeta de Liberation Sans y niveles de zoom simulados (50% a 400%).
+
+### MARGEN_SEGURIDAD / MARGEN_ANCHO_TEXTO / MAX_LINEAS_TABLA
+- Ubicación: excel/generar_figuras.py
+- Qué hace: Constante del generador.
+- Cómo funciona: 20% de espacio extra en ancho y alto; las líneas se calculan con 15% menos de ancho; filas de tabla de máximo 3 líneas.
+
+### MUESTRA_TEXTO / MUESTRA_PANEL / MUESTRA_NUMERO
+- Ubicación: excel/generar_figuras.py
+- Qué hace: Constante del generador.
+- Cómo funciona: Textos y valores más largos esperados (mensajes, montos de hasta $999.999.999, fechas) para reservar su espacio.
+
+### Fuente base del libro (wb._fonts)
+- Ubicación: excel/generar_figuras.py
+- Qué hace: Constante del generador.
+- Cómo funciona: Se reemplaza la fuente Normal (Calibri) por Arial 11, la misma de las celdas: así el ancho de columna se mide con la fuente que realmente se muestra.
+
