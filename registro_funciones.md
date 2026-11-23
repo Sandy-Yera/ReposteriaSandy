@@ -216,7 +216,7 @@ No mezcla ni modifica las entradas de arriba.
 ### Compras: Envío para impuesto
 - Ubicación: excel/Figuras.xlsx
 - Qué hace: Fórmula por fila/celda (ver encabezado y su nota).
-- Cómo funciona: Envío CLP; si el grupo está pagado, Envío CLP x pagado del grupo / suma individual del grupo (sin canceladas).
+- Cómo funciona: Envío CLP; si el grupo está pagado, ROUND(Envío CLP x pagado del grupo / suma individual del grupo). La última figura del grupo (COUNTIFS de filas de abajo = 0) recibe pagado - suma de las partes de arriba, para que el total calce exacto sin sesgo de redondeo.
 
 ### Compras: Arancel est. / IVA est. / Impuestos est.
 - Ubicación: excel/Figuras.xlsx
@@ -256,7 +256,7 @@ No mezcla ni modifica las entradas de arriba.
 ### Envíos acumulados: N envíos / Suma / Pagado / Fecha / Estado / Ahorro / Impuestos est. grupo
 - Ubicación: excel/Figuras.xlsx
 - Qué hace: Fórmula por fila/celda (ver encabezado y su nota).
-- Cómo funciona: COUNTIFS/SUMIFS sobre Compras (grupo, acumulado "S*", manual "<>Can*") y SUMIFS/MAXIFS sobre Pagos ("Env*", grupo, Validación OK). Ahorro = suma - pagado si Pagado.
+- Cómo funciona: COUNTIFS/SUMIFS sobre Compras (grupo, acumulado "S*", manual "<>Can*") y SUMIFS/MAXIFS sobre Pagos ("Env*", grupo, Validación OK). Ahorro = suma - pagado si Pagado. Impuestos est. grupo se calcula sobre el paquete completo: base = figuras + (pagado conjunto o suma individual); arancel = ROUND(base x cfgArancelV); IVA = ROUND((base + arancel) x cfgIVAV).
 
 ### Ahorro: resumen
 - Ubicación: excel/Figuras.xlsx

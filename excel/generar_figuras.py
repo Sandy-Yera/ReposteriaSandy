@@ -82,7 +82,7 @@ COLS_COMPRAS = [
     ("falta", "Falta pagar figura", 12, False, "Calculado: total - pagado figura (mínimo 0). Si está Cerrado o Cancelado, 0."),
     ("dif", "Diferencia figura", 12, False, "Calculado solo si está Pagado o Cerrado: pagado - total. Positivo = pagaste de más; negativo = pagaste de menos."),
     ("envpend", "Envío por pagar", 11, False, "Calculado: envío en CLP que aún falta pagar (individual o dentro de un grupo sin pagar)."),
-    ("envimp", "Envío para impuesto", 11, False, "Calculado: envío usado para estimar impuestos. Grupo sin pagar o envío individual: su envío CLP. Grupo pagado: su parte del pago conjunto, repartida según los envíos individuales."),
+    ("envimp", "Envío para impuesto", 11, False, "Calculado: envío usado para estimar impuestos. Grupo sin pagar o envío individual: su envío CLP. Grupo pagado: su parte del pago conjunto, repartida según los envíos individuales; la última figura del grupo absorbe el redondeo para que la suma calce exacto con el pago."),
     ("arancel", "Arancel est.", 10, False, "Estimación: arancel (6% en Config) x (total figura + envío para impuesto). Se paga al llegar a Chile. No cuenta para las reglas."),
     ("iva", "IVA est.", 10, False, "Estimación: IVA (19% en Config) x (total figura + envío para impuesto + arancel). Se paga al llegar a Chile. No cuenta para las reglas."),
     ("impuestos", "Impuestos est.", 11, False, "Estimación: arancel + IVA. Solo referencia para preparar el dinero."),
@@ -117,7 +117,7 @@ COLS_GRUPOS = [
     ("fpago", "Fecha pago", 11, False, "Calculado: fecha del último pago registrado para el grupo. No hay plazo obligatorio."),
     ("estado", "Estado grupo", 10, False, "Calculado: Pendiente (sin pagos) o Pagado."),
     ("ahorro", "Ahorro CLP", 11, False, "Calculado si está Pagado: suma individual - pagado conjunto. Negativo = pagaste de más (sobrecosto)."),
-    ("imp", "Impuestos est. grupo", 12, False, "Estimación: suma de arancel + IVA estimados de las figuras del grupo. Lo que conviene preparar cuando el paquete llegue a Chile."),
+    ("imp", "Impuestos est. grupo", 12, False, "Estimación sobre el paquete completo: arancel 6% x (figuras + envío del grupo) e IVA 19% x (figuras + envío + arancel). Envío = pago conjunto si ya se pagó; si no, la suma individual. Puede diferir en pocos pesos de la suma por figura (redondeo)."),
     ("clave", "Clave mes pago", 9, False, "Auxiliar: año x 12 + mes de la fecha de pago."),
     ("usado", "Usado", 6, False, "Auxiliar: 1 si el grupo tiene descripción, envíos o pagos."),
     ("nlista", "N lista", 6, False, "Auxiliar para la lista desplegable de Pagos."),
@@ -348,9 +348,9 @@ def hoja_compras(wb, nombre, hoja_pagos, hoja_grupos, tabla, practica=False, dem
         c = {k: f"{LC[k]}{r}" for k in LC}
         x = {k: f"${LC[k]}{r}" for k in LC}       # celdas de ingreso de la fila
         cB, man, sal, mon, grp, acu, fp = x["prod"], x["manual"], x["salida"], x["moneda"], x["grupo"], x["acum"], c["fpago"]
-        es_cancel = f'LEFT(TRIM({man}),3)="Can"'
-        es_cerr = f'LEFT(TRIM({man}),3)="Cer"'
-        es_acum = f'LEFT(TRIM({acu}),1)="S"'
+        es_cancel = f'LEFT({man},3)="Can"'
+        es_cerr = f'LEFT({man},3)="Cer"'
+        es_acum = f'LEFT({acu},1)="S"'
         cant_ok = f'OR({x["cant"]}="",AND(ISNUMBER({x["cant"]}),N({x["cant"]})>0))'
         cant = f'IF({x["cant"]}="",1,{x["cant"]})'
         precio_ok = f'AND(ISNUMBER({x["precio"]}),N({x["precio"]})>=0)'
@@ -390,8 +390,15 @@ def hoja_compras(wb, nombre, hoja_pagos, hoja_grupos, tabla, practica=False, dem
         ws[c["envpend"]] = (f'=IF({cB}="","",IF(OR({c["estenv"]}="Pagado",{c["estenv"]}="Sin envío"),0,'
                             f'IF({es_acum},{c["envclp"]},MAX(0,{c["envclp"]}-{c["pagenv"]}))))')
         suma_grupo = f'SUMIFS({R("envclp")},{R("grupo")},{grp},{R("acum")},"S*",{R("manual")},"<>Can*")'
+        abajo = lambda k: f"${LC[k]}${r + 1}:${LC[k]}${fin + 1}"
+        arriba = lambda k: f"${LC[k]}${FILA_ENC}:${LC[k]}${r - 1}"
+        es_ultima = (f'COUNTIFS({abajo("grupo")},{grp},{abajo("acum")},"S*",{abajo("manual")},"<>Can*",'
+                     f'{abajo("envclp")},">0")=0')
+        resto = (f'{pag_grupo}-SUMIFS({arriba("envimp")},{arriba("grupo")},{grp},{arriba("acum")},"S*",'
+                 f'{arriba("manual")},"<>Can*")')
         ws[c["envimp"]] = (f'=IF({cB}="","",IF({c["envclp"]}=0,0,IF(AND({es_acum},{grp}<>"",{pag_grupo}>0,'
-                           f'{suma_grupo}>0),ROUND({c["envclp"]}*{pag_grupo}/{suma_grupo},0),{c["envclp"]})))')
+                           f'{suma_grupo}>0),IF({es_ultima},{resto},ROUND({c["envclp"]}*{pag_grupo}/{suma_grupo},0)),'
+                           f'{c["envclp"]})))')
         base = f'N({c["total"]})+N({c["envimp"]})'
         sin_imp = f'OR({cB}="",{c["estado"]}="Cancelado",{c["total"]}="")'
         ws[c["arancel"]] = f'=IF({sin_imp},"",ROUND(({base})*cfgArancelV,0))'
@@ -528,16 +535,16 @@ def hoja_pagos(wb, nombre, hoja_compras, hoja_grupos, tabla, practica=False, dem
                                 f'IFERROR(UPPER(LEFT({parte},1))&TEXT(VALUE(MID({parte},2,9)),"000"),UPPER({parte}))))')
         ws[f"{LP['clave']}{r}"] = f'=IF(ISNUMBER({f}),YEAR({f})*12+MONTH({f}),"")'
         pos = f'MATCH({i},{CA},0)'
-        es_env = f'LEFT(TRIM({t}),3)="Env"'
-        es_fig = f'LEFT(TRIM({t}),3)="Fig"'
+        es_env = f'LEFT({t},3)="Env"'
+        es_fig = f'LEFT({t},3)="Fig"'
         ws[f"{LP['valid']}{r}"] = (
             f'=IF(AND({f}="",{m}="",{a}="",{t}=""),"",IF(OR({f}="",{m}="",{t}="",{a}=""),"Faltan datos",'
             f'IF(NOT(ISNUMBER({f})),"Fecha no es fecha",IF(OR(NOT(ISNUMBER({m})),N({m})<=0),"Monto no válido (número mayor a 0)",'
             f'IF(NOT(OR({es_env},{es_fig})),"Tipo debe ser Figura o Envío",'
             f'IF(AND(LEFT({i},1)="C",ISNUMBER({pos})),IF(COUNTIF({CA},{i})>1,"ID repetido en Compras: corrígelo",'
             f'IF(INDEX({CB},{pos})="","Ese producto está vacío",'
-            f'IF(LEFT(TRIM(INDEX({CM},{pos})),3)="Can","Ese producto está cancelado: no cuenta",'
-            f'IF(AND({es_env},LEFT(TRIM(INDEX({CT},{pos})),1)="S"),"Ese envío es acumulado: paga al grupo","OK")))),'
+            f'IF(LEFT(INDEX({CM},{pos}),3)="Can","Ese producto está cancelado: no cuenta",'
+            f'IF(AND({es_env},LEFT(INDEX({CT},{pos}),1)="S"),"Ese envío es acumulado: paga al grupo","OK")))),'
             f'IF(AND(LEFT({i},1)="G",ISNUMBER(MATCH({i},{GA},0))),IF({es_fig},"Un grupo solo recibe pagos de Envío","OK"),'
             f'"ID no existe")))))))')
         ws[f"{LP['integ']}{r}"] = (f'=IF(AND(_xlfn.ISFORMULA({i}),_xlfn.ISFORMULA(${LP["clave"]}{r}),'
@@ -582,8 +589,8 @@ def hoja_grupos(wb, nombre, hoja_compras, hoja_pagos, tabla, practica=False, dem
     encabezado(ws, FILA_ENC, cols)
     n = FILAS_GRUPOS
     fin = FILA_INI + n - 1
-    CU, CT, CS, CM, CI = (rango(hoja_compras, LC[k], FILAS_COMPRAS)
-                          for k in ("grupo", "acum", "envclp", "manual", "impuestos"))
+    CU, CT, CS, CM, CTOT = (rango(hoja_compras, LC[k], FILAS_COMPRAS)
+                            for k in ("grupo", "acum", "envclp", "manual", "total"))
     PA, PB, PC, PF, PV = (rango(hoja_pagos, LP[k], FILAS_PAGOS) for k in ("fecha", "monto", "tipo", "id", "valid"))
     for r in range(FILA_INI, fin + 1):
         c = {k: f"{LG[k]}{r}" for k in LG}
@@ -597,7 +604,9 @@ def hoja_grupos(wb, nombre, hoja_compras, hoja_pagos, tabla, practica=False, dem
         ws[c["usado"]] = f'=IF(OR(${LG["desc"]}{r}<>"",{c["nenv"]}>0,{c["pagado"]}>0),1,0)'
         ws[c["estado"]] = f'=IF({c["usado"]}=0,"",IF({c["pagado"]}>0,"Pagado","Pendiente"))'
         ws[c["ahorro"]] = f'=IF({c["estado"]}="Pagado",{c["suma"]}-{c["pagado"]},"")'
-        ws[c["imp"]] = f'=SUMIFS({CI},{filtro})'
+        base_g = (f'(SUMIFS({CTOT},{filtro})+IF({c["pagado"]}>0,{c["pagado"]},{c["suma"]}))')
+        ar_g = f'ROUND({base_g}*cfgArancelV,0)'
+        ws[c["imp"]] = f'=IF({c["nenv"]}=0,0,{ar_g}+ROUND(({base_g}+{ar_g})*cfgIVAV,0))'
         ws[c["clave"]] = f'=IF({c["fpago"]}="","",YEAR({c["fpago"]})*12+MONTH({c["fpago"]}))'
         ws[c["nlista"]] = f'=IF({c["usado"]}=1,SUM(${LG["usado"]}${FILA_INI}:{c["usado"]}),"")'
         ws[c["etiq"]] = f'={g}&IF(${LG["desc"]}{r}<>""," · "&${LG["desc"]}{r},"")'
