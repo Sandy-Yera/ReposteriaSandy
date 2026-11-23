@@ -602,10 +602,10 @@ def hoja_pagos(wb, nombre, hoja_compras, hoja_grupos, tabla, practica=False, dem
         ws[f"{LP['aviso']}{r}"] = (
             f'=IF(OR({vb}="",{vb}="Faltan datos"),"",_xlfn.TEXTJOIN(" | ",TRUE,'
             f'IF(COUNTIFS({PAr},{f},{PBr},{m},{PCr},{t},{PFr},{i})>1,"Posible pago duplicado",""),'
-            f'IF(AND({pc}>0,ISNUMBER(INDEX({CR},{pc}))),IF(N({f})<N(INDEX({CR},{pc})),"Pago anterior a la fecha de reserva",""),""),'
-            f'IF(AND({es_fig},{pc}>0,ISNUMBER(INDEX({CTOT},{pc})),LEFT(INDEX({CM},{pc}),3)<>"Cer"),IF(SUMIFS({PBr},{PCr},"Fig*",{PFr},{i},{PVr},"OK",{PAr},"<="&N({f}))>INDEX({CTOT},{pc}),"Con este pago se pasa del total de la figura",""),""),'
-            f'IF(AND({es_env},{pc}>0,N(INDEX({CE},{pc}))>0),IF(ABS(N({m})-INDEX({CE},{pc}))>0.2*INDEX({CE},{pc}),"Monto distinto al envío calculado",""),""),'
-            f'IF(AND({es_env},{pg}>0),IF(N({m})>2*N(INDEX({GS},{pg})),"Pago del grupo mayor al doble de sus envíos",""),"")))')
+            f'IF(AND({pc}>0,ISNUMBER(INDEX({CR},MAX(1,{pc})))),IF(N({f})<N(INDEX({CR},MAX(1,{pc}))),"Pago anterior a la fecha de reserva",""),""),'
+            f'IF(AND({es_fig},{pc}>0,ISNUMBER(INDEX({CTOT},MAX(1,{pc}))),LEFT(INDEX({CM},MAX(1,{pc})),3)<>"Cer"),IF(SUMIFS({PBr},{PCr},"Fig*",{PFr},{i},{PVr},"OK",{PAr},"<="&N({f}))>INDEX({CTOT},MAX(1,{pc})),"Con este pago se pasa del total de la figura",""),""),'
+            f'IF(AND({es_env},{pc}>0,N(INDEX({CE},MAX(1,{pc})))>0),IF(ABS(N({m})-INDEX({CE},MAX(1,{pc})))>0.2*INDEX({CE},MAX(1,{pc})),"Monto distinto al envío calculado",""),""),'
+            f'IF(AND({es_env},{pg}>0),IF(N({m})>2*N(INDEX({GS},MAX(1,{pg}))),"Pago del grupo mayor al doble de sus envíos",""),"")))')
         ws[f"{LP['integ']}{r}"] = (f'=IF(AND(_xlfn.ISFORMULA({i}),_xlfn.ISFORMULA(${LP["clave"]}{r}),'
                                    f'_xlfn.ISFORMULA({pc}),_xlfn.ISFORMULA({pg}),_xlfn.ISFORMULA({vb}),_xlfn.ISFORMULA(${LP["aviso"]}{r}),_xlfn.ISFORMULA(${LP["valid"]}{r})),IF({a}="","","OK"),"Fórmulas borradas: copia la fila de arriba")')
     for k, _, _, ing, _ in COLS_PAGOS:
