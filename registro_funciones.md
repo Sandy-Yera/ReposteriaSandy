@@ -173,15 +173,15 @@ No mezcla ni modifica las entradas de arriba.
 - Qué hace: Fórmula por fila/celda (ver encabezado y su nota).
 - Cómo funciona: Pago especial si existe; si no, día cfgDiaPago del mes de salida original (último día si el mes es más corto).
 
-### Compras: Mes efectivo / Clave mes
+### Compras: Clave mes
 - Ubicación: excel/Figuras.xlsx
 - Qué hace: Fórmula por fila/celda (ver encabezado y su nota).
-- Cómo funciona: Primer día del mes de la Fecha salida original (vacío si Cancelada); clave = AÑO*12+MES.
+- Cómo funciona: AÑO*12+MES de la Fecha salida original (vacío si Cancelada o si la fecha no es fecha). Se eliminó la columna 'Mes efectivo' (era redundante).
 
 ### Compras: TC sugerido / TC aplicado
 - Ubicación: excel/Figuras.xlsx
 - Qué hace: Fórmula por fila/celda (ver encabezado y su nota).
-- Cómo funciona: MAXIFS da la última fecha de tblTC <= Fecha pago; AVERAGEIFS trae su valor. Aplicado = 1 si CLP, TC usado si existe, si no el sugerido.
+- Cómo funciona: MAXIFS da la última fecha de tblTC <= Fecha pago con valor numérico > 0; AVERAGEIFS trae su valor (filas con texto o 0 se ignoran, sin #DIV/0!). Aplicado = 1 si CLP, TC usado si existe, si no el sugerido.
 
 ### Compras: Total figura CLP
 - Ubicación: excel/Figuras.xlsx
@@ -196,7 +196,7 @@ No mezcla ni modifica las entradas de arriba.
 ### Compras: Pagado figura / Pagado envío
 - Ubicación: excel/Figuras.xlsx
 - Qué hace: Fórmula por fila/celda (ver encabezado y su nota).
-- Cómo funciona: SUMIFS en Pagos por ID, Tipo ("Fig*"/"Env*") y Validación = "OK": un pago inválido o a una figura cancelada no cuenta.
+- Cómo funciona: Solo si el ID empieza con C: SUMIFS en Pagos por ID, Tipo ("Fig*"/"Env*") y Validación = "OK": un pago inválido o a una figura cancelada no cuenta.
 
 ### Compras: Estado producto
 - Ubicación: excel/Figuras.xlsx
@@ -226,7 +226,7 @@ No mezcla ni modifica las entradas de arriba.
 ### Compras: Clave mes pago envío
 - Ubicación: excel/Figuras.xlsx
 - Qué hace: Fórmula por fila/celda (ver encabezado y su nota).
-- Cómo funciona: Mes del último pago tipo Envío al ID (individual) o al grupo (acumulado), solo si el envío está Pagado.
+- Cómo funciona: Sin envío → clave del mes de salida (llega sin costo de envío). Pagado → mes del último pago válido tipo Envío al ID (individual) o al grupo (acumulado). Si no, vacío.
 
 ### Compras: Total figuras mes / Productos mes / Límite mes
 - Ubicación: excel/Figuras.xlsx
@@ -236,7 +236,7 @@ No mezcla ni modifica las entradas de arriba.
 ### Compras: Reglas
 - Ubicación: excel/Figuras.xlsx
 - Qué hace: Fórmula por fila/celda (ver encabezado y su nota).
-- Cómo funciona: Cancelada: aviso si tiene pagos o grupo. Si no, TEXTJOIN de 'Mes bloqueado...' y 'Límite superado...'; vacío = OK.
+- Cómo funciona: Cancelada: aviso si tiene pagos o grupo. Si no, 'OK' si Aviso bloqueo y Aviso límite están vacíos; si no, TEXTJOIN de ambos.
 
 ### Compras: Avisos de datos
 - Ubicación: excel/Figuras.xlsx
@@ -286,17 +286,17 @@ No mezcla ni modifica las entradas de arriba.
 ### Compras: Integridad
 - Ubicación: excel/Figuras.xlsx
 - Qué hace: Detecta si alguien escribió encima de una celda calculada.
-- Cómo funciona: AND de ISFORMULA sobre 13 columnas calculadas de la fila; 'OK' si están intactas (vacío si la fila no tiene producto), si no 'Fórmulas borradas: copia la fila de arriba'.
+- Cómo funciona: AND de ISFORMULA sobre TODAS las columnas calculadas de la fila (se arma desde COLS_COMPRAS); 'OK' si están intactas (vacío si la fila no tiene producto), si no 'Fórmulas borradas: copia la fila de arriba'.
 
 ### Pagos: Integridad
 - Ubicación: excel/Figuras.xlsx
-- Qué hace: Detecta fórmulas borradas en ID, clave o Validación del pago.
-- Cómo funciona: ISFORMULA sobre esas 3 celdas.
+- Qué hace: Detecta fórmulas borradas en el pago.
+- Cómo funciona: ISFORMULA sobre ID, clave, Fila compra, Fila grupo y Validación.
 
 ### Envíos acumulados: Integridad
 - Ubicación: excel/Figuras.xlsx
-- Qué hace: Detecta fórmulas borradas en el grupo.
-- Cómo funciona: ISFORMULA sobre N envíos, suma, pagado, estado, ahorro, impuestos y usado.
+- Qué hace: Detecta fórmulas borradas e IDs de grupo repetidos.
+- Cómo funciona: ISFORMULA sobre todas las columnas calculadas; si el ID del grupo aparece más de una vez, 'ID de grupo repetido: corrígelo'.
 
 ### Ahorro: Revisar (abonos)
 - Ubicación: excel/Figuras.xlsx
@@ -312,6 +312,41 @@ No mezcla ni modifica las entradas de arriba.
 - Ubicación: excel/Figuras.xlsx
 - Qué hace: Interpreta el mes y año elegidos.
 - Cómo funciona: Mes: número 1-12 o las 3 primeras letras ('Julio' → jul); vacío o inválido = mes de hoy. Año: 2000-2100; vacío = año de hoy. Resultado en pnlClave.
+
+### Compras: Pagado grupo / Suma grupo
+- Ubicación: excel/Figuras.xlsx
+- Qué hace: Columnas auxiliares que se calculan una vez por fila y reutilizan Estado envío, Envío para impuesto y la clave de pago.
+- Cómo funciona: Pagado grupo = SUMIFS de pagos Envío válidos al grupo; Suma grupo = SUMIFS de Envío CLP de figuras activas del grupo. 0 si no hay grupo.
+
+### Compras: Aviso bloqueo / Aviso límite
+- Ubicación: excel/Figuras.xlsx
+- Qué hace: Textos de cada regla, calculados una vez y usados por la columna Reglas.
+- Cómo funciona: Aviso bloqueo: 'Mes bloqueado...' si la clave-1 tiene compras. Aviso límite: 'Límite superado...' si total del mes > límite.
+
+### Pagos: Fila compra / Fila grupo
+- Ubicación: excel/Figuras.xlsx
+- Qué hace: Posición del ID en Compras o en Envíos acumulados (0 si no existe).
+- Cómo funciona: IFERROR(MATCH(ID, IDs, 0), 0) según la letra C o G. La Validación las reutiliza en vez de repetir MATCH.
+
+### Pagos: reglas nuevas de Validación
+- Ubicación: excel/Figuras.xlsx
+- Qué hace: Rechaza pagos que no deben contar.
+- Cómo funciona: Además de lo anterior: 'Esa figura no tiene envío' (Envío a figura con Envío CLP = 0), 'Grupo sin envíos asignados' (grupo con N envíos = 0) e 'ID de grupo repetido'.
+
+### Ahorro: Integridad del plan
+- Ubicación: excel/Figuras.xlsx
+- Qué hace: Detecta fórmulas borradas en el plan de pagos del 13.
+- Cómo funciona: ISFORMULA sobre cada columna de la fila del plan; el Panel lo suma en 'Fórmulas borradas'.
+
+### Listas: conteos C1/C2 y D1/D2
+- Ubicación: excel/Figuras.xlsx
+- Qué hace: Cantidad de productos y grupos usados (real y práctica), calculados una sola vez.
+- Cómo funciona: COUNTA de Producto (cuenta también nombres numéricos) y SUM de 'Usado'; las listas dinámicas y los nombres lstAsociado los reutilizan.
+
+### Panel: Próximo pago en rojo / IDs de grupo repetidos
+- Ubicación: excel/Figuras.xlsx
+- Qué hace: Avisos nuevos del Panel.
+- Cómo funciona: Formato rojo si la fecha del próximo pago es anterior a hoy. Fila de revisión que cuenta grupos con 'ID de grupo repetido'.
 
 ## Funciones del generador (excel/generar_figuras.py)
 
@@ -408,7 +443,7 @@ No mezcla ni modifica las entradas de arriba.
 ### hoja_compras
 - Ubicación: excel/generar_figuras.py
 - Qué hace: Crea una hoja de compras (real o práctica).
-- Cómo funciona: Recibe hoja, nombre, hoja de pagos, hoja de grupos y tabla. Fórmulas por fila (tolerantes a texto y mayúsculas), formatos, validaciones, colores, tabla y alto de fila para la foto.
+- Cómo funciona: Recibe hoja, nombre, hoja de pagos, hoja de grupos y tabla; usa FILAS_PRACTICA si es práctica. Fórmulas por fila (tolerantes a texto y mayúsculas), formatos, validaciones, colores, tabla y alto de fila para la foto.
 
 ### hoja_pagos
 - Ubicación: excel/generar_figuras.py
@@ -451,6 +486,11 @@ No mezcla ni modifica las entradas de arriba.
 - Cómo funciona: Crea todas las hojas, colores de pestaña y guarda en la ruta dada.
 
 ## Variables del generador (excel/generar_figuras.py)
+
+### FILAS_PRACTICA
+- Ubicación: excel/generar_figuras.py
+- Qué hace: Constante del generador.
+- Cómo funciona: Filas de las hojas de práctica: compras 40, pagos 40, grupos 10, abonos 20 (reduce fórmulas y tamaño).
 
 ### FILAS_COMPRAS / FILAS_PAGOS / FILAS_GRUPOS / FILAS_ABONOS
 - Ubicación: excel/generar_figuras.py
