@@ -55,7 +55,7 @@ for _ in range(3):
     t0 = time.perf_counter(); doc.calculateAll(); full_times.append(time.perf_counter() - t0)
 
 ra, pn, de = doc.Sheets.getByName("Registro Auto"), doc.Sheets.getByName("Panel"), doc.Sheets.getByName("Registro Delivery")
-for n in doc.Sheets.ElementNames: doc.Sheets.getByName(n).unprotect("")
+for n in doc.Sheets.ElementNames: doc.Sheets.getByName(n).unprotect(os.environ.get("CLAVE_HOJAS", ""))
 def timed(action, reps=5):
     ts = []
     for i in range(reps):
