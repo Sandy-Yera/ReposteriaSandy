@@ -251,7 +251,7 @@ No mezcla ni modifica las entradas de arriba.
 ### Compras: Avisos de datos
 - Ubicación: excel/Figuras.xlsx
 - Qué hace: Fórmula por fila/celda (ver encabezado y su nota).
-- Cómo funciona: TEXTJOIN de: falta/repetido ID, fecha salida no válida, cantidad/precio/moneda/TC no válidos, TC USD/JPY fuera de rango, TC usado en CLP, pago especial fuera de mes o no fecha, envío no válido, grupo faltante o inexistente, TC del envío, 'Cerrada sin pagos' y 'Envío pagado y la figura aún no' (envío Pagado con Pagado figura = 0; se registra igual).
+- Cómo funciona: TEXTJOIN de: falta/repetido ID, fecha salida no válida, cantidad/precio/moneda/TC no válidos, TC USD/JPY fuera de rango, TC usado en CLP, pago especial fuera de mes o no fecha, envío no válido, grupo faltante o inexistente, TC del envío, 'Cerrada sin pagos' y los avisos de contralógica (ver entrada propia).
 
 ### Compras: N lista / Etiqueta lista
 - Ubicación: excel/Figuras.xlsx
@@ -311,12 +311,12 @@ No mezcla ni modifica las entradas de arriba.
 ### Ahorro: Valor / Total después / Revisar
 - Ubicación: excel/Figuras.xlsx
 - Qué hace: Calculan cada movimiento del historial.
-- Cómo funciona: Valor = +monto (Agregar) o -monto (Quitar) si fecha, monto > 0 y tipo son válidos; si no, 0. Total después = suma de Valor hasta esa fila. Revisar = OK, el motivo del rechazo o 'Ojo: el ahorro queda negativo'.
+- Cómo funciona: Valor = +monto (Agregar) o -monto (Quitar) si la fecha es válida y no futura, monto > 0 y tipo válido; si no, 0. Total después = suma de Valor hasta esa fila. Revisar = OK, el motivo del rechazo o 'Ojo: el ahorro queda negativo'.
 
 ### Panel: Revisión del libro
 - Ubicación: excel/Figuras.xlsx
 - Qué hace: Cuenta lo que hay que revisar en el libro.
-- Cómo funciona: Config (columna Revisar ≠ OK), Compras con avisos, canceladas con pagos, pagos y movimientos de ahorro no OK, fórmulas borradas (columnas Integridad) y datos escritos debajo de las filas preparadas. La fila 3 muestra 'todo OK', el total pendiente o la guía 'EMPIEZA AQUÍ' si no hay datos reales.
+- Cómo funciona: Config (columna Revisar ≠ OK), Compras con avisos, canceladas con pagos, pagos con avisos, pagos y movimientos de ahorro no OK, fórmulas borradas (columnas Integridad) y datos escritos debajo de las filas preparadas. La fila 3 muestra 'todo OK', el total pendiente o la guía 'EMPIEZA AQUÍ' si no hay datos reales.
 
 ### Panel: selector tolerante
 - Ubicación: excel/Figuras.xlsx
@@ -338,10 +338,10 @@ No mezcla ni modifica las entradas de arriba.
 - Qué hace: Posición del ID en Compras o en Envíos acumulados (0 si no existe).
 - Cómo funciona: IFERROR(MATCH(ID, IDs, 0), 0) según la letra C o G. La Validación las reutiliza en vez de repetir MATCH.
 
-### Pagos: reglas nuevas de Validación
+### Pagos: Validación base / Validación / Avisos
 - Ubicación: excel/Figuras.xlsx
-- Qué hace: Rechaza pagos que no deben contar.
-- Cómo funciona: Además de lo anterior: 'Esa figura no tiene envío' (Envío a figura con Envío CLP = 0), 'Grupo sin envíos asignados' (grupo con N envíos = 0) e 'ID de grupo repetido'.
+- Qué hace: Decide si un pago cuenta y marca lo raro sin bloquear.
+- Cómo funciona: Validación base (auxiliar): datos, fecha (no futura), monto > 0, tipo, ID existente y no repetido, producto vacío o cancelado, envío a figura sin envío o acumulada, figura a grupo, grupo sin envíos. Validación (final) = la base y, para Envío, la regla de orden: la figura debe estar pagada ('Figura pagada el'), el envío no puede ser antes de ese pago ni de la 'Salida efectiva'; para un grupo, todas sus figuras pagadas y el envío después del último pago y de la última salida. Se separa en dos columnas para evitar referencias circulares. Avisos (no bloquean): posible duplicado (COUNTIFS fecha+monto+tipo+ID), pago anterior a la reserva, se pasa del total (no en Cerradas), monto distinto al envío (>20%), pago de grupo mayor al doble.
 
 ### Ahorro: Integridad del plan
 - Ubicación: excel/Figuras.xlsx
@@ -357,6 +357,21 @@ No mezcla ni modifica las entradas de arriba.
 - Ubicación: excel/Figuras.xlsx
 - Qué hace: Avisos nuevos del Panel.
 - Cómo funciona: Formato rojo si la fecha del próximo pago es anterior a hoy. Fila de revisión que cuenta grupos con 'ID de grupo repetido'.
+
+### Compras: Figura pagada el
+- Ubicación: excel/Figuras.xlsx
+- Qué hace: Fecha en que la figura quedó pagada.
+- Cómo funciona: Con la Validación base: si (Cerrada y pagos > 0) o (pagos >= total), MAXIFS de la fecha de sus pagos de figura; si no, vacío. La usa Pagos para permitir o bloquear el envío.
+
+### Compras: Salida efectiva
+- Ubicación: excel/Figuras.xlsx
+- Qué hace: Fecha desde la que se puede pagar el envío.
+- Cómo funciona: 'Salida actual' si es fecha; si no, 'Fecha salida original'.
+
+### Compras: avisos de contralógica
+- Ubicación: excel/Figuras.xlsx
+- Qué hace: Marcan combinaciones raras sin bloquear.
+- Cómo funciona: Reserva después de la salida, salida actual antes que la original, acumulado sin monto de envío, envío pagado de más (>120%), Cerrada pagando menos del 90%, pagado más del 150% del total.
 
 ## Funciones del generador (excel/generar_figuras.py)
 
