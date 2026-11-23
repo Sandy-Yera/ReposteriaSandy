@@ -40,14 +40,14 @@ No mezcla ni modifica las entradas de arriba.
 - Cómo funciona: Calcula N envíos, suma individual, pagado conjunto, fecha, estado, ahorro e impuestos estimados del grupo. Excluye figuras canceladas.
 
 ### Ahorro
-- Ubicación: excel/Figuras.xlsx (hoja Ahorro, tabla tblAbonos)
-- Qué hace: Resumen del ahorro, plan de pagos del 13 (24 meses + 'Más adelante') y tabla de abonos.
-- Cómo funciona: Saldo = abonos - pagos de figuras desde el primer abono. El saldo llena en orden los meses del plan; lo que falta se reparte en cuotas iguales desde el mes siguiente hasta el mes del pago.
+- Ubicación: excel/Figuras.xlsx
+- Qué hace: Total ahorrado arriba, movimientos Agregar/Quitar con historial y, a la derecha, detalle y plan de pagos del 13 (tabla tblAbonos).
+- Cómo funciona: B3 = TOTAL AHORRADO; B4 = cuánto cubre del próximo pago. Tabla desde la fila 6: Fecha, Monto, Agregar o Quitar, Nota, Revisar, Total después, Valor. Detalle en I3:J11 y plan desde I14.
 
 ### Config
 - Ubicación: excel/Figuras.xlsx (hoja Config, tabla tblTC)
 - Qué hace: Parámetros editables y tabla de tipos de cambio.
-- Cómo funciona: B3 modo práctica, B4-B5 límites, B6 máx. productos, B7 contar por, B8 día de pago (13), B9 arancel, B10 IVA, B11 hoy opcional, B12 hoy de práctica. Columna C 'Revisar' (C3:C12) avisa valores vacíos o mal escritos y qué valor por defecto se usa. tblTC en A16:C216.
+- Cómo funciona: B3 modo práctica, B4-B5 límites, B6 máx. productos, B7 contar por, B8 día de pago (13), B9 arancel, B10 IVA, B11 hoy opcional, B12 hoy de práctica, B13 descontar pagos del ahorro (Sí/No). Columna C 'Revisar' (C3:C13) avisa valores vacíos o mal escritos y qué valor por defecto se usa. tblTC en A16:C216.
 
 ### Ayuda
 - Ubicación: excel/Figuras.xlsx (hoja Ayuda)
@@ -140,6 +140,16 @@ No mezcla ni modifica las entradas de arriba.
 - Ubicación: excel/Figuras.xlsx (nombre definido)
 - Qué hace: Porcentajes seguros de arancel e IVA.
 - Cómo funciona: Si el valor es mayor a 1 se interpreta como porcentaje entero (6 → 6%); vacío o texto → 6% / 19%.
+
+### cfgDescontar
+- Ubicación: excel/Figuras.xlsx
+- Qué hace: Verdadero si en Config!B13 se activó 'Descontar pagos del ahorro'.
+- Cómo funciona: LEFT(TRIM(Config!B13),1)="S". Por defecto No: el ahorro solo cambia con Agregar/Quitar.
+
+### lstMovAhorro
+- Ubicación: excel/Figuras.xlsx
+- Qué hace: Lista Agregar/Quitar de la tabla de movimientos.
+- Cómo funciona: Rango fijo Listas!L2:L3.
 
 ### lstSiNo / lstMonedas / lstTipoPago / lstMeses / lstAnios / lstManual
 - Ubicación: excel/Figuras.xlsx (nombre definido)
@@ -241,7 +251,7 @@ No mezcla ni modifica las entradas de arriba.
 ### Compras: Avisos de datos
 - Ubicación: excel/Figuras.xlsx
 - Qué hace: Fórmula por fila/celda (ver encabezado y su nota).
-- Cómo funciona: TEXTJOIN de: falta/repetido ID, fecha salida no válida, cantidad/precio/moneda/TC no válidos, TC USD/JPY fuera de rango, TC usado en CLP, pago especial fuera de mes o no fecha, envío no válido, grupo faltante o inexistente, TC del envío y 'Cerrada sin pagos'.
+- Cómo funciona: TEXTJOIN de: falta/repetido ID, fecha salida no válida, cantidad/precio/moneda/TC no válidos, TC USD/JPY fuera de rango, TC usado en CLP, pago especial fuera de mes o no fecha, envío no válido, grupo faltante o inexistente, TC del envío, 'Cerrada sin pagos' y 'Envío pagado y la figura aún no' (envío Pagado con Pagado figura = 0; se registra igual).
 
 ### Compras: N lista / Etiqueta lista
 - Ubicación: excel/Figuras.xlsx
@@ -258,20 +268,20 @@ No mezcla ni modifica las entradas de arriba.
 - Qué hace: Fórmula por fila/celda (ver encabezado y su nota).
 - Cómo funciona: COUNTIFS/SUMIFS sobre Compras (grupo, acumulado "S*", manual "<>Can*") y SUMIFS/MAXIFS sobre Pagos ("Env*", grupo, Validación OK). Ahorro = suma - pagado si Pagado. Impuestos est. grupo se calcula sobre el paquete completo: base = figuras + (pagado conjunto o suma individual); arancel = ROUND(base x cfgArancelV); IVA = ROUND((base + arancel) x cfgIVAV).
 
-### Ahorro: resumen
+### Ahorro: detalle (I3:J11)
 - Ubicación: excel/Figuras.xlsx
-- Qué hace: Fórmula por fila/celda (ver encabezado y su nota).
-- Cómo funciona: Hoy, total abonado (solo abonos OK), pagos de figuras válidos desde el primer abono OK, saldo, saldo extra, atrasado (falta de meses < mes actual) y clave del mes actual.
+- Qué hace: Cifras del ahorro que usa el Panel.
+- Cómo funciona: Hoy, total agregado (SUMIF Valor > 0), total quitado, pagos descontados (solo si cfgDescontar: pagos de figuras OK desde el primer movimiento), total ahorrado = agregado - quitado - descontado, saldo extra, atrasado, clave del mes actual y clave del próximo pago.
 
 ### Ahorro: plan (A pagar / Primer pago / Ahorrado / Falta juntar / Meses / Cuota / Apartar)
 - Ubicación: excel/Figuras.xlsx
 - Qué hace: Fórmula por fila/celda (ver encabezado y su nota).
-- Cómo funciona: A pagar = SUMIFS de Falta pagar por clave; Ahorrado = MIN(a pagar, MAX(0, saldo - suma de meses anteriores)); Meses = clave - clave actual; Cuota = falta (si meses <= 0) o ROUNDUP(falta/meses); Apartar = cuota del mes actual o suma de cuotas de pagos con clave >= ese mes.
+- Cómo funciona: A pagar = SUMIFS de Falta pagar por clave; Ahorrado = MIN(a pagar, MAX(0, MAX(0, total ahorrado) - suma de meses anteriores)); Meses = clave - clave actual; Cuota = falta (si meses <= 0) o ROUNDUP(falta/meses); Apartar = cuota del mes actual o suma de cuotas de pagos con clave >= ese mes.
 
 ### Panel: próximo pago y ahorro
 - Ubicación: excel/Figuras.xlsx
 - Qué hace: Fórmula por fila/celda (ver encabezado y su nota).
-- Cómo funciona: Clave del próximo mes con pagos = MINIFS sobre el plan; trae fecha, a pagar, ahorrado, falta, apartar este mes y el próximo, saldo, saldo extra y atrasado.
+- Cómo funciona: Primera fila: Total ahorrado. Clave del próximo mes con pagos = MINIFS sobre el plan; trae fecha, a pagar, ahorrado, falta, apartar este mes y el próximo, saldo, saldo extra y atrasado.
 
 ### Panel: Estado general / Meses alternos / Límite mensual
 - Ubicación: excel/Figuras.xlsx
@@ -298,15 +308,15 @@ No mezcla ni modifica las entradas de arriba.
 - Qué hace: Detecta fórmulas borradas e IDs de grupo repetidos.
 - Cómo funciona: ISFORMULA sobre todas las columnas calculadas; si el ID del grupo aparece más de una vez, 'ID de grupo repetido: corrígelo'.
 
-### Ahorro: Revisar (abonos)
+### Ahorro: Valor / Total después / Revisar
 - Ubicación: excel/Figuras.xlsx
-- Qué hace: Valida cada abono.
-- Cómo funciona: OK si la fecha es fecha y el monto es número > 0; si no, el motivo. Solo los abonos OK suman (SUMIFS/MINIFS con Revisar = "OK").
+- Qué hace: Calculan cada movimiento del historial.
+- Cómo funciona: Valor = +monto (Agregar) o -monto (Quitar) si fecha, monto > 0 y tipo son válidos; si no, 0. Total después = suma de Valor hasta esa fila. Revisar = OK, el motivo del rechazo o 'Ojo: el ahorro queda negativo'.
 
 ### Panel: Revisión del libro
 - Ubicación: excel/Figuras.xlsx
 - Qué hace: Cuenta lo que hay que revisar en el libro.
-- Cómo funciona: Config (columna Revisar ≠ OK), Compras con avisos, canceladas con pagos, pagos y abonos no OK, fórmulas borradas (columnas Integridad) y datos escritos debajo de las filas preparadas. La fila 3 muestra 'todo OK', el total pendiente o la guía 'EMPIEZA AQUÍ' si no hay datos reales.
+- Cómo funciona: Config (columna Revisar ≠ OK), Compras con avisos, canceladas con pagos, pagos y movimientos de ahorro no OK, fórmulas borradas (columnas Integridad) y datos escritos debajo de las filas preparadas. La fila 3 muestra 'todo OK', el total pendiente o la guía 'EMPIEZA AQUÍ' si no hay datos reales.
 
 ### Panel: selector tolerante
 - Ubicación: excel/Figuras.xlsx
@@ -458,7 +468,7 @@ No mezcla ni modifica las entradas de arriba.
 ### hoja_ahorro
 - Ubicación: excel/generar_figuras.py
 - Qué hace: Crea una hoja de ahorro (real o práctica).
-- Cómo funciona: Resumen, plan de pagos del 13 y tabla de abonos; en práctica agrega una explicación.
+- Cómo funciona: Total arriba (B3), próximo pago (B4), tabla de movimientos Agregar/Quitar con historial, detalle y plan del 13 a la derecha; en práctica agrega una explicación.
 
 ### hoja_config
 - Ubicación: excel/generar_figuras.py
@@ -490,7 +500,7 @@ No mezcla ni modifica las entradas de arriba.
 ### FILAS_PRACTICA
 - Ubicación: excel/generar_figuras.py
 - Qué hace: Constante del generador.
-- Cómo funciona: Filas de las hojas de práctica: compras 40, pagos 40, grupos 10, abonos 20 (reduce fórmulas y tamaño).
+- Cómo funciona: Filas de las hojas de práctica: compras 40, pagos 40, grupos 10, movimientos de ahorro 20 (reduce fórmulas y tamaño).
 
 ### FILAS_COMPRAS / FILAS_PAGOS / FILAS_GRUPOS / FILAS_ABONOS
 - Ubicación: excel/generar_figuras.py
@@ -507,10 +517,10 @@ No mezcla ni modifica las entradas de arriba.
 - Qué hace: Constante del generador.
 - Cómo funciona: Meses del plan de ahorro (24) desde el mes actual.
 
-### AH_RES_INI, AH_PLAN_ENC, AH_PLAN_INI, AH_PLAN_FIN, AH_ABO_ENC, AH_ABO_INI, AH_ABO_FIN, AH_CELDAS
+### AH_TOTAL, AH_MOV_ENC, AH_MOV_INI, AH_MOV_FIN, AH_RES_COL, AH_CELDAS, AH_PLAN_ENC, AH_PLAN_INI, AH_PLAN_FIN, PLAN_COL0
 - Ubicación: excel/generar_figuras.py
 - Qué hace: Constante del generador.
-- Cómo funciona: Distribución de filas de la hoja Ahorro y celdas del resumen.
+- Cómo funciona: Distribución de la hoja Ahorro: total en fila 3, movimientos desde la fila 6, detalle en la columna J (filas 3-11) y plan desde I14.
 
 ### FUENTE, FMT_CLP, FMT_CLP_VACIO, FMT_TC, FMT_FECHA, FMT_MES, FMT_PCT
 - Ubicación: excel/generar_figuras.py
@@ -527,7 +537,7 @@ No mezcla ni modifica las entradas de arriba.
 - Qué hace: Constante del generador.
 - Cómo funciona: Abreviaturas ene..dic.
 
-### COLS_COMPRAS / COLS_PAGOS / COLS_GRUPOS / COLS_ABONOS / COLS_PLAN
+### COLS_COMPRAS / COLS_PAGOS / COLS_GRUPOS / COLS_MOV / COLS_PLAN
 - Ubicación: excel/generar_figuras.py
 - Qué hace: Constante del generador.
 - Cómo funciona: Definición de columnas: clave, encabezado, ancho, ingreso y nota.
@@ -537,7 +547,7 @@ No mezcla ni modifica las entradas de arriba.
 - Qué hace: Constante del generador.
 - Cómo funciona: Mapas clave→letra de cada tabla.
 
-### DEMO_COMPRAS / DEMO_PAGOS / DEMO_GRUPOS / DEMO_ABONOS
+### DEMO_COMPRAS / DEMO_PAGOS / DEMO_GRUPOS / DEMO_MOV
 - Ubicación: excel/generar_figuras.py
 - Qué hace: Constante del generador.
 - Cómo funciona: Datos simulados de las hojas de práctica.
